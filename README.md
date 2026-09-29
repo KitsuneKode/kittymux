@@ -67,6 +67,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+i` (×2) | cwd pill → detail card (copy path/branch) |
 | `ctrl+alt+u` | agent usage HUD |
 | `ctrl+alt+g` | agent picker — every agent pane, live preview + status |
+| `ctrl+alt+b` | sidebar command deck — hover/click rows, live pane preview |
 | `ctrl+alt+;` | send a prompt to a background agent pane |
 | `ctrl+alt+shift+e` | tab bar bottom → left → right |
 | `ctrl+alt+/` | keymap overlay — this table, parsed live from your conf |
