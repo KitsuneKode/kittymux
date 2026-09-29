@@ -4,7 +4,12 @@
 # process; callbacks receive (boss, window, data) with the real Window.
 #
 # Writes $KITTYMUX_STATE/panes-<pid>.json:
-#   { "<wid>": {title, ts_title, ts_cmd, cmd, running, focused, at_prompt} }
+#   { "<wid>": {title, ts_title, ts_cmd, cmd, running, focused, at_prompt,
+#                status, ts_status} }
+#
+# `status` (working|waiting|done|idle) comes from the `kittymux_status` window user
+# variable, set by bin/mux-status from agent hooks (see README). It outranks the
+# "title went quiet" heuristic. `done` clears to `idle` once the window is focused.
 
 import json
 import os
@@ -41,7 +46,8 @@ def _entry(window) -> dict:
     e = _state.get(window.id)
     if e is None:
         e = {"title": "", "ts_title": 0.0, "ts_cmd": 0.0, "cmd": "",
-             "running": False, "focused": False, "at_prompt": False}
+             "running": False, "focused": False, "at_prompt": False,
+             "status": "", "ts_status": 0.0}
         _state[window.id] = e
     return e
 
@@ -53,6 +59,7 @@ def _attach(window) -> None:
     if ws is None:
         return
     for lst, fn in ((ws.on_title_change, on_title_change),
+                    (ws.on_set_user_var, on_set_user_var),
                     (ws.on_cmd_startstop, on_cmd_startstop),
                     (ws.on_focus_change, on_focus_change),
                     (ws.on_close, on_close)):
@@ -91,9 +98,33 @@ def on_cmd_startstop(boss, window, data) -> None:
     _flush(e["ts_cmd"], force=True)
 
 
+def _mark_tab_bar_dirty(window) -> None:
+    # Redraw the tab bar now instead of waiting for some other event to.
+    try:
+        window.tabref().mark_tab_bar_dirty()
+    except Exception:
+        pass
+
+
+def on_set_user_var(boss, window, data) -> None:
+    try:
+        if data.get("key") != "kittymux_status":
+            return
+        e = _entry(window)
+        e["status"] = str(data.get("value") or "")
+        e["ts_status"] = time.monotonic()
+        _flush(e["ts_status"], force=True)
+        _mark_tab_bar_dirty(window)
+    except Exception:
+        pass
+
+
 def on_focus_change(boss, window, data) -> None:
     e = _entry(window)
     e["focused"] = bool(data.get("focused"))
+    if e["focused"] and e.get("status") == "done":
+        e["status"] = "idle"   # you looked at it: no longer unread
+        _mark_tab_bar_dirty(window)
     _flush(time.monotonic(), force=True)
 
 

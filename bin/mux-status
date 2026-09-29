@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# mux-status — tell kittymux what the agent in this pane is doing.
+#
+#   mux-status working|waiting|done|idle
+#
+# Meant to be called from agent hooks (Claude Code: UserPromptSubmit / Notification /
+# Stop; see README "Agent status hooks"). It sets the kitty window user variable
+# `kittymux_status`, which python/pane-state.py records and the tab bar / deck show.
+#
+# Preferred path: the OSC 1337 SetUserVar escape written to the controlling tty —
+# no socket needed, and it also works through ssh. Fallback: kitty remote control.
+# A hook must never block or fail the agent: runtime problems exit 0; only bad
+# usage exits 2. Extra args (some agents append a JSON payload) are ignored.
+#
+#   --print   write the escape to stdout instead of the tty (for tests)
+
+set -u
+
+print_only=0
+if [[ "${1:-}" == "--print" ]]; then
+    print_only=1
+    shift
+fi
+
+state="${1:-}"
+case "$state" in
+    working|waiting|done|idle) ;;
+    *) echo "usage: mux-status [--print] working|waiting|done|idle" >&2; exit 2 ;;
+esac
+
+b64="$(printf '%s' "$state" | base64 -w0 2>/dev/null || printf '%s' "$state" | base64 | tr -d '\n')"
+esc="$(printf '\033]1337;SetUserVar=kittymux_status=%s\007' "$b64")"
+
+if (( print_only )); then
+    printf '%s' "$esc"
+    exit 0
+fi
+
+# Inside tmux the escape needs passthrough; skip it and use remote control.
+if [[ -z "${TMUX:-}" ]] && { : >/dev/tty; } 2>/dev/null; then
+    printf '%s' "$esc" >/dev/tty 2>/dev/null && exit 0
+fi
+
+if [[ -n "${KITTY_LISTEN_ON:-}" && -n "${KITTY_WINDOW_ID:-}" ]]; then
+    kitty @ --to "$KITTY_LISTEN_ON" set-user-vars \
+        --match "id:${KITTY_WINDOW_ID}" "kittymux_status=${state}" >/dev/null 2>&1 || true
+fi
+exit 0

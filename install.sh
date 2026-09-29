@@ -4,7 +4,9 @@
 # What it does:
 #   1. Verifies deps: kitty >= 0.48, jq, python3, fzf, git
 #   2. Renders kittymux-keys.conf (absolute paths baked) into ~/.config/kitty
-#   3. Symlinks python/tab_bar.py into ~/.config/kitty (kitty loads it there)
+#   3. Symlinks python/tab_bar.py + the kittymux_*.py helper modules into
+#      ~/.config/kitty (kitty loads tab_bar.py there; the sidebar kitten finds the
+#      helpers there too)
 #   4. Adds `include` lines to kitty.conf — AFTER backing it up
 #   5. Creates $KITTYMUX_STATE (0700) and the tab-edge include file
 #
@@ -51,15 +53,23 @@ sed "s|@KITTYMUX_HOME@|$KITTYMUX_HOME|g" \
     "$KITTYMUX_HOME/kittymux-keys.conf.tpl" > "$KEYS_OUT"
 ok "rendered keys → $KEYS_OUT"
 
-# ── tab_bar.py symlink (kitty auto-loads it from the config dir) ────────────
-if [[ -L "$KITTY_CONF_DIR/tab_bar.py" ]]; then
-    rm -f "$KITTY_CONF_DIR/tab_bar.py"
-elif [[ -f "$KITTY_CONF_DIR/tab_bar.py" ]]; then
-    mv "$KITTY_CONF_DIR/tab_bar.py" "$KITTY_CONF_DIR/tab_bar.py.bak"
-    warn "existing tab_bar.py backed up to tab_bar.py.bak"
-fi
-ln -s "$KITTYMUX_HOME/python/tab_bar.py" "$KITTY_CONF_DIR/tab_bar.py"
-ok "tab_bar.py → symlink"
+# ── python symlinks (kitty auto-loads tab_bar.py from the config dir; the
+#    kittymux_*.py helpers are imported by tab_bar.py and the sidebar kitten) ──
+link_py() {
+    local name="$1" dest="$KITTY_CONF_DIR/$1"
+    if [[ -L "$dest" ]]; then
+        rm -f "$dest"
+    elif [[ -f "$dest" ]]; then
+        mv "$dest" "$dest.bak"
+        warn "existing $name backed up to $name.bak"
+    fi
+    ln -s "$KITTYMUX_HOME/python/$name" "$dest"
+}
+link_py tab_bar.py
+for helper in "$KITTYMUX_HOME"/python/kittymux_*.py; do
+    link_py "$(basename "$helper")"
+done
+ok "tab_bar.py + helper modules → symlinks"
 
 # ── managed tab-edge file (mux-edge.sh rewrites it) ─────────────────────────
 [[ -f "$EDGE_FILE" ]] || printf '# managed by kittymux mux-edge.sh — do not edit\ntab_bar_edge bottom\n' > "$EDGE_FILE"

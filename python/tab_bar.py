@@ -294,18 +294,21 @@ def _panes_state() -> dict:
     return _PANES_CACHE["data"]
 
 
-def _agent_waiting(tab_id: int) -> bool:
-    """True when the tab's active window title has gone quiet — agent CLIs
-    animate their title while working; silence usually means 'waiting'."""
+def _agent_status(tab_id: int, has_agent: bool) -> str:
+    """working | waiting | done | idle | "" for the tab's active window.
+    An explicit status from agent hooks (bin/mux-status) wins; otherwise the
+    title-went-quiet heuristic decides. See kittymux_agents.resolve_status."""
+    entry = None
     try:
         window = get_boss().tab_for_id(tab_id).active_window
-        st = _panes_state().get(str(window.id)) if window else None
-        if not st:
-            return False
-        ts = float(st.get("ts_title") or 0)
-        return bool(ts) and (time.monotonic() - ts) > _STALE_AFTER
+        entry = _panes_state().get(str(window.id)) if window else None
     except Exception:
-        return False
+        pass
+    return kittymux_agents.resolve_status(entry, has_agent, time.monotonic(), _STALE_AFTER)
+
+
+def _agent_waiting(tab_id: int) -> bool:
+    return _agent_status(tab_id, True) == "waiting"
 
 
 _USAGE_CACHE = (Path(os.environ["KITTYMUX_STATE"])
@@ -616,7 +619,8 @@ def _put(screen: Screen, x: int, text: str, fg: int, bold: bool = False) -> int:
 
 def _tab_state(tab: TabBarData, info) -> str:
     if info:
-        return "waiting" if _agent_waiting(tab.tab_id) else "working"
+        st = _agent_status(tab.tab_id, True)
+        return "" if st == "idle" else st
     if tab.needs_attention or tab.has_activity_since_last_focus:
         return "done"
     return ""

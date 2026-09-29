@@ -13,6 +13,10 @@ remote work.
 - `python/tab_bar.py` — custom tab bar (two-line vertical rows, brand icons)
 - `python/pane-state.py` — kitty `watcher`: per-window activity →
   `$KITTYMUX_STATE/panes-<kittypid>.json` (drives waiting/busy marks)
+- `python/kittymux_theme.py` / `kittymux_agents.py` / `kittymux_deck.py` — pure helper modules
+  (no kitty imports; unit-tested in `tests/`). Theme tokens derive from live kitty colours; symlinked
+  into the config dir by `install.sh`. Never hardcode a palette in `tab_bar.py`/`sidebar-kit.py`.
+- `bin/mux-status` — agent hooks → `kittymux_status` window user var → recorded by `pane-state.py`
 - `python/sidebar-kit.py` — `kitten` overlay: sidebar with real hover/click
   + live pane preview (bound `ctrl+alt+b`)
 - `python/collectors/` — per-provider usage collectors (claude/codex/cursor/devin)
@@ -33,6 +37,11 @@ remote work.
   `KITTY_CONFIG_DIRECTORY`; `styled()` wants `Color` objects, not ints/strings.
 
 ## Verify
+
+- `python3 -m unittest discover -s tests` and `bash tests/test_mux_status.sh`.
+- Kitten UI can be screenshotted offscreen: Xvfb + `env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa
+  LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=:99 kitty -o linux_display_server=x11 …`, then `xdotool windowsize` (forces a
+  first redraw) and `import -window root out.png`. Config reload does NOT re-import `tab_bar.py` — restart the scratch kitty.
 
 - `python3 -m py_compile` on touched python; `bash -n` on shell.
 - Reload a live kitty: `kitty @ --to unix:/tmp/mykitty-* action load_config_file`.

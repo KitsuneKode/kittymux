@@ -23,5 +23,34 @@ class AgentTests(unittest.TestCase):
             self.assertTrue(agent.glyph, name)
 
 
+class ResolveStatusTests(unittest.TestCase):
+    NOW = 1000.0
+
+    def test_no_agent_is_blank_even_with_status(self):
+        self.assertEqual(A.resolve_status({"status": "working"}, False, self.NOW), "")
+
+    def test_explicit_beats_fresh_title(self):
+        self.assertEqual(A.resolve_status({"status": "waiting", "ts_title": self.NOW - 1}, True, self.NOW), "waiting")
+
+    def test_explicit_done_and_idle(self):
+        self.assertEqual(A.resolve_status({"status": "done"}, True, self.NOW), "done")
+        self.assertEqual(A.resolve_status({"status": "idle"}, True, self.NOW), "idle")
+
+    def test_unknown_explicit_falls_back(self):
+        self.assertEqual(A.resolve_status({"status": "bogus", "ts_title": self.NOW - 1}, True, self.NOW), "working")
+
+    def test_missing_entry_is_working(self):
+        self.assertEqual(A.resolve_status(None, True, self.NOW), "working")
+
+    def test_stale_title_is_waiting(self):
+        self.assertEqual(A.resolve_status({"ts_title": self.NOW - 16}, True, self.NOW), "waiting")
+
+    def test_fresh_title_is_working(self):
+        self.assertEqual(A.resolve_status({"ts_title": self.NOW - 3}, True, self.NOW), "working")
+
+    def test_zero_title_ts_is_working(self):
+        self.assertEqual(A.resolve_status({"ts_title": 0}, True, self.NOW), "working")
+
+
 if __name__ == "__main__":
     unittest.main()

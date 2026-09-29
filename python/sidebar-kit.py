@@ -128,12 +128,11 @@ class Collector:
                     if name:
                         break
                 agent = kittymux_agents.AGENTS.get(name) if name else None
-                st = panes.get(str(aw["id"])) or {}
-                ts = float(st.get("ts_title") or 0)
-                quiet = bool(ts) and (time.monotonic() - ts) > _STALE_AFTER
+                st = kittymux_agents.resolve_status(
+                    panes.get(str(aw["id"])), agent is not None, time.monotonic(), _STALE_AFTER)
                 unread = bool(tab.get("needs_attention") or aw.get("needs_attention")
                               or aw.get("has_activity_since_last_focus"))
-                status = ("waiting" if quiet else "working") if agent else ("done" if unread else "")
+                status = ("" if st == "idle" else st) if agent else ("done" if unread else "")
                 current = bool(osw.get("is_focused") and tab.get("is_active"))
                 session = aw.get("session_name", "") or ""
                 if current:

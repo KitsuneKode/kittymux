@@ -34,3 +34,25 @@ def agent_in(cmdline_args: Iterable[str]) -> str | None:
         if name in AGENTS:
             return name
     return None
+
+
+STATES = ("working", "waiting", "done", "idle")
+
+
+def resolve_status(entry: dict | None, has_agent: bool, now: float,
+                   stale_after: float = 15.0) -> str:
+    """Status of a pane's agent: working | waiting | done | idle | "" (no agent).
+
+    An explicit status (set by `bin/mux-status` from agent hooks and recorded by
+    pane-state.py) wins. Without one, fall back to the heuristic: an agent whose
+    title has been quiet for `stale_after` seconds is probably waiting on you.
+    Explicit status is ignored once no agent process is in the pane, so a crash
+    can never leave a ghost "working" marker."""
+    if not has_agent:
+        return ""
+    entry = entry or {}
+    explicit = entry.get("status")
+    if explicit in STATES:
+        return explicit
+    ts = float(entry.get("ts_title") or 0)
+    return "waiting" if ts and (now - ts) > stale_after else "working"

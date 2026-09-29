@@ -67,7 +67,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+i` (×2) | cwd pill → detail card (copy path/branch) |
 | `ctrl+alt+u` | agent usage HUD |
 | `ctrl+alt+g` | agent picker — every agent pane, live preview + status |
-| `ctrl+alt+b` | sidebar command deck — hover/click rows, live pane preview |
+| `ctrl+alt+b` | sidebar deck — tabs grouped by session, hover/click, live pane preview (`J`/`K` jump sessions) |
 | `ctrl+alt+;` | send a prompt to a background agent pane |
 | `ctrl+alt+shift+e` | tab bar bottom → left → right |
 | `ctrl+alt+/` | keymap overlay — this table, parsed live from your conf |
@@ -82,6 +82,41 @@ When tmux is focused, only the keys tmux actually binds pass through
 On Hyprland's scrolling layout the `ctrl+alt+` layer is WM-owned — kittymux
 uses `ctrl+alt+g` (not `+a`), `shift+alt+arrows`, `ctrl+alt+0`, `ctrl+alt+q` so
 nothing gets silently swallowed.
+
+## Agent status hooks
+
+Tab dots and the sidebar deck show what each agent is doing — **working**
+(blue), **waiting** for you (amber), **done** (green, clears when you look).
+Without hooks kittymux guesses from title activity; with hooks it *knows*.
+
+`bin/mux-status <working|waiting|done|idle>` sets a window variable that the
+watcher records and the tab bar redraws on instantly. It writes the OSC 1337
+`SetUserVar` escape to the tty (works over ssh, no socket needed) and falls back
+to kitty remote control. It never blocks or fails the calling agent.
+
+Claude Code — add to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "~/kittymux/bin/mux-status working" }] }],
+    "Notification":     [{ "hooks": [{ "type": "command", "command": "~/kittymux/bin/mux-status waiting" }] }],
+    "Stop":             [{ "hooks": [{ "type": "command", "command": "~/kittymux/bin/mux-status done" }] }]
+  }
+}
+```
+
+Other agents: call `mux-status` from whatever hook/notify command they offer
+(extra arguments are ignored). Inside tmux the escape needs passthrough; kittymux
+then falls back to remote control (`listen_on` required).
+
+## Theme & colours
+
+Nothing is hardcoded to a palette. `python/kittymux_theme.py` derives every
+colour from your live kitty theme — pane, sidebar tint, active row, separator,
+status colours (from the ANSI slots, contrast-checked) — so it follows theme
+switches. Set `KITTYMUX_ACCENT=#rrggbb` to pin the accent (default: your
+theme's `active_border_color`).
 
 ## Agent usage collectors
 
@@ -113,9 +148,15 @@ kittymux/
 ├── install.sh
 ├── lib/mux.sh             # session model + remote-control plumbing
 ├── bin/mux-*              # sessionizer, nav, cycle, agents, save, HUDs…
+├── bin/mux-status         # agent hooks → window status (working/waiting/done)
+├── tests/                 # python3 -m unittest discover -s tests
 └── python/
-    ├── tab_bar.py         # custom tab bar
-    ├── pane-state.py      # watcher: per-window busy/waiting state
+    ├── tab_bar.py         # custom tab bar (horizontal + vertical rows)
+    ├── sidebar-kit.py     # ctrl+alt+b deck kitten (hover/click/preview)
+    ├── pane-state.py      # watcher: per-window activity + agent status
+    ├── kittymux_theme.py  # colour tokens derived from your kitty theme
+    ├── kittymux_agents.py # agent table + status resolution
+    ├── kittymux_deck.py   # deck grouping/layout logic (pure, tested)
     └── collectors/        # usage plugins (_common.py shared helpers)
 ```
 
