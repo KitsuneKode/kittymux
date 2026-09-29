@@ -25,7 +25,8 @@ _BG          = as_rgb(0x1e1e2e)  # base
 _SESSION_FG  = as_rgb(0x89b4fa)  # blue
 _ACTIVE_FG   = as_rgb(0xcba6f7)  # mauve
 _INACTIVE_FG = as_rgb(0x6c7086)  # overlay0 (dim inactive tabs)
-_ACTIVITY_FG = as_rgb(0xf9e2af)  # yellow
+_ACTIVITY_FG = as_rgb(0xa6e3a1)  # emerald — unread output (t3code "done")
+_WAITING_FG  = as_rgb(0xb4befe)  # indigo — agent idle, needs input
 _SEP_FG      = as_rgb(0x313244)  # surface0 (subtle separator)
 _BRACKET_FG  = as_rgb(0x45475a)  # surface1
 _CWD_FG      = as_rgb(0x9399b2)  # overlay2 (right-side cwd anchor)
@@ -473,8 +474,11 @@ def draw_tab(
         screen.cursor.fg = _BRACKET_FG
         screen.draw("] ")
 
-    # Tab body: [▌][icon] N:title [status] — fixed 3-cell prefix so every
-    # tab's "N:" aligns regardless of glyph advance widths.
+    # Tab body — cmux/t3code anatomy per row:
+    #   line 1: [▌][icon] N:title  + status marks right-aligned (vertical)
+    #   line 2: (vertical only) dim subtitle — git branch · pane count
+    is_vert = draw_data.tab_bar_edge in ("left", "right")
+    last = extra_data.next_tab is None
     activity = "●" if tab.needs_attention or tab.has_activity_since_last_focus else ""
     info = _agent_info(tab.tab_id)
     waiting = bool(info) and _agent_waiting(tab.tab_id)
@@ -494,30 +498,55 @@ def draw_tab(
     if screen.cursor.x < x0 + 3:
         screen.cursor.x = x0 + 3
 
+    num = f"{index}:"
     screen.cursor.fg = _ACTIVE_FG if tab.is_active else _INACTIVE_FG
     screen.cursor.bold = tab.is_active
-    screen.draw(f"{index}:{title}")
+    screen.draw(num + title)
 
-    if activity:
-        screen.cursor.fg = _ACTIVITY_FG
-        screen.cursor.bold = False
-        screen.draw(activity)
-    if waiting:
-        screen.cursor.fg = _ALERT_FG
-        screen.cursor.bold = False
-        screen.draw(" !")
+    def _draw_marks() -> None:
+        if activity:
+            screen.cursor.fg = _ACTIVITY_FG
+            screen.cursor.bold = False
+            screen.draw(activity)
+        if waiting:
+            screen.cursor.fg = _WAITING_FG
+            screen.cursor.bold = False
+            screen.draw(" !")
+
+    if is_vert:
+        # Right-align status marks against the bar's inner edge.
+        pad = screen.columns - 2 - screen.cursor.x - marks_w
+        if marks_w and pad > 0:
+            screen.cursor.x += pad
+        _draw_marks()
+        # Line 2: dim subtitle under the title (branch · split count · status).
+        if draw_data.max_tab_title_lines >= 2 and screen.cursor.y + 1 < screen.lines:
+            cwd, _fg, _last_cmd = _active_window_info(tab.tab_id)
+            _label, branch = _git_anchor(cwd) if cwd else ("", "")
+            sub = ""
+            if branch:
+                sub += "\uf126 " + _truncate(branch, 18)
+            if tab.num_windows > 1:
+                sub += ("  " if sub else "") + f"{tab.num_windows} panes"
+            if waiting and not activity:
+                sub += ("  " if sub else "") + "waiting"
+            elif not waiting and info:
+                sub += ("  " if sub else "") + "working"
+            if sub:
+                screen.cursor.y += 1  # occupies the tab's 2nd row — kitty
+                # measures vertical height from cursor.y, so leave it here
+                screen.cursor.x = x0 + 3 + len(num)
+                screen.cursor.fg = _WAITING_FG if waiting else _CWD_FG
+                screen.cursor.bold = False
+                screen.draw(_truncate(sub, max_title_length - (3 + len(num))))
+    else:
+        _draw_marks()
 
     # Separators: horizontal bars get ┃ between tabs. On vertical edges kitty
     # passes is_last=True for every row, so use next_tab to find the real end;
     # it also inserts a blank spacing row between tabs on its own.
-    is_vert = draw_data.tab_bar_edge in ("left", "right")
-    last = extra_data.next_tab is None
     if is_vert:
-        if last:  # dim rule under the last tab row — caps the list visually
-            if screen.cursor.x < screen.columns - 1:
-                screen.cursor.fg = _SEP_FG
-                screen.cursor.bold = False
-                screen.draw("─" * (screen.columns - screen.cursor.x - 1))
+        pass
     elif not last:
         screen.cursor.fg = _SEP_FG
         screen.cursor.bold = False
