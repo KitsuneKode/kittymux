@@ -64,7 +64,12 @@ map ctrl+alt+shift+d     detach_window ask
 map ctrl+alt+i           launch --type=overlay --cwd=current @KITTYMUX_HOME@/bin/mux-cwd.sh
 map ctrl+alt+shift+i     launch --type=overlay --cwd=current @KITTYMUX_HOME@/bin/mux-cwd.sh --detail
 map ctrl+alt+u           launch --type=overlay /usr/bin/python3 @KITTYMUX_HOME@/bin/mux-usage.py
-map ctrl+alt+a           launch --type=background @KITTYMUX_HOME@/bin/mux-jump.sh
+# agent picker: every agent pane across windows/sessions + live preview
+map ctrl+alt+a           launch --type=overlay @KITTYMUX_HOME@/bin/mux-agents.sh
+# send a prompt to a background agent pane without switching focus
+map ctrl+alt+semicolon   launch --type=overlay @KITTYMUX_HOME@/bin/mux-send.sh
+# per-window activity state feeding the picker's busy/waiting markers
+watcher @KITTYMUX_HOME@/python/pane-state.py
 map ctrl+alt+shift+e     launch --type=background @KITTYMUX_HOME@/bin/mux-edge.sh
 
 # ============================================

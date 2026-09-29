@@ -66,11 +66,13 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+z` / `=` | zoom pane / equalize |
 | `ctrl+alt+i` (×2) | cwd pill → detail card (copy path/branch) |
 | `ctrl+alt+u` | agent usage HUD |
-| `ctrl+alt+a` | cycle focus between agent panes |
+| `ctrl+alt+a` | agent picker — every agent pane, live preview + status |
+| `ctrl+alt+;` | send a prompt to a background agent pane |
 | `ctrl+alt+shift+e` | tab bar bottom → left → right |
 | `ctrl+alt+shift+s` | save session now |
 
-When tmux is focused, every `ctrl+alt*` chord passes through untouched.
+When tmux is focused, only the keys tmux actually binds pass through
+(`shift+←/→`, `ctrl+alt+←/→`, `ctrl+alt+z`) — everything else stays kitty's.
 
 ## Agent usage collectors
 
@@ -101,9 +103,10 @@ kittymux/
 ├── kittymux-keys.conf.tpl # keybinds → rendered by install.sh
 ├── install.sh
 ├── lib/mux.sh             # session model + remote-control plumbing
-├── bin/mux-*              # sessionizer, nav, cycle, jump, save, HUDs…
+├── bin/mux-*              # sessionizer, nav, cycle, agents, save, HUDs…
 └── python/
     ├── tab_bar.py         # custom tab bar
+    ├── pane-state.py      # watcher: per-window busy/waiting state
     └── collectors/        # usage plugins (_common.py shared helpers)
 ```
 
