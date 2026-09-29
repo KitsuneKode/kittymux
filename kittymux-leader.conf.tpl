@@ -80,6 +80,8 @@ map --mode leader g launch --type=overlay --cwd=current @KITTYMUX_HOME@/bin/mux-
 map --mode leader semicolon launch --type=overlay @KITTYMUX_HOME@/bin/mux-send.sh
 # sidebar deck
 map --mode leader b kitten @KITTYMUX_HOME@/python/sidebar-kit.py
+# docked sidebar panel (toggle)
+map --mode leader shift+b launch --type=background @KITTYMUX_HOME@/bin/mux-panel toggle
 # agent usage HUD
 map --mode leader u launch --type=overlay /usr/bin/python3 @KITTYMUX_HOME@/bin/mux-usage.py
 # location pill

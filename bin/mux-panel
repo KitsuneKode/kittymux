@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# mux-panel — the sidebar deck as a persistent docked panel (Wayland, wlr-layer-shell).
+#
+#   mux-panel toggle|start|stop|status
+#
+# Runs python/sidebar-kit.py inside `kitten panel` docked to the left screen edge. On a
+# compositor that honours the layer-shell exclusive zone (Hyprland does) the panel
+# reserves its width, so tiled windows sit beside it — the cmux-style always-visible
+# sidebar. It watches the kitty you were last in and jumps there on click / Enter.
+#
+# Env: KITTYMUX_PANEL_COLUMNS (default 32), KITTYMUX_PANEL_EDGE (left|right, default left),
+#      KITTYMUX_TARGET (kitty socket to watch; default: the active kitty, else the newest)
+# Notes: Wayland only (X11 ignores the exclusive zone). The panel is a separate kitty
+# instance — it needs no config of its own.
+
+set -u
+
+STATE="${KITTYMUX_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/kittymux}"
+PIDFILE="$STATE/panel.pid"
+HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# canonical path: a `..` segment makes `kitten <path>` exit silently inside a panel
+DECK="$(cd -- "$HERE/../python" && pwd -P)/sidebar-kit.py"
+COLUMNS_N="${KITTYMUX_PANEL_COLUMNS:-32}"
+EDGE="${KITTYMUX_PANEL_EDGE:-left}"
+
+alive() { [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; }
+
+pick_target() {
+    [[ -n "${KITTYMUX_TARGET:-}" ]] && { printf '%s' "$KITTYMUX_TARGET"; return; }
+    local pid sock
+    if command -v hyprctl >/dev/null 2>&1; then     # the kitty you are in right now
+        pid="$(hyprctl activewindow -j 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("pid",""))' 2>/dev/null)"
+        [[ -n "$pid" && -S "/tmp/mykitty-$pid" ]] && { printf 'unix:/tmp/mykitty-%s' "$pid"; return; }
+    fi
+    sock="$(ls -t /tmp/mykitty-* 2>/dev/null | head -1)"
+    [[ -n "$sock" ]] && printf 'unix:%s' "$sock"
+}
+
+start() {
+    alive && { echo "panel already running (pid $(cat "$PIDFILE"))"; return 0; }
+    command -v kitten >/dev/null 2>&1 || { echo "mux-panel: kitten not found" >&2; return 1; }
+    [[ -n "${WAYLAND_DISPLAY:-}" ]] || echo "mux-panel: no Wayland session — the panel will not reserve space" >&2
+    local target
+    target="$(pick_target)"
+    [[ -n "$target" ]] || { echo "mux-panel: no kitty remote-control socket found (set listen_on unix:/tmp/mykitty)" >&2; return 1; }
+    mkdir -p "$STATE"
+    KITTYMUX_TARGET="$target" KITTYMUX_PANEL=1 setsid nohup kitten panel \
+        --edge="$EDGE" --columns="$COLUMNS_N" --layer=top --focus-policy=on-demand \
+        --name kittymux-panel \
+        -o allow_remote_control=no -o confirm_os_window_close=0 -o background_opacity=1 \
+        kitten "$DECK" >"$STATE/panel.log" 2>&1 &
+    echo $! > "$PIDFILE"
+    echo "panel started → watching $target"
+}
+
+stop() {
+    if alive; then
+        kill -- "-$(cat "$PIDFILE")" 2>/dev/null || kill "$(cat "$PIDFILE")" 2>/dev/null
+        rm -f "$PIDFILE"
+        echo "panel stopped"
+    else
+        rm -f "$PIDFILE"
+        echo "panel not running"
+    fi
+}
+
+case "${1:-toggle}" in
+    start)  start ;;
+    stop)   stop ;;
+    status) alive && echo "running (pid $(cat "$PIDFILE"))" || echo "stopped" ;;
+    toggle) if alive; then stop; else start; fi ;;
+    *) echo "usage: mux-panel toggle|start|stop|status" >&2; exit 2 ;;
+esac

@@ -71,6 +71,8 @@ map ctrl+alt+u           launch --type=overlay /usr/bin/python3 @KITTYMUX_HOME@/
 map ctrl+alt+g           launch --type=overlay @KITTYMUX_HOME@/bin/mux-agents.sh
 # ctrl+alt+b — sidebar command deck (hover/click, live preview, jump to tab)
 map ctrl+alt+b           kitten @KITTYMUX_HOME@/python/sidebar-kit.py
+# ctrl+alt+shift+b — toggle the sidebar deck as a persistent docked panel (Wayland)
+map ctrl+alt+shift+b     launch --type=background @KITTYMUX_HOME@/bin/mux-panel toggle
 # ctrl+alt+y — jump to the next agent waiting on you (round-robin, longest-waiting first)
 map ctrl+alt+y           launch --type=background @KITTYMUX_HOME@/bin/mux-agents.sh --next-waiting
 # ctrl+alt+shift+g — new agent in its own git worktree + tab

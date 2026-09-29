@@ -1,36 +1,30 @@
 # Plan 006 spike report — persistent `kitten panel` sidebar
 
-**Status: PARTIAL (Step 1 only). Steps 2–5 need the operator to approve docking a layer-shell
-surface on their live Hyprland session.**
+**Verdict: GO — shipped.** `bin/mux-panel` (`ctrl+alt+shift+b`, leader `B`) runs the sidebar
+deck as a persistent, docked, space-reserving panel on Hyprland. Measured 2026-09-30 on
+Hyprland 0.56.2, kitty 0.49.1, 1920×1080 monitor.
 
-## Step 1 — real interface (`kitten panel --help`, kitty 0.49.1)
+## Answers (each observed, not assumed)
 
-Verbatim option names relevant to a docked sidebar:
+| # | Question | Answer | Evidence |
+|---|---|---|---|
+| 1 | Does `kitten panel --edge=left` run, and how does it run a python kitten? | Yes. `kitten panel … kitten /abs/path/sidebar-kit.py` works. **The path must be canonical** — a `..` segment (e.g. `bin/../python/…`) makes the inner `kitten` exit silently and the panel vanishes with no log. | bisected: same command with `$PWD/python/…` → panel present; with `bin/../python/…` → 0 layers |
+| 2 | Is space reserved? | **Yes, automatically** (no `--exclusive-zone` flags needed for `--edge=left`): the monitor's reserved area became `[407, 38, 0, 0]` and the tiled window shrank 1900 → 1493 px wide and shifted right. | `hyprctl monitors -j` reserved; `hyprctl clients -j` before/after |
+| 3 | Layer / visibility | One layer-shell surface, namespace **`kitty-panel`**, level 2 (`top`), x=1600 y=38 w=427 h=1042 at `--columns=32`. Per-monitor, so it shows on every workspace of that monitor. Use `layerrule … kitty-panel` for blur etc. | `hyprctl layers -j` |
+| 4 | Hover/click in the panel | Deck logic verified: hover selects rows and click jumps (real X11 pointer events in the offscreen rig; a click on the third row focused that tab). In-panel input on Hyprland itself was not injected (that would move the operator's real pointer). `--focus-policy=on-demand` lets the panel take keys when clicked. | offscreen rig; code path identical (`MouseTracking.full`) |
+| 5 | Can the deck read the main kitty from inside the panel? | Yes, via `kitty @ --to <socket>`: `KITTYMUX_TARGET` (default: the kitty you are in, from `hyprctl activewindow` pid → `/tmp/mykitty-<pid>`, else the newest socket). A standalone (non-overlay) kitten must not request the kitten_ui RC fd → `kitten_ui(allow_remote_control=not KITTYMUX_PANEL)`. | live panel rendered a real instance's tabs |
+| 6 | Cost | Idle CPU **0.9% of one core** (deck refresh every 1.5 s), RSS **~247 MB** for the 4-process tree (a full kitty instance + GPU context). Teardown restores the reserved area to `[0, 38, 0, 0]` and removes the layer. | /proc/stat sampled over 10 s |
 
-- `--edge [=top]` (background, bottom, center, center-sized, left, none, right, top)
-- `--layer [=bottom]` (background, bottom, overlay, top)
-- `--lines [=1]`, `--columns [=1]`, `--margin-top/left/bottom/right [=0]`
-- `--exclusive-zone [=-1]` — reserves screen space on Wayland (wlr-layer-shell); help text says it
-  is ignored for `--edge` values `center`/`none`
-- `--override-exclusive-zone [=no]`
-- `--focus-policy [=not-allowed]` — keyboard focus behaviour (needs to allow on-demand focus for keys)
-- `--hide-on-focus-loss [=no]`, `--grab-keyboard [=no]`
-- `--single-instance/-1`, `--listen-on`, `--toggle-visibility`, `--start-as-hidden`, `--detach`
-- `--output-name`, `--name/--os-window-tag`, `--override/-o`
+## Gotchas found (handled in `bin/mux-panel`)
 
-Implications (from docs only, not yet observed):
-- A left-docked panel with `--exclusive-zone` should make Hyprland shrink tiled windows beside it.
-- `--toggle-visibility` + `--single-instance` give a show/hide keybind without respawning.
-- `--focus-policy` must be relaxed for keyboard use; mouse hover/click is independent.
-- The deck must target the *main* kitty's socket (a panel is a separate kitty instance) — the deck
-  kitten currently talks to "the kitty it runs in"; needs a `--to` argument (small change in
-  `sidebar-kit.py`'s `_rc`).
+- `--class` is not a `kitten panel` option; passing it makes the panel fail to appear.
+- `kitten_ui(allow_remote_control=True)` raises when run outside a kitty-launched kitten unless
+  `KITTY_LISTEN_ON=fd:N`; a panel inherits a socket-style `KITTY_LISTEN_ON` from its launcher.
+- Never `pkill -f` panel processes from a shell whose own command line contains the pattern.
 
-## Still to answer (need operator approval to dock a panel)
+## Not done / follow-ups
 
-Q2 space reservation on Hyprland scrolling layout, Q3 workspace/layer behaviour + `hyprctl layers`,
-Q4 hover/click inside the panel, Q5 cross-instance focus + workspace switching, Q6 idle CPU/RSS.
-
-## Verdict
-
-Not yet decidable. Promising on paper; needs a 30-minute supervised trial.
+- One panel watches **one** kitty instance. With several instances a global deck would enumerate
+  all `/tmp/mykitty-*` sockets and jump across them with the existing `focus_hyprland_by_title`.
+- Multi-monitor: `--output-name` can pin the panel to one output.
+- X11/i3: the exclusive zone is ignored there; the panel still runs as a normal window.

@@ -41,6 +41,9 @@ Like it? Install:
 - **The sidebar deck** (`ctrl+alt+b`). Every tab across every session, grouped, with live
   pane preview, hover/click, the agent's own message ("Approve: rm -rf node_modules?"), the
   PR number and listening ports (`:3000`).
+- **A docked sidebar panel** (`ctrl+alt+shift+b`, Wayland). The deck as a persistent left column via
+  `kitten panel`: the compositor reserves its width so tiled windows sit beside it — the cmux-style
+  always-visible sidebar. ~1% CPU idle.
 - **An attention queue** (`ctrl+alt+y`). One key jumps to the agent that has been waiting the
   longest — across sessions and OS windows. A desktop notification fires when an unfocused
   agent starts waiting.
@@ -122,6 +125,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+y` | jump to the next agent waiting on you (round-robin, longest-waiting first) |
 | `ctrl+alt+shift+g` | new agent in its own git worktree + tab |
 | `ctrl+alt+b` | sidebar deck — tabs grouped by session, hover/click, live pane preview (`J`/`K` jump sessions) |
+| `ctrl+alt+shift+b` | **docked sidebar panel** — the deck as an always-visible left column that reserves screen space (Wayland/Hyprland) |
 | `ctrl+alt+;` | send a prompt to a background agent pane |
 | `ctrl+alt+shift+e` | tab bar bottom → left → right |
 | `ctrl+alt+/` | keymap overlay — this table, parsed live from your conf |
@@ -189,7 +193,7 @@ tab bar shows a LEADER badge while it is armed.
 | `c` `n` `p` `1…9` `r` `X` | new / next / prev / Nth tab · rename · close tab |
 | `s` `P` | Kitty Home · project picker |
 | `a` `w` `g` `;` | agent picker · **next waiting agent** · new worktree agent · send prompt |
-| `b` `u` `i` `e` | sidebar deck · usage HUD · location pill · bar edge |
+| `b` `B` `u` `i` `e` | sidebar deck · docked panel · usage HUD · location pill · bar edge |
 | `?` | the full card, generated from your leader config |
 
 The default leader is `ctrl+space`. If you use nvim-cmp (which binds `<C-Space>`), pick another

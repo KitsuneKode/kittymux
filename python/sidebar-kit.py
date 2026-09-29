@@ -55,8 +55,22 @@ def _cells(s: str) -> int:
     return max(0, wcswidth(s))
 
 
+# Panel mode (bin/mux-panel): the deck lives in its own docked kitty instance and
+# talks to a *target* kitty over its socket; it stays open after a jump.
+_TARGET = os.environ.get("KITTYMUX_TARGET", "")
+_PANEL = os.environ.get("KITTYMUX_PANEL") == "1"
+
+
 def _rc(*args: str) -> str:
-    """Synchronous remote control over the kitten's fd channel."""
+    """Synchronous remote control: over --to $KITTYMUX_TARGET in panel mode, else the
+    kitten's own fd channel."""
+    if _TARGET:
+        try:
+            p = subprocess.run(["kitty", "@", "--to", _TARGET, *args],
+                               capture_output=True, text=True, timeout=4)
+        except Exception:
+            return ""
+        return p.stdout if p.returncode == 0 else ""
     p = main.remote_control(list(args), capture_output=True, text=True)
     return p.stdout if p.returncode == 0 else ""
 
@@ -200,7 +214,7 @@ class Collector:
                 unread = bool(tab.get("needs_attention") or aw.get("needs_attention")
                               or aw.get("has_activity_since_last_focus"))
                 status = ("" if st == "idle" else st) if agent else ("done" if unread else "")
-                current = bool(osw.get("is_focused") and tab.get("is_active"))
+                current = bool((osw.get("is_focused") or (_PANEL and osw.get("last_focused"))) and tab.get("is_active"))
                 session = aw.get("session_name", "") or ""
                 if current:
                     current_session = session
@@ -463,7 +477,8 @@ class Sidebar(Handler):
             return
         k = (key_event.key or "").upper()
         if k in ("Q", "ESCAPE"):
-            self.quit_loop()
+            if not _PANEL or k == "Q":
+                self.quit_loop()
             return
         shifted = bool(key_event.mods & 1)
         n = len(self.snap.rows)
@@ -514,7 +529,10 @@ class Sidebar(Handler):
         _rc("focus-tab", "--match", f"id:{r.tab_id}")
         if r.win_id:
             _rc("focus-window", "--match", f"id:{r.win_id}")
-        self.quit_loop()
+        if not _PANEL:
+            self.quit_loop()
+        else:
+            self._request_refresh()
 
 
 def _log_error() -> None:
@@ -527,7 +545,7 @@ def _log_error() -> None:
         pass
 
 
-@kitten_ui(allow_remote_control=True)
+@kitten_ui(allow_remote_control=not _PANEL)   # panel mode talks to _TARGET over its socket
 def main(args: list[str]) -> str:
     loop = Loop()
     handler = Sidebar()

@@ -16,7 +16,7 @@ Selection: the operator said "go ahead" after the review, so plans were written 
 | [003](003-vertical-tab-bar-redesign.md) | Vertical tab bar redesign: clean backgrounds, rail, header row, status dots | P1 | M | 002 | DONE |
 | [004](004-sidebar-deck-fixes-and-grouping.md) | Sidebar deck: non-blocking refresh, correct focus, clean fill, session groups | P2 | M | 002 | DONE |
 | [005](005-explicit-agent-status-via-hooks.md) | Explicit agent status via hooks → user var → watcher (heuristic as fallback) | P2 | M | 003, 004 | DONE |
-| [006](006-spike-persistent-panel-sidebar.md) | SPIKE: persistent docked `kitten panel` sidebar on Hyprland | P3 | M | 004 | BLOCKED (Step 1 done; docking needs operator OK) |
+| [006](006-spike-persistent-panel-sidebar.md) | SPIKE: persistent docked `kitten panel` sidebar on Hyprland | P3 | M | 004 | DONE (GO — shipped as bin/mux-panel; see 006-spike-report.md) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -32,6 +32,14 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   (b) test UI only in a scratch kitty (`--class kmx-t`, `--listen-on unix:/tmp/kmx-t`, temporary
   `KITTY_CONFIG_DIRECTORY`), never the user's live windows; (c) as of planning, the user's `userprefs.conf` duplicates
   several `kittymux.conf` options (e.g. `tab_title_max_lines 2`) and may override them — plan 003 Step 1 tells you how to check.
+
+## Roadmap items shipped after the plans (2026-09-30)
+
+Agent messages + notifications (`mux-status`), state shapes (◐ ◆ ✓), attention queue
+(`mux-agents.sh --next-waiting`, `ctrl+alt+y`), worktree-per-agent (`mux-agent-new`), leader mode
+(`install.sh --leader`), themed overlays (fzf/keys/usage/cwd from live colours), `kittymux`
+CLI (`doctor` / `demo` / `hooks`), deck PR numbers + listening ports, docked panel (`mux-panel`),
+CI workflow and PKGBUILD.
 
 ## Findings considered and not planned (yet)
 
