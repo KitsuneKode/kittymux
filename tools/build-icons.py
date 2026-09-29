@@ -30,6 +30,10 @@ SCALE = 0.9          # icon occupies 90% of em height — reads well in a tab
 ASCENT, DESCENT = int(UPM * 0.8), -int(UPM * 0.2)
 
 # codepoint -> svg filename (without .svg). Keep stable: append only.
+# Each icon is also mirrored into BMP private-use at BMP_BASE + i so
+# consumers that only scan the format-4 cmap (kitty, ghostty) find it —
+# format-4 cannot encode Plane-16 codepoints.
+BMP_BASE = 0xE0D8  # free run U+E0D8–E1FF in Symbols Nerd Font Mono
 ICONS = [
     (0x10EA01, "claude"),
     (0x10EA02, "openai"),      # codex CLI
@@ -79,7 +83,11 @@ def main() -> None:
     fb = fontBuilder.FontBuilder(UPM, isTTF=True)
     order = [".notdef"] + [f"icon-{cp:x}" for cp, _ in ICONS]
     fb.setupGlyphOrder(order)
-    fb.setupCharacterMap({cp: f"icon-{cp:x}" for cp, _ in ICONS})
+    cmap = {}
+    for i, (cp, _) in enumerate(ICONS):
+        cmap[cp] = f"icon-{cp:x}"
+        cmap[BMP_BASE + i] = f"icon-{cp:x}"
+    fb.setupCharacterMap(cmap)
 
     glyphs, metrics = {}, {}
     glyphs[".notdef"] = TTGlyphPen(None).glyph()

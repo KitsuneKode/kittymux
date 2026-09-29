@@ -7,7 +7,8 @@ their rows in one animated panel. Collectors are pure local-file reads
 KITTYMUX_USAGE_LIVE=1 is set. Results cached 60s in
 $KITTYMUX_STATE/agent-usage.json so repeat invocations render instantly.
 
-Keys: r = force refresh, anything else (or timeout) dismisses.
+Keys: j/k/↑/↓ select, ⏎ detail, a all-rows view, h/← back,
+r force refresh, q/Esc dismiss. Stays open until dismissed.
 """
 
 import importlib.util
@@ -147,10 +148,10 @@ def get_data(force: bool) -> dict:
 C_BORDER, C_DIM, C_TXT, C_NAME = "45475a", "6c7086", "cdd6f4", "89b4fa"
 C_OK, C_WARN, C_BAD, C_CLOCK = "a6e3a1", "f9e2af", "f38ba8", "cba6f7"
 
-_GLYPHS = {"claude": "\U00010EA01", "codex": "\U00010EA02",
-           "cursor": "\U00010EA03", "gemini": "\U00010EA04",
-           "opencode": "\U00010EA05", "amp": "\U00010EA06",
-           "devin": "\U00010EA07",
+_GLYPHS = {"claude": "\ue0d8", "codex": "\ue0d9",
+           "cursor": "\ue0da", "gemini": "\ue0db",
+           "opencode": "\ue0dc", "amp": "\ue0dd",
+           "devin": "\ue0de",
            "aider": "✎", "crush": "♥", "grok": "✗"}
 
 
@@ -168,83 +169,198 @@ def _bar_color(pct: float) -> str:
     return C_OK if pct < 60 else C_WARN if pct < 85 else C_BAD
 
 
-def build_lines(data: dict) -> list[tuple[str, str, str]]:
-    """(text, fg_hex, kind) rows; kind 'bar' renders text|bar|pct."""
-    rows = [(" agent usage ", C_NAME, "")]
-    for p in data["providers"]:
-        name = (_GLYPHS.get(p["name"], "·") + " " + p["name"]).ljust(9)
-        if not p["rows"]:
-            rows.append((f"  {name} {p.get('note') or '—'}", C_DIM, ""))
+def _live_tag(data: dict) -> str:
+    return " · live" if any(v.get("rows") for v in (data.get("live") or {}).values()
+                           if isinstance(v, dict)) else ""
+
+
+def _headline(p: dict) -> tuple[list[dict], dict | None]:
+    """Split a provider's rows into quota rows and the headline text row."""
+    pcts = [r for r in p["rows"] if "pct" in r]
+    texts = [r for r in p["rows"] if "pct" not in r]
+    return pcts, (texts[0] if texts else None)
+
+
+def build_summary(data: dict, sel: int) -> list[tuple[str, str]]:
+    """One scannable row per provider; sel marks the focused row with ▸."""
+    age = int(time.time() - data["ts"])
+    rows = [(f" agent usage · cached {age}s{_live_tag(data)} ", C_NAME), ("", C_DIM)]
+    for i, p in enumerate(data["providers"]):
+        mark = "▸" if i == sel else " "
+        name = (_GLYPHS.get(p["name"], "·") + " " + p["name"]).ljust(10)
+        pcts, text = _headline(p)
+        if not pcts:
+            tail = (text or {}).get("text") or p.get("note") or "—"
+            rows.append((f" {mark} {name} {tail}", C_DIM))
             continue
-        for i, r in enumerate(p["rows"]):
-            label = (r.get("label") or "").ljust(6)
-            if "pct" in r:
-                reset = r.get("reset") or ""
-                rows.append((f"  {name} {label}|{_bar(r['pct'])}|"
-                             f"{r['pct']:>3.0f}%{' · ' if reset else ''}{reset}",
-                             C_CLOCK if r.get("clock") else _bar_color(r["pct"]),
-                             "bar"))
-            else:
-                rows.append((f"  {name} {label}{r.get('text', '')} "
-                             f"{r.get('reset', '')}", C_TXT, ""))
-            note = p.get("note") if i == 0 else None
-            if note:
-                t, c, k = rows[-1]
-                rows[-1] = (t + f" · {note}", c, k)
-            name = " " * 9
+        r0 = pcts[0]
+        tail = f"{r0['label']}"
+        if r0.get("reset"):
+            tail += f" · {r0['reset']}"
+        for r in pcts[1:2]:
+            tail += f" · {r['label']} {r['pct']:.0f}%"
+        color = C_CLOCK if r0.get("clock") else _bar_color(r0["pct"])
+        rows.append((f" {mark} {name} |{_bar(r0['pct'], 8)}| {r0['pct']:>3.0f}% {tail}", color))
     spark = _sparkline("burn")
     if spark:
-        rows.append((f"  7d burn  {spark}", C_DIM, ""))
-    age = int(time.time() - data.get("ts", time.time()))
-    live_tag = " · live" if data.get("live") else ""
-    rows.append((f"  cached {age}s{live_tag} · r refresh", C_DIM, ""))
+        rows.append((f"   7d burn  {spark}", C_DIM))
+    rows.append(("", C_DIM))
+    rows.append((" j/k move · ⏎ detail · a all · r refresh · q", C_DIM))
     return rows
 
 
-def draw(rows: list[tuple[str, str, str]], p: int, cols: int, lines: int) -> None:
-    w = max(len(t) for t, _, _ in rows) + 4
-    x, y = (cols - w) // 2, max(1, (lines - len(rows) - 2) // 2)
-    b, dim, txt = _rgb(C_BORDER, p), _rgb(C_DIM, p), _rgb(C_TXT, p)
-    top = "╭" + "─" * (w - 2) + "╮"
-    bot = "╰" + "─" * (w - 2) + "╯"
-    out = [f"\033[{y};{x}H{b}{top}"]
-    for i, (t, fg, kind) in enumerate(rows):
-        body = t[:w - 4].ljust(w - 4)
-        seg = f"\033[{y + 1 + i};{x}H{b}│ {out_fg(fg, p)}{body}{b}│"
-        out.append(seg)
-    out.append(f"\033[{y + len(rows) + 1};{x}H{b}{bot}")
+def build_detail(p: dict) -> list[tuple[str, str]]:
+    """All rows for one provider — the old dense section, scoped down."""
+    name = _GLYPHS.get(p["name"], "·") + " " + p["name"]
+    rows = [(f" {name} ", C_NAME), ("", C_DIM)]
+    for r in p["rows"]:
+        if "pct" in r:
+            reset = f" · {r['reset']}" if r.get("reset") else ""
+            color = C_CLOCK if r.get("clock") else _bar_color(r["pct"])
+            rows.append((f"   {r['label']:<7} |{_bar(r['pct'])}| {r['pct']:.0f}%{reset}", color))
+        else:
+            rows.append((f"   {r['label']:<7} {r.get('text', '')}", C_TXT))
+    if not p["rows"]:
+        rows.append((f"   {p.get('note') or '—'}", C_DIM))
+    if p.get("note") and p["rows"]:
+        rows.append((f"   {p['note']}", C_DIM))
+    spark = _sparkline(f"{p['name']}_burn") or _sparkline("burn")
+    if spark:
+        rows.append((f"   7d      {spark}", C_DIM))
+    rows.append(("", C_DIM))
+    rows.append((" h/← back · r refresh · q", C_DIM))
+    return rows
+
+
+def build_all(data: dict) -> list[tuple[str, str]]:
+    """The classic dense dump — everything at once, one key away."""
+    rows = [(f" agent usage · all{_live_tag(data)} ", C_NAME), ("", C_DIM)]
+    for p in data["providers"]:
+        name = (_GLYPHS.get(p["name"], "·") + " " + p["name"]).ljust(10)
+        if not p["rows"]:
+            rows.append((f"   {name} {p.get('note') or '—'}", C_DIM))
+            continue
+        for i, r in enumerate(p["rows"]):
+            note = f" · {p['note']}" if i == 0 and p.get("note") else ""
+            if "pct" in r:
+                reset = f" · {r['reset']}" if r.get("reset") else ""
+                color = C_CLOCK if r.get("clock") else _bar_color(r["pct"])
+                rows.append((f"   {name} {r['label']} |{_bar(r['pct'])}| {r['pct']:.0f}%{reset}{note}",
+                             color))
+            else:
+                rows.append((f"   {name} {r['label']} {r.get('text', '')}{note}", C_TXT))
+    spark = _sparkline("burn")
+    if spark:
+        rows.append((f"   7d burn  {spark}", C_DIM))
+    rows.append(("", C_DIM))
+    rows.append((" a summary · r refresh · q", C_DIM))
+    return rows
+
+
+_last_box = [0, 0, 0, 0]  # top, left, w, h of the previous frame
+
+
+def draw(rows: list[tuple[str, str]], p: int, cols: int, lines: int) -> None:
+    w = max(len(t) for t, _ in rows) + 2
+    left = max((cols - w - 2) // 2, 0)
+    n = min(len(rows), max(0, lines - 4))
+    top = max((lines - n - 3) // 2, 0)
+    b = _rgb(C_BORDER, p)
+    pt, pl, pw, ph = _last_box
+    if ph:
+        # erase the previous frame's footprint so smaller boxes leave no trail
+        blank = " " * pw
+        out = [f"\033[{pt + i};{pl}H{blank}" for i in range(ph)]
+    else:
+        out = []
+    out.append(f"\033[{top};{left}H{b}╭{'─' * w}╮")
+    for i, (text, fg) in enumerate(rows[:n]):
+        out.append(f"\033[{top + 1 + i};{left}H{b}│{_rgb(fg, p)}{text.ljust(w)}{b}│")
+    out.append(f"\033[{top + 1 + n};{left}H{b}╰{'─' * w}╯")
+    _last_box[:] = [top, left, w + 2, n + 2]
     sys.stdout.write("".join(out) + "\033[0m")
     sys.stdout.flush()
 
 
-def out_fg(h: str, p: int) -> str:
-    return _rgb(h, p)
+def _read_key() -> str:
+    """One key → name; arrows collapse to names, bare Esc → esc."""
+    ch = os.read(sys.stdin.fileno(), 1)
+    if not ch:
+        return "q"
+    if ch != b"\x1b":
+        return ch.decode("utf-8", "replace")
+    r, _, _ = select.select([sys.stdin], [], [], 0.04)
+    if not r:
+        return "esc"
+    rest = os.read(sys.stdin.fileno(), 2)
+    return {"[A": "up", "[B": "dn", "[C": "rt", "[D": "lt"}.get(rest.decode("ascii", ""), "esc")
+
+
+def interactive(data: dict) -> None:
+    import termios
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        termios.tcsetattr(fd, termios.TCSANOW,
+                          termios.tcgetattr(fd)[:3] + [termios.tcgetattr(fd)[3] & ~termios.ECHO & ~termios.ICANON] +
+                          termios.tcgetattr(fd)[4:])
+        mode, sel = "summary", 0
+        cols, lines = os.get_terminal_size()
+        sys.stdout.write("\033[?25l")
+        for p_ in (20, 45, 70, 100):
+            draw(build_summary(data, sel), p_, cols, lines)
+            time.sleep(0.03)
+        dirty_ts = 0.0
+        while True:
+            r, _, _ = select.select([sys.stdin], [], [], 1.0)
+            cols, lines = os.get_terminal_size()
+            if r:
+                k = _read_key()
+                if k in ("q", "\x03"):
+                    break
+                if k == "esc":
+                    if mode != "summary":
+                        mode = "summary"
+                    else:
+                        break
+                elif k in ("up", "k") and mode == "summary":
+                    sel = max(0, sel - 1)
+                elif k in ("dn", "j") and mode == "summary":
+                    sel = min(len(data["providers"]) - 1, sel + 1)
+                elif k in ("\r", "\n", "rt", "l") and mode == "summary":
+                    mode = "detail"
+                elif k in ("lt", "h") and mode == "detail":
+                    mode = "summary"
+                elif k == "a":
+                    mode = "summary" if mode == "all" else "all"
+                elif k == "r":
+                    data = get_data(force=True)
+                    sel = min(sel, len(data["providers"]) - 1)
+            elif time.time() - data["ts"] > C.TTL and dirty_ts != data["ts"]:
+                dirty_ts = data["ts"]
+                data = get_data(force=False)
+            rows = (build_summary(data, sel) if mode == "summary"
+                    else build_detail(data["providers"][sel]) if mode == "detail"
+                    else build_all(data))
+            draw(rows, 100, cols, lines)
+    finally:
+        termios.tcsetattr(fd, termios.TCSANOW, old)
+        sys.stdout.write("\033[?25h\033[0m")
 
 
 def main() -> None:
-    collect_only = "--collect-only" in sys.argv
-    if collect_only:
+    if "--collect-only" in sys.argv:
+        # quiet refresh for tab_bar's quota warning — no UI, no tty needed
         get_data(force=True)
         return
-    force = False
-    while True:
-        data = get_data(force)
-        force = False
-        rows = build_lines(data)
-        sys.stdout.write("\033[?25l\033[2J")
-        for p in range(30, 101, 35):
-            draw(rows, p, os.get_terminal_size().columns,
-                 os.get_terminal_size().lines)
-            time.sleep(0.04)
-        r, _, _ = select.select([sys.stdin], [], [], 5.0)
-        if r:
-            ch = sys.stdin.read(1)
-            if ch in ("r", "R"):
-                force = True
-                continue
-            break
-        break
-    sys.stdout.write("\033[?25h\033[2J")
+    data = get_data(force=False)
+    if "--once" in sys.argv:
+        for text, fg in build_all(data):
+            print(f"{_rgb(fg, 100)}{text}")
+        print("\033[0m", end="")
+        return
+    sys.stdin = open("/dev/tty", "rb", buffering=0)
+    interactive(data)
 
 
 if __name__ == "__main__":
