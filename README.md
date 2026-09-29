@@ -80,6 +80,11 @@ Ships with codex (rollout rate-limit snapshots), claude (reconstructed
 (session/token activity). Add your own by dropping a file in — a broken
 collector can never kill the HUD.
 
+With `KITTYMUX_USAGE_LIVE=1`, collectors that expose `live()` also fetch
+real quotas, cached ≥5min: claude via the OAuth usage endpoint, cursor via
+`DashboardService/GetCurrentPeriodUsage` (monthly auto/api model pools +
+spend). Network is strictly opt-in — everything works offline.
+
 ## Layout
 
 ```
