@@ -187,6 +187,41 @@ _AGENT_FG = as_rgb(0x94e2d5)   # teal — tab has an agent CLI in foreground
 _ALERT_FG = as_rgb(0xf38ba8)   # red — provider quota window >= 85%
 
 
+_PANES_JSON = (Path(os.environ.get("KITTYMUX_STATE",
+               os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))
+               + "/kittymux")) / f"panes-{os.getpid()}.json")
+_PANES_CACHE: dict = {"mtime": 0.0, "data": {}}
+_STALE_AFTER = 15.0  # seconds without a title change → probably waiting
+
+
+def _panes_state() -> dict:
+    try:
+        mtime = _PANES_JSON.stat().st_mtime
+    except OSError:
+        return _PANES_CACHE["data"]
+    if mtime != _PANES_CACHE["mtime"]:
+        try:
+            _PANES_CACHE["data"] = json.loads(_PANES_JSON.read_text())
+            _PANES_CACHE["mtime"] = mtime
+        except Exception:
+            pass
+    return _PANES_CACHE["data"]
+
+
+def _agent_waiting(tab_id: int) -> bool:
+    """True when the tab's active window title has gone quiet — agent CLIs
+    animate their title while working; silence usually means 'waiting'."""
+    try:
+        window = get_boss().tab_for_id(tab_id).active_window
+        st = _panes_state().get(str(window.id)) if window else None
+        if not st:
+            return False
+        ts = float(st.get("ts_title") or 0)
+        return bool(ts) and (time.monotonic() - ts) > _STALE_AFTER
+    except Exception:
+        return False
+
+
 def _agent_glyph(tab_id: int) -> str:
     """Brand-ish glyph for the agent CLI in the foreground, else ''."""
     _cwd, foreground, _last = _active_window_info(tab_id)
@@ -457,6 +492,9 @@ def draw_tab(
         screen.cursor.fg = _AGENT_FG
         screen.cursor.bold = False
         screen.draw(agent_glyph)
+        if _agent_waiting(tab.tab_id):
+            screen.cursor.fg = _ALERT_FG
+            screen.draw("!")
 
     # Separator between tabs
     if not is_last:
