@@ -507,8 +507,18 @@ def draw_tab(
         screen.cursor.bold = False
         screen.draw(" !")
 
-    # Separator between tabs
-    if not is_last:
+    # Separators: horizontal bars get ┃ between tabs. On vertical edges kitty
+    # passes is_last=True for every row, so use next_tab to find the real end;
+    # it also inserts a blank spacing row between tabs on its own.
+    is_vert = draw_data.tab_bar_edge in ("left", "right")
+    last = extra_data.next_tab is None
+    if is_vert:
+        if last:  # dim rule under the last tab row — caps the list visually
+            if screen.cursor.x < screen.columns - 1:
+                screen.cursor.fg = _SEP_FG
+                screen.cursor.bold = False
+                screen.draw("─" * (screen.columns - screen.cursor.x - 1))
+    elif not last:
         screen.cursor.fg = _SEP_FG
         screen.cursor.bold = False
         screen.cursor.bg = _BG
