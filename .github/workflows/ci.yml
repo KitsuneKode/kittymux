@@ -1,0 +1,20 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck jq
+      - name: python compiles
+        run: python3 -m py_compile python/*.py python/collectors/*.py bin/*.py bin/kittymux
+      - name: unit tests
+        run: python3 -m unittest discover -s tests -v
+      - name: mux-status tests
+        run: bash tests/test_mux_status.sh
+      - name: shell syntax
+        run: for f in bin/*.sh bin/mux-status bin/mux-agent-new bin/mux-sessionizer lib/mux.sh install.sh; do bash -n "$f"; done
+      - name: shellcheck (errors)
+        run: shellcheck -S error bin/*.sh bin/mux-status bin/mux-agent-new lib/mux.sh install.sh

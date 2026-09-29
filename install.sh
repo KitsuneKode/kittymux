@@ -15,6 +15,18 @@
 
 set -euo pipefail
 
+# ── options ──────────────────────────────────────────────────────────────────
+#   --leader[=KEY]   also install leader mode (tap KEY, then one key; default KEY: ctrl+space)
+LEADER=0; LEADER_KEY="ctrl+space"
+for arg in "$@"; do
+    case "$arg" in
+        --leader)       LEADER=1 ;;
+        --leader=*)     LEADER=1; LEADER_KEY="${arg#--leader=}" ;;
+        -h|--help)      sed -n '2,13p;' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; echo "options: --leader[=KEY]"; exit 0 ;;
+        *) echo "install.sh: unknown option $arg" >&2; exit 2 ;;
+    esac
+done
+
 KITTYMUX_HOME="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 KITTY_CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/kitty"
 KITTY_CONF="$KITTY_CONF_DIR/kitty.conf"
@@ -41,7 +53,6 @@ if ((${#missing[@]})); then
 fi
 kitty_ver="$(kitty --version 2>/dev/null | awk '{print $2}')"
 kitty_major="${kitty_ver#*.}"; kitty_major="${kitty_major%%.*}"
-kitty_minor="${kitty_ver##*.}"
 if [[ "${kitty_ver%%.*}" -eq 0 ]] && (( kitty_major < 48 )); then
     warn "kitty $kitty_ver detected — vertical tabs need >= 0.48, 0.49+ recommended"
 fi
@@ -52,6 +63,14 @@ mkdir -p "$KITTY_CONF_DIR"
 sed "s|@KITTYMUX_HOME@|$KITTYMUX_HOME|g" \
     "$KITTYMUX_HOME/kittymux-keys.conf.tpl" > "$KEYS_OUT"
 ok "rendered keys → $KEYS_OUT"
+
+# ── leader mode (opt-in) ─────────────────────────────────────────────────────
+LEADER_OUT="$KITTY_CONF_DIR/kittymux-leader.conf"
+if (( LEADER )); then
+    sed -e "s|@KITTYMUX_HOME@|$KITTYMUX_HOME|g" -e "s|@KITTYMUX_LEADER@|$LEADER_KEY|g" \
+        "$KITTYMUX_HOME/kittymux-leader.conf.tpl" > "$LEADER_OUT"
+    ok "rendered leader mode (leader: $LEADER_KEY) → $LEADER_OUT"
+fi
 
 # ── python symlinks (kitty auto-loads tab_bar.py from the config dir; the
 #    kittymux_*.py helpers are imported by tab_bar.py and the sidebar kitten) ──
@@ -90,13 +109,21 @@ add_include() {
     grep -qxF "$line" "$KITTY_CONF" || printf '\n%s\n' "$line" >> "$KITTY_CONF"
 }
 add_include "include $KEYS_OUT"
+(( LEADER )) && add_include "include $LEADER_OUT"
 add_include "include $KITTYMUX_HOME/kittymux.conf"
-add_include "include $EDGE_FILE"
+# kitty rejects a file included twice (and pops an error at every start). If your
+# config already includes the edge file (e.g. via another conf), leave it be — but it
+# must come AFTER kittymux.conf, or kittymux.conf's tab_bar_edge wins over the toggle.
+if grep -rqs "include-tab-edge.conf" "$KITTY_CONF_DIR"/*.conf 2>/dev/null; then
+    warn "include-tab-edge.conf is already included by your config — make sure it comes after kittymux.conf"
+else
+    add_include "include $EDGE_FILE"
+fi
 ok "kitty.conf includes added (backup: kitty.conf.bak.*)"
 
 # ── state dir + exec bits ───────────────────────────────────────────────────
-mkdir -p -m 700 "$STATE_DIR/sessions"
-chmod +x "$KITTYMUX_HOME"/bin/*
+mkdir -p "$STATE_DIR/sessions" && chmod 700 "$STATE_DIR" "$STATE_DIR/sessions"
+chmod +x "$KITTYMUX_HOME"/bin/* 2>/dev/null || true
 ok "state → $STATE_DIR (0700)"
 
 echo

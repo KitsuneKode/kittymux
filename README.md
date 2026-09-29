@@ -1,44 +1,92 @@
 # kittymux
 
-An agent-aware workspace layer for [kitty](https://sw.kovidgoyal.net/kitty/).
-Named sessions, per-project tab groups, git-aware tab bar, usage HUDs for
-agent CLIs — as a *config layer*, not a daemon.
+**Run a herd of AI coding agents in [kitty](https://sw.kovidgoyal.net/kitty/) — and always know which one needs you.**
+
+A vertical tab bar, a sidebar deck and a few keystrokes that turn kitty into an
+agent-aware workspace: named sessions, per-agent git worktrees, live
+`working` / `waiting` / `done` status, and a one-key jump to whichever agent is
+blocked on you. A *config layer*, not a daemon — Linux, Wayland, Hyprland-friendly,
+zero background processes.
 
 <p align="center">
-  <img src="assets/deck.png" alt="kittymux vertical tab bar and sidebar deck — agent status, sessions, live preview" width="720">
+  <img src="assets/demo.gif" alt="kittymux: an agent starts waiting, the sidebar deck lists every tab with its status and message, leader mode" width="720">
 </p>
 
-<p align="center">
-  <img src="assets/screenshot.png" alt="kittymux agent usage HUD" width="720">
-</p>
+## Try it in 30 seconds
 
-- **Zero daemon.** Everything is a shell script, one Python tab bar, and
-  kitty's remote-control API. State is plain files.
-- **Session-native.** Tabs belong to named sessions; parking hides them,
-  restoring brings them back — checkpointed automatically on every switch.
-- **Agent-aware.** Tab glyphs show which agent lives where — real brand
-  marks (claude, codex, cursor, gemini, devin …) shipped as a tiny
-  custom icon font wired through `symbol_map`. A usage HUD reads local
-  provider state, with opt-in live quotas for claude/cursor/devin.
-- **Honest data.** No fabricated percentages — collectors show real local
-  numbers or say "unavailable". Network access is opt-in.
+```sh
+git clone https://github.com/KitsuneKode/kittymux ~/kittymux
+~/kittymux/bin/kittymux demo
+```
 
-## Install
+`demo` opens an isolated window (its own config, state and theme — your kitty
+config is never touched) with a sample session and a couple of fake agents in
+different states. Press `ctrl+alt+b` for the deck, `ctrl+alt+y` to jump to the waiting agent,
+`ctrl+space` then `?` for leader mode. Close the window and it is gone.
+
+Like it? Install:
+
+```sh
+~/kittymux/install.sh            # add --leader for tmux-style leader mode
+~/kittymux/bin/kittymux doctor   # tells you exactly what (if anything) is off
+~/kittymux/bin/kittymux hooks --install   # Claude Code status hooks (backup first)
+```
+
+## What you get
+
+- **A tab bar that reads like a workspace list.** Vertical rows (or a slim bottom bar):
+  agent logo, title, git branch, pane count, and one status glyph — **◐ working**,
+  **◆ waiting on you**, **✓ done** (shape *and* colour, so it is readable without colour vision).
+  Every colour is derived from *your* kitty theme, so it follows theme switches.
+- **The sidebar deck** (`ctrl+alt+b`). Every tab across every session, grouped, with live
+  pane preview, hover/click, the agent's own message ("Approve: rm -rf node_modules?"), the
+  PR number and listening ports (`:3000`).
+- **An attention queue** (`ctrl+alt+y`). One key jumps to the agent that has been waiting the
+  longest — across sessions and OS windows. A desktop notification fires when an unfocused
+  agent starts waiting.
+- **Worktree per agent** (`ctrl+alt+shift+g`). Pick an agent, name a branch: kittymux creates
+  `.worktrees/<branch>`, opens a tab and starts the agent there. Parallel agents never share a
+  working tree.
+- **Sessions that survive.** Tabs belong to named sessions; switching *parks* the current one
+  (processes stay alive) and auto-checkpoints it. `ctrl+shift+space` is Kitty Home.
+- **Leader mode** (opt-in). Tap `ctrl+space`, then one key — no modifier chords fighting your
+  window manager. The bar shows a LEADER badge while armed; `?` shows the card.
+- **Honest usage HUDs.** Real local numbers or "unavailable" — never fabricated. Network is opt-in.
+
+### How is this different?
+
+| | kittymux | [cmux](https://github.com/manaflow-ai/cmux) | [herdr](https://terminaltrove.com/herdr/) |
+|---|---|---|---|
+| What it is | config layer for kitty | its own macOS terminal (Ghostty-based) | multiplexer that runs *inside* a terminal |
+| Platform | Linux (Wayland/X11) | macOS | cross-platform |
+| Your terminal | stays kitty (GPU, ligatures, kittens) | replaces it | any |
+| Processes | none (scripts + kitty's own API) | app | one binary |
+| Agent state | hooks → window var (+ heuristic fallback) | notifications/hooks | process detection |
+
+Pick the one that fits how you work; kittymux is for people who already live in kitty and don't
+want a second multiplexer between them and their terminal.
+
+## Install (details)
 
 ```sh
 git clone https://github.com/KitsuneKode/kittymux ~/kittymux
 ~/kittymux/install.sh
 ```
 
-The installer verifies deps (`kitty`, `jq`, `python3`, `fzf`, `git`),
-backs up `kitty.conf`, adds three `include` lines, and symlinks
-`tab_bar.py`. Nothing is overwritten. Reload with `ctrl+shift+alt+r`.
+The installer verifies deps (`kitty ≥ 0.48`, `jq`, `python3`, `fzf`, `git`), backs up
+`kitty.conf`, adds the `include` lines, and symlinks `tab_bar.py` plus the helper modules.
+Nothing is overwritten (existing files are backed up). Re-running is safe. Reload with
+`ctrl+shift+alt+r`; a *new* kitty window picks up the tab bar (kitty caches a running
+instance's `tab_bar.py`).
 
 Add a remote-control socket if you don't have one:
 
 ```conf
+allow_remote_control yes
 listen_on unix:/tmp/mykitty
 ```
+
+Arch: `packaging/PKGBUILD` builds `kittymux-git`.
 
 ## The mental model
 
@@ -70,7 +118,9 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+z` / `0` | zoom pane / equalize |
 | `ctrl+alt+i` (×2) | cwd pill → detail card (copy path/branch) |
 | `ctrl+alt+u` | agent usage HUD |
-| `ctrl+alt+g` | agent picker — every agent pane, live preview + status |
+| `ctrl+alt+g` | agent picker — every agent pane, live preview + status + message |
+| `ctrl+alt+y` | jump to the next agent waiting on you (round-robin, longest-waiting first) |
+| `ctrl+alt+shift+g` | new agent in its own git worktree + tab |
 | `ctrl+alt+b` | sidebar deck — tabs grouped by session, hover/click, live pane preview (`J`/`K` jump sessions) |
 | `ctrl+alt+;` | send a prompt to a background agent pane |
 | `ctrl+alt+shift+e` | tab bar bottom → left → right |
@@ -80,6 +130,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `alt+shift+hjkl` | resize pane |
 | `ctrl+alt+q` | close pane (confirms if a process runs) |
 | `ctrl+alt+shift+s` | save session now |
+| `ctrl+space` then a key | **leader mode** (opt-in: `install.sh --leader`) — `?` shows the card |
 
 When tmux is focused, only the keys tmux actually binds pass through
 (`shift+←/→`, `ctrl+alt+←/→`, `ctrl+alt+z`) — everything else stays kitty's.
@@ -89,16 +140,27 @@ nothing gets silently swallowed.
 
 ## Agent status hooks
 
-Tab dots and the sidebar deck show what each agent is doing — **working**
-(blue), **waiting** for you (amber), **done** (green, clears when you look).
-Without hooks kittymux guesses from title activity; with hooks it *knows*.
+Tab glyphs and the deck show what each agent is doing — **◐ working**, **◆ waiting** for
+you, **✓ done** (clears when you look). Without hooks kittymux guesses from title
+activity; with hooks it *knows*, and it also shows *why* the agent is waiting.
 
-`bin/mux-status <working|waiting|done|idle>` sets a window variable that the
-watcher records and the tab bar redraws on instantly. It writes the OSC 1337
-`SetUserVar` escape to the tty (works over ssh, no socket needed) and falls back
-to kitty remote control. It never blocks or fails the calling agent.
+```sh
+kittymux hooks --install      # merges the Claude Code hooks into ~/.claude/settings.json (backup first, idempotent)
+kittymux hooks                # or just print the snippet
+```
 
-Claude Code — add to `~/.claude/settings.json`:
+`bin/mux-status <working|waiting|done|idle>` is what the hooks call. It sets two window
+variables — `kittymux_status` and `kittymux_msg` — that the watcher records and the bar
+redraws on instantly. The message comes from `--msg`, from the hook's JSON on stdin
+(Claude Code `Notification` → `.message`) or from a JSON last argument (Codex `notify` →
+`.last-assistant-message`). It writes the OSC 1337 `SetUserVar` escape to the tty (works
+over ssh, no socket needed) and falls back to kitty remote control. It never blocks or
+fails the agent.
+
+When an agent you are not looking at starts waiting, kittymux sends a desktop notification
+(`notify-send`). Silence it with `touch ~/.local/state/kittymux/notify-off`.
+
+Claude Code hooks, by hand:
 
 ```json
 {
@@ -110,9 +172,28 @@ Claude Code — add to `~/.claude/settings.json`:
 }
 ```
 
-Other agents: call `mux-status` from whatever hook/notify command they offer
-(extra arguments are ignored). Inside tmux the escape needs passthrough; kittymux
-then falls back to remote control (`listen_on` required).
+Other agents: call `mux-status` from whatever hook/notify command they offer (extra arguments
+are ignored). Inside tmux the escape needs passthrough; kittymux then falls back to remote
+control (`listen_on` required).
+
+## Leader mode
+
+`install.sh --leader` (or `--leader=ctrl+a`) adds a tmux-style prefix built on kitty's modal
+mappings: tap the leader, then **one** key. Unmapped keys or 2 s of silence cancel it, and the
+tab bar shows a LEADER badge while it is armed.
+
+| after leader | |
+|---|---|
+| `h j k l` `o` | focus pane · last pane |
+| `\` `-` `z` `=` `x` `d` | split right/down · zoom · equalize · close pane · pane → tab |
+| `c` `n` `p` `1…9` `r` `X` | new / next / prev / Nth tab · rename · close tab |
+| `s` `P` | Kitty Home · project picker |
+| `a` `w` `g` `;` | agent picker · **next waiting agent** · new worktree agent · send prompt |
+| `b` `u` `i` `e` | sidebar deck · usage HUD · location pill · bar edge |
+| `?` | the full card, generated from your leader config |
+
+The default leader is `ctrl+space`. If you use nvim-cmp (which binds `<C-Space>`), pick another
+with `--leader=ctrl+a`.
 
 ## Theme & colours
 

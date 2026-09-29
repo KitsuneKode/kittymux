@@ -340,15 +340,113 @@ def _last_box(lines):
     return len(lines), w
 
 
+# ── leader-mode card ────────────────────────────────────────────────────────
+
+_LEADER_KEYS = {"backslash": "\\", "minus": "-", "equal": "=", "space": "␣",
+                "semicolon": ";", "slash": "/", "shift+slash": "?", "comma": ",", "period": "."}
+
+
+def _leader_key(k: str) -> str:
+    if k in _LEADER_KEYS:
+        return _LEADER_KEYS[k]
+    if k.startswith("shift+") and len(k) == 7:
+        return k[-1].upper()
+    return k
+
+
+def parse_leader(conf: str) -> tuple[str, list[list[tuple[str, str]]]]:
+    """(leader key, groups of (key, description)) from kittymux-leader.conf.
+    A `# description` line documents the `map --mode leader KEY …` line below it;
+    blank lines separate groups."""
+    leader, groups, cur, pending = "leader", [], [], ""
+    try:
+        text = open(conf, encoding="utf-8").read().splitlines()
+    except OSError:
+        return leader, []
+    for line in text:
+        line = line.strip()
+        if not line:
+            if cur:
+                groups.append(cur)
+                cur = []
+            pending = ""
+            continue
+        m = re.match(r"^map\s+--new-mode\s+leader\b.*\s(\S+)$", line)
+        if m:
+            leader = m.group(1)
+            continue
+        m = re.match(r"^map\s+--mode\s+leader\s+(\S+)\s+.*$", line)
+        if m:
+            cur.append((_leader_key(m.group(1)), pending or "?"))
+            pending = ""
+            continue
+        if line.startswith("#"):
+            pending = line.lstrip("#").strip()
+    if cur:
+        groups.append(cur)
+    # collapse "jump to tab N" runs into one row
+    out = []
+    for g in groups:
+        rows, digits = [], [r for r in g if r[1].startswith("jump to tab")]
+        for r in g:
+            if r in digits:
+                if r is digits[0] and len(digits) > 1:
+                    rows.append((f"{digits[0][0]}…{digits[-1][0]}", "jump to tab N"))
+                elif len(digits) == 1:
+                    rows.append(r)
+                continue
+            rows.append(r)
+        out.append(rows)
+    return leader, out
+
+
+def leader_card(conf: str, term_cols: int) -> list[str]:
+    leader, groups = parse_leader(conf)
+    if not groups:
+        groups = [[("—", "leader mode is not installed — run install.sh --leader")]]
+    blocks = []
+    for g in groups:
+        kw = max(len(k) for k, _ in g)
+        blocks.append([f"  {C['key']}{k:<{kw}}{C['reset']}  {C['desc']}{d}{C['reset']}" for k, d in g])
+    ncols = 3 if term_cols >= 120 else 2 if term_cols >= 80 else 1
+    cols: list[list[str]] = [[] for _ in range(ncols)]
+    for b in blocks:                       # fill the shortest column first
+        target = min(cols, key=len)
+        target.extend(b + [""])
+    height = max(len(c) for c in cols)
+    col_w = max((_vlen(l) for c in cols for l in c), default=30) + 3
+    body = []
+    for i in range(height):
+        body.append("".join((c[i] if i < len(c) else "") + " " * (col_w - _vlen(c[i] if i < len(c) else ""))
+                            for c in cols).rstrip())
+    inner_w = max(max((_vlen(l) for l in body), default=40), 44)
+    head = f" leader · {leader} then a key"
+    top = (f"{C['border']}╭{C['reset']}{C['title']}{head}{C['reset']}"
+           f"{' ' * max(0, inner_w - len(head))}{C['border']}╮{C['reset']}")
+    foot = " any key closes · unmapped key or 2s cancels leader"
+    bot = (f"{C['border']}╰{C['reset']}{C['dim']}{foot}{C['reset']}"
+           f"{' ' * max(0, inner_w - len(foot))}{C['border']}╯{C['reset']}")
+    out = [top]
+    for l in body:
+        out.append(f"{C['border']}│{C['reset']}{l}{' ' * (inner_w - _vlen(l))}{C['border']}│{C['reset']}")
+    out.append(bot)
+    return out
+
+
 def main() -> int:
-    conf = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
-        os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
-        "kitty", "kittymux-keys.conf")
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    cfg_dir = os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.join(
+        os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "kitty")
     try:
         term_cols = os.get_terminal_size().columns
     except OSError:
         term_cols = 190
-    lines = _render(parse_conf(conf), term_cols)
+    if "--leader" in sys.argv:
+        conf = args[0] if args else os.path.join(cfg_dir, "kittymux-leader.conf")
+        lines = leader_card(conf, term_cols)
+    else:
+        conf = args[0] if args else os.path.join(cfg_dir, "kittymux-keys.conf")
+        lines = _render(parse_conf(conf), term_cols)
 
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)

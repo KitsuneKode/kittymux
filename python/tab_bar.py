@@ -89,6 +89,14 @@ def _rgb(value: int) -> int:
     return as_rgb(value)
 
 
+def _kb_mode() -> str:
+    """Name of the active kitty keyboard mode (e.g. 'leader'), or ''."""
+    try:
+        return get_boss().mappings.current_keyboard_mode_name or ""
+    except Exception:
+        return ""
+
+
 def _mute(brand: int, pal) -> int:
     """Inactive brand mark: the brand colour receded toward the bar background
     (stays legible on any theme, unlike scaling channels toward black)."""
@@ -527,7 +535,16 @@ def _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal) -> i
     session_name = _compact_session_name(getattr(tab, "session_name", "") or "")
 
     # Session name prefix before the first tab
-    if index == 1:
+    mode = _kb_mode() if index == 1 else ""
+    if index == 1 and mode:
+        screen.cursor.bg = _rgb(pal.accent)
+        screen.cursor.fg = _rgb(pal.bg)
+        screen.cursor.bold = True
+        screen.draw(f" {mode.upper()} ")
+        screen.cursor.bold = False
+        screen.cursor.bg = 0
+        screen.draw(" ")
+    elif index == 1:
         screen.cursor.bg = 0
         screen.cursor.fg = _rgb(pal.faint)
         screen.draw("[")
@@ -680,8 +697,11 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
 
     bar = _rgb(pal.bar)
     row_bg = _rgb(pal.surface_hi) if active else bar
+    mode = _kb_mode() if header else ""
     if header:
-        _paint_rows(screen, y0, 1, bar)  # the session header never takes the tab's fill
+        # the session header never takes the tab's fill; an armed keyboard mode
+        # (leader) turns it into an accent badge so you always know you're in it
+        _paint_rows(screen, y0, 1, _rgb(pal.accent) if mode else bar)
         _paint_rows(screen, y0 + 1, n_rows - 1, row_bg)
     else:
         _paint_rows(screen, y0, n_rows, row_bg)
@@ -690,7 +710,14 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         _sep_column(screen, 0, screen.lines, bar, _rgb(pal.line))
 
     y = y0
-    if header:
+    if header and mode:
+        screen.cursor.y = y
+        screen.cursor.bg = _rgb(pal.accent)
+        badge = f" {mode.upper()} "
+        x = _put(screen, 0, badge, _rgb(pal.bg), True)
+        _put(screen, x + 1, _fit("hjkl cnp saw g ?", max(0, cols - x - 2)), _rgb(pal.bg))
+        y += 1
+    elif header:
         name = _compact_session_name(getattr(tab, "session_name", "") or "")
         name = "TABS" if name == "—" else name.upper()
         total, waiting_n = _session_stats(tab)

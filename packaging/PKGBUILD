@@ -1,0 +1,39 @@
+# Maintainer: KitsuneKode <bhuyanmanash2002@gmail.com>
+pkgname=kittymux-git
+pkgver=0
+pkgrel=1
+pkgdesc="Agent-aware workspace layer for kitty: vertical tabs, sidebar deck, live agent status, worktree-per-agent"
+arch=('any')
+url="https://github.com/KitsuneKode/kittymux"
+license=('MIT')
+depends=('kitty' 'jq' 'fzf' 'git' 'python' 'fontconfig')
+optdepends=('libnotify: desktop notification when an agent starts waiting'
+            'github-cli: PR numbers in the sidebar deck'
+            'iproute2: listening ports in the sidebar deck'
+            'ttf-nerd-fonts-symbols-mono: branch/folder glyphs')
+makedepends=('git')
+provides=('kittymux')
+conflicts=('kittymux')
+source=("${pkgname}::git+${url}.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$pkgname"
+  printf '0.r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+check() {
+  cd "$pkgname"
+  python3 -m unittest discover -s tests
+  bash tests/test_mux_status.sh
+}
+
+package() {
+  cd "$pkgname"
+  install -dm755 "$pkgdir/usr/share/kittymux"
+  cp -a bin lib python assets tools install.sh kittymux.conf kittymux-keys.conf.tpl \
+        kittymux-leader.conf.tpl README.md "$pkgdir/usr/share/kittymux/"
+  install -Dm755 /dev/null "$pkgdir/usr/bin/kittymux"
+  ln -sf /usr/share/kittymux/bin/kittymux "$pkgdir/usr/bin/kittymux"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

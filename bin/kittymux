@@ -1,0 +1,447 @@
+#!/usr/bin/env python3
+"""kittymux — helper CLI.
+
+  kittymux doctor      check your install and tell you exactly how to fix what's off
+  kittymux demo        try kittymux in an isolated window (your config is never touched)
+  kittymux hooks       print the Claude Code hook config;  --install merges it (backup first)
+  kittymux version
+
+`demo` is the 30-second tour: a scratch kitty with a sample session, fake agents in
+different states, and the real key bindings. Close the window when you're done.
+"""
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+HOME_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+sys.path.insert(0, os.path.join(HOME_DIR, "python"))
+import kittymux_agents  # noqa: E402
+import kittymux_theme  # noqa: E402
+
+VERSION = "0.2.0"
+USE_COLOR = sys.stdout.isatty()
+
+
+def c(code: str, text: str) -> str:
+    return f"\033[{code}m{text}\033[0m" if USE_COLOR else text
+
+
+OK, WARN, BAD = c("32", "✓"), c("33", "!"), c("31", "✗")
+CFG = os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.join(
+    os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "kitty")
+STATE = os.environ.get("KITTYMUX_STATE") or os.path.join(
+    os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state")), "kittymux")
+
+
+# ── doctor ───────────────────────────────────────────────────────────────────
+class Report:
+    def __init__(self) -> None:
+        self.bad = 0
+        self.warn = 0
+
+    def ok(self, msg: str) -> None:
+        print(f"  {OK} {msg}")
+
+    def warning(self, msg: str, fix: str = "") -> None:
+        self.warn += 1
+        print(f"  {WARN} {msg}")
+        if fix:
+            print(f"      {c('2', '→ ' + fix)}")
+
+    def fail(self, msg: str, fix: str = "") -> None:
+        self.bad += 1
+        print(f"  {BAD} {msg}")
+        if fix:
+            print(f"      {c('2', '→ ' + fix)}")
+
+
+def _run(cmd: list[str], timeout: float = 3.0) -> tuple[int, str]:
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, p.stdout
+    except Exception:
+        return 1, ""
+
+
+def _kitty_version() -> tuple[int, int, int] | None:
+    rc, out = _run(["kitty", "--version"])
+    m = re.search(r"(\d+)\.(\d+)\.(\d+)", out)
+    return tuple(int(x) for x in m.groups()) if m else None  # type: ignore[return-value]
+
+
+def _sockets() -> list[str]:
+    import glob
+    socks = [s for s in glob.glob("/tmp/mykitty-*") if os.path.exists(s)]
+    env = os.environ.get("KITTY_LISTEN_ON")
+    return ([env] if env else []) + [f"unix:{s}" for s in socks]
+
+
+def _fc_families() -> set:
+    """Lower-cased font family names known to fontconfig."""
+    if not shutil.which("fc-list"):
+        return set()
+    out = _run(["fc-list", ":", "family"], 8)[1]
+    return {f.strip().lower() for line in out.splitlines() for f in line.split(",")}
+
+
+def _conf_text(path: str, seen: set | None = None) -> str:
+    """kitty.conf plus everything it includes (absolute or relative), best effort."""
+    seen = seen or set()
+    path = os.path.expanduser(path)
+    if path in seen or not os.path.isfile(path):
+        return ""
+    seen.add(path)
+    text = open(path, encoding="utf-8", errors="replace").read()
+    out = [text]
+    for m in re.finditer(r"^\s*include\s+(\S+)", text, re.M):
+        inc = os.path.expanduser(m.group(1))
+        if not os.path.isabs(inc):
+            inc = os.path.join(os.path.dirname(path), inc)
+        out.append(_conf_text(inc, seen))
+    return "\n".join(out)
+
+
+_KEYNAMES = {"comma": ",", "period": ".", "slash": "/", "semicolon": ";", "space": "space",
+             "enter": "return", "bracketleft": "[", "bracketright": "]", "backslash": "\\",
+             "minus": "-", "equal": "="}
+_MOD_MASK = 1 | 4 | 8 | 64   # shift ctrl alt super — ignore caps/numlock bits
+
+
+def conflicts_from_binds(binds: list, tpl_text: str) -> list[str]:
+    """kittymux ctrl+alt[+shift] keys that the WM binds with EXACTLY those modifiers.
+    (A super+ctrl+alt bind is a different chord and does not conflict.)"""
+    taken = {(b.get("modmask", 0) & _MOD_MASK, str(b.get("key", "")).lower()) for b in binds}
+    found = set()
+    for line in tpl_text.splitlines():
+        m = re.match(r"^map\s+(ctrl\+alt(?:\+shift)?)\+(\w+)\s", line)
+        if not m:
+            continue
+        mods = 4 | 8 | (1 if "shift" in m.group(1) else 0)
+        key = _KEYNAMES.get(m.group(2), m.group(2)).lower()
+        if (mods, key) in taken:
+            found.add(f"{m.group(1)}+{m.group(2)}")
+    return sorted(found)
+
+
+def _hypr_conflicts() -> list[str]:
+    rc, out = _run(["hyprctl", "binds", "-j"])
+    if rc != 0:
+        return []
+    try:
+        binds = json.loads(out)
+    except ValueError:
+        return []
+    tpl = os.path.join(HOME_DIR, "kittymux-keys.conf.tpl")
+    return conflicts_from_binds(binds, open(tpl, encoding="utf-8").read())
+
+
+def doctor() -> int:
+    r = Report()
+    print(c("1", "kittymux doctor") + c("2", f"  {HOME_DIR}"))
+
+    print("\nrequirements")
+    ver = _kitty_version()
+    if ver is None:
+        r.fail("kitty not found", "install kitty ≥ 0.48 (0.49+ recommended)")
+    elif ver < (0, 48, 0):
+        r.fail(f"kitty {'.'.join(map(str, ver))} is too old", "vertical tabs need ≥ 0.48; 0.49+ recommended")
+    else:
+        r.ok(f"kitty {'.'.join(map(str, ver))}")
+    for dep, why in (("jq", "session/JSON plumbing"), ("fzf", "pickers"), ("git", "branch & worktrees"),
+                     ("python3", "tab bar helpers")):
+        r.ok(dep) if shutil.which(dep) else r.fail(f"{dep} missing ({why})", f"install {dep}")
+    for dep, why in (("notify-send", "desktop notifications when an agent waits"),
+                     ("gh", "PR numbers in the deck"), ("ss", "listening ports in the deck")):
+        r.ok(f"{dep} (optional)") if shutil.which(dep) else r.warning(f"{dep} not found — {why} disabled")
+
+    print("\ninstall")
+    conf = os.path.join(CFG, "kitty.conf")
+    text = _conf_text(conf)
+    if not text:
+        r.fail(f"{conf} not found", "run ./install.sh")
+    else:
+        for needle, label in (("kittymux-keys.conf", "keybindings"), ("kittymux.conf", "core options")):
+            if needle in text:
+                r.ok(f"{label} included")
+            else:
+                r.fail(f"{label} not included by kitty.conf", "run ./install.sh")
+        if re.search(r"^\s*watcher\s+\S*pane-state\.py", text, re.M):
+            r.ok("pane-state watcher loaded (agent status)")
+        else:
+            r.fail("pane-state watcher not configured", "run ./install.sh (the keys conf adds it)")
+        if re.search(r"^\s*allow_remote_control\s+(yes|socket|socket-only)", text, re.M) and \
+                re.search(r"^\s*listen_on\s+", text, re.M):
+            r.ok("remote control + listen_on enabled")
+        else:
+            r.warning("remote control may be off", "add to kitty.conf: allow_remote_control yes / listen_on unix:/tmp/mykitty")
+    for f in ("tab_bar.py", "kittymux_theme.py", "kittymux_agents.py", "kittymux_deck.py"):
+        p = os.path.join(CFG, f)
+        (r.ok(f"{f} → linked") if os.path.exists(p) else r.fail(f"{f} missing from {CFG}", "run ./install.sh"))
+    fonts = _run(["fc-list", ":family=kittymux icons"])[1] if shutil.which("fc-list") else ""
+    r.ok("brand icon font installed") if "kittymux" in fonts.lower() else \
+        r.warning("brand icon font not found — agent logos will show as boxes", "run ./install.sh (copies it to ~/.local/share/fonts)")
+    if os.path.isdir(STATE):
+        mode = os.stat(STATE).st_mode & 0o777
+        r.ok(f"state dir {STATE}") if mode == 0o700 else r.warning(f"state dir mode is {oct(mode)}", f"chmod 700 {STATE}")
+    else:
+        r.warning(f"state dir {STATE} missing", "it is created on first run of install.sh")
+
+    print("\nlive kitty")
+    socks = _sockets()
+    if not socks:
+        r.warning("no kitty remote-control socket found", "set listen_on unix:/tmp/mykitty and restart kitty")
+    else:
+        rc, out = _run(["kitty", "@", "--to", socks[0], "get-colors"])
+        if rc == 0:
+            p = kittymux_theme.from_colors(kittymux_theme.parse_kitty_colors(out))
+            r.ok(f"connected ({socks[0]}); theme accent #{p.accent:06x}, bar #{p.bar:06x}")
+        else:
+            r.warning(f"could not query {socks[0]}", "is allow_remote_control on for that instance?")
+
+    print("\nagent hooks (status dots, messages, notifications)")
+    hooks_ok = False
+    sj = os.path.expanduser("~/.claude/settings.json")
+    if os.path.exists(sj) and "mux-status" in open(sj, encoding="utf-8", errors="replace").read():
+        r.ok("Claude Code hooks call mux-status")
+        hooks_ok = True
+    elif shutil.which("claude"):
+        r.warning("Claude Code found but no mux-status hooks", "see README → Agent status hooks (or: kittymux hooks)")
+    cx = os.path.expanduser("~/.codex/config.toml")
+    if os.path.exists(cx) and "mux-status" in open(cx, encoding="utf-8", errors="replace").read():
+        r.ok("Codex notify calls mux-status")
+    if not hooks_ok and not shutil.which("claude"):
+        r.ok("no hook-capable agents detected (heuristic status still works)")
+
+    print("\nwindow manager")
+    conflicts = _hypr_conflicts()
+    if shutil.which("hyprctl"):
+        if conflicts:
+            r.warning("Hyprland already binds: " + ", ".join(conflicts),
+                      "those kittymux keys will never reach kitty — remap them in kittymux-keys.conf.tpl, or use leader mode (install.sh --leader)")
+        else:
+            r.ok("no ctrl+alt key conflicts with Hyprland")
+    else:
+        r.ok("no Hyprland detected (skipping key-conflict check)")
+
+    print()
+    if r.bad:
+        print(f"{BAD} {r.bad} problem(s), {r.warn} warning(s)")
+        return 1
+    print(f"{OK} healthy" + (f" — {r.warn} optional warning(s)" if r.warn else ""))
+    return 0
+
+
+# ── demo ─────────────────────────────────────────────────────────────────────
+DEMO_THEME = """\
+foreground #c0caf5
+background #1a1b26
+selection_foreground #1a1b26
+selection_background #c0caf5
+cursor #c0caf5
+active_border_color #bb9af7
+inactive_border_color #414868
+color0 #15161e
+color1 #f7768e
+color2 #9ece6a
+color3 #e0af68
+color4 #7aa2f7
+color5 #bb9af7
+color6 #7dcfff
+color7 #a9b1d6
+color8 #414868
+color9 #f7768e
+color10 #9ece6a
+color11 #e0af68
+color12 #7aa2f7
+color13 #bb9af7
+color14 #7dcfff
+color15 #c0caf5
+"""
+
+DEMO_SESSION = """\
+new_tab api
+cd {home}
+launch
+new_tab claude
+cd {home}
+launch sh -c 'exec -a claude sleep 86400'
+new_tab codex
+cd {home}
+launch sh -c 'exec -a codex sleep 86400'
+new_tab logs
+cd /tmp
+launch
+launch
+new_tab notes
+cd {home}
+launch
+focus_tab 1
+"""
+
+
+def demo(argv: list[str]) -> int:
+    edge = "bottom" if "--bottom" in argv else "left"
+    if not shutil.which("kitty"):
+        print("kitty not found", file=sys.stderr)
+        return 1
+    tmp = tempfile.mkdtemp(prefix="kittymux-demo-")
+    cfg, state = os.path.join(tmp, "cfg"), os.path.join(tmp, "state")
+    os.makedirs(cfg)
+    os.makedirs(state, mode=0o700)
+    for name in ("tab_bar.py", "kittymux_theme.py", "kittymux_agents.py", "kittymux_deck.py"):
+        os.symlink(os.path.join(HOME_DIR, "python", name), os.path.join(cfg, name))
+    tpl = open(os.path.join(HOME_DIR, "kittymux-keys.conf.tpl"), encoding="utf-8").read()
+    open(os.path.join(cfg, "kittymux-keys.conf"), "w").write(tpl.replace("@KITTYMUX_HOME@", HOME_DIR))
+    ltpl = open(os.path.join(HOME_DIR, "kittymux-leader.conf.tpl"), encoding="utf-8").read()
+    open(os.path.join(cfg, "kittymux-leader.conf"), "w").write(
+        ltpl.replace("@KITTYMUX_HOME@", HOME_DIR).replace("@KITTYMUX_LEADER@", "ctrl+space"))
+    open(os.path.join(cfg, "theme.conf"), "w").write(DEMO_THEME)
+    env = dict(os.environ, KITTY_CONFIG_DIRECTORY=cfg, KITTYMUX_STATE=state, KITTYMUX_NOTIFY="0")
+    fam = _fc_families()
+    font_conf = "font_size 12\n"
+    for cand in ("JetBrainsMono Nerd Font Mono", "CaskaydiaCove Nerd Font Mono", "FiraCode Nerd Font Mono",
+                 "Hack Nerd Font Mono", "JetBrains Mono"):
+        if cand.lower() in fam:
+            font_conf += f"font_family {cand}\n"
+            break
+    if "symbols nerd font mono" in fam:
+        font_conf += "symbol_map U+e000-U+e00a,U+e0a0-U+e0a3,U+e0b0-U+e0c8,U+e200-U+e2a9,U+e300-U+e3e3," \
+                     "U+e5fa-U+e6b7,U+e700-U+e8ef,U+ea60-U+ec1e,U+ed00-U+efce,U+f000-U+f2ff,U+f300-U+f381," \
+                     "U+f400-U+f533,U+f0001-U+f1af0 Symbols Nerd Font Mono\n"
+    if "kittymux icons" not in fam or "--own-icon-font" in argv:
+        # brand logos live in our own icon font — expose it to this window only
+        data = os.path.join(tmp, "data")
+        os.makedirs(os.path.join(data, "fonts"))
+        shutil.copy(os.path.join(HOME_DIR, "assets", "kittymux-icons.ttf"), os.path.join(data, "fonts"))
+        user_fonts = os.path.expanduser("~/.local/share/fonts")
+        if os.path.isdir(user_fonts):
+            os.symlink(user_fonts, os.path.join(data, "fonts", "user"))
+        env["XDG_DATA_HOME"] = data
+    open(os.path.join(cfg, "kitty.conf"), "w").write(
+        font_conf + "allow_remote_control yes\nlisten_on unix:/tmp/mykitty\n"
+        "include theme.conf\n"
+        f"include {cfg}/kittymux-keys.conf\ninclude {cfg}/kittymux-leader.conf\n"
+        f"include {HOME_DIR}/kittymux.conf\ntab_bar_edge {edge}\nwindow_padding_width 10\n")
+    session = os.path.join(tmp, "demo.kitty")
+    open(session, "w").write(DEMO_SESSION.format(home=os.path.expanduser("~")))
+
+    print(c("1", "kittymux demo") + " — an isolated window; your config is untouched.\n")
+    proc = subprocess.Popen(["kitty", "--class", "kittymux-demo", "--session", session], env=env,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    sock = f"unix:/tmp/mykitty-{proc.pid}"
+    for _ in range(60):
+        if os.path.exists(sock[5:]):
+            break
+        time.sleep(0.1)
+    time.sleep(1.5)
+
+    def rc(*args: str) -> str:
+        return _run(["kitty", "@", "--to", sock, *args], 4)[1]
+
+    ids = {}
+    try:
+        for osw in json.loads(rc("ls") or "[]"):
+            for tab in osw["tabs"]:
+                ids[tab["title"]] = tab["windows"][0]["id"]
+    except ValueError:
+        pass
+    if "claude" in ids:
+        rc("set-user-vars", "--match", f"id:{ids['claude']}",
+           "kittymux_msg=Approve: rm -rf node_modules?", "kittymux_status=waiting")
+    if "codex" in ids:
+        rc("set-user-vars", "--match", f"id:{ids['codex']}", "kittymux_status=working")
+
+    print("  try:")
+    print(f"    {c('1', 'ctrl+alt+b')}       sidebar deck — hover, click, live preview")
+    print(f"    {c('1', 'ctrl+alt+y')}       jump to the agent that is waiting on you")
+    print(f"    {c('1', 'ctrl+space')} then {c('1', '?')}   leader mode card")
+    print(f"    {c('1', 'ctrl+alt+/')}       every key binding")
+    print(f"\n  the ◆ waiting / ◐ working dots are set by `mux-status` — see README → Agent status hooks.")
+    print("  close the kitty window to end the demo.\n")
+    try:
+        proc.wait()
+    except KeyboardInterrupt:
+        proc.terminate()
+    shutil.rmtree(tmp, ignore_errors=True)
+    return 0
+
+
+# ── hooks ────────────────────────────────────────────────────────────────────
+HOOK_EVENTS = {"UserPromptSubmit": "working", "Notification": "waiting", "Stop": "done"}
+
+
+def hook_command(state: str) -> str:
+    return f"{os.path.join(HOME_DIR, 'bin', 'mux-status')} {state}"
+
+
+def merge_hooks(settings: dict) -> tuple[dict, list[str]]:
+    """Add our three hooks to a Claude Code settings dict without disturbing anything
+    else. Idempotent. Returns (new settings, events added)."""
+    settings = json.loads(json.dumps(settings))            # deep copy
+    hooks = settings.setdefault("hooks", {})
+    added = []
+    for event, state in HOOK_EVENTS.items():
+        groups = hooks.setdefault(event, [])
+        already = any("mux-status" in h.get("command", "")
+                      for g in groups for h in g.get("hooks", []))
+        if not already:
+            groups.append({"hooks": [{"type": "command", "command": hook_command(state)}]})
+            added.append(event)
+    return settings, added
+
+
+def hooks(argv: list[str]) -> int:
+    path = os.path.expanduser("~/.claude/settings.json")
+    if "--settings" in argv:
+        path = argv[argv.index("--settings") + 1]
+    if "--install" not in argv:
+        snippet, _ = merge_hooks({})
+        print(f"Add to {path} (or run: kittymux hooks --install):\n")
+        print(json.dumps(snippet, indent=2))
+        return 0
+    try:
+        current = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
+    except ValueError:
+        print(f"{BAD} {path} is not valid JSON — not touching it", file=sys.stderr)
+        return 1
+    merged, added = merge_hooks(current)
+    if not added:
+        print(f"{OK} hooks already installed in {path}")
+        return 0
+    if os.path.exists(path):
+        backup = f"{path}.bak-kittymux-{time.strftime('%Y%m%d-%H%M%S')}"
+        shutil.copy2(path, backup)
+        print(f"  backup: {backup}")
+    tmp = path + ".tmp-kittymux"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(merged, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, path)
+    print(f"{OK} added {', '.join(added)} → {path}")
+    print("  new Claude Code sessions pick this up; the tab dot flips working/waiting/done.")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    cmd = argv[0] if argv else "help"
+    if cmd == "doctor":
+        return doctor()
+    if cmd == "demo":
+        return demo(argv[1:])
+    if cmd == "hooks":
+        return hooks(argv[1:])
+    if cmd in ("version", "--version", "-V"):
+        print(f"kittymux {VERSION}")
+        return 0
+    print(__doc__)
+    return 0 if cmd in ("help", "-h", "--help") else 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
