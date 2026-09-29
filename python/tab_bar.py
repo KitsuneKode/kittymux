@@ -181,10 +181,33 @@ _AGENT_GLYPHS = {
     "amp": "\ue0dd", "devin": "\ue0de", "aider": "✎",
     "crush": "♥", "grok": "✗",
 }
+# Brand accent per provider — matches the usage HUD palette.
+_AGENT_BRANDS = {
+    "claude": 0xd97757, "codex": 0x10a37f, "cursor-agent": 0x5b8ef4,
+    "cursor": 0x5b8ef4, "gemini": 0x4e8cff, "opencode": 0xfab283,
+    "amp": 0xf5c2e7, "devin": 0x8b5cf6, "aider": 0xa6e3a1,
+    "crush": 0xf38ba8, "grok": 0xf9e2af,
+}
 _AGENT_PROCS = frozenset(_AGENT_GLYPHS)
 _AGENT_FALLBACK = "⚡"
-_AGENT_FG = as_rgb(0x94e2d5)   # teal — tab has an agent CLI in foreground
 _ALERT_FG = as_rgb(0xf38ba8)   # red — provider quota window >= 85%
+
+
+def _dim(rgb: int, factor: float = 0.55) -> int:
+    r, g, b = (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF
+    return (int(r * factor) << 16) | (int(g * factor) << 8) | int(b * factor)
+
+
+def _agent_info(tab_id: int) -> tuple[str, int, str] | None:
+    """(glyph, brand_rgb, name) for the foreground agent CLI, else None."""
+    _cwd, foreground, _last = _active_window_info(tab_id)
+    for cmdline in foreground:
+        for arg in cmdline:
+            name = os.path.basename(arg).lower()
+            if name in _AGENT_PROCS:
+                rgb = _AGENT_BRANDS.get(name, 0x94e2d5)
+                return _AGENT_GLYPHS.get(name, _AGENT_FALLBACK), as_rgb(rgb), name
+    return None
 
 
 _PANES_JSON = (Path(os.environ.get("KITTYMUX_STATE",
@@ -222,20 +245,9 @@ def _agent_waiting(tab_id: int) -> bool:
         return False
 
 
-def _agent_glyph(tab_id: int) -> str:
-    """Brand-ish glyph for the agent CLI in the foreground, else ''."""
-    _cwd, foreground, _last = _active_window_info(tab_id)
-    for cmdline in foreground:
-        for arg in cmdline:
-            name = os.path.basename(arg).lower()
-            if name in _AGENT_PROCS:
-                return _AGENT_GLYPHS.get(name, _AGENT_FALLBACK)
-    return ""
-
-
 _USAGE_CACHE = (Path(os.environ["KITTYMUX_STATE"])
     if os.environ.get("KITTYMUX_STATE") else
-    Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+    Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state")))
     / "kittymux") / "agent-usage.json"
 _usage_state: list = [0.0, False]  # [checked_at, alert]
 _USAGE_SPAWN_AT = 0.0
@@ -255,7 +267,7 @@ def _usage_alert() -> bool:
         try:
             subprocess.Popen(
                 ["python3", os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                         "agent-usage.py"), "--collect-only"],
+                                         "..", "bin", "mux-usage.py"), "--collect-only"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except OSError:
             pass
@@ -418,12 +430,15 @@ def _draw_cwd_anchor(screen: Screen, tab_id: int) -> None:
         screen.draw(" ⚠")
 
 
-def _title_limit(max_tab_length: int, index: int, session_name: str, is_active: bool, has_activity: bool) -> int:
+def _title_limit(max_tab_length: int, index: int, session_name: str, is_active: bool,
+                 has_activity: bool, has_icon: bool) -> int:
     chrome = len(f"{index}:") + 1
     if is_active:
         chrome += 1
     if has_activity:
         chrome += 1
+    if has_icon:
+        chrome += 2  # icon + space
     if index == 1:
         chrome += len(session_name) + 3
 
@@ -464,11 +479,12 @@ def draw_tab(
         screen.cursor.fg = _BRACKET_FG
         screen.draw("] ")
 
-    # Tab body
+    # Tab body: [▸][icon] N:title [●|!]
     activity = "●" if tab.needs_attention or tab.has_activity_since_last_focus else ""
-    agent_glyph = _agent_glyph(tab.tab_id)
+    info = _agent_info(tab.tab_id)
+    waiting = bool(info) and _agent_waiting(tab.tab_id)
     title_limit = _title_limit(max_title_length, index, session_name, tab.is_active,
-                               bool(activity) or bool(agent_glyph))
+                               bool(activity) or waiting, bool(info))
     title = _compact_title(tab, title_limit)
 
     if tab.is_active:
@@ -481,20 +497,25 @@ def draw_tab(
         prefix = ""
     screen.cursor.bg = _BG
 
-    text = f"{prefix}{index}:{title}"
-    screen.draw(text)
+    if prefix:
+        screen.draw(prefix)
+    if info:
+        glyph, brand, _name = info
+        screen.cursor.fg = brand if tab.is_active else _dim(brand)
+        screen.cursor.bold = False
+        screen.draw(f"{glyph} ")
+        screen.cursor.fg = _ACTIVE_FG if tab.is_active else _INACTIVE_FG
+        screen.cursor.bold = tab.is_active
+    screen.draw(f"{index}:{title}")
 
     if activity:
         screen.cursor.fg = _ACTIVITY_FG
         screen.cursor.bold = False
         screen.draw(activity)
-    if agent_glyph:
-        screen.cursor.fg = _AGENT_FG
+    if waiting:
+        screen.cursor.fg = _ALERT_FG
         screen.cursor.bold = False
-        screen.draw(agent_glyph)
-        if _agent_waiting(tab.tab_id):
-            screen.cursor.fg = _ALERT_FG
-            screen.draw("!")
+        screen.draw(" !")
 
     # Separator between tabs
     if not is_last:

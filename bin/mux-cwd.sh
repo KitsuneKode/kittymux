@@ -73,7 +73,7 @@ kitty_rc() { # remote control with socket fallback
 printf '\033[?25l'  # hide cursor
 
 if (( detail )); then
-    # ---------------- detail mode ----------------
+    # ---------------- detail mode: the "peek" card ----------------
     git_line=""
     if [[ -n "$branch" ]]; then
         git_line=" $label   $branch"
@@ -90,37 +90,127 @@ if (( detail )); then
         git_line="  not a git repo"
     fi
 
-    hint=" y path · b branch · t tab · s split "
-    inner=$(( ${#path} > ${#git_line} ? ${#path} : ${#git_line} ))
-    (( inner < ${#hint} )) && inner=${#hint}
+    # Peek at the host pane under this overlay: agent + status + tail.
+    # Hover isn't reachable in kitty's tab bar, so this card is the details.
+    host_id=""; agent=""; st=""; tail_l=()
+    to="${KITTY_LISTEN_ON:-}"
+    [[ -z "$to" ]] && { s=$(ls -t /tmp/mykitty-* 2>/dev/null | head -1); [[ -n "$s" ]] && to="unix:$s"; }
+    if [[ -n "$to" ]]; then
+        mapfile -t hi < <(kitty @ --to "$to" ls 2>/dev/null | python3 - <<'PY'
+import json, os, sys
+own = os.environ.get("KITTY_WINDOW_ID", "")
+AGENTS = {"claude","codex","cursor-agent","cursor","gemini","opencode","amp","devin","aider","crush","grok"}
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit()
+for osw in data:
+    if not osw.get("is_focused"):
+        continue
+    for t in osw.get("tabs", []):
+        if not t.get("is_active"):
+            continue
+        wins = {w["id"]: w for w in t.get("windows", [])}
+        hist = t.get("active_window_history") or []
+        order = [i for i in hist if i in wins] + [w["id"] for w in t.get("windows", []) if w["id"] not in hist]
+        for wid in order:
+            if str(wid) == own:
+                continue
+            w = wins[wid]
+            agent = ""
+            for p in w.get("foreground_processes") or []:
+                for a in p.get("cmdline") or []:
+                    n = os.path.basename(str(a)).lower()
+                    if n in AGENTS:
+                        agent = n; break
+                if agent:
+                    break
+            print(wid); print(agent)
+            sys.exit()
+PY
+)
+        host_id="${hi[0]:-}"; agent="${hi[1]:-}"
+        if [[ -n "$host_id" && -n "$agent" ]]; then
+            st=$(python3 - "$host_id" "${to##*-}" <<'PY' 2>/dev/null
+import json, os, sys, time
+st_dir = os.environ.get("KITTYMUX_STATE") or os.path.join(
+    os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state")), "kittymux")
+p = os.path.join(st_dir, f"panes-{sys.argv[2]}.json")
+try:
+    ts = float((json.load(open(p)).get(sys.argv[1]) or {}).get("ts_title") or 0)
+except Exception:
+    ts = 0
+print("waiting" if ts and time.monotonic() - ts > 15 else ("busy" if ts else ""))
+PY
+)
+        fi
+        tail_l=()
+        if [[ -n "$host_id" ]]; then
+            mapfile -t tail_l < <(kitty @ --to "$to" get-text -m "id:$host_id" --extent=screen 2>/dev/null | grep -v '^[[:space:]]*$' | tail -4)
+        fi
+    fi
+
+    agent_line=""; agent_hex=$C_TXT
+    if [[ -n "$agent" ]]; then
+        case "$agent" in
+            claude)              ag=$'\ue0d8'; agent_hex=d97757 ;;
+            codex)               ag=$'\ue0d9'; agent_hex=10a37f ;;
+            cursor|cursor-agent) ag=$'\ue0da'; agent_hex=5b8ef4 ;;
+            gemini)              ag=$'\ue0db'; agent_hex=4e8cff ;;
+            opencode)            ag=$'\ue0dc'; agent_hex=fab283 ;;
+            amp)                 ag=$'\ue0dd'; agent_hex=f5c2e7 ;;
+            devin)               ag=$'\ue0de'; agent_hex=8b5cf6 ;;
+            aider)               ag='✎';       agent_hex=a6e3a1 ;;
+            crush)               ag='♥';       agent_hex=f38ba8 ;;
+            grok)                ag='✗';       agent_hex=f9e2af ;;
+            *)                   ag='⚡';      agent_hex=94e2d5 ;;
+        esac
+        sttxt=""
+        [[ "$st" == "busy" ]] && sttxt="· ● busy"
+        [[ "$st" == "waiting" ]] && sttxt="· ! waiting"
+        agent_line="$ag $agent $sttxt"
+    fi
+
+    # Content rows (text + palette hex). Path/git first, then pane tail.
+    rows_txt=(); rows_hex=()
+    [[ -n "$agent_line" ]] && { rows_txt+=("$agent_line"); rows_hex+=("$agent_hex"); }
+    rows_txt+=("$path");    rows_hex+=("$C_PATH")
+    rows_txt+=("$git_line"); rows_hex+=("$C_BR")
+    if (( ${#tail_l[@]} )); then
+        rows_txt+=("── last output"); rows_hex+=("$C_SEP")
+        for l in "${tail_l[@]}"; do rows_txt+=("$l"); rows_hex+=("$C_DIM"); done
+    fi
+
+    hint=" y path · b branch · r ↻ · t tab · s split "
+    inner=0
+    for l in "${rows_txt[@]}" "$hint"; do (( ${#l} > inner )) && inner=${#l}; done
+    (( inner > 62 )) && inner=62
     inner=$(( inner + 2 ))
     box_w=$(( inner + 2 ))
     left=$(( (cols - box_w) / 2 )); (( left < 0 )) && left=0
-    nrows=4
-    row=$(( lines / 2 - 2 )); (( row < 0 )) && row=0
+    nrows=${#rows_txt[@]}
+    row=$(( lines / 2 - (nrows + 3) / 2 )); (( row < 0 )) && row=0
     note=""
 
     draw_detail() {
-        local p=$1
-        local b dp brp sp dim ok
-        b="$(fg_step "$C_BORDER" "$p")"; dp="$(fg_step "$C_PATH" "$p")"
-        brp="$(fg_step "$C_BR" "$p")"; sp="$(fg_step "$C_SEP" "$p")"
+        local p=$1 i
+        local b dim ok
+        b="$(fg_step "$C_BORDER" "$p")"
         dim="$(fg_step "$C_DIM" "$p")"; ok="$(fg_step "$C_OK" "$p")"
-        local txttp; txttp="$(fg_step "$C_TXT" "$p")"
-
         printf '\033[%d;%dH' "$row" "$left"
         printf '%s╭' "$b"; printf '─%.0s' $(seq "$inner"); printf '╮'
-        printf '\033[%d;%dH' "$((row + 1))" "$left"
-        printf '%s│%s %s%-*s %s│' "$b" "$dp" "$txttp" "$((inner - 2))" "$path" "$b"
-        printf '\033[%d;%dH' "$((row + 2))" "$left"
-        printf '%s│%s%-*s%s│' "$b" "$brp" "$inner" "${git_line:0:$inner}" "$b"
-        printf '\033[%d;%dH' "$((row + 3))" "$left"
+        for i in "${!rows_txt[@]}"; do
+            printf '\033[%d;%dH' "$((row + 1 + i))" "$left"
+            printf '%s│%s %-*s%s│' "$b" "$(fg_step "${rows_hex[$i]}" "$p")" \
+                "$((inner - 1))" "${rows_txt[$i]:0:$((inner - 1))}" "$b"
+        done
+        printf '\033[%d;%dH' "$((row + 1 + nrows))" "$left"
         if [[ -n "$note" ]]; then
             printf '%s│%s %-*s%s│' "$b" "$ok" "$((inner - 1))" "$note" "$b"
         else
             printf '%s│%s%-*s%s│' "$b" "$dim" "$inner" "$hint" "$b"
         fi
-        printf '\033[%d;%dH' "$((row + 4))" "$left"
+        printf '\033[%d;%dH' "$((row + 2 + nrows))" "$left"
         printf '%s╰' "$b"; printf '─%.0s' $(seq "$inner"); printf '╯'
         printf '\033[0m'
     }
