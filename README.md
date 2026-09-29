@@ -4,12 +4,16 @@ An agent-aware workspace layer for [kitty](https://sw.kovidgoyal.net/kitty/).
 Named sessions, per-project tab groups, git-aware tab bar, usage HUDs for
 agent CLIs — as a *config layer*, not a daemon.
 
+<p align="center">
+  <img src="assets/screenshot.png" alt="kittymux agent usage HUD" width="720">
+</p>
+
 - **Zero daemon.** Everything is a shell script, one Python tab bar, and
   kitty's remote-control API. State is plain files.
 - **Session-native.** Tabs belong to named sessions; parking hides them,
   restoring brings them back — checkpointed automatically on every switch.
 - **Agent-aware.** Tab glyphs show which agent lives where — real brand
-  marks (claude ✳, codex, cursor, gemini, devin …) shipped as a tiny
+  marks (claude, codex, cursor, gemini, devin …) shipped as a tiny
   custom icon font wired through `symbol_map`. A usage HUD reads local
   provider state, with opt-in live quotas for claude/cursor/devin.
 - **Honest data.** No fabricated percentages — collectors show real local
@@ -18,7 +22,7 @@ agent CLIs — as a *config layer*, not a daemon.
 ## Install
 
 ```sh
-git clone <repo> ~/kittymux
+git clone https://github.com/KitsuneKode/kittymux ~/kittymux
 ~/kittymux/install.sh
 ```
 
