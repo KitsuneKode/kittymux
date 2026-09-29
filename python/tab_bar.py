@@ -431,14 +431,8 @@ def _draw_cwd_anchor(screen: Screen, tab_id: int) -> None:
 
 
 def _title_limit(max_tab_length: int, index: int, session_name: str, is_active: bool,
-                 has_activity: bool, has_icon: bool) -> int:
-    chrome = len(f"{index}:") + 1
-    if is_active:
-        chrome += 1
-    if has_activity:
-        chrome += 1
-    if has_icon:
-        chrome += 2  # icon + space
+                 marks_w: int) -> int:
+    chrome = len(f"{index}:") + 1 + 3 + marks_w  # edge+icon column is always 3
     if index == 1:
         chrome += len(session_name) + 3
 
@@ -479,33 +473,29 @@ def draw_tab(
         screen.cursor.fg = _BRACKET_FG
         screen.draw("] ")
 
-    # Tab body: [▸][icon] N:title [●|!]
+    # Tab body: [▌][icon] N:title [status] — fixed 3-cell prefix so every
+    # tab's "N:" aligns regardless of glyph advance widths.
     activity = "●" if tab.needs_attention or tab.has_activity_since_last_focus else ""
     info = _agent_info(tab.tab_id)
     waiting = bool(info) and _agent_waiting(tab.tab_id)
-    title_limit = _title_limit(max_title_length, index, session_name, tab.is_active,
-                               bool(activity) or waiting, bool(info))
+    marks_w = (1 if activity else 0) + (2 if waiting else 0)
+    title_limit = _title_limit(max_title_length, index, session_name, tab.is_active, marks_w)
     title = _compact_title(tab, title_limit)
 
-    if tab.is_active:
-        screen.cursor.fg = _ACTIVE_FG
-        screen.cursor.bold = True
-        prefix = "▸"
-    else:
-        screen.cursor.fg = _INACTIVE_FG
-        screen.cursor.bold = False
-        prefix = ""
     screen.cursor.bg = _BG
-
-    if prefix:
-        screen.draw(prefix)
+    x0 = screen.cursor.x
+    screen.cursor.fg = _ACTIVE_FG if tab.is_active else _SEP_FG
+    screen.cursor.bold = False
+    screen.draw("▌" if tab.is_active else " ")
     if info:
         glyph, brand, _name = info
         screen.cursor.fg = brand if tab.is_active else _dim(brand)
-        screen.cursor.bold = False
-        screen.draw(f"{glyph} ")
-        screen.cursor.fg = _ACTIVE_FG if tab.is_active else _INACTIVE_FG
-        screen.cursor.bold = tab.is_active
+        screen.draw(glyph)
+    if screen.cursor.x < x0 + 3:
+        screen.cursor.x = x0 + 3
+
+    screen.cursor.fg = _ACTIVE_FG if tab.is_active else _INACTIVE_FG
+    screen.cursor.bold = tab.is_active
     screen.draw(f"{index}:{title}")
 
     if activity:
