@@ -1,0 +1,3 @@
+# kittymux
+
+@AGENTS.md
