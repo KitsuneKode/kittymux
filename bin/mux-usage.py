@@ -212,6 +212,33 @@ _PERIODS = {"5h": 5 * 3600, "day": 86400, "wk": 7 * 86400, "mo": 30 * 86400}
 _SPARK_KEYS = {"claude": "claude_fresh", "devin": "devin_tok"}
 
 
+def _week_chart(hist_key: str, brand: str) -> list[tuple[str, str]]:
+    """Two-row weekly chart: weekday initials over per-day burn blocks."""
+    if not hist_key:
+        return []
+    try:
+        hist = json.loads(C.HIST.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    now = time.time()
+    days = [time.strftime("%Y-%m-%d", time.localtime(now - i * 86400))
+            for i in range(6, -1, -1)]
+    vals = []
+    for d in days:
+        try:
+            vals.append(float((hist.get(d) or {}).get(hist_key) or 0))
+        except (TypeError, ValueError):
+            vals.append(0.0)
+    peak = max(vals)
+    if peak == 0:
+        return []
+    blocks = "▁▂▃▄▅▆▇█"
+    letters = " ".join("MTWTFSS"[time.strptime(d, "%Y-%m-%d").tm_wday] for d in days)
+    bars = " ".join(blocks[min(7, round(v / peak * 7))] for v in vals)
+    return [(f"   week    {letters}", C_DIM),
+            (f"   {'':<7} {_rgb(brand, 100)}{bars}\033[0m", C_TXT)]
+
+
 def _live_tag(data: dict) -> str:
     return " · live" if any(v.get("rows") for v in (data.get("live") or {}).values()
                            if isinstance(v, dict)) else ""
@@ -277,9 +304,13 @@ def build_detail(p: dict) -> list[tuple[str, str]]:
         rows.append((f"   {p.get('note') or '—'}", C_DIM))
     if p.get("note") and p["rows"]:
         rows.append((f"   {p['note']}", C_DIM))
-    spark = _sparkline(_SPARK_KEYS.get(p["name"], "burn"))
-    if spark:
-        rows.append((f"   7d      {spark}", C_DIM))
+    chart = _week_chart(_SPARK_KEYS.get(p["name"], ""), brand)
+    if chart:
+        rows += chart
+    else:
+        spark = _sparkline("burn")
+        if spark:
+            rows.append((f"   7d      {spark}", C_DIM))
     rows.append(("", C_DIM))
     rows.append((" h/← back · r refresh · q", C_DIM))
     return rows
