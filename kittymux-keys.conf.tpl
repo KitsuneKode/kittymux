@@ -73,6 +73,24 @@ watcher @KITTYMUX_HOME@/python/pane-state.py
 map ctrl+alt+shift+e     launch --type=background @KITTYMUX_HOME@/bin/mux-edge.sh
 
 # ============================================
+# RESIZE, SCROLLBACK & HELP
+# ctrl+alt+/         — keymap overlay (this list, parsed live)
+# ctrl+alt+shift+/   — last command's output in pager
+# ctrl+alt+w         — close current pane (confirms if a process runs)
+# ctrl+alt+[ / ]     — jump between shell prompts in scrollback
+# alt+shift+h/l/j/k  — resize pane narrower/wider/taller/shorter
+# ============================================
+map ctrl+alt+slash        launch --type=overlay /usr/bin/python3 @KITTYMUX_HOME@/bin/mux-keys.py
+map ctrl+alt+shift+slash  show_last_command_output
+map ctrl+alt+w            close_window_with_confirmation
+map ctrl+alt+bracketleft  scroll_to_prompt -1
+map ctrl+alt+bracketright scroll_to_prompt 1
+map alt+shift+h           resize_window narrower 1
+map alt+shift+l           resize_window wider 1
+map alt+shift+j           resize_window taller 1
+map alt+shift+k           resize_window shorter 1
+
+# ============================================
 # LAYOUTS
 # ============================================
 map ctrl+alt+space       next_layout

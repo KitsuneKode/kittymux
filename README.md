@@ -69,6 +69,11 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+a` | agent picker — every agent pane, live preview + status |
 | `ctrl+alt+;` | send a prompt to a background agent pane |
 | `ctrl+alt+shift+e` | tab bar bottom → left → right |
+| `ctrl+alt+/` | keymap overlay — this table, parsed live from your conf |
+| `ctrl+alt+shift+/` | last command output in pager |
+| `ctrl+alt+[` / `]` | jump between shell prompts in scrollback |
+| `alt+shift+hjkl` | resize pane |
+| `ctrl+alt+w` | close pane (confirms if a process runs) |
 | `ctrl+alt+shift+s` | save session now |
 
 When tmux is focused, only the keys tmux actually binds pass through
