@@ -568,9 +568,9 @@ def _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal) -> i
     screen.draw(" " if tab.is_active else "")
 
     if not last:
-        screen.cursor.fg = _rgb(pal.faint)
+        screen.cursor.fg = _rgb(pal.line)
         screen.cursor.bg = 0
-        screen.draw(" ┃ ")
+        screen.draw(" │ ")
     else:
         screen.cursor.bg = 0
         _draw_cwd_anchor(screen, tab.tab_id, pal)

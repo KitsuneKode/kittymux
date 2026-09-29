@@ -11,12 +11,12 @@ Selection: the operator said "go ahead" after the review, so plans were written 
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| [001](001-fix-agent-icon-color-and-cwd-heredoc.md) | Fix inactive agent-icon colour + cwd-HUD heredoc bug | P1 | S | — | TODO |
-| [002](002-theme-tokens-from-kitty-colors.md) | Derive all UI colours from the live kitty theme (token + agent modules, tests) | P1 | M | 001 | TODO |
-| [003](003-vertical-tab-bar-redesign.md) | Vertical tab bar redesign: clean backgrounds, rail, header row, status dots | P1 | M | 002 | TODO |
-| [004](004-sidebar-deck-fixes-and-grouping.md) | Sidebar deck: non-blocking refresh, correct focus, clean fill, session groups | P2 | M | 002 | TODO |
-| [005](005-explicit-agent-status-via-hooks.md) | Explicit agent status via hooks → user var → watcher (heuristic as fallback) | P2 | M | 003, 004 | TODO |
-| [006](006-spike-persistent-panel-sidebar.md) | SPIKE: persistent docked `kitten panel` sidebar on Hyprland | P3 | M | 004 | TODO |
+| [001](001-fix-agent-icon-color-and-cwd-heredoc.md) | Fix inactive agent-icon colour + cwd-HUD heredoc bug | P1 | S | — | DONE |
+| [002](002-theme-tokens-from-kitty-colors.md) | Derive all UI colours from the live kitty theme (token + agent modules, tests) | P1 | M | 001 | DONE |
+| [003](003-vertical-tab-bar-redesign.md) | Vertical tab bar redesign: clean backgrounds, rail, header row, status dots | P1 | M | 002 | DONE |
+| [004](004-sidebar-deck-fixes-and-grouping.md) | Sidebar deck: non-blocking refresh, correct focus, clean fill, session groups | P2 | M | 002 | DONE |
+| [005](005-explicit-agent-status-via-hooks.md) | Explicit agent status via hooks → user var → watcher (heuristic as fallback) | P2 | M | 003, 004 | DONE |
+| [006](006-spike-persistent-panel-sidebar.md) | SPIKE: persistent docked `kitten panel` sidebar on Hyprland | P3 | M | 004 | BLOCKED (Step 1 done; docking needs operator OK) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 

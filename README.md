@@ -5,6 +5,10 @@ Named sessions, per-project tab groups, git-aware tab bar, usage HUDs for
 agent CLIs — as a *config layer*, not a daemon.
 
 <p align="center">
+  <img src="assets/deck.png" alt="kittymux vertical tab bar and sidebar deck — agent status, sessions, live preview" width="720">
+</p>
+
+<p align="center">
   <img src="assets/screenshot.png" alt="kittymux agent usage HUD" width="720">
 </p>
 
