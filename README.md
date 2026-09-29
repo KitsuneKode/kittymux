@@ -83,7 +83,9 @@ collector can never kill the HUD.
 With `KITTYMUX_USAGE_LIVE=1`, collectors that expose `live()` also fetch
 real quotas, cached ≥5min: claude via the OAuth usage endpoint, cursor via
 `DashboardService/GetCurrentPeriodUsage` (monthly auto/api model pools +
-spend). Network is strictly opt-in — everything works offline.
+spend), devin via `SeatManagementService/GetUserStatus` (daily/weekly
+quota + overage balance). Network is strictly opt-in — everything works
+offline.
 
 ## Layout
 
