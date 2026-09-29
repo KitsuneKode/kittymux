@@ -3,56 +3,17 @@
 # @KITTYMUX_HOME@ expands to the repo's absolute path.
 
 # ============================================
-# TMUX PASSTHROUGH — tmux owns these when focused
+# TMUX PASSTHROUGH — tmux owns ONLY keys it binds with `bind -n`.
+# Anything else passed through becomes a dead key inside tmux.
+# The defaults cover common binds: S-arrows = tmux windows,
+# C-M-arrows = tmux session cycle, C-M-z = kill-window.
+# Adjust to match your ~/.tmux.conf.
 # ============================================
-map --when-focus-on cmdline:tmux ctrl+alt+enter
-map --when-focus-on cmdline:tmux ctrl+shift+enter
-map --when-focus-on cmdline:tmux ctrl+alt+t
-map --when-focus-on cmdline:tmux ctrl+alt+shift+t
-map --when-focus-on cmdline:tmux ctrl+shift+t
-map --when-focus-on cmdline:tmux ctrl+alt+r
-map --when-focus-on cmdline:tmux ctrl+alt+n
 map --when-focus-on cmdline:tmux shift+left
 map --when-focus-on cmdline:tmux shift+right
-map --when-focus-on cmdline:tmux ctrl+alt+1
-map --when-focus-on cmdline:tmux ctrl+alt+2
-map --when-focus-on cmdline:tmux ctrl+alt+3
-map --when-focus-on cmdline:tmux ctrl+alt+4
-map --when-focus-on cmdline:tmux ctrl+alt+5
-map --when-focus-on cmdline:tmux ctrl+alt+6
-map --when-focus-on cmdline:tmux ctrl+alt+7
-map --when-focus-on cmdline:tmux ctrl+alt+8
-map --when-focus-on cmdline:tmux ctrl+alt+9
-map --when-focus-on cmdline:tmux ctrl+alt+shift+left
-map --when-focus-on cmdline:tmux ctrl+alt+shift+right
-map --when-focus-on cmdline:tmux ctrl+shift+comma
-map --when-focus-on cmdline:tmux ctrl+shift+period
-map --when-focus-on cmdline:tmux ctrl+alt+h
-map --when-focus-on cmdline:tmux ctrl+alt+j
-map --when-focus-on cmdline:tmux ctrl+alt+k
-map --when-focus-on cmdline:tmux ctrl+alt+l
 map --when-focus-on cmdline:tmux ctrl+alt+left
-map --when-focus-on cmdline:tmux ctrl+alt+down
-map --when-focus-on cmdline:tmux ctrl+alt+up
 map --when-focus-on cmdline:tmux ctrl+alt+right
-map --when-focus-on cmdline:tmux ctrl+alt+o
-map --when-focus-on cmdline:tmux ctrl+alt+d
-map --when-focus-on cmdline:tmux ctrl+alt+shift+d
-map --when-focus-on cmdline:tmux ctrl+alt+i
-map --when-focus-on cmdline:tmux ctrl+alt+shift+i
-map --when-focus-on cmdline:tmux ctrl+alt+u
-map --when-focus-on cmdline:tmux ctrl+alt+a
-map --when-focus-on cmdline:tmux ctrl+alt+shift+e
-map --when-focus-on cmdline:tmux ctrl+alt+space
 map --when-focus-on cmdline:tmux ctrl+alt+z
-map --when-focus-on cmdline:tmux ctrl+alt+equal
-map --when-focus-on cmdline:tmux ctrl+shift+space
-map --when-focus-on cmdline:tmux ctrl+alt+shift+n
-map --when-focus-on cmdline:tmux ctrl+alt+shift+m
-map --when-focus-on cmdline:tmux ctrl+alt+shift+s
-map --when-focus-on cmdline:tmux ctrl+alt+shift+a
-map --when-focus-on cmdline:tmux ctrl+alt+comma
-map --when-focus-on cmdline:tmux ctrl+alt+period
 
 # ============================================
 # TABS — contextual placement, session-scoped nav
