@@ -477,6 +477,8 @@ def draw_tab(
     # Tab body — cmux/t3code anatomy per row:
     #   line 1: [▌][icon] N:title  + status marks right-aligned (vertical)
     #   line 2: (vertical only) dim subtitle — git branch · pane count
+    # All horizontal budgets are clamped to screen.columns (the real bar
+    # width): max_title_length can exceed it and would wrap/bleed to the edge.
     is_vert = draw_data.tab_bar_edge in ("left", "right")
     last = extra_data.next_tab is None
     activity = "●" if tab.needs_attention or tab.has_activity_since_last_focus else ""
@@ -499,6 +501,13 @@ def draw_tab(
         screen.cursor.x = x0 + 3
 
     num = f"{index}:"
+    if is_vert:
+        # Fit title to the bar width: prefix + num + title + marks + 1 margin.
+        limit = screen.columns - 2 - screen.cursor.x - len(num) - marks_w
+        if limit >= 4 and limit < len(title):
+            title = _truncate(title, limit)
+        elif limit < 4:
+            title = title[:max(0, limit)]  # degenerate narrow bar
     screen.cursor.fg = _ACTIVE_FG if tab.is_active else _INACTIVE_FG
     screen.cursor.bold = tab.is_active
     screen.draw(num + title)
@@ -514,18 +523,20 @@ def draw_tab(
             screen.draw(" !")
 
     if is_vert:
-        # Right-align status marks against the bar's inner edge.
+        # Right-align status marks against the bar's inner edge (last cell
+        # stays empty); if the title filled the row, the subtitle still
+        # carries the status word so nothing is lost.
         pad = screen.columns - 2 - screen.cursor.x - marks_w
-        if marks_w and pad > 0:
+        if marks_w and pad >= 0:
             screen.cursor.x += pad
-        _draw_marks()
+            _draw_marks()
         # Line 2: dim subtitle under the title (branch · split count · status).
         if draw_data.max_tab_title_lines >= 2 and screen.cursor.y + 1 < screen.lines:
             cwd, _fg, _last_cmd = _active_window_info(tab.tab_id)
             _label, branch = _git_anchor(cwd) if cwd else ("", "")
             sub = ""
             if branch:
-                sub += "\uf126 " + _truncate(branch, 18)
+                sub = _truncate(branch, 18)
             if tab.num_windows > 1:
                 sub += ("  " if sub else "") + f"{tab.num_windows} panes"
             if waiting and not activity:
@@ -533,12 +544,15 @@ def draw_tab(
             elif not waiting and info:
                 sub += ("  " if sub else "") + "working"
             if sub:
-                screen.cursor.y += 1  # occupies the tab's 2nd row — kitty
-                # measures vertical height from cursor.y, so leave it here
-                screen.cursor.x = x0 + 3 + len(num)
-                screen.cursor.fg = _WAITING_FG if waiting else _CWD_FG
-                screen.cursor.bold = False
-                screen.draw(_truncate(sub, max_title_length - (3 + len(num))))
+                sub_x = x0 + 3 + len(num)
+                sub_limit = screen.columns - 2 - sub_x
+                if sub_limit >= 4:
+                    screen.cursor.y += 1  # occupies the tab's 2nd row — kitty
+                    # measures vertical height from cursor.y, so leave it here
+                    screen.cursor.x = sub_x
+                    screen.cursor.fg = _WAITING_FG if waiting else _CWD_FG
+                    screen.cursor.bold = False
+                    screen.draw(_truncate(sub, sub_limit))
     else:
         _draw_marks()
 
