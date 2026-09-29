@@ -12,16 +12,26 @@ import sys
 import termios
 import tty
 
-# ── palette (same catppuccin-ish language as the usage HUD) ────────────────
+# ── palette: derived from the live kitty theme ─────────────────────────────
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "python"))
+import kittymux_theme  # noqa: E402
+
+_P = kittymux_theme.palette_from_kitty()
+
+
+def _sgr(rgb: int) -> str:
+    return "\033[38;2;%d;%d;%dm" % (rgb >> 16 & 255, rgb >> 8 & 255, rgb & 255)
+
 
 C = {
     "reset": "\033[0m",
-    "dim": "\033[38;2;110;115;141m",
-    "title": "\033[38;2;137;180;250m",
-    "key": "\033[38;2;249;226;175m",
-    "desc": "\033[38;2;205;214;244m",
-    "head": "\033[38;2;203;166;247m",
-    "border": "\033[38;2;69;71;90m",
+    "dim": _sgr(_P.faint),
+    "title": _sgr(_P.info),
+    "key": _sgr(_P.waiting),
+    "desc": _sgr(_P.text),
+    "head": _sgr(_P.accent),
+    "border": _sgr(_P.line),
     "sel": "\033[7m",
 }
 

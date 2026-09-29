@@ -117,3 +117,57 @@ def from_colors(c: dict[str, int]) -> Palette:
         alert=ansi(9, fg),
         info=ansi(12, fg),
     )
+
+
+def _hex(c: int) -> str:
+    return f"#{c & 0xFFFFFF:06x}"
+
+
+def fzf_args(p: Palette) -> list[str]:
+    """fzf `--color` args (one per list item) matching the palette."""
+    pairs = (
+        ("bg", p.bg), ("bg+", p.surface_hi), ("fg", p.muted), ("fg+", p.text),
+        ("hl", p.accent), ("hl+", p.accent), ("info", p.faint), ("prompt", p.info),
+        ("pointer", p.accent), ("marker", p.done), ("spinner", p.waiting),
+        ("header", p.faint), ("border", p.line), ("label", p.info),
+        ("preview-bg", p.bar), ("preview-border", p.line),
+    )
+    return [f"--color={name}:{_hex(value)}" for name, value in pairs]
+
+
+def palette_from_kitty(to: str | None = None) -> Palette:
+    """Palette from the running kitty (`kitty @ get-colors`). `to` defaults to
+    $KITTY_LISTEN_ON; on any failure returns the kitty-default palette (never raises)."""
+    import subprocess
+    target = to or os.environ.get("KITTY_LISTEN_ON")
+    cmd = ["kitty", "@"] + (["--to", target] if target else []) + ["get-colors"]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=1.5)
+        colors = parse_kitty_colors(out.stdout) if out.returncode == 0 else {}
+    except Exception:
+        colors = {}
+    return from_colors(colors)
+
+
+def shell_vars(p: Palette) -> str:
+    """`NAME=hex` assignments (no #) for shell overlays: eval "$(… --shell)"."""
+    pairs = (("C_BORDER", p.line), ("C_PATH", p.accent), ("C_BR", p.done), ("C_SEP", p.faint),
+             ("C_DIR", p.info), ("C_DIM", p.faint), ("C_TXT", p.text), ("C_OK", p.done),
+             ("C_WARN", p.waiting), ("C_BAD", p.alert))
+    return "; ".join(f"{name}={value & 0xFFFFFF:06x}" for name, value in pairs)
+
+
+def main(argv: list[str]) -> int:
+    """`kitty @ get-colors | kittymux_theme.py --fzf|--shell` (colours on stdin)."""
+    import sys
+    if "--fzf" in argv or "--shell" in argv:
+        palette = from_colors(parse_kitty_colors(sys.stdin.read()))
+        print("\n".join(fzf_args(palette)) if "--fzf" in argv else shell_vars(palette))
+        return 0
+    print("usage: kittymux_theme.py --fzf|--shell  (reads `kitty @ get-colors` on stdin)", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    import sys
+    raise SystemExit(main(sys.argv[1:]))

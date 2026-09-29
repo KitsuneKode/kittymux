@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
-# Shared Catppuccin-ish fzf styling for kitty overlays.
+# Shared fzf styling for kitty overlays. Colours derive from the live kitty theme
+# (python/kittymux_theme.py --fzf); the Catppuccin set below is only the fallback
+# when kitty can't be queried.
 
 FZF_KITTY_COLORS=(
     --color=bg:#1e1e2e,bg+:#313244,fg:#cdd6f4,fg+:#f5e0dc
@@ -9,6 +11,14 @@ FZF_KITTY_COLORS=(
     --color=spinner:#f9e2af,header:#6c7086,border:#45475a,label:#89b4fa
     --color=preview-bg:#181825,preview-border:#45475a
 )
+
+_kmx_theme_py="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../python/kittymux_theme.py"
+if [[ -n "${KITTY_SOCKET:-}" ]] && command -v python3 >/dev/null 2>&1; then
+    mapfile -t _kmx_colors < <(kitty @ --to "$KITTY_SOCKET" get-colors 2>/dev/null \
+        | python3 "$_kmx_theme_py" --fzf 2>/dev/null)
+    (( ${#_kmx_colors[@]} )) && FZF_KITTY_COLORS=("${_kmx_colors[@]}")
+    unset _kmx_colors
+fi
 
 FZF_KITTY_BASE=(
     --ansi

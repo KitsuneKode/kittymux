@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# mux-agent-new — start an agent in its own git worktree, in its own tab.
+#
+#   mux-agent-new                      interactive: pick agent, name the branch
+#   mux-agent-new --agent claude --branch fix-login [--base origin/main]
+#
+# The herd workflow: one branch per agent so parallel agents never trip over each
+# other's working tree. Worktrees live in <repo>/.worktrees/<branch> (added to the repo's
+# local .git/info/exclude, never to your tracked .gitignore). Remove one later with
+#   git worktree remove .worktrees/<branch>
+#
+# Options:
+#   --agent NAME    claude|codex|cursor-agent|gemini|opencode|amp|devin|aider|crush|grok
+#   --branch NAME   new branch (or an existing one to check out)
+#   --base REF      start point for a new branch (default: origin/HEAD, else current branch)
+#   --cmd CMD       run CMD instead of the agent binary (tests, custom flags)
+#   --no-launch     create the worktree only
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/mux.sh"
+source "$SCRIPT_DIR/fzf-style.sh"
+
+agent="" branch="" base="" cmd="" launch=1
+while (( $# )); do
+    case "$1" in
+        --agent)     agent="${2:-}"; shift 2 ;;
+        --branch)    branch="${2:-}"; shift 2 ;;
+        --base)      base="${2:-}"; shift 2 ;;
+        --cmd)       cmd="${2:-}"; shift 2 ;;
+        --no-launch) launch=0; shift ;;
+        -h|--help)   sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "mux-agent-new: unknown option $1" >&2; exit 2 ;;
+    esac
+done
+
+die() { echo "mux-agent-new: $*" >&2; notify_kitty "$*" 2>/dev/null || true; sleep "${MUX_ERR_PAUSE:-2}"; exit 1; }
+
+repo="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"
+# a worktree's toplevel is the worktree itself — anchor on the main checkout
+common="$(git rev-parse --path-format=absolute --git-common-dir)"
+main_repo="$(dirname "$common")"
+[[ -d "$main_repo/.git" || -f "$main_repo/.git" ]] || main_repo="$repo"
+
+# ── agent ────────────────────────────────────────────────────────────────────
+if [[ -z "$agent" && -z "$cmd" ]]; then
+    mapfile -t installed < <(python3 - "$SCRIPT_DIR/../python" <<'PY'
+import shutil, sys
+sys.path.insert(0, sys.argv[1])
+import kittymux_agents as A
+for name in A.AGENTS:
+    if shutil.which(name):
+        print(name)
+PY
+)
+    (( ${#installed[@]} )) || die "no agent CLI found on PATH"
+    if (( ${#installed[@]} == 1 )); then
+        agent="${installed[0]}"
+    else
+        agent="$(printf '%s\n' "${installed[@]}" | fzf "${FZF_KITTY_BASE[@]}" --height=40% \
+            --prompt="  agent › " --header="worktree agent in $(basename "$main_repo")" --header-first)" || exit 0
+    fi
+fi
+[[ -n "$agent" || -n "$cmd" ]] || die "no agent chosen"
+[[ -n "$cmd" ]] || command -v "$agent" >/dev/null 2>&1 || die "$agent is not on PATH"
+
+# ── branch ───────────────────────────────────────────────────────────────────
+if [[ -z "$branch" ]]; then
+    printf '\n  \033[1mnew worktree\033[0m in %s — branch name › ' "$(basename "$main_repo")"
+    read -r branch
+fi
+branch="$(printf '%s' "$branch" | tr -s ' ' '-' )"
+[[ -n "$branch" ]] || exit 0
+git check-ref-format --branch "$branch" >/dev/null 2>&1 || die "'$branch' is not a valid branch name"
+
+slug="${branch//\//-}"
+wt="$main_repo/.worktrees/$slug"
+[[ ! -e "$wt" ]] || die "$wt already exists"
+
+if [[ -z "$base" ]]; then
+    base="$(git -C "$main_repo" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+    [[ -n "$base" ]] || base="$(git -C "$main_repo" rev-parse --abbrev-ref HEAD)"
+fi
+
+# keep worktrees out of `git status` without touching the tracked .gitignore
+exclude="$common/info/exclude"
+mkdir -p "$(dirname "$exclude")"
+grep -qxF '/.worktrees/' "$exclude" 2>/dev/null || printf '/.worktrees/\n' >> "$exclude"
+
+if git -C "$main_repo" show-ref --verify --quiet "refs/heads/$branch"; then
+    git -C "$main_repo" worktree add "$wt" "$branch" >/dev/null 2>&1 || die "git worktree add failed for existing branch $branch"
+else
+    git -C "$main_repo" worktree add -b "$branch" "$wt" "$base" >/dev/null 2>&1 || die "git worktree add failed (base: $base)"
+fi
+
+echo "worktree: $wt  (branch $branch from ${base})"
+(( launch )) || exit 0
+
+# ── launch the agent in a new tab ────────────────────────────────────────────
+run="${cmd:-$agent}"
+kitty_remote launch --type=tab --cwd "$wt" --tab-title "$slug" \
+    sh -c "exec $run" >/dev/null 2>&1 || die "could not open a tab (is remote control on / listen_on set?)"
+notify_kitty "$run started in .worktrees/$slug" 2>/dev/null || true

@@ -145,8 +145,19 @@ def get_data(force: bool) -> dict:
 
 # ---------- render ----------
 
-C_BORDER, C_DIM, C_TXT, C_NAME = "45475a", "6c7086", "cdd6f4", "89b4fa"
-C_OK, C_WARN, C_BAD, C_CLOCK = "a6e3a1", "f9e2af", "f38ba8", "cba6f7"
+# UI chrome follows the live kitty theme; provider brand colours stay fixed.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "python"))
+import kittymux_theme  # noqa: E402
+
+_PAL = kittymux_theme.palette_from_kitty()
+
+
+def _h(rgb: int) -> str:
+    return f"{rgb & 0xFFFFFF:06x}"
+
+
+C_BORDER, C_DIM, C_TXT, C_NAME = _h(_PAL.line), _h(_PAL.faint), _h(_PAL.text), _h(_PAL.info)
+C_OK, C_WARN, C_BAD, C_CLOCK = _h(_PAL.done), _h(_PAL.waiting), _h(_PAL.alert), _h(_PAL.accent)
 
 _GLYPHS = {"claude": "\ue0d8", "codex": "\ue0d9",
            "cursor": "\ue0da", "gemini": "\ue0db",

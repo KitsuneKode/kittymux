@@ -42,9 +42,14 @@ if (( ${#label} + ${#branch} + 14 > cols )); then
     label="…/${parent}/${leaf}"
 fi
 
-# Catppuccin Mocha
+# Colours derive from the live kitty theme (fallback: Catppuccin Mocha)
 C_BORDER=45475a; C_PATH=cba6f7; C_BR=a6e3a1; C_SEP=6c7086; C_DIR=89b4fa
 C_DIM=6c7086; C_TXT=cdd6f4; C_OK=a6e3a1
+_theme_py="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../python/kittymux_theme.py"
+if _tv="$(kitty @ ${KITTY_LISTEN_ON:+--to "$KITTY_LISTEN_ON"} get-colors 2>/dev/null | python3 "$_theme_py" --shell 2>/dev/null)" && [[ -n "$_tv" ]]; then
+    eval "$_tv"
+fi
+unset _tv
 
 FG=$(printf '\xef\x81\xbb')   #  folder
 BR=$(printf '\xef\x84\xa6')   #  branch

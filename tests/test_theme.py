@@ -93,5 +93,29 @@ class PaletteTests(unittest.TestCase):
         self.assertGreaterEqual(T.contrast(p.waiting, p.bg), 3.0)
 
 
+class FzfTests(unittest.TestCase):
+    def test_args_use_palette(self):
+        p = T.from_colors(GRUVBOX)
+        args = T.fzf_args(p)
+        self.assertTrue(all(a.startswith("--color=") for a in args))
+        self.assertIn("--color=bg:#272727", args)
+        self.assertIn("--color=hl:#d3869b", args)
+        self.assertIn("--color=bg+:" + "#%06x" % p.surface_hi, args)
+
+    def test_cli_reads_get_colors(self):
+        import subprocess
+        text = "background #272727\nforeground #ebdbb2\ncolor11 #fabc2e\n"
+        out = subprocess.run([sys.executable, os.path.join(os.path.dirname(T.__file__), "kittymux_theme.py"), "--fzf"],
+                             input=text, capture_output=True, text=True)
+        self.assertEqual(out.returncode, 0)
+        self.assertIn("--color=bg:#272727", out.stdout.splitlines())
+
+    def test_cli_usage_error(self):
+        import subprocess
+        out = subprocess.run([sys.executable, os.path.join(os.path.dirname(T.__file__), "kittymux_theme.py")],
+                             capture_output=True, text=True)
+        self.assertEqual(out.returncode, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
