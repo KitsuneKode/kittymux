@@ -96,7 +96,9 @@ if (( detail )); then
     to="${KITTY_LISTEN_ON:-}"
     [[ -z "$to" ]] && { s=$(ls -t /tmp/mykitty-* 2>/dev/null | head -1); [[ -n "$s" ]] && to="unix:$s"; }
     if [[ -n "$to" ]]; then
-        mapfile -t hi < <(kitty @ --to "$to" ls 2>/dev/null | python3 - <<'PY'
+        # Program goes in via -c: a heredoc on `python3 -` would replace the
+        # pipe on stdin, so the `kitty @ ls` JSON would never arrive.
+        hi_py=$(cat <<'PY'
 import json, os, sys
 own = os.environ.get("KITTY_WINDOW_ID", "")
 AGENTS = {"claude","codex","cursor-agent","cursor","gemini","opencode","amp","devin","aider","crush","grok"}
@@ -129,6 +131,7 @@ for osw in data:
             sys.exit()
 PY
 )
+        mapfile -t hi < <(kitty @ --to "$to" ls 2>/dev/null | python3 -c "$hi_py")
         host_id="${hi[0]:-}"; agent="${hi[1]:-}"
         if [[ -n "$host_id" && -n "$agent" ]]; then
             st=$(python3 - "$host_id" "${to##*-}" <<'PY' 2>/dev/null

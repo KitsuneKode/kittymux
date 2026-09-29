@@ -200,14 +200,15 @@ def _dim(rgb: int, factor: float = 0.55) -> int:
 
 
 def _agent_info(tab_id: int) -> tuple[str, int, str] | None:
-    """(glyph, brand_rgb, name) for the foreground agent CLI, else None."""
+    """(glyph, brand_rgb, name) for the foreground agent CLI, else None.
+    brand_rgb is a plain 0xRRGGBB int — tag it with as_rgb() only at draw time."""
     _cwd, foreground, _last = _active_window_info(tab_id)
     for cmdline in foreground:
         for arg in cmdline:
             name = os.path.basename(arg).lower()
             if name in _AGENT_PROCS:
                 rgb = _AGENT_BRANDS.get(name, 0x94e2d5)
-                return _AGENT_GLYPHS.get(name, _AGENT_FALLBACK), as_rgb(rgb), name
+                return _AGENT_GLYPHS.get(name, _AGENT_FALLBACK), rgb, name
     return None
 
 
@@ -495,7 +496,7 @@ def draw_tab(
     screen.draw("▌" if tab.is_active else " ")
     if info:
         glyph, brand, _name = info
-        screen.cursor.fg = brand if tab.is_active else _dim(brand)
+        screen.cursor.fg = as_rgb(brand if tab.is_active else _dim(brand))
         screen.draw(glyph)
     if screen.cursor.x < x0 + 3:
         screen.cursor.x = x0 + 3
