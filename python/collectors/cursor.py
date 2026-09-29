@@ -95,7 +95,7 @@ def live(cached_live: dict) -> dict:
     spend = plan.get("totalSpend")
     if isinstance(spend, (int, float)) and spend > 0:
         bonus = plan.get("bonusSpend") or 0
-        note = f"${spend / 100:.0f} spend"
+        note = f"${spend / 100:.0f}"
         if isinstance(bonus, (int, float)) and bonus > 0:
             note += f" (incl ${bonus / 100:.0f} bonus)"
         rows.append({"label": "spend", "text": note})
