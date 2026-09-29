@@ -8,8 +8,10 @@ agent CLIs — as a *config layer*, not a daemon.
   kitty's remote-control API. State is plain files.
 - **Session-native.** Tabs belong to named sessions; parking hides them,
   restoring brings them back — checkpointed automatically on every switch.
-- **Agent-aware.** Tab glyphs show which agent lives where (`✳` claude,
-  `❋` codex, `⬡` devin …); a usage HUD reads local provider state.
+- **Agent-aware.** Tab glyphs show which agent lives where — real brand
+  marks (claude ✳, codex, cursor, gemini, devin …) shipped as a tiny
+  custom icon font wired through `symbol_map`. A usage HUD reads local
+  provider state, with opt-in live quotas for claude/cursor/devin.
 - **Honest data.** No fabricated percentages — collectors show real local
   numbers or say "unavailable". Network access is opt-in.
 
