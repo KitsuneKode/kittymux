@@ -82,6 +82,7 @@ def live(cached_live: dict) -> dict:
     except (TypeError, ValueError):
         end_ts = 0
     reset = f"resets {fmt_wait(end_ts)}" if end_ts else ""
+    rem_s = end_ts - time.time() if end_ts else 0
     rows = []
     # Label convention: '5h' rows get replaced by live data upstream, so use
     # distinct pool labels; the host prepends these before local rows.
@@ -91,12 +92,14 @@ def live(cached_live: dict) -> dict:
         u = plan.get(key)
         if isinstance(u, (int, float)):
             rows.append({"label": label, "pct": min(100.0, float(u)),
-                         "reset": reset})
+                         "reset": reset, "rem_s": rem_s})
     spend = plan.get("totalSpend")
     if isinstance(spend, (int, float)) and spend > 0:
         bonus = plan.get("bonusSpend") or 0
+        included = plan.get("includedSpend") or 0
         note = f"${spend / 100:.0f}"
         if isinstance(bonus, (int, float)) and bonus > 0:
             note += f" (incl ${bonus / 100:.0f} bonus)"
-        rows.append({"label": "spend", "text": note})
+        rows.append({"label": "spend", "text": note,
+                     "stack": [v for v in (included, bonus) if isinstance(v, (int, float)) and v > 0]})
     return {"ts": time.time(), "rows": rows} if rows else cached_live

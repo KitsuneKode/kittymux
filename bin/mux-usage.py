@@ -155,18 +155,61 @@ _GLYPHS = {"claude": "\ue0d8", "codex": "\ue0d9",
            "aider": "✎", "crush": "♥", "grok": "✗"}
 
 
+# Brand accent per provider — names/glyphs get this; values keep severity.
+_BRAND = {"claude": "d97757", "codex": "10a37f", "cursor": "5b8ef4",
+          "devin": "8b5cf6", "gemini": "4796e3", "opencode": "9ca3af",
+          "amp": "f59e0b"}
+_TRACK = "313244"  # unfilled bar segment
+_ELAPSED = "585b70"  # window-elapsed fill (surface2)
+_SEGS = ("a6e3a1", "f9e2af", "cba6f7", "f38ba8")  # spend-stack colors
+
+
 def _rgb(h: str, p: int) -> str:
     return f"\033[38;2;{int(h[0:2], 16) * p // 100};" \
            f"{int(h[2:4], 16) * p // 100};{int(h[4:6], 16) * p // 100}m"
 
 
-def _bar(pct: float, w: int = 10) -> str:
-    f = round(pct / 100 * w)
-    return "▓" * f + "░" * (w - f)
+def _bg(h: str) -> str:
+    return f"\033[48;2;{int(h[0:2], 16)};{int(h[2:4], 16)};{int(h[4:6], 16)}m"
+
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _vlen(s: str) -> int:
+    return len(_ANSI_RE.sub("", s))
+
+
+def _pad(s: str, w: int) -> str:
+    return s + " " * max(0, w - _vlen(s))
 
 
 def _bar_color(pct: float) -> str:
     return C_OK if pct < 60 else C_WARN if pct < 85 else C_BAD
+
+
+def _bar(pct: float, w: int = 10, fill: str | None = None) -> str:
+    """SGR background-color cells — no glyph dependency, always crisp."""
+    f = max(0, min(w, round(min(100.0, pct) / 100 * w)))
+    return _bg(fill or _bar_color(pct)) + " " * f + _bg(_TRACK) + " " * (w - f) + "\033[0m"
+
+
+def _stack_bar(parts: list[float], w: int = 12) -> str:
+    """Proportional segments (e.g. cursor included vs bonus spend)."""
+    total = sum(parts) or 1
+    out, used = [], 0
+    for i, v in enumerate(parts):
+        n = (w - used) if i == len(parts) - 1 else round(v / total * w)
+        n = max(0, min(n, w - used))
+        used += n
+        out.append(_bg(_SEGS[i % len(_SEGS)]) + " " * n)
+    out.append(_bg(_TRACK) + " " * (w - used))
+    return "".join(out) + "\033[0m"
+
+
+# Period length in seconds for rows that can show a "window elapsed" bar.
+_PERIODS = {"5h": 5 * 3600, "day": 86400, "wk": 7 * 86400, "mo": 30 * 86400}
+_SPARK_KEYS = {"claude": "claude_fresh", "devin": "devin_tok"}
 
 
 def _live_tag(data: dict) -> str:
@@ -187,7 +230,8 @@ def build_summary(data: dict, sel: int) -> list[tuple[str, str]]:
     rows = [(f" agent usage · cached {age}s{_live_tag(data)} ", C_NAME), ("", C_DIM)]
     for i, p in enumerate(data["providers"]):
         mark = "▸" if i == sel else " "
-        name = (_GLYPHS.get(p["name"], "·") + " " + p["name"]).ljust(10)
+        brand = _BRAND.get(p["name"], C_NAME)
+        name = _pad(f"{_rgb(brand, 100)}{_GLYPHS.get(p['name'], '·')} {p['name']}\033[0m", 10)
         pcts, text = _headline(p)
         if not pcts:
             tail = (text or {}).get("text") or p.get("note") or "—"
@@ -200,7 +244,7 @@ def build_summary(data: dict, sel: int) -> list[tuple[str, str]]:
         for r in pcts[1:2]:
             tail += f" · {r['label']} {r['pct']:.0f}%"
         color = C_CLOCK if r0.get("clock") else _bar_color(r0["pct"])
-        rows.append((f" {mark} {name} |{_bar(r0['pct'], 8)}| {r0['pct']:>3.0f}% {tail}", color))
+        rows.append((f" {mark} {name} {_bar(r0['pct'], 8, brand)} {r0['pct']:>3.0f}% {tail}", color))
     spark = _sparkline("burn")
     if spark:
         rows.append((f"   7d burn  {spark}", C_DIM))
@@ -211,20 +255,29 @@ def build_summary(data: dict, sel: int) -> list[tuple[str, str]]:
 
 def build_detail(p: dict) -> list[tuple[str, str]]:
     """All rows for one provider — the old dense section, scoped down."""
+    brand = _BRAND.get(p["name"], C_NAME)
     name = _GLYPHS.get(p["name"], "·") + " " + p["name"]
-    rows = [(f" {name} ", C_NAME), ("", C_DIM)]
+    rows = [(f" {name} ", brand), ("", C_DIM)]
     for r in p["rows"]:
+        label = r["label"]
         if "pct" in r:
             reset = f" · {r['reset']}" if r.get("reset") else ""
             color = C_CLOCK if r.get("clock") else _bar_color(r["pct"])
-            rows.append((f"   {r['label']:<7} |{_bar(r['pct'])}| {r['pct']:.0f}%{reset}", color))
+            rows.append((f"   {label:<7} {_bar(r['pct'], 12, brand)} {r['pct']:.0f}%{reset}", color))
+            rem = r.get("rem_s") or 0
+            period = _PERIODS.get(label)
+            if period and rem > 0:
+                el = max(0.0, min(1.0, 1 - rem / period)) * 100
+                rows.append((f"   {'win':<7} {_bar(el, 12, _ELAPSED)} {el:.0f}% elapsed", C_DIM))
+        elif "stack" in r:
+            rows.append((f"   {label:<7} {_stack_bar(r['stack'])} {r.get('text', '')}", C_TXT))
         else:
-            rows.append((f"   {r['label']:<7} {r.get('text', '')}", C_TXT))
+            rows.append((f"   {label:<7} {r.get('text', '')}", C_TXT))
     if not p["rows"]:
         rows.append((f"   {p.get('note') or '—'}", C_DIM))
     if p.get("note") and p["rows"]:
         rows.append((f"   {p['note']}", C_DIM))
-    spark = _sparkline(f"{p['name']}_burn") or _sparkline("burn")
+    spark = _sparkline(_SPARK_KEYS.get(p["name"], "burn"))
     if spark:
         rows.append((f"   7d      {spark}", C_DIM))
     rows.append(("", C_DIM))
@@ -236,7 +289,8 @@ def build_all(data: dict) -> list[tuple[str, str]]:
     """The classic dense dump — everything at once, one key away."""
     rows = [(f" agent usage · all{_live_tag(data)} ", C_NAME), ("", C_DIM)]
     for p in data["providers"]:
-        name = (_GLYPHS.get(p["name"], "·") + " " + p["name"]).ljust(10)
+        brand = _BRAND.get(p["name"], C_NAME)
+        name = _pad(f"{_rgb(brand, 100)}{_GLYPHS.get(p['name'], '·')} {p['name']}\033[0m", 10)
         if not p["rows"]:
             rows.append((f"   {name} {p.get('note') or '—'}", C_DIM))
             continue
@@ -245,8 +299,10 @@ def build_all(data: dict) -> list[tuple[str, str]]:
             if "pct" in r:
                 reset = f" · {r['reset']}" if r.get("reset") else ""
                 color = C_CLOCK if r.get("clock") else _bar_color(r["pct"])
-                rows.append((f"   {name} {r['label']} |{_bar(r['pct'])}| {r['pct']:.0f}%{reset}{note}",
+                rows.append((f"   {name} {r['label']} {_bar(r['pct'], 10, brand)} {r['pct']:.0f}%{reset}{note}",
                              color))
+            elif "stack" in r:
+                rows.append((f"   {name} {r['label']} {_stack_bar(r['stack'])} {r.get('text', '')}{note}", C_TXT))
             else:
                 rows.append((f"   {name} {r['label']} {r.get('text', '')}{note}", C_TXT))
     spark = _sparkline("burn")
@@ -261,7 +317,7 @@ _last_box = [0, 0, 0, 0]  # top, left, w, h of the previous frame
 
 
 def draw(rows: list[tuple[str, str]], p: int, cols: int, lines: int) -> None:
-    w = max(len(t) for t, _ in rows) + 2
+    w = max(_vlen(t) for t, _ in rows) + 2
     left = max((cols - w - 2) // 2, 0)
     n = min(len(rows), max(0, lines - 4))
     top = max((lines - n - 3) // 2, 0)
@@ -275,7 +331,7 @@ def draw(rows: list[tuple[str, str]], p: int, cols: int, lines: int) -> None:
         out = []
     out.append(f"\033[{top};{left}H{b}╭{'─' * w}╮")
     for i, (text, fg) in enumerate(rows[:n]):
-        out.append(f"\033[{top + 1 + i};{left}H{b}│{_rgb(fg, p)}{text.ljust(w)}{b}│")
+        out.append(f"\033[{top + 1 + i};{left}H{b}│{_rgb(fg, p)}{_pad(text, w)}{b}│")
     out.append(f"\033[{top + 1 + n};{left}H{b}╰{'─' * w}╯")
     _last_box[:] = [top, left, w + 2, n + 2]
     sys.stdout.write("".join(out) + "\033[0m")

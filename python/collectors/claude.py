@@ -132,7 +132,10 @@ def live(cached_live: dict) -> dict:
             u = u * 100  # fraction form
         if not isinstance(u, (int, float)):
             continue
+        rem_s = (iso_ts(w.get("resets_at") or "") - time.time()
+                 if w.get("resets_at") else 0)
         rows.append({"label": label, "pct": min(100.0, float(u)),
                      "reset": f"resets {fmt_wait(iso_ts(w.get('resets_at') or ''))}"
-                              if w.get("resets_at") else ""})
+                              if w.get("resets_at") else "",
+                     "rem_s": rem_s})
     return {"ts": time.time(), "rows": rows} if rows else cached_live

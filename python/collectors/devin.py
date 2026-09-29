@@ -93,7 +93,8 @@ def live(cached_live: dict) -> dict:
             except (TypeError, ValueError):
                 reset_ts = 0
             rows.append({"label": label, "pct": min(100.0, 100.0 - float(rem)),
-                         "reset": f"resets {fmt_wait(reset_ts)}" if reset_ts else ""})
+                         "reset": f"resets {fmt_wait(reset_ts)}" if reset_ts else "",
+                         "rem_s": reset_ts - time.time() if reset_ts else 0})
     name = (plan.get("planInfo") or {}).get("planName")
     if name:
         rows.append({"label": "plan", "text": name})
