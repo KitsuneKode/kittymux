@@ -33,7 +33,8 @@ package() {
   install -dm755 "$pkgdir/usr/share/kittymux"
   cp -a bin lib python assets tools install.sh kittymux.conf kittymux-keys.conf.tpl \
         kittymux-leader.conf.tpl README.md "$pkgdir/usr/share/kittymux/"
-  install -Dm755 /dev/null "$pkgdir/usr/bin/kittymux"
+  find "$pkgdir/usr/share/kittymux" -name __pycache__ -type d -prune -exec rm -rf {} +
+  install -dm755 "$pkgdir/usr/bin"
   ln -sf /usr/share/kittymux/bin/kittymux "$pkgdir/usr/bin/kittymux"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
