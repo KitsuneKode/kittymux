@@ -94,10 +94,20 @@ def main() -> None:
     fb.setupGlyf(glyphs)
     fb.setupHorizontalMetrics(metrics)
     fb.setupHorizontalHeader(ascent=ASCENT, descent=DESCENT)
-    fb.setupNameTable({"familyName": FAMILY, "styleName": "Regular"})
+    fb.setupNameTable({
+        "familyName": FAMILY,
+        "styleName": "Regular",
+        "uniqueFontIdentifier": f"{FAMILY};kittymux;0.1",
+        "fullName": f"{FAMILY} Regular",
+        "psName": "kittymux-icons",
+        "version": "Version 0.1",
+    })
     fb.setupOS2(sTypoAscender=ASCENT, sTypoDescender=DESCENT,
                 usWinAscent=ASCENT, usWinDescent=-DESCENT)
-    fb.setupPost()
+    fb.setupPost(isFixedPitch=1)
+    # kitty only accepts monospace fonts: flag panose + fixed pitch so
+    # freetype reports FT_IS_FIXED_WIDTH for the face.
+    fb.font["OS/2"].panose.bProportion = 9
     fb.setupDummyDSIG()
     fb.save(OUT)
     print(f"wrote {OUT} with {len(ICONS)} icons")
