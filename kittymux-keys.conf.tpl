@@ -50,10 +50,12 @@ map ctrl+alt+h           neighboring_window left
 map ctrl+alt+j           neighboring_window down
 map ctrl+alt+k           neighboring_window up
 map ctrl+alt+l           neighboring_window right
-map ctrl+alt+left        neighboring_window left
-map ctrl+alt+down        neighboring_window down
-map ctrl+alt+up          neighboring_window up
-map ctrl+alt+right       neighboring_window right
+# NOTE: ctrl+alt+arrows is claimed by some WMs (e.g. Hyprland's scrolling
+# layout uses it for layoutmsg focus). Pane arrows live on shift+alt.
+map shift+alt+left       neighboring_window left
+map shift+alt+down       neighboring_window down
+map shift+alt+up         neighboring_window up
+map shift+alt+right      neighboring_window right
 map ctrl+alt+o           nth_window -1
 map ctrl+alt+d           detach_window new-tab-right
 map ctrl+alt+shift+d     detach_window ask
@@ -65,7 +67,8 @@ map ctrl+alt+i           launch --type=overlay --cwd=current @KITTYMUX_HOME@/bin
 map ctrl+alt+shift+i     launch --type=overlay --cwd=current @KITTYMUX_HOME@/bin/mux-cwd.sh --detail
 map ctrl+alt+u           launch --type=overlay /usr/bin/python3 @KITTYMUX_HOME@/bin/mux-usage.py
 # agent picker: every agent pane across windows/sessions + live preview
-map ctrl+alt+a           launch --type=overlay @KITTYMUX_HOME@/bin/mux-agents.sh
+# (ctrl+alt+g, not +a — ctrl+alt+a is Hyprland's swapcol on this setup)
+map ctrl+alt+g           launch --type=overlay @KITTYMUX_HOME@/bin/mux-agents.sh
 # send a prompt to a background agent pane without switching focus
 map ctrl+alt+semicolon   launch --type=overlay @KITTYMUX_HOME@/bin/mux-send.sh
 # per-window activity state feeding the picker's busy/waiting markers
@@ -76,13 +79,13 @@ map ctrl+alt+shift+e     launch --type=background @KITTYMUX_HOME@/bin/mux-edge.s
 # RESIZE, SCROLLBACK & HELP
 # ctrl+alt+/         — keymap overlay (this list, parsed live)
 # ctrl+alt+shift+/   — last command's output in pager
-# ctrl+alt+w         — close current pane (confirms if a process runs)
+# ctrl+alt+q         — close current pane (confirms if a process runs)
 # ctrl+alt+[ / ]     — jump between shell prompts in scrollback
 # alt+shift+h/l/j/k  — resize pane narrower/wider/taller/shorter
 # ============================================
 map ctrl+alt+slash        launch --type=overlay /usr/bin/python3 @KITTYMUX_HOME@/bin/mux-keys.py
 map ctrl+alt+shift+slash  show_last_command_output
-map ctrl+alt+w            close_window_with_confirmation
+map ctrl+alt+q            close_window_with_confirmation
 map ctrl+alt+bracketleft  scroll_to_prompt -1
 map ctrl+alt+bracketright scroll_to_prompt 1
 map alt+shift+h           resize_window narrower 1
@@ -95,7 +98,8 @@ map alt+shift+k           resize_window shorter 1
 # ============================================
 map ctrl+alt+space       next_layout
 map ctrl+alt+z           layout_action maximize
-map ctrl+alt+equal       layout_action equalize
+# ctrl+alt+0: rebalance (ctrl+alt+equal collides with Hyprland colresize)
+map ctrl+alt+0           layout_action equalize
 
 # ============================================
 # SESSIONS — Kitty Home is the one shortcut to remember

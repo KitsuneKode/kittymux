@@ -60,24 +60,27 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+t` / `+shift` | new tab beside / at end |
 | `shift+←` / `shift+→` | prev / next tab (session-scoped) |
 | `ctrl+alt+1..9` | jump to tab N |
-| `ctrl+alt+h j k l` | pane nav · `ctrl+alt+o` last pane |
+| `ctrl+alt+h j k l` | pane nav (`shift+alt+arrows`) · `ctrl+alt+o` last pane |
 | `ctrl+alt+enter` | split horizontal · `+shift` vertical |
 | `ctrl+alt+d` / `+shift` | pane → new tab / chooser |
-| `ctrl+alt+z` / `=` | zoom pane / equalize |
+| `ctrl+alt+z` / `0` | zoom pane / equalize |
 | `ctrl+alt+i` (×2) | cwd pill → detail card (copy path/branch) |
 | `ctrl+alt+u` | agent usage HUD |
-| `ctrl+alt+a` | agent picker — every agent pane, live preview + status |
+| `ctrl+alt+g` | agent picker — every agent pane, live preview + status |
 | `ctrl+alt+;` | send a prompt to a background agent pane |
 | `ctrl+alt+shift+e` | tab bar bottom → left → right |
 | `ctrl+alt+/` | keymap overlay — this table, parsed live from your conf |
 | `ctrl+alt+shift+/` | last command output in pager |
 | `ctrl+alt+[` / `]` | jump between shell prompts in scrollback |
 | `alt+shift+hjkl` | resize pane |
-| `ctrl+alt+w` | close pane (confirms if a process runs) |
+| `ctrl+alt+q` | close pane (confirms if a process runs) |
 | `ctrl+alt+shift+s` | save session now |
 
 When tmux is focused, only the keys tmux actually binds pass through
 (`shift+←/→`, `ctrl+alt+←/→`, `ctrl+alt+z`) — everything else stays kitty's.
+On Hyprland's scrolling layout the `ctrl+alt+` layer is WM-owned — kittymux
+uses `ctrl+alt+g` (not `+a`), `shift+alt+arrows`, `ctrl+alt+0`, `ctrl+alt+q` so
+nothing gets silently swallowed.
 
 ## Agent usage collectors
 
