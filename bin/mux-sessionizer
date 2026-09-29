@@ -1,0 +1,260 @@
+#!/usr/bin/env bash
+
+# Kitty Home: unified session and local-multiplexer control center.
+#
+#  ● session  (here)   — live in this OS window   → goto_session
+#  ● session  (win N)  — live in another window   → focus that OS window
+#  ○ session           — saved, not live          → restore into this window
+#  + new: dirname      — create new session       → write template + load
+#  ⌕ project           — choose a project and open/create its session
+#  ↓ save              — save the current session
+#  ↗ move tab          — move the source tab to another OS window
+#  ? guide             — open the local workflow guide
+#
+# Hotkeys inside fzf:
+#   enter   open / switch / create
+#   ctrl-d  delete saved (○) session file, reopen picker
+#   ctrl-r  rename saved session (prompts)
+#   esc     cancel
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/mux.sh"
+source "$SCRIPT_DIR/fzf-style.sh"
+
+SESSION_NAME=""
+SOURCE_WINDOW_ID=""
+EXPLICIT_DIR=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --project-dir)      EXPLICIT_DIR="$2"; shift ;;
+        --session-name)     SESSION_NAME="$2"; shift ;;
+        --source-window-id) SOURCE_WINDOW_ID="$2"; shift ;;
+        *)                  SESSION_NAME="$1" ;;
+    esac
+    shift
+done
+
+if ! is_inside_kitty; then
+    if [[ -n "$SESSION_NAME" ]]; then
+        sname="$(sanitize_session_name "$SESSION_NAME" || true)"
+        [[ -n "$sname" ]] || sname="$(basename "${EXPLICIT_DIR:-$HOME}")"
+        sfile="$(session_path "$sname")"
+        [[ -s "$sfile" ]] || write_session_template "$sfile" "${EXPLICIT_DIR:-$HOME}" "$sname"
+        kitty --single-instance --instance-group=local --session "$sfile"
+    else
+        kitty --single-instance --instance-group=local
+    fi
+    exit 0
+fi
+
+if [[ -z "$SOURCE_WINDOW_ID" ]]; then
+    SOURCE_WINDOW_ID="$(source_window_id 2>/dev/null || true)"
+fi
+[[ -n "$SOURCE_WINDOW_ID" ]] || { echo "Could not determine kitty window."; exit 1; }
+
+# Get project dir: explicit arg → source window's cwd → $HOME
+if [[ -n "$EXPLICIT_DIR" ]]; then
+    PROJECT_DIR="$(cd "$EXPLICIT_DIR" 2>/dev/null && pwd -P || printf '%s' "$EXPLICIT_DIR")"
+else
+    PROJECT_DIR="$(source_window_cwd "$SOURCE_WINDOW_ID" 2>/dev/null || true)"
+    PROJECT_DIR="${PROJECT_DIR:-$HOME}"
+fi
+
+ensure_sessions_dir
+SOURCE_OS_WIN_ID="$(source_os_window_id 2>/dev/null || true)"
+
+# ── Non-interactive: explicit session name passed (e.g. from project-picker) ──
+
+if [[ -n "$SESSION_NAME" ]]; then
+    sname="$(sanitize_session_name "$SESSION_NAME" 2>/dev/null || true)"
+    [[ -n "$sname" ]] || sname="$(basename "$PROJECT_DIR")"
+    sfile="$(session_path "$sname")"
+
+    live_os_win="$(find_os_window_for_session "$sname" 2>/dev/null || true)"
+    if [[ -n "$live_os_win" && "$live_os_win" != "$SOURCE_OS_WIN_ID" ]]; then
+        focus_os_window_by_id "$live_os_win"
+        exit 0
+    fi
+    if session_is_live_in_focused_window "$sname" 2>/dev/null; then
+        focus_live_session_name "$SOURCE_WINDOW_ID" "$sname"
+        exit 0
+    fi
+    [[ -s "$sfile" ]] || write_session_template "$sfile" "$PROJECT_DIR" "$sname"
+    load_session_into_window "$SOURCE_WINDOW_ID" "$sfile"
+    exit 0
+fi
+
+# ── Interactive fzf picker ────────────────────────────────────────────────────
+
+build_list() {
+    local sname sfile live_os_win row
+    local active_rows="" live_rows="" other_rows="" saved_rows=""
+    declare -A seen=()
+
+    while IFS= read -r sfile; do
+        sname="$(session_name_from_file "$sfile")"
+        [[ -n "${seen[$sname]:-}" ]] && continue
+        seen["$sname"]=1
+
+        live_os_win="$(find_os_window_for_session "$sname" 2>/dev/null || true)"
+        if [[ -n "$live_os_win" ]]; then
+            if [[ "$live_os_win" == "$SOURCE_OS_WIN_ID" ]]; then
+                if session_is_active_in_focused_window "$sname" 2>/dev/null; then
+                    row="$(printf '◆ %-26s(active)\tlive_here\t%s\t\n' "$sname " "$sname")"
+                    active_rows+="${row}"$'\n'
+                else
+                    row="$(printf '● %-26s(live)\tlive_here\t%s\t\n' "$sname " "$sname")"
+                    live_rows+="${row}"$'\n'
+                fi
+            else
+                row="$(printf '● %-26s(win %s)\tlive_other\t%s\t%s\n' "$sname " "$live_os_win" "$sname" "$live_os_win")"
+                other_rows+="${row}"$'\n'
+            fi
+        else
+            row="$(printf '○ %-26s(saved)\tsaved\t%s\t\n' "$sname " "$sfile")"
+            saved_rows+="${row}"$'\n'
+        fi
+    done < <(ordered_session_files)
+
+    [[ -n "$active_rows" ]] && printf '%s' "$active_rows"
+    [[ -n "$live_rows" ]] && printf '%s' "$live_rows"
+    [[ -n "$other_rows" ]] && printf '%s' "$other_rows"
+    [[ -n "$saved_rows" ]] && printf '%s' "$saved_rows"
+
+    local dir_name
+    dir_name="$(basename "$PROJECT_DIR")"
+    printf '+ %-26s(session from cwd)\tnew\t%s\t\n' "$dir_name " "$PROJECT_DIR"
+    printf '⌕ %-26s(project session)\taction_project\t\t\n' "Open project "
+    printf '↓ %-26s(current session)\taction_save\t\t\n' "Save session "
+    printf '↗ %-26s(choose OS window)\taction_move\t\t\n' "Move current tab "
+    printf '? %-26s(one-key workflow)\taction_help\t\t\n' "Open guide "
+}
+
+prompt_session_rename() {
+    local old_name="$1"
+    local answer
+    answer="$(
+        printf '\n' \
+        | fzf \
+            "${FZF_KITTY_BASE[@]}" \
+            --phony \
+            --print-query \
+            --query="$old_name" \
+            --prompt="  rename  " \
+            --header=$'type a new saved-session name  enter:rename  esc:cancel' \
+            --header-first \
+            --preview-window=hidden \
+            --height=40% \
+        | head -1
+    )" || return 1
+    printf '%s\n' "$answer"
+}
+
+PREVIEW="$SCRIPT_DIR/session-preview.sh {2} {3} {4}"
+HEADER=$'◆ active  ● live  ○ saved  + create    Search sessions, projects, and actions'
+FOOTER=$'enter: open/run   ctrl-r: rename saved   ctrl-d: delete saved   esc: close'
+
+while true; do
+    list="$(build_list)"
+
+    selected="$(
+        printf '%s\n' "$list" \
+        | fzf \
+            "${FZF_KITTY_HOME[@]}" \
+            --prompt="  › " \
+            --delimiter=$'\t' \
+            --with-nth=1 \
+            --expect=ctrl-d,ctrl-r \
+            --header="$HEADER" \
+            --header-first \
+            --footer="$FOOTER" \
+            --preview="$PREVIEW" \
+            --preview-window=right:58%:wrap:border-left \
+            --preview-label=' details ' \
+            --preview-label-pos=2 \
+            --no-sort
+    )" || exit 0
+
+    key="$(printf '%s\n' "$selected" | head -1)"
+    line="$(printf '%s\n' "$selected" | tail -1)"
+
+    etype="$(printf '%s\n' "$line" | cut -f2)"
+    data1="$(printf '%s\n' "$line" | cut -f3)"
+    data2="$(printf '%s\n' "$line" | cut -f4)"
+
+    # ctrl-d: delete saved file, loop to reopen picker
+    if [[ "$key" == "ctrl-d" ]]; then
+        if [[ "$etype" == "saved" && -n "$data1" ]]; then
+            rm -f "$data1"
+            remove_session_from_saved_history "$data1"
+            notify_kitty "Deleted: $(basename "$data1" .kitty-session)"
+        else
+            notify_kitty "Only saved sessions can be deleted"
+        fi
+        continue
+    fi
+
+    # ctrl-r: rename saved file, loop to reopen picker
+    if [[ "$key" == "ctrl-r" ]]; then
+        if [[ "$etype" == "saved" && -n "$data1" ]]; then
+            old_name="$(session_name_from_file "$data1")"
+            new_name="$(prompt_session_rename "$old_name" 2>/dev/null || true)"
+            new_name="$(sanitize_session_name "$new_name" 2>/dev/null || true)"
+            if [[ -n "$new_name" && "$new_name" != "$old_name" ]]; then
+                new_file="$(session_path "$new_name")"
+                if [[ -e "$new_file" ]]; then
+                    notify_kitty "Session already exists: $new_name"
+                else
+                    mv "$data1" "$new_file"
+                    escaped_new_name="${new_name//&/\\&}"
+                    sed -i "1s/^# Kitty session: .*/# Kitty session: ${escaped_new_name}/" "$new_file" 2>/dev/null || true
+                    remove_session_from_saved_history "$data1"
+                    record_session "$new_file"
+                    notify_kitty "Renamed: $old_name -> $new_name"
+                fi
+            fi
+        else
+            notify_kitty "Only saved sessions can be renamed"
+        fi
+        continue
+    fi
+
+    case "$etype" in
+        live_here)
+            focus_live_session_name "$SOURCE_WINDOW_ID" "$data1"
+            ;;
+        live_other)
+            focus_os_window_by_id "$data2"
+            ;;
+        saved)
+            load_session_into_window "$SOURCE_WINDOW_ID" "$data1"
+            ;;
+        new)
+            new_dir="$data1"
+            new_name="$(sanitize_session_name "$(basename "$new_dir")" 2>/dev/null || true)"
+            [[ -n "$new_name" ]] || new_name="session-$$"
+            new_file="$(session_path "$new_name")"
+            [[ -s "$new_file" ]] || write_session_template "$new_file" "$new_dir" "$new_name"
+            load_session_into_window "$SOURCE_WINDOW_ID" "$new_file"
+            ;;
+        action_project)
+            exec "$SCRIPT_DIR/mux-projects.sh"
+            ;;
+        action_save)
+            exec "$SCRIPT_DIR/mux-save.sh" --source-window-id "$SOURCE_WINDOW_ID"
+            ;;
+        action_move)
+            exec "$SCRIPT_DIR/mux-movetab.sh" --source-window-id "$SOURCE_WINDOW_ID"
+            ;;
+        action_help)
+            if command -v bat >/dev/null 2>&1; then
+                exec bat --style=plain --paging=always "$SCRIPT_DIR/SESSIONS.md"
+            fi
+            exec less "$SCRIPT_DIR/SESSIONS.md"
+            ;;
+    esac
+    break
+done
