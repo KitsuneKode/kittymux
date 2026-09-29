@@ -353,10 +353,22 @@ window_belongs_to_session() {
     printf '%s' "$json" | json_has_windows
 }
 
+# kitty 0.49: reflect the active session in the OS window title; empty
+# title restores automatic app-driven tracking for anonymous workspaces.
+set_os_window_title_for_session() {
+    local name="${1:-}"
+    if [[ -n "$name" ]]; then
+        kitty_remote set-os-window-title --match state:focused_os_window "$name" >/dev/null 2>&1 || true
+    else
+        kitty_remote set-os-window-title --match state:focused_os_window >/dev/null 2>&1 || true
+    fi
+}
+
 goto_session_for_window() {
     local window_id="$1"
     local session_target="$2"
     kitty_action_for_window "id:${window_id}" goto_session "$session_target"
+    set_os_window_title_for_session "$(session_display_name "$session_target")"
 }
 
 save_session_file_for_window() {
