@@ -176,9 +176,10 @@ def _clean_visible_title(title: str) -> str:
 
 _APP_TITLES = frozenset(_APP_LABELS) | _EDITOR_NAMES
 _AGENT_GLYPHS = {
-    "claude": "✳", "codex": "❋", "devin": "⬡", "aider": "✎",
-    "opencode": "‹›", "gemini": "✦", "cursor-agent": "➤", "cursor": "➤",
-    "amp": "⚡", "crush": "♥", "grok": "✗",
+    "claude": "\U00010EA01", "codex": "\U00010EA02", "cursor-agent": "\U00010EA03",
+    "cursor": "\U00010EA03", "gemini": "\U00010EA04", "opencode": "\U00010EA05",
+    "amp": "\U00010EA06", "devin": "\U00010EA07", "aider": "✎",
+    "crush": "♥", "grok": "✗",
 }
 _AGENT_PROCS = frozenset(_AGENT_GLYPHS)
 _AGENT_FALLBACK = "⚡"

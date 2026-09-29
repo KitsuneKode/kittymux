@@ -147,9 +147,11 @@ def get_data(force: bool) -> dict:
 C_BORDER, C_DIM, C_TXT, C_NAME = "45475a", "6c7086", "cdd6f4", "89b4fa"
 C_OK, C_WARN, C_BAD, C_CLOCK = "a6e3a1", "f9e2af", "f38ba8", "cba6f7"
 
-_GLYPHS = {"claude": "✳", "codex": "❋", "devin": "⬡", "cursor": "➤",
-           "aider": "✎", "opencode": "‹›", "gemini": "✦", "amp": "⚡",
-           "crush": "♥", "grok": "✗"}
+_GLYPHS = {"claude": "\U00010EA01", "codex": "\U00010EA02",
+           "cursor": "\U00010EA03", "gemini": "\U00010EA04",
+           "opencode": "\U00010EA05", "amp": "\U00010EA06",
+           "devin": "\U00010EA07",
+           "aider": "✎", "crush": "♥", "grok": "✗"}
 
 
 def _rgb(h: str, p: int) -> str:

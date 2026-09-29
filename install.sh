@@ -65,6 +65,13 @@ ok "tab_bar.py → symlink"
 [[ -f "$EDGE_FILE" ]] || printf '# managed by kittymux mux-edge.sh — do not edit\ntab_bar_edge bottom\n' > "$EDGE_FILE"
 ok "tab-edge include ready"
 
+# ── brand icon font (real provider logos via symbol_map) ─────────────────────
+FONT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/fonts"
+mkdir -p "$FONT_DIR"
+cp "$KITTYMUX_HOME/assets/kittymux-icons.ttf" "$FONT_DIR/"
+command -v fc-cache >/dev/null 2>&1 && fc-cache -f "$FONT_DIR" >/dev/null 2>&1
+ok "icon font → $FONT_DIR/kittymux-icons.ttf"
+
 # ── include lines in kitty.conf (backup first, never overwrite) ─────────────
 touch "$KITTY_CONF"
 cp "$KITTY_CONF" "$KITTY_CONF.bak.$(date +%Y%m%d-%H%M%S)"
