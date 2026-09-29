@@ -1,36 +1,39 @@
-# Custom kitty tab bar — left side only (Waybar handles stats).
+# Custom kitty tab bar.
 #
-# Renders:  [session] ▸1:title ┃ 2:title ┃ 3:title●
-#           └─ session prefix         └─ tabs with active/activity markers
+# Horizontal (bottom/top):  [session] ▌1:title ┃ 2:title ┃ 3:title●      cwd  branch
+# Vertical   (left/right):  shadcn/cmux-style rows —
 #
-# active tab  = bold + mauve
-# inactive    = subtext0
-# session prefix = blue
-# activity dot (●) = yellow  (tab has output while unfocused)
-# separator   = surface1
+#     SESSION                     <- header row (tab 1 only; needs tab_title_max_lines 3)
+#   ▌ ◉ active title          ●   <- accent rail + filled row, agent glyph, status dot
+#   ▌   ⎇ main · 2 panes  1
+#     ◉ other title
+#       ⎇ feat/x · waiting    2
+#
+# Every colour is derived from the live kitty theme (kittymux_theme), so the
+# bar follows theme switches. Status dot: working / waiting (needs you) / done.
 
 import json
 import os
 import re
 import shlex
 import subprocess
+import sys
 import time
 from pathlib import Path
 
-from kitty.fast_data_types import Screen, get_boss
+from kitty.fast_data_types import Screen, get_boss, get_options, wcswidth
 from kitty.tab_bar import DrawData, ExtraData, TabBarData, as_rgb
+from kitty.utils import color_as_int
 
-# Catppuccin Mocha
-_BG          = as_rgb(0x1e1e2e)  # base
-_SESSION_FG  = as_rgb(0x89b4fa)  # blue
-_ACTIVE_FG   = as_rgb(0xcba6f7)  # mauve
-_INACTIVE_FG = as_rgb(0x6c7086)  # overlay0 (dim inactive tabs)
-_ACTIVITY_FG = as_rgb(0xa6e3a1)  # emerald — unread output (t3code "done")
-_WAITING_FG  = as_rgb(0xb4befe)  # indigo — agent idle, needs input
-_SEP_FG      = as_rgb(0x313244)  # surface0 (subtle separator)
-_BRACKET_FG  = as_rgb(0x45475a)  # surface1
-_CWD_FG      = as_rgb(0x9399b2)  # overlay2 (right-side cwd anchor)
-_BRANCH_FG   = as_rgb(0xa6e3a1)  # green (git branch)
+# The token/agent modules live next to this file (repo checkout) or, when the
+# installer copied/symlinked them, in the kitty config dir.
+_here = globals().get("__file__")
+for _d in ((os.path.dirname(os.path.realpath(_here)) if _here else ""),
+           os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty")):
+    if _d and _d not in sys.path:
+        sys.path.insert(0, _d)
+import kittymux_agents  # noqa: E402
+import kittymux_theme  # noqa: E402
 
 _SESSION_SOFT_MAX = 16
 _GENERIC_TITLES = {"kitty", "zsh", "bash", "fish", "sh", "node"}
@@ -51,7 +54,48 @@ _APP_LABELS = {
     "bun": "bun",
 }
 
+_ICON_BRANCH = ""   # nerd-font git-branch
+_ICON_FOLDER = ""   # nerd-font folder
+_RAIL = "▌"
+_DOT = "●"
 
+
+# ── palette (derived from the live kitty theme) ──────────────────────────────
+_PAL_CACHE: dict = {"key": None, "pal": None}
+
+
+def _palette(draw_data: DrawData) -> "kittymux_theme.Palette":
+    try:
+        o = get_options()
+        colors = {
+            "background": color_as_int(draw_data.default_bg),
+            "foreground": color_as_int(o.foreground),
+        }
+        abc = o.active_border_color
+        if abc is not None:
+            colors["active_border_color"] = color_as_int(abc)
+        for n in range(1, 16):
+            colors[f"color{n}"] = int(o.color_table[n]) & 0xFFFFFF
+    except Exception:
+        colors = {}
+    key = (tuple(sorted(colors.items())), os.environ.get("KITTYMUX_ACCENT", ""))
+    if _PAL_CACHE["key"] != key:
+        _PAL_CACHE["key"] = key
+        _PAL_CACHE["pal"] = kittymux_theme.from_colors(colors)
+    return _PAL_CACHE["pal"]
+
+
+def _rgb(value: int) -> int:
+    return as_rgb(value)
+
+
+def _mute(brand: int, pal) -> int:
+    """Inactive brand mark: the brand colour receded toward the bar background
+    (stays legible on any theme, unlike scaling channels toward black)."""
+    return kittymux_theme.blend(brand, pal.bg, 0.6)
+
+
+# ── text helpers ─────────────────────────────────────────────────────────────
 def _truncate(text: str, limit: int) -> str:
     text = " ".join(text.split())
     if len(text) <= limit:
@@ -59,6 +103,26 @@ def _truncate(text: str, limit: int) -> str:
     if limit <= 1:
         return text[:limit]
     return text[: limit - 1] + "…"
+
+
+def _cells(text: str) -> int:
+    return max(0, wcswidth(text))
+
+
+def _fit(text: str, width: int) -> str:
+    """Truncate to `width` terminal cells, marking the cut with …"""
+    if width <= 0:
+        return ""
+    if _cells(text) <= width:
+        return text
+    out, used = "", 0
+    for ch in text:
+        w = _cells(ch)
+        if used + w > width - 1:
+            break
+        out += ch
+        used += w
+    return out + "…"
 
 
 def _basename(value: str) -> str:
@@ -117,22 +181,37 @@ def _title_from_cmdline(cmdline: list[str]) -> str:
     return _APP_LABELS.get(first, first)
 
 
-def _active_window_info(tab_id: int) -> tuple[str, list[str], str]:
+# draw_tab runs twice per tab per redraw (kitty measures, then draws) and the
+# foreground-process read is not free — cache it briefly.
+_AWI_CACHE: dict[int, tuple[float, tuple[str, list[list[str]], str]]] = {}
+_AWI_TTL = 0.25
+
+
+def _active_window_info(tab_id: int) -> tuple[str, list[list[str]], str]:
+    now = time.monotonic()
+    hit = _AWI_CACHE.get(tab_id)
+    if hit is not None and now - hit[0] < _AWI_TTL:
+        return hit[1]
+    result: tuple[str, list[list[str]], str] = ("", [], "")
     try:
         tab = get_boss().tab_for_id(tab_id)
         window = tab.active_window if tab else None
-        if not window:
-            return "", [], ""
-        cwd = window.child.current_cwd or window.child.cwd or ""
-        last_cmd = getattr(window, "last_cmd_cmdline", "") or ""
-        foreground = []
-        for process in window.child.foreground_processes:
-            cmdline = process.get("cmdline") or []
-            if cmdline:
-                foreground.append(list(cmdline))
-        return cwd, foreground, last_cmd
+        if window:
+            cwd = window.child.current_cwd or window.child.cwd or ""
+            last_cmd = getattr(window, "last_cmd_cmdline", "") or ""
+            foreground = []
+            for process in window.child.foreground_processes:
+                cmdline = process.get("cmdline") or []
+                if cmdline:
+                    foreground.append(list(cmdline))
+            result = (cwd, foreground, last_cmd)
     except Exception:
-        return "", [], ""
+        pass
+    if len(_AWI_CACHE) > 64:
+        for k in [k for k, v in _AWI_CACHE.items() if now - v[0] > 5.0]:
+            del _AWI_CACHE[k]
+    _AWI_CACHE[tab_id] = (now, result)
+    return result
 
 
 def _best_process_label(foreground: list[list[str]], last_cmd: str) -> str:
@@ -176,40 +255,22 @@ def _clean_visible_title(title: str) -> str:
 
 
 _APP_TITLES = frozenset(_APP_LABELS) | _EDITOR_NAMES
-_AGENT_GLYPHS = {
-    "claude": "\ue0d8", "codex": "\ue0d9", "cursor-agent": "\ue0da",
-    "cursor": "\ue0da", "gemini": "\ue0db", "opencode": "\ue0dc",
-    "amp": "\ue0dd", "devin": "\ue0de", "aider": "✎",
-    "crush": "♥", "grok": "✗",
-}
-# Brand accent per provider — matches the usage HUD palette.
-_AGENT_BRANDS = {
-    "claude": 0xd97757, "codex": 0x10a37f, "cursor-agent": 0x5b8ef4,
-    "cursor": 0x5b8ef4, "gemini": 0x4e8cff, "opencode": 0xfab283,
-    "amp": 0xf5c2e7, "devin": 0x8b5cf6, "aider": 0xa6e3a1,
-    "crush": 0xf38ba8, "grok": 0xf9e2af,
-}
-_AGENT_PROCS = frozenset(_AGENT_GLYPHS)
-_AGENT_FALLBACK = "⚡"
-_ALERT_FG = as_rgb(0xf38ba8)   # red — provider quota window >= 85%
+_AGENT_FALLBACK = kittymux_agents.FALLBACK
 
 
-def _dim(rgb: int, factor: float = 0.55) -> int:
-    r, g, b = (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF
-    return (int(r * factor) << 16) | (int(g * factor) << 8) | int(b * factor)
+def _agent_from_fg(foreground: list[list[str]]) -> tuple[str, int, str] | None:
+    """(glyph, brand_rgb, name) for the foreground agent CLI, else None.
+    brand_rgb is a plain 0xRRGGBB int — tag it with as_rgb() only at draw time."""
+    for cmdline in foreground:
+        name = kittymux_agents.agent_in(cmdline)
+        if name:
+            agent = kittymux_agents.AGENTS.get(name, _AGENT_FALLBACK)
+            return agent.glyph, agent.brand, name
+    return None
 
 
 def _agent_info(tab_id: int) -> tuple[str, int, str] | None:
-    """(glyph, brand_rgb, name) for the foreground agent CLI, else None.
-    brand_rgb is a plain 0xRRGGBB int — tag it with as_rgb() only at draw time."""
-    _cwd, foreground, _last = _active_window_info(tab_id)
-    for cmdline in foreground:
-        for arg in cmdline:
-            name = os.path.basename(arg).lower()
-            if name in _AGENT_PROCS:
-                rgb = _AGENT_BRANDS.get(name, 0x94e2d5)
-                return _AGENT_GLYPHS.get(name, _AGENT_FALLBACK), rgb, name
-    return None
+    return _agent_from_fg(_active_window_info(tab_id)[1])
 
 
 _PANES_JSON = (Path(os.environ.get("KITTYMUX_STATE",
@@ -251,13 +312,14 @@ _USAGE_CACHE = (Path(os.environ["KITTYMUX_STATE"])
     if os.environ.get("KITTYMUX_STATE") else
     Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state")))
     / "kittymux") / "agent-usage.json"
-_usage_state: list = [0.0, False]  # [checked_at, alert]
+_usage_state: list = [0.0, None]  # [checked_at, (provider, pct) | None]
 _USAGE_SPAWN_AT = 0.0
 
 
-def _usage_alert() -> bool:
-    """True when a cached provider window is >=85%. Spawns a collector at most
-    once a minute when the cache is stale; never blocks redraws."""
+def _usage_alert() -> tuple[str, int] | None:
+    """(provider, pct) of the worst cached quota window >= 85%, else None.
+    Spawns a collector at most once a minute when the cache is stale; never
+    blocks redraws."""
     global _USAGE_SPAWN_AT
     now = time.time()
     try:
@@ -275,16 +337,17 @@ def _usage_alert() -> bool:
             pass
     if now - _usage_state[0] > 15:
         _usage_state[0] = now
-        alert = False
+        worst = None
         try:
             data = json.loads(_USAGE_CACHE.read_text())
             for p in data.get("providers", []):
                 for r in p.get("rows", []):
-                    if r.get("pct", 0) >= 85:
-                        alert = True
+                    pct = int(r.get("pct", 0) or 0)
+                    if pct >= 85 and (worst is None or pct > worst[1]):
+                        worst = (str(p.get("name", "")), pct)
         except (OSError, ValueError):
             pass
-        _usage_state[1] = alert
+        _usage_state[1] = worst
     return _usage_state[1]
 
 
@@ -395,43 +458,6 @@ def _short_cwd(cwd: str, limit: int) -> str:
     return _truncate(path, limit)
 
 
-def _draw_cwd_anchor(screen: Screen, tab_id: int) -> None:
-    cwd = _os_window_active_cwd(tab_id)
-    if not cwd:
-        return
-    path, branch = _git_anchor(cwd)
-
-    path = _truncate(path, 34)
-    branch_label = _truncate(branch, 18) if branch else ""
-    alert = _usage_alert()
-    text_w = len(path) + 2  # leading space + icon + space
-    if branch_label:
-        text_w += len(branch_label) + 3  # '  ' + icon + ' '
-    if alert:
-        text_w += 2
-
-    right_x = screen.columns - text_w - 1
-    if right_x - screen.cursor.x < 2:
-        return
-    screen.cursor.x = right_x
-    screen.cursor.bold = False
-    screen.cursor.bg = _BG
-
-    screen.cursor.fg = _SEP_FG
-    screen.draw(" ")
-    screen.cursor.fg = _CWD_FG
-    screen.draw(" " + path)
-    if branch_label:
-        screen.cursor.fg = _SEP_FG
-        screen.draw("  ")
-        screen.cursor.fg = _BRANCH_FG
-        screen.draw(" " + branch_label)
-    if alert:
-        screen.cursor.fg = _ALERT_FG
-        screen.cursor.bold = True
-        screen.draw(" ⚠")
-
-
 def _title_limit(max_tab_length: int, index: int, session_name: str, is_active: bool,
                  marks_w: int) -> int:
     chrome = len(f"{index}:") + 1 + 3 + marks_w  # edge+icon column is always 3
@@ -453,6 +479,280 @@ def _title_limit(max_tab_length: int, index: int, session_name: str, is_active: 
     return max(6, min(preferred, budget))
 
 
+# ── horizontal bar ───────────────────────────────────────────────────────────
+def _draw_cwd_anchor(screen: Screen, tab_id: int, pal) -> None:
+    cwd = _os_window_active_cwd(tab_id)
+    if not cwd:
+        return
+    path, branch = _git_anchor(cwd)
+
+    path = _truncate(path, 34)
+    branch_label = _truncate(branch, 18) if branch else ""
+    alert = _usage_alert()
+    alert_text = f" ⚠ {alert[0]} {alert[1]}%" if alert else ""
+    text_w = len(path) + 2  # leading space + icon + space
+    if branch_label:
+        text_w += len(branch_label) + 3  # '  ' + icon + ' '
+    text_w += _cells(alert_text)
+
+    right_x = screen.columns - text_w - 1
+    if right_x - screen.cursor.x < 2:
+        return
+    screen.cursor.x = right_x
+    screen.cursor.bold = False
+    screen.cursor.bg = 0
+
+    screen.cursor.fg = _rgb(pal.faint)
+    screen.draw(" ")
+    screen.cursor.fg = _rgb(pal.muted)
+    screen.draw(" " + path)
+    if branch_label:
+        screen.cursor.fg = _rgb(pal.faint)
+        screen.draw("  ")
+        screen.cursor.fg = _rgb(pal.done)
+        screen.draw(" " + branch_label)
+    if alert:
+        screen.cursor.fg = _rgb(pal.alert)
+        screen.cursor.bold = True
+        screen.draw(alert_text)
+
+
+def _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal) -> int:
+    session_name = _compact_session_name(getattr(tab, "session_name", "") or "")
+
+    # Session name prefix before the first tab
+    if index == 1:
+        screen.cursor.bg = 0
+        screen.cursor.fg = _rgb(pal.faint)
+        screen.draw("[")
+        screen.cursor.fg = _rgb(pal.info) if session_name != "—" else _rgb(pal.muted)
+        screen.draw(session_name)
+        screen.cursor.fg = _rgb(pal.faint)
+        screen.draw("] ")
+
+    last = extra_data.next_tab is None
+    activity = _DOT if tab.needs_attention or tab.has_activity_since_last_focus else ""
+    cwd, foreground, _last_cmd = _active_window_info(tab.tab_id)
+    info = _agent_from_fg(foreground)
+    waiting = bool(info) and _agent_waiting(tab.tab_id)
+    marks_w = (1 if activity else 0) + (2 if waiting else 0)
+    title_limit = _title_limit(max_title_length, index, session_name, tab.is_active, marks_w)
+    title = _compact_title(tab, title_limit)
+
+    chip = _rgb(pal.surface_hi) if tab.is_active else 0
+    screen.cursor.bg = chip
+    x0 = screen.cursor.x
+    screen.cursor.fg = _rgb(pal.accent) if tab.is_active else _rgb(pal.faint)
+    screen.cursor.bold = False
+    screen.draw(_RAIL if tab.is_active else " ")
+    if info:
+        glyph, brand, _name = info
+        screen.cursor.fg = _rgb(brand if tab.is_active else _mute(brand, pal))
+        screen.draw(glyph)
+    if screen.cursor.x < x0 + 3:
+        screen.cursor.x = x0 + 3
+
+    screen.cursor.fg = _rgb(pal.text) if tab.is_active else _rgb(pal.muted)
+    screen.cursor.bold = tab.is_active
+    screen.draw(f"{index}:{title}")
+    screen.cursor.bold = False
+    if activity:
+        screen.cursor.fg = _rgb(pal.done)
+        screen.draw(activity)
+    if waiting:
+        screen.cursor.fg = _rgb(pal.waiting)
+        screen.draw(" !")
+    screen.draw(" " if tab.is_active else "")
+
+    if not last:
+        screen.cursor.fg = _rgb(pal.faint)
+        screen.cursor.bg = 0
+        screen.draw(" ┃ ")
+    else:
+        screen.cursor.bg = 0
+        _draw_cwd_anchor(screen, tab.tab_id, pal)
+
+    screen.cursor.bold = False
+    return screen.cursor.x
+
+
+# ── vertical bar ─────────────────────────────────────────────────────────────
+def _paint_rows(screen: Screen, y0: int, n: int, bg: int) -> None:
+    """Repaint n rows from y0 with `bg` (0 = the bar's default background).
+    Kitty pre-fills a vertical tab's rows with kitty's own tab colours; we
+    replace that so the palette is ours end to end."""
+    screen.cursor.bg = bg
+    for r in range(n):
+        y = y0 + r
+        if y >= screen.lines:
+            break
+        screen.cursor.x = 0
+        screen.cursor.y = y
+        screen.draw(" " * screen.columns)
+    screen.cursor.x = 0
+    screen.cursor.y = y0
+
+
+def _sep_column(screen: Screen, y0: int, n: int, bg: int, fg: int) -> None:
+    """Right-edge separator line between the bar and the panes."""
+    screen.cursor.bg = bg
+    screen.cursor.fg = fg
+    for r in range(n):
+        y = y0 + r
+        if y >= screen.lines:
+            break
+        screen.cursor.y = y
+        screen.cursor.x = screen.columns - 1
+        screen.draw("▕")
+
+
+def _put(screen: Screen, x: int, text: str, fg: int, bold: bool = False) -> int:
+    screen.cursor.x = x
+    screen.cursor.fg = fg
+    screen.cursor.bold = bold
+    screen.draw(text)
+    return screen.cursor.x
+
+
+def _tab_state(tab: TabBarData, info) -> str:
+    if info:
+        return "waiting" if _agent_waiting(tab.tab_id) else "working"
+    if tab.needs_attention or tab.has_activity_since_last_focus:
+        return "done"
+    return ""
+
+
+def _session_stats(tab: TabBarData) -> tuple[int, int]:
+    """(tabs in the active session, agent tabs waiting on the user)."""
+    try:
+        boss = get_boss()
+        tab_obj = boss.tab_for_id(tab.tab_id)
+        tm = boss.os_window_map.get(tab_obj.os_window_id) if tab_obj else None
+        if tm is None:
+            return 0, 0
+        active = tab.active_session_name
+        visible = [t for t in tm.tabs if t.created_in_session_name == active]
+        waiting = 0
+        for t in visible:
+            if _agent_from_fg(_active_window_info(t.id)[1]) and _agent_waiting(t.id):
+                waiting += 1
+        return len(visible), waiting
+    except Exception:
+        return 0, 0
+
+
+def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
+    cols = screen.columns
+    y0 = screen.cursor.y
+    lines_avail = min(max(1, draw_data.max_tab_title_lines), screen.lines - y0)
+    active = tab.is_active
+
+    cwd, foreground, _last_cmd = _active_window_info(tab.tab_id)
+    info = _agent_from_fg(foreground)
+    state = _tab_state(tab, info)
+    state_fg = {"waiting": pal.waiting, "working": pal.working, "done": pal.done}.get(state)
+
+    branch = _git_anchor(cwd)[1] if cwd else ""
+    subtitle: list[tuple[str, int]] = []
+    if branch:
+        subtitle.append((f"{_ICON_BRANCH} {branch}", pal.muted if active else pal.faint))
+    elif cwd:
+        subtitle.append((f"{_ICON_FOLDER} {_short_cwd(cwd, 24)}", pal.muted if active else pal.faint))
+    if tab.num_windows > 1:
+        subtitle.append((f"{tab.num_windows} panes", pal.faint))
+    if state in ("waiting", "working"):
+        subtitle.append((state, state_fg))
+
+    header = index == 1 and lines_avail >= 3
+    want_sub = lines_avail >= (3 if header else 2) and bool(subtitle)
+    n_rows = (1 if header else 0) + 1 + (1 if want_sub else 0)
+    n_rows = min(n_rows, lines_avail)
+
+    bar = _rgb(pal.bar)
+    row_bg = _rgb(pal.surface_hi) if active else bar
+    if header:
+        _paint_rows(screen, y0, 1, bar)  # the session header never takes the tab's fill
+        _paint_rows(screen, y0 + 1, n_rows - 1, row_bg)
+    else:
+        _paint_rows(screen, y0, n_rows, row_bg)
+    if index == 1 and not extra_data.for_layout:
+        # one full-height separator line, drawn once; each tab re-asserts its rows
+        _sep_column(screen, 0, screen.lines, bar, _rgb(pal.line))
+
+    y = y0
+    if header:
+        name = _compact_session_name(getattr(tab, "session_name", "") or "")
+        name = "TABS" if name == "—" else name.upper()
+        total, waiting_n = _session_stats(tab)
+        right = f"{total} tabs" if total else ""
+        w_right = f"! {waiting_n}  " if waiting_n else ""
+        room = cols - 2 - _cells(right) - _cells(w_right) - 2
+        screen.cursor.bg = bar
+        screen.cursor.y = y
+        _put(screen, 1, _fit(name, max(4, room)), _rgb(pal.faint), True)
+        rx = cols - 1 - _cells(right)
+        if right and rx > 1 + _cells(name) + 1:
+            xr = rx - _cells(w_right)
+            if w_right:
+                _put(screen, xr, w_right, _rgb(pal.waiting), True)
+            _put(screen, rx, right, _rgb(pal.faint))
+        y += 1
+
+    # Title row: [rail][glyph][space] title ............ dot
+    screen.cursor.bg = row_bg
+    screen.cursor.y = y
+    _put(screen, 0, _RAIL if active else " ", _rgb(pal.accent))
+    if info:
+        glyph, brand, _n = info
+        _put(screen, 1, glyph, _rgb(brand if active else _mute(brand, pal)))
+    title_room = cols - 3 - 2
+    if title_room >= 3:
+        title = _fit(_compact_title(tab, max(4, title_room)), title_room)
+        _put(screen, 3, title,
+             _rgb(pal.text) if active else _rgb(pal.muted), bold=active)
+    if state_fg is not None and cols >= 6:
+        _put(screen, cols - 2, _DOT, _rgb(state_fg))
+    title_y = y
+
+    if want_sub and n_rows > (2 if header else 1):
+        y += 1
+        screen.cursor.bg = row_bg
+        screen.cursor.y = y
+        if active:
+            _put(screen, 0, _RAIL, _rgb(pal.accent))
+        idx = str(index)
+        _put(screen, cols - 1 - len(idx), idx, _rgb(pal.faint))
+        room = cols - 3 - 1 - len(idx) - 1
+        # The state word (waiting/working) outranks the branch/path: reserve
+        # its room first and give the rest to the leading pieces.
+        tail = [p for p in subtitle if p[0] in ("working", "waiting")]
+        lead = [p for p in subtitle if p not in tail]
+        reserve = sum(_cells(t) + 2 for t, _c in tail)
+        x = 3
+        for i, (text, color) in enumerate(lead):
+            sep = "  " if i else ""
+            avail = room - (x - 3) - reserve - _cells(sep)
+            if avail <= 1:
+                break
+            x = _put(screen, x, sep + _fit(text, avail), _rgb(color))
+        for text, color in tail:
+            sep = "  " if x > 3 else ""
+            avail = room - (x - 3) - _cells(sep)
+            if avail >= _cells(text):
+                x = _put(screen, x, sep + text, _rgb(color))
+
+    _sep_column(screen, y0, n_rows, row_bg, _rgb(pal.line))
+
+    # Leave the cursor on the last used row (kitty measures height from it),
+    # and never leak our colours into kitty's later erase/draw calls.
+    screen.cursor.y = y if want_sub else title_y
+    screen.cursor.bg = bar
+    screen.cursor.fg = 0
+    screen.cursor.bold = False
+    return screen.cursor.x
+
+
+# ── entry point ──────────────────────────────────────────────────────────────
 def draw_tab(
     draw_data: DrawData,
     screen: Screen,
@@ -463,112 +763,10 @@ def draw_tab(
     is_last: bool,
     extra_data: ExtraData,
 ) -> int:
-    session_name = _compact_session_name(getattr(tab, "session_name", "") or "")
-
-    # Draw session name prefix before the first tab
-    if index == 1:
-        screen.cursor.fg = _BRACKET_FG
-        screen.cursor.bg = _BG
-        screen.draw("[")
-        screen.cursor.fg = _SESSION_FG if session_name != "—" else _INACTIVE_FG
-        screen.draw(session_name)
-        screen.cursor.fg = _BRACKET_FG
-        screen.draw("] ")
-
-    # Tab body — cmux/t3code anatomy per row:
-    #   line 1: [▌][icon] N:title  + status marks right-aligned (vertical)
-    #   line 2: (vertical only) dim subtitle — git branch · pane count
-    # All horizontal budgets are clamped to screen.columns (the real bar
-    # width): max_title_length can exceed it and would wrap/bleed to the edge.
-    is_vert = draw_data.tab_bar_edge in ("left", "right")
-    last = extra_data.next_tab is None
-    activity = "●" if tab.needs_attention or tab.has_activity_since_last_focus else ""
-    info = _agent_info(tab.tab_id)
-    waiting = bool(info) and _agent_waiting(tab.tab_id)
-    marks_w = (1 if activity else 0) + (2 if waiting else 0)
-    title_limit = _title_limit(max_title_length, index, session_name, tab.is_active, marks_w)
-    title = _compact_title(tab, title_limit)
-
-    screen.cursor.bg = _BG
-    x0 = screen.cursor.x
-    screen.cursor.fg = _ACTIVE_FG if tab.is_active else _SEP_FG
-    screen.cursor.bold = False
-    screen.draw("▌" if tab.is_active else " ")
-    if info:
-        glyph, brand, _name = info
-        screen.cursor.fg = as_rgb(brand if tab.is_active else _dim(brand))
-        screen.draw(glyph)
-    if screen.cursor.x < x0 + 3:
-        screen.cursor.x = x0 + 3
-
-    num = f"{index}:"
-    if is_vert:
-        # Fit title to the bar width: prefix + num + title + marks + 1 margin.
-        limit = screen.columns - 2 - screen.cursor.x - len(num) - marks_w
-        if limit >= 4 and limit < len(title):
-            title = _truncate(title, limit)
-        elif limit < 4:
-            title = title[:max(0, limit)]  # degenerate narrow bar
-    screen.cursor.fg = _ACTIVE_FG if tab.is_active else _INACTIVE_FG
-    screen.cursor.bold = tab.is_active
-    screen.draw(num + title)
-
-    def _draw_marks() -> None:
-        if activity:
-            screen.cursor.fg = _ACTIVITY_FG
-            screen.cursor.bold = False
-            screen.draw(activity)
-        if waiting:
-            screen.cursor.fg = _WAITING_FG
-            screen.cursor.bold = False
-            screen.draw(" !")
-
-    if is_vert:
-        # Right-align status marks against the bar's inner edge (last cell
-        # stays empty); if the title filled the row, the subtitle still
-        # carries the status word so nothing is lost.
-        pad = screen.columns - 2 - screen.cursor.x - marks_w
-        if marks_w and pad >= 0:
-            screen.cursor.x += pad
-            _draw_marks()
-        # Line 2: dim subtitle under the title (branch · split count · status).
-        if draw_data.max_tab_title_lines >= 2 and screen.cursor.y + 1 < screen.lines:
-            cwd, _fg, _last_cmd = _active_window_info(tab.tab_id)
-            _label, branch = _git_anchor(cwd) if cwd else ("", "")
-            sub = ""
-            if branch:
-                sub = _truncate(branch, 18)
-            if tab.num_windows > 1:
-                sub += ("  " if sub else "") + f"{tab.num_windows} panes"
-            if waiting and not activity:
-                sub += ("  " if sub else "") + "waiting"
-            elif not waiting and info:
-                sub += ("  " if sub else "") + "working"
-            if sub:
-                sub_x = x0 + 3 + len(num)
-                sub_limit = screen.columns - 2 - sub_x
-                if sub_limit >= 4:
-                    screen.cursor.y += 1  # occupies the tab's 2nd row — kitty
-                    # measures vertical height from cursor.y, so leave it here
-                    screen.cursor.x = sub_x
-                    screen.cursor.fg = _WAITING_FG if waiting else _CWD_FG
-                    screen.cursor.bold = False
-                    screen.draw(_truncate(sub, sub_limit))
+    pal = _palette(draw_data)
+    if draw_data.tab_bar_edge in ("left", "right"):
+        end = _draw_vertical(draw_data, screen, tab, index, extra_data, pal)
     else:
-        _draw_marks()
-
-    # Separators: horizontal bars get ┃ between tabs. On vertical edges kitty
-    # passes is_last=True for every row, so use next_tab to find the real end;
-    # it also inserts a blank spacing row between tabs on its own.
-    if is_vert:
-        pass
-    elif not last:
-        screen.cursor.fg = _SEP_FG
-        screen.cursor.bold = False
-        screen.cursor.bg = _BG
-        screen.draw(" ┃ ")
-    else:
-        _draw_cwd_anchor(screen, tab.tab_id)
-
+        end = _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal)
     screen.cursor.bold = False
-    return screen.cursor.x
+    return end
