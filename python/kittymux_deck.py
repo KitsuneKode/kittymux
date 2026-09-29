@@ -19,6 +19,9 @@ class RowData:
     cwd: str = ""
     panes: int = 1
     status: str = ""        # working | waiting | done | ""
+    msg: str = ""           # what the agent is waiting for (from hooks)
+    pr: str = ""            # "#123" for the branch's open pull request
+    ports: tuple = ()       # TCP ports listening under this pane
     unread: bool = False
     current: bool = False   # the tab you are looking at right now
     index: int = 0          # 1-based position within its session (matches the tab bar)
@@ -154,3 +157,46 @@ def pad(text: str, width: int, cells: Callable[[str], int] = len) -> str:
     """fit() then right-pad with spaces to exactly `width` cells."""
     t = fit(text, width, cells)
     return t + " " * max(0, width - cells(t))
+
+
+# ── listening ports under a pane ────────────────────────────────────────────
+def children_map(ppid_of: dict) -> dict:
+    """{pid: ppid} → {ppid: [pid, …]}"""
+    out: dict = {}
+    for pid, ppid in ppid_of.items():
+        out.setdefault(ppid, []).append(pid)
+    return out
+
+
+def descendants(root: int, children: dict) -> set:
+    """root and every process below it."""
+    seen, stack = set(), [root]
+    while stack:
+        pid = stack.pop()
+        if pid in seen:
+            continue
+        seen.add(pid)
+        stack.extend(children.get(pid, ()))
+    return seen
+
+
+def parse_ss(text: str) -> list:
+    """`ss -H -ltnp` output → [(port, pid)]. Lines without a pid are skipped."""
+    import re
+    out = []
+    for line in text.splitlines():
+        cols = line.split()
+        if len(cols) < 5:
+            continue
+        m = re.search(r":(\d+)$", cols[3])
+        pids = re.findall(r"pid=(\d+)", line)
+        if m:
+            for pid in pids:
+                out.append((int(m.group(1)), int(pid)))
+    return out
+
+
+def ports_for(root: int, children: dict, listeners: list) -> tuple:
+    """Sorted unique listening ports owned by root's process tree."""
+    tree = descendants(root, children)
+    return tuple(sorted({port for port, pid in listeners if pid in tree}))

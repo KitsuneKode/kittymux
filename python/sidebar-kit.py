@@ -9,6 +9,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -40,9 +41,9 @@ _ERR_LOG = _STATE_DIR / "sidebar-kit-err.log"
 _ICON_BRANCH = ""
 _ICON_FOLDER = ""
 _RAIL = "▌"
-_DOT = "●"
 _STALE_AFTER = 15.0
 _GIT_TTL = 5.0
+_PR_TTL = 120.0
 _REFRESH_EVERY = 1.5
 
 
@@ -72,6 +73,69 @@ def _short_home(p: str) -> str:
     return "~" + p[len(home):] if p.startswith(home) else p
 
 
+class PrCache:
+    """Open-PR number per (cwd, branch) via `gh`, refreshed in the background so a
+    slow network never stalls a snapshot. Disabled with KITTYMUX_PR=0 or no gh."""
+
+    def __init__(self):
+        self._cache: dict[tuple[str, str], tuple[float, str]] = {}
+        self._inflight: set = set()
+        self._lock = threading.Lock()
+        self.enabled = os.environ.get("KITTYMUX_PR") != "0" and bool(shutil.which("gh"))
+
+    def get(self, cwd: str, branch: str) -> str:
+        if not self.enabled or not cwd or not branch or branch in ("main", "master", "detached"):
+            return ""
+        key = (cwd, branch)
+        now = time.monotonic()
+        with self._lock:
+            hit = self._cache.get(key)
+            stale = hit is None or now - hit[0] > _PR_TTL
+            if stale and key not in self._inflight:
+                self._inflight.add(key)
+                threading.Thread(target=self._fetch, args=(key,), daemon=True).start()
+            return hit[1] if hit else ""
+
+    def _fetch(self, key) -> None:
+        cwd, branch = key
+        pr = ""
+        try:
+            p = subprocess.run(["gh", "pr", "view", branch, "--json", "number,state", "-q",
+                                r'select(.state=="OPEN") | "#\(.number)"'],
+                               cwd=cwd, capture_output=True, text=True, timeout=6)
+            pr = p.stdout.strip() if p.returncode == 0 else ""
+        except Exception:
+            pass
+        with self._lock:
+            self._cache[key] = (time.monotonic(), pr)
+            self._inflight.discard(key)
+
+
+def _proc_ppids() -> dict:
+    out = {}
+    try:
+        for name in os.listdir("/proc"):
+            if not name.isdigit():
+                continue
+            try:
+                with open(f"/proc/{name}/stat") as f:
+                    stat = f.read()
+                out[int(name)] = int(stat.rsplit(")", 1)[1].split()[1])
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return out
+
+
+def _listeners() -> list:
+    try:
+        p = subprocess.run(["ss", "-H", "-ltnp"], capture_output=True, text=True, timeout=1.5)
+        return deck.parse_ss(p.stdout) if p.returncode == 0 else []
+    except Exception:
+        return []
+
+
 class Snapshot:
     __slots__ = ("rows", "items", "current_session")
 
@@ -86,6 +150,7 @@ class Collector:
 
     def __init__(self):
         self._git: dict[str, tuple[float, str]] = {}
+        self._pr = PrCache()
 
     def branch(self, cwd: str) -> str:
         now = time.monotonic()
@@ -109,6 +174,8 @@ class Collector:
         except Exception:
             return None
         panes = _panes_state()
+        children = deck.children_map(_proc_ppids())
+        listeners = _listeners()
         rows, current_session = [], ""
         for osw in data:
             for tab in osw.get("tabs", []):
@@ -137,11 +204,17 @@ class Collector:
                 session = aw.get("session_name", "") or ""
                 if current:
                     current_session = session
+                branch = self.branch(cwd) if cwd else ""
+                pids = [w.get("pid") for w in wins if w.get("pid")]
+                ports = tuple(sorted({p for pid in pids
+                                      for p in deck.ports_for(int(pid), children, listeners)}))
                 rows.append(deck.RowData(
                     tab_id=tab["id"], win_id=aw["id"], session=session,
                     title=tab.get("title") or "", glyph=agent.glyph if agent else "",
-                    agent=name or "", branch=self.branch(cwd) if cwd else "", cwd=cwd,
-                    panes=len(wins), status=status, unread=unread, current=current))
+                    agent=name or "", branch=branch, cwd=cwd,
+                    panes=len(wins), status=status, unread=unread, current=current,
+                    msg=kittymux_agents.resolve_msg(panes.get(str(aw["id"])), status) if agent else "",
+                    pr=self._pr.get(cwd, branch), ports=ports))
         return Snapshot(rows, current_session)
 
 
@@ -288,7 +361,7 @@ class Sidebar(Handler):
         state_fg = {"waiting": p.waiting, "working": p.working, "done": p.done}.get(r.status)
         title_fg = p.text if (selected or r.current) else p.muted
         title = deck.pad(r.title or "—", bar_w - 3 - 2, _cells)
-        dot = (_DOT, state_fg, False) if state_fg is not None else (" ", p.text, False)
+        dot = (kittymux_agents.STATE_GLYPH[r.status], state_fg, False) if state_fg is not None else (" ", p.text, False)
         line1 = self._line([rail, icon, (" ", p.text, False),
                             (title, title_fg, selected or r.current), dot, (" ", p.text, False)], bar_w, bg)
 
@@ -300,9 +373,15 @@ class Sidebar(Handler):
             parts.append((f"{_ICON_BRANCH} {r.branch}", sub_fg))
         elif r.cwd:
             parts.append((f"{_ICON_FOLDER} {_short_home(r.cwd)}", sub_fg))
+        if r.pr:
+            parts.append((r.pr, p.info))
+        if r.ports:
+            parts.append((" ".join(f":{n}" for n in r.ports[:3]), p.info))
         if r.panes > 1:
             parts.append((f"{r.panes} panes", p.faint))
         tail = [(r.status, state_fg)] if r.status in ("working", "waiting") else []
+        if r.msg:                                   # what it is waiting for beats everything
+            parts, tail = [(r.msg, state_fg)], []
         reserve = sum(_cells(t) + 2 for t, _ in tail)
         cells, used = [], 0
         for i, (text, fg) in enumerate(parts):
@@ -333,7 +412,7 @@ class Sidebar(Handler):
         waiting = sum(1 for r in snap.rows if r.status == "waiting")
         head = [(f" {len(snap.rows)} tabs", p.text, True)]
         if waiting:
-            head.append((f"  ! {waiting} waiting", p.waiting, True))
+            head.append((f"  {kittymux_agents.STATE_GLYPH['waiting']} {waiting} waiting", p.waiting, True))
         w(set_cursor_position(0, 0) + self._line(head, bar_w, p.bar))
         w(set_cursor_position(0, 1) + self._line([(" " + deck.hint(bar_w - 1), p.faint, False)], bar_w, p.bar))
         # list

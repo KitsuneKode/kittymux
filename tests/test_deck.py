@@ -102,5 +102,34 @@ class TextTests(unittest.TestCase):
         self.assertLessEqual(wide(D.fit("日本語日本語", 7, wide)), 7)
 
 
+SS = """LISTEN 0 511 127.0.0.1:3000 0.0.0.0:* users:(("node",pid=4242,fd=19))
+LISTEN 0 4096 [::]:5432 [::]:* users:(("postgres",pid=900,fd=5))
+LISTEN 0 128 0.0.0.0:8080 0.0.0.0:* users:(("python3",pid=4300,fd=3),("python3",pid=4301,fd=3))
+LISTEN 0 128 0.0.0.0:22 0.0.0.0:*
+"""
+
+
+class PortTests(unittest.TestCase):
+    def test_parse_ss(self):
+        got = D.parse_ss(SS)
+        self.assertIn((3000, 4242), got)
+        self.assertIn((5432, 900), got)
+        self.assertIn((8080, 4301), got)
+        self.assertFalse(any(port == 22 for port, _ in got))   # no pid → skipped
+
+    def test_descendants_and_ports(self):
+        # pane shell 4000 → npm 4100 → node 4242 ; python 4300/4301 under 4200 ; postgres unrelated
+        children = D.children_map({4100: 4000, 4242: 4100, 4200: 4000, 4300: 4200, 4301: 4200, 900: 1})
+        self.assertEqual(D.descendants(4000, children), {4000, 4100, 4242, 4200, 4300, 4301})
+        self.assertEqual(D.ports_for(4000, children, D.parse_ss(SS)), (3000, 8080))
+
+    def test_no_processes_no_ports(self):
+        self.assertEqual(D.ports_for(1234, {}, D.parse_ss(SS)), ())
+
+    def test_cycle_safe(self):
+        children = {1: [2], 2: [1]}
+        self.assertEqual(D.descendants(1, children), {1, 2})
+
+
 if __name__ == "__main__":
     unittest.main()

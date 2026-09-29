@@ -52,5 +52,20 @@ class ResolveStatusTests(unittest.TestCase):
         self.assertEqual(A.resolve_status({"ts_title": 0}, True, self.NOW), "working")
 
 
+class MsgTests(unittest.TestCase):
+    def test_msg_only_for_waiting_and_done(self):
+        e = {"msg": "needs approval"}
+        self.assertEqual(A.resolve_msg(e, "waiting"), "needs approval")
+        self.assertEqual(A.resolve_msg(e, "done"), "needs approval")
+        self.assertEqual(A.resolve_msg(e, "working"), "")
+        self.assertEqual(A.resolve_msg(e, ""), "")
+
+    def test_missing(self):
+        self.assertEqual(A.resolve_msg(None, "waiting"), "")
+
+    def test_state_glyphs_distinct(self):
+        self.assertEqual(len(set(A.STATE_GLYPH.values())), 3)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -56,3 +56,15 @@ def resolve_status(entry: dict | None, has_agent: bool, now: float,
         return explicit
     ts = float(entry.get("ts_title") or 0)
     return "waiting" if ts and (now - ts) > stale_after else "working"
+
+
+# Shape + colour: state must be readable without colour vision.
+STATE_GLYPH = {"working": "◐", "waiting": "◆", "done": "✓"}
+
+
+def resolve_msg(entry: dict | None, status: str) -> str:
+    """The one-line reason an agent is waiting/done (from hooks), else ''.
+    Only meaningful while the status is waiting or done."""
+    if status not in ("waiting", "done"):
+        return ""
+    return str((entry or {}).get("msg") or "")

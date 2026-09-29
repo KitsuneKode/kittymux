@@ -5,7 +5,7 @@
 #
 # Writes $KITTYMUX_STATE/panes-<pid>.json:
 #   { "<wid>": {title, ts_title, ts_cmd, cmd, running, focused, at_prompt,
-#                status, ts_status} }
+#                status, ts_status, msg} }
 #
 # `status` (working|waiting|done|idle) comes from the `kittymux_status` window user
 # variable, set by bin/mux-status from agent hooks (see README). It outranks the
@@ -13,6 +13,8 @@
 
 import json
 import os
+import shutil
+import subprocess
 import time
 
 _STATE_DIR = os.environ.get("KITTYMUX_STATE") or os.path.join(
@@ -47,7 +49,7 @@ def _entry(window) -> dict:
     if e is None:
         e = {"title": "", "ts_title": 0.0, "ts_cmd": 0.0, "cmd": "",
              "running": False, "focused": False, "at_prompt": False,
-             "status": "", "ts_status": 0.0}
+             "status": "", "ts_status": 0.0, "msg": ""}
         _state[window.id] = e
     return e
 
@@ -106,14 +108,51 @@ def _mark_tab_bar_dirty(window) -> None:
         pass
 
 
+_NOTIFY_EVERY = 10.0     # seconds, per window
+_last_notify: dict = {}
+
+
+def _notify_enabled() -> bool:
+    if os.environ.get("KITTYMUX_NOTIFY") == "0":
+        return False
+    return not os.path.exists(os.path.join(_STATE_DIR, "notify-off"))
+
+
+def _notify_waiting(window, e: dict) -> None:
+    """Desktop notification when an agent you are not looking at starts waiting."""
+    try:
+        if e.get("focused") or not _notify_enabled() or not shutil.which("notify-send"):
+            return
+        now = time.monotonic()
+        if now - _last_notify.get(window.id, -1e9) < _NOTIFY_EVERY:
+            return
+        _last_notify[window.id] = now
+        title = " ".join((window.title or "agent").split())[:60]
+        subprocess.Popen(
+            ["notify-send", "-a", "kittymux", "-i", "utilities-terminal",
+             f"{title} needs you", e.get("msg") or "Waiting for your input"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True)
+    except Exception:
+        pass
+
+
 def on_set_user_var(boss, window, data) -> None:
     try:
-        if data.get("key") != "kittymux_status":
+        key, value = data.get("key"), str(data.get("value") or "")
+        if key not in ("kittymux_status", "kittymux_msg"):
             return
         e = _entry(window)
-        e["status"] = str(data.get("value") or "")
-        e["ts_status"] = time.monotonic()
-        _flush(e["ts_status"], force=True)
+        now = time.monotonic()
+        if key == "kittymux_msg":
+            e["msg"] = value
+        else:
+            prev = e.get("status")
+            e["status"] = value
+            e["ts_status"] = now
+            if value == "waiting" and prev != "waiting":
+                _notify_waiting(window, e)
+        _flush(now, force=True)
         _mark_tab_bar_dirty(window)
     except Exception:
         pass

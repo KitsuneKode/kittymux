@@ -1,48 +1,84 @@
 #!/usr/bin/env bash
 # mux-status — tell kittymux what the agent in this pane is doing.
 #
-#   mux-status working|waiting|done|idle
+#   mux-status [--msg TEXT] working|waiting|done|idle [extra…]
 #
 # Meant to be called from agent hooks (Claude Code: UserPromptSubmit / Notification /
-# Stop; see README "Agent status hooks"). It sets the kitty window user variable
-# `kittymux_status`, which python/pane-state.py records and the tab bar / deck show.
+# Stop; see README "Agent status hooks"). It sets two kitty window user variables:
+#   kittymux_status  working|waiting|done|idle
+#   kittymux_msg     one-line "what it's waiting for" (cleared on working/idle)
+# python/pane-state.py records them; the tab bar and deck show them, and a desktop
+# notification fires when an unfocused agent starts waiting.
 #
-# Preferred path: the OSC 1337 SetUserVar escape written to the controlling tty —
-# no socket needed, and it also works through ssh. Fallback: kitty remote control.
-# A hook must never block or fail the agent: runtime problems exit 0; only bad
-# usage exits 2. Extra args (some agents append a JSON payload) are ignored.
+# The message comes from (first hit wins): --msg, the hook's JSON on stdin
+# (`.message`, Claude Code Notification), or a JSON last argument (`.message` or
+# `."last-assistant-message"`, Codex `notify`).
 #
-#   --print   write the escape to stdout instead of the tty (for tests)
+# Preferred transport: OSC 1337 SetUserVar escapes on the controlling tty — no socket
+# needed, works through ssh. Fallback: kitty remote control. A hook must never block or
+# fail the agent: runtime problems exit 0; only bad usage exits 2.
+#
+#   --print   write the escape(s) to stdout instead of the tty (for tests)
 
 set -u
 
 print_only=0
-if [[ "${1:-}" == "--print" ]]; then
-    print_only=1
-    shift
-fi
+msg=""
+have_msg=0
+while [[ "${1:-}" == --* ]]; do
+    case "$1" in
+        --print) print_only=1; shift ;;
+        --msg)   msg="${2:-}"; have_msg=1; shift 2 ;;
+        *)       break ;;
+    esac
+done
 
 state="${1:-}"
 case "$state" in
     working|waiting|done|idle) ;;
-    *) echo "usage: mux-status [--print] working|waiting|done|idle" >&2; exit 2 ;;
+    *) echo "usage: mux-status [--print] [--msg TEXT] working|waiting|done|idle" >&2; exit 2 ;;
 esac
+shift
 
-b64="$(printf '%s' "$state" | base64 -w0 2>/dev/null || printf '%s' "$state" | base64 | tr -d '\n')"
-esc="$(printf '\033]1337;SetUserVar=kittymux_status=%s\007' "$b64")"
+json_msg() {  # stdin: JSON → message field, or nothing
+    command -v jq >/dev/null 2>&1 || return 0
+    jq -r '(.message // ."last-assistant-message" // empty) | tostring' 2>/dev/null | head -n1
+}
+
+if (( ! have_msg )) && [[ "$state" == "waiting" || "$state" == "done" ]]; then
+    # a JSON payload as the last argument (Codex notify)…
+    if (( $# )); then
+        last="${*: -1}"
+        [[ "$last" == \{* ]] && msg="$(printf '%s' "$last" | json_msg)"
+    fi
+    # …or on stdin (Claude Code hooks) — never block waiting for it
+    if [[ -z "$msg" && ! -t 0 ]]; then
+        msg="$(timeout 0.4 cat 2>/dev/null | json_msg)"
+    fi
+fi
+[[ "$state" == "working" || "$state" == "idle" ]] && msg=""
+
+# one line, no control chars, bounded
+msg="$(printf '%s' "$msg" | tr '\n\r\t' '   ' | tr -d '\000-\010\013\014\016-\037\033\007' | cut -c1-120)"
+
+b64() { printf '%s' "$1" | base64 -w0 2>/dev/null || printf '%s' "$1" | base64 | tr -d '\n'; }
+esc() { printf '\033]1337;SetUserVar=%s=%s\007' "$1" "$(b64 "$2")"; }
+
+# message first so the recorder already has it when the status flips
+payload="$(esc kittymux_msg "$msg")$(esc kittymux_status "$state")"
 
 if (( print_only )); then
-    printf '%s' "$esc"
+    printf '%s' "$payload"
     exit 0
 fi
 
 # Inside tmux the escape needs passthrough; skip it and use remote control.
 if [[ -z "${TMUX:-}" ]] && { : >/dev/tty; } 2>/dev/null; then
-    printf '%s' "$esc" >/dev/tty 2>/dev/null && exit 0
+    printf '%s' "$payload" >/dev/tty 2>/dev/null && exit 0
 fi
 
 if [[ -n "${KITTY_LISTEN_ON:-}" && -n "${KITTY_WINDOW_ID:-}" ]]; then
     kitty @ --to "$KITTY_LISTEN_ON" set-user-vars \
-        --match "id:${KITTY_WINDOW_ID}" "kittymux_status=${state}" >/dev/null 2>&1 || true
+        --match "id:${KITTY_WINDOW_ID}" "kittymux_msg=${msg}" "kittymux_status=${state}" >/dev/null 2>&1 || true
 fi
 exit 0
