@@ -117,5 +117,23 @@ class ToolTests(unittest.TestCase):
         self.assertFalse(set(A.TOOLS) & set(A.AGENTS))
 
 
+class SanitizeTests(unittest.TestCase):
+    def test_control_and_escape_sequences_neutralised(self):
+        evil = "ok\x1b[2J\x1b]0;pwned\x07\x9b31m\r\nnext\x00"
+        out = A.sanitize_text(evil)
+        self.assertFalse(any(ord(c) < 32 or ord(c) == 127 or 0x80 <= ord(c) < 0xA0 for c in out))
+        self.assertIn("ok", out)
+
+    def test_bounded_and_single_line(self):
+        self.assertEqual(len(A.sanitize_text("x" * 500)), 120)
+        self.assertNotIn("\n", A.sanitize_text("a\nb\tc"))
+
+    def test_resolve_msg_applies_it(self):
+        self.assertEqual(A.resolve_msg({"msg": "hi\x1b[31m"}, "waiting"), "hi [31m")
+
+    def test_printable_unicode_survives(self):
+        self.assertEqual(A.sanitize_text("Approve: rm -rf node_modules? ✓ 日本"), "Approve: rm -rf node_modules? ✓ 日本")
+
+
 if __name__ == "__main__":
     unittest.main()

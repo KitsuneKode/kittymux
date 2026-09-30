@@ -9,7 +9,9 @@
 cols=$(tput cols 2>/dev/null || printf '80')
 lines=$(tput lines 2>/dev/null || printf '24')
 
-STATE=/tmp/kittymux-cwd.last
+# shellcheck source=../lib/socket.sh
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../lib/socket.sh"
+STATE="$(mux_runtime_dir)/cwd.last"
 now=$(date +%s)
 detail=0
 [[ "${1:-}" == "--detail" ]] && detail=1
@@ -69,7 +71,7 @@ osc52() { # copy $1 to clipboard
 kitty_rc() { # remote control with socket fallback
     local to="${KITTY_LISTEN_ON:-}"
     if [[ -z "$to" ]]; then
-        local s; s=$(ls -t /tmp/mykitty-* 2>/dev/null | head -1)
+        local s; s=$(mux_kitty_sockets | head -n1)
         [[ -n "$s" ]] && to="unix:$s"
     fi
     [[ -n "$to" ]] && kitty @ --to "$to" "$@" >/dev/null 2>&1
@@ -99,7 +101,7 @@ if (( detail )); then
     # Hover isn't reachable in kitty's tab bar, so this card is the details.
     host_id=""; agent=""; st=""; tail_l=()
     to="${KITTY_LISTEN_ON:-}"
-    [[ -z "$to" ]] && { s=$(ls -t /tmp/mykitty-* 2>/dev/null | head -1); [[ -n "$s" ]] && to="unix:$s"; }
+    [[ -z "$to" ]] && { s=$(mux_kitty_sockets | head -n1); [[ -n "$s" ]] && to="unix:$s"; }
     if [[ -n "$to" ]]; then
         # Program goes in via -c: a heredoc on `python3 -` would replace the
         # pipe on stdin, so the `kitty @ ls` JSON would never arrive.

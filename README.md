@@ -129,6 +129,10 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+shift+b` | **docked sidebar panel** — the deck as an always-visible left column that reserves screen space (Wayland/Hyprland) |
 | `ctrl+alt+;` | send a prompt to a background agent pane |
 | `ctrl+alt+shift+e` | tab bar bottom → left → right |
+| `ctrl+alt+\` | bar mode: full → slim rail → hidden ("zen") |
+| `ctrl+alt+shift+[` / `]` | narrower / wider sidebar |
+| `ctrl+alt+shift+l` | pick a layout preset (sidebar, rail, right, bottom, top, zen) |
+| *drag the bar's inner edge* | resize the vertical bar with the mouse |
 | `ctrl+alt+/` | keymap overlay — this table, parsed live from your conf |
 | `ctrl+alt+shift+/` | last command output in pager |
 | `ctrl+alt+[` / `]` | jump between shell prompts in scrollback |
@@ -229,6 +233,24 @@ spend), devin via `SeatManagementService/GetUserStatus` (daily/weekly
 quota + overage balance). Network is strictly opt-in — everything works
 offline.
 
+## Tab bar layout & resizing
+
+Layout is **per kitty instance** (all OS windows of one kitty share it), takes effect
+instantly and survives config reloads: `kittymux layout <mode|edge|width|preset|pick|default|show>`.
+New instances start from `kittymux layout default` (or your kitty.conf when nothing was chosen).
+
+**Drag to resize.** Grab the vertical bar's inner edge (the separator line lights up while you
+drag) and pull. The pointer is captured for the drag, so it works even outside the bar; release
+saves the width for this kitty. Constraints:
+
+- never narrower than 16 columns (a drag from the 9-column rail promotes it to the full sidebar);
+- never wider than a third of the window — kitty's own cap for vertical bars — or 60 columns;
+- a drag that goes silent for 2.5 s is abandoned, so the mouse can never stay captured.
+
+Tab titles show only what fits; kitty does not deliver hover events to its tab bar, so for
+richer per-tab detail use the deck (`ctrl+alt+b`) or the docked panel (`ctrl+alt+shift+b`,
+also drag-resizable). Set `KITTYMUX_DEBUG=1` to log drag errors to `barsize-debug.log`.
+
 ## Layout
 
 ```
@@ -246,6 +268,9 @@ kittymux/
     ├── pane-state.py      # watcher: per-window activity + agent status
     ├── kittymux_theme.py  # colour tokens derived from your kitty theme
     ├── kittymux_agents.py # agent table + status resolution
+    ├── kittymux_layout.py # per-instance bar layout (geninclude) + drag maths
+    ├── kittymux_barsize.py# drag-to-resize the vertical bar
+    ├── kittymux_git.py    # branch/worktree reader (no subprocess)
     ├── kittymux_deck.py   # deck grouping/layout logic (pure, tested)
     └── collectors/        # usage plugins (_common.py shared helpers)
 ```

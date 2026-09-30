@@ -81,11 +81,21 @@ def _kitty_version() -> tuple[int, int, int] | None:
     return tuple(int(x) for x in m.groups()) if m else None  # type: ignore[return-value]
 
 
+def _socket_dirs() -> list[str]:
+    dirs = ["/tmp"]
+    rt = os.environ.get("XDG_RUNTIME_DIR")
+    if rt and os.path.isdir(rt):
+        dirs.insert(0, rt)                     # the private place first
+    return dirs
+
+
 def _sockets() -> list[str]:
+    """Kitty sockets we may trust: real sockets owned by us, in /tmp or $XDG_RUNTIME_DIR."""
     import glob
-    socks = [s for s in glob.glob("/tmp/mykitty-*") if os.path.exists(s)]
-    env = os.environ.get("KITTY_LISTEN_ON")
-    return ([env] if env else []) + [f"unix:{s}" for s in socks]
+    socks = [s for d in _socket_dirs() for s in glob.glob(os.path.join(d, "mykitty-*")) if _owned_socket(s)]
+    env = os.environ.get("KITTY_LISTEN_ON", "")
+    ok_env = [env] if env.startswith("unix:") and _owned_socket(env[5:]) else []
+    return ok_env + [f"unix:{s}" for s in socks]
 
 
 def _fc_families() -> set:
@@ -181,9 +191,12 @@ def doctor() -> int:
             r.ok("pane-state watcher loaded (agent status)")
         else:
             r.fail("pane-state watcher not configured", "run ./install.sh (the keys conf adds it)")
-        if re.search(r"^\s*allow_remote_control\s+(yes|socket|socket-only)", text, re.M) and \
-                re.search(r"^\s*listen_on\s+", text, re.M):
+        listen = re.search(r"^\s*listen_on\s+unix:(\S+)", text, re.M)
+        if re.search(r"^\s*allow_remote_control\s+(yes|socket|socket-only)", text, re.M) and listen:
             r.ok("remote control + listen_on enabled")
+            if listen.group(1).startswith("/tmp/"):
+                r.warning("listen_on puts the control socket in /tmp, which any local user can write to",
+                          "prefer  listen_on unix:${XDG_RUNTIME_DIR}/mykitty  (private 0700 directory; kittymux finds it there too)")
         else:
             r.warning("remote control may be off", "add to kitty.conf: allow_remote_control yes / listen_on unix:/tmp/mykitty")
     import glob as _glob
@@ -409,16 +422,19 @@ def _target_socket() -> str | None:
     if explicit.startswith("unix:") and _owned_socket(explicit[5:]):
         return explicit
     ppid = str(os.getppid())
-    if _owned_socket(f"/tmp/mykitty-{ppid}"):
-        return f"unix:/tmp/mykitty-{ppid}"
+    for d in _socket_dirs():
+        if _owned_socket(f"{d}/mykitty-{ppid}"):
+            return f"unix:{d}/mykitty-{ppid}"
     env = os.environ.get("KITTY_LISTEN_ON", "")
     if env.startswith("unix:") and _owned_socket(env[5:]):
         return env
     pid = os.environ.get("KITTY_PID", "")
-    if pid.isdigit() and _owned_socket(f"/tmp/mykitty-{pid}"):
-        return f"unix:/tmp/mykitty-{pid}"
+    if pid.isdigit():
+        for d in _socket_dirs():
+            if _owned_socket(f"{d}/mykitty-{pid}"):
+                return f"unix:{d}/mykitty-{pid}"
     import glob
-    socks = sorted((g for g in glob.glob("/tmp/mykitty-*") if _owned_socket(g)),
+    socks = sorted((g for d in _socket_dirs() for g in glob.glob(os.path.join(d, "mykitty-*")) if _owned_socket(g)),
                    key=lambda g: os.stat(g).st_mtime, reverse=True)
     return f"unix:{socks[0]}" if socks else None
 
@@ -552,9 +568,12 @@ def hooks(argv: list[str]) -> int:
         shutil.copy2(path, backup)
         print(f"  backup: {backup}")
     tmp = path + ".tmp-kittymux"
-    with open(tmp, "w", encoding="utf-8") as f:
+    mode = stat.S_IMODE(os.stat(path).st_mode) if os.path.exists(path) else 0o600
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)      # never wider than the original
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(merged, f, indent=2)
         f.write("\n")
+    os.chmod(tmp, mode)
     os.replace(tmp, path)
     print(f"{OK} added {', '.join(added)} → {path}")
     print("  new Claude Code sessions pick this up; the tab dot flips working/waiting/done.")

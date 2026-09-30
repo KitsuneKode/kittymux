@@ -4,17 +4,9 @@
 # Self-contained: no session-lib dependency.
 
 # Socket: KITTY_LISTEN_ON is set by kitty for background keybind launches.
-if [[ -n "${KITTY_LISTEN_ON:-}" ]]; then
-    SOCKET="$KITTY_LISTEN_ON"
-elif [[ -S "/tmp/mykitty-${PPID}" ]]; then
-    SOCKET="unix:/tmp/mykitty-${PPID}"
-elif [[ -S "/tmp/kitty-${PPID}" ]]; then
-    SOCKET="unix:/tmp/kitty-${PPID}"
-else
-    _sock=$(ls /tmp/mykitty-* 2>/dev/null | head -1)
-    SOCKET="unix:${_sock:-/tmp/mykitty}"
-    unset _sock
-fi
+# shellcheck source=../lib/socket.sh
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../lib/socket.sh"
+SOCKET="$(mux_resolve_socket)"
 
 CWD="${HOME}"
 CMD_ARGS=()
@@ -53,7 +45,7 @@ sys.exit(1)
 " 2>/dev/null || echo "0")"
 fi
 
-FLAG="/tmp/kitty-scratch-${OS_WIN_ID}"
+FLAG="$(mux_runtime_dir)/scratch-${OS_WIN_ID}"
 
 # Close existing scratch tab if tracked
 if [[ -f "$FLAG" ]]; then

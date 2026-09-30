@@ -77,12 +77,21 @@ def state_glyph(state: str, now: float | None = None) -> str:
     return STATE_GLYPH.get(state, "")
 
 
+_CTRL = {c: " " for c in list(range(0, 32)) + [127] + list(range(0x80, 0xA0))}
+
+
+def sanitize_text(text, limit: int = 120) -> str:
+    """One line, control characters replaced, bounded. Text that arrives from a terminal
+    user variable is drawn straight into the tab bar — never trust it."""
+    return " ".join(str(text).translate(_CTRL).split())[:limit]
+
+
 def resolve_msg(entry: dict | None, status: str) -> str:
     """The one-line reason an agent is waiting/done (from hooks), else ''.
     Only meaningful while the status is waiting or done."""
     if status not in ("waiting", "done"):
         return ""
-    return str((entry or {}).get("msg") or "")
+    return sanitize_text((entry or {}).get("msg") or "")
 
 
 # ── quiet glyphs for non-agent tools ─────────────────────────────────────────

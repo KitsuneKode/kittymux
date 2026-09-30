@@ -6,17 +6,9 @@
 #   --home      open in $HOME instead of the current directory
 # Fast path: let kitty match scratch in the focused OS window internally.
 
-if [[ -n "${KITTY_LISTEN_ON:-}" ]]; then
-    SOCKET="$KITTY_LISTEN_ON"
-elif [[ -S "/tmp/mykitty-${PPID}" ]]; then
-    SOCKET="unix:/tmp/mykitty-${PPID}"
-elif [[ -S "/tmp/kitty-${PPID}" ]]; then
-    SOCKET="unix:/tmp/kitty-${PPID}"
-else
-    _sock=$(ls /tmp/mykitty-* 2>/dev/null | head -1)
-    SOCKET="unix:${_sock:-/tmp/mykitty}"
-    unset _sock
-fi
+# shellcheck source=../lib/socket.sh
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../lib/socket.sh"
+SOCKET="$(mux_resolve_socket)"
 
 CWD_ARGS=(--cwd current)
 MODE="end"

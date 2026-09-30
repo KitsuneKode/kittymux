@@ -174,5 +174,37 @@ class CommandTests(unittest.TestCase):
         self.assertNotIn("width", L.describe(L.Layout("bottom", "full")))
 
 
+class DragMathTests(unittest.TestCase):
+    def test_left_edge_width_follows_pointer(self):
+        # cell 10px: pointer at 280px → 28 cols → tab_title_max_length 20
+        self.assertEqual(L.width_from_pointer(280, 10, 1300, "left"), 20)
+        self.assertEqual(L.width_from_pointer(380, 10, 1300, "left"), 30)
+
+    def test_right_edge_measures_from_the_other_side(self):
+        self.assertEqual(L.width_from_pointer(1020, 10, 1300, "right"), 20)
+
+    def test_minimum_never_goes_compact_or_negative(self):
+        self.assertEqual(L.width_from_pointer(0, 10, 1300, "left"), L.WIDTH_MIN)
+        self.assertEqual(L.width_from_pointer(-500, 10, 1300, "left"), L.WIDTH_MIN)
+
+    def test_maximum_is_a_third_of_the_window_and_hard_cap(self):
+        # 130 cols wide window → a third = 43 cols → 35 after padding (measured against real kitty)
+        self.assertEqual(L.max_width_for(130), 35)
+        self.assertEqual(L.width_from_pointer(1290, 10, 1300, "left"), 35)
+        self.assertLessEqual(L.max_width_for(400), L.WIDTH_MAX)       # huge window: hard cap applies
+        # a narrow 60-col window: a third = 20 cols → 12
+        self.assertEqual(L.max_width_for(60), 12)
+        self.assertGreaterEqual(L.max_width_for(10), L.WIDTH_MIN)     # never below the minimum
+
+    def test_grab_zone(self):
+        self.assertTrue(L.in_grab_zone(280, 280, 10))
+        self.assertTrue(L.in_grab_zone(285, 280, 10))
+        self.assertFalse(L.in_grab_zone(300, 280, 10))
+        self.assertFalse(L.in_grab_zone(200, 280, 10))
+
+    def test_bad_cell_width_is_safe(self):
+        self.assertEqual(L.width_from_pointer(100, 0, 1300, "left"), L.DEFAULT_WIDTH)
+
+
 if __name__ == "__main__":
     unittest.main()

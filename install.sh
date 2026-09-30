@@ -35,6 +35,8 @@ KEYS_OUT="$KITTY_CONF_DIR/kittymux-keys.conf"
 EDGE_FILE="$KITTY_CONF_DIR/include-tab-edge.conf"
 
 say()  { printf '  %s\n' "$*"; }
+# escape a value for use as a sed replacement (paths may contain & | \ /)
+sed_esc() { printf '%s' "$1" | sed -e 's/[\\/&|]/\\&/g'; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 die()  { printf '  \033[31m✗\033[0m %s\n' "$*" >&2; exit 1; }
@@ -60,14 +62,16 @@ ok "deps: jq, python3, fzf, git, kitty ${kitty_ver:-?}"
 
 # ── render keys conf ────────────────────────────────────────────────────────
 mkdir -p "$KITTY_CONF_DIR"
-sed "s|@KITTYMUX_HOME@|$KITTYMUX_HOME|g" \
+case "$KITTYMUX_HOME" in *$'\n'*) die "install path contains a newline" ;; esac
+sed "s|@KITTYMUX_HOME@|$(sed_esc "$KITTYMUX_HOME")|g" \
     "$KITTYMUX_HOME/kittymux-keys.conf.tpl" > "$KEYS_OUT"
 ok "rendered keys → $KEYS_OUT"
 
 # ── leader mode (opt-in) ─────────────────────────────────────────────────────
 LEADER_OUT="$KITTY_CONF_DIR/kittymux-leader.conf"
 if (( LEADER )); then
-    sed -e "s|@KITTYMUX_HOME@|$KITTYMUX_HOME|g" -e "s|@KITTYMUX_LEADER@|$LEADER_KEY|g" \
+    [[ "$LEADER_KEY" =~ ^[A-Za-z0-9+_.,-]+$ ]] || die "invalid leader key '$LEADER_KEY'"
+    sed -e "s|@KITTYMUX_HOME@|$(sed_esc "$KITTYMUX_HOME")|g" -e "s|@KITTYMUX_LEADER@|$(sed_esc "$LEADER_KEY")|g" \
         "$KITTYMUX_HOME/kittymux-leader.conf.tpl" > "$LEADER_OUT"
     ok "rendered leader mode (leader: $LEADER_KEY) → $LEADER_OUT"
 fi
@@ -135,8 +139,9 @@ echo
 echo "Done. Reload kitty with ctrl+shift+alt+r (or restart kitty)."
 echo
 say "Notes:"
-say "• remote control: scripts need a listen socket — add e.g."
-say "    listen_on unix:/tmp/mykitty"
+say "• remote control: scripts need a listen socket — add e.g. (private directory)"
+say "    allow_remote_control yes"
+say "    listen_on unix:\${XDG_RUNTIME_DIR}/mykitty"
 say "  to kitty.conf if you don't already have one."
 say "• live Claude quota is opt-in: export KITTYMUX_USAGE_LIVE=1"
 say "• project picker root: export KITTYMUX_PROJECTS=~/code"

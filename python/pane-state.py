@@ -13,6 +13,7 @@
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -36,11 +37,37 @@ def _flush(now: float, force: bool = False) -> None:
     _last_flush = now
     tmp = STATE_FILE + ".tmp"
     try:
-        os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
-        with open(tmp, "w", encoding="utf-8") as f:
+        os.makedirs(os.path.dirname(STATE_FILE), mode=0o700, exist_ok=True)
+        # window titles and agent messages are private: 0600 from the first byte
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(_state, f)
         os.replace(tmp, STATE_FILE)
     except Exception:
+        pass
+
+
+# ── hygiene ──────────────────────────────────────────────────────────────────
+_CTRL_MAP = {c: " " for c in list(range(0, 32)) + [127] + list(range(0x80, 0xA0))}
+
+
+def _clean(text, limit: int = 120) -> str:
+    """One line, no control characters (anything running in a pane can set user vars, and
+    this text is drawn into the tab bar and shown in notifications), bounded length."""
+    return " ".join(str(text).translate(_CTRL_MAP).split())[:limit]
+
+
+def _cleanup_stale() -> None:
+    """Delete panes-<pid>.json left behind by kitty processes that no longer exist."""
+    try:
+        for name in os.listdir(_STATE_DIR):
+            m = re.fullmatch(r"panes-(\d+)\.json(?:\.tmp)?", name)
+            if m and int(m.group(1)) != os.getpid() and not os.path.exists(f"/proc/{m.group(1)}"):
+                try:
+                    os.unlink(os.path.join(_STATE_DIR, name))
+                except OSError:
+                    pass
+    except OSError:
         pass
 
 
@@ -69,7 +96,24 @@ def _attach(window) -> None:
             lst.append(fn)
 
 
+def _install_bar_drag() -> None:
+    """Make the vertical tab bar's inner edge draggable (see kittymux_barsize)."""
+    try:
+        import sys
+        here = globals().get("__file__")
+        for d in ((os.path.dirname(os.path.realpath(here)) if here else ""),
+                  os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty")):
+            if d and d not in sys.path:
+                sys.path.insert(0, d)
+        import kittymux_barsize
+        kittymux_barsize.install()
+    except Exception:
+        pass
+
+
 def on_load(boss, data) -> None:
+    _cleanup_stale()
+    _install_bar_drag()
     now = time.monotonic()
     for w in getattr(boss, "all_windows", []):
         try:
@@ -185,6 +229,11 @@ def _notify_enabled() -> bool:
     return not os.path.exists(os.path.join(_STATE_DIR, "notify-off"))
 
 
+def _plain(text, limit: int) -> str:
+    """Notification text: cleaned, and markup-escaped (many daemons render Pango markup)."""
+    return _clean(text, limit).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def _notify_waiting(window, e: dict) -> None:
     """Desktop notification when an agent you are not looking at starts waiting."""
     try:
@@ -194,10 +243,12 @@ def _notify_waiting(window, e: dict) -> None:
         if now - _last_notify.get(window.id, -1e9) < _NOTIFY_EVERY:
             return
         _last_notify[window.id] = now
-        title = " ".join((window.title or "agent").split())[:60]
+        title = _plain(window.title or "agent", 60)
+        body = _plain(e.get("msg") or "Waiting for your input", 120)
         subprocess.Popen(
-            ["notify-send", "-a", "kittymux", "-i", "utilities-terminal",
-             f"{title} needs you", e.get("msg") or "Waiting for your input"],
+            # `--`: a message starting with "-" must not be parsed as an option
+            ["notify-send", "-a", "kittymux", "-i", "utilities-terminal", "--",
+             f"{title} needs you", body],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             start_new_session=True)
     except Exception:
@@ -212,7 +263,7 @@ def on_set_user_var(boss, window, data) -> None:
         e = _entry(window)
         now = time.monotonic()
         if key == "kittymux_msg":
-            e["msg"] = value
+            e["msg"] = _clean(value)
         else:
             prev = e.get("status")
             e["status"] = value

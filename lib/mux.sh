@@ -82,22 +82,10 @@ is_inside_kitty() {
 # (tab/window/overlay). Background keybind launches get neither — resolve
 # context via socket fallback here and state:focused in source_context_json.
 # kitty appends its PID to listen_on path (e.g. /tmp/mykitty -> /tmp/mykitty-<pid>).
-# Fall through: env var → PPID socket → glob mykitty-* → static fallback.
-if [[ -n "${KITTY_LISTEN_ON:-}" ]]; then
-    KITTY_SOCKET="$KITTY_LISTEN_ON"
-elif [[ -S "/tmp/mykitty-${PPID}" ]]; then
-    KITTY_SOCKET="unix:/tmp/mykitty-${PPID}"
-elif [[ -S "/tmp/kitty-${PPID}" ]]; then
-    KITTY_SOCKET="unix:/tmp/kitty-${PPID}"
-else
-    _sock=$(ls /tmp/mykitty-* 2>/dev/null | head -1)
-    if [[ -n "$_sock" ]]; then
-        KITTY_SOCKET="unix:$_sock"
-    else
-        KITTY_SOCKET="unix:/tmp/mykitty"
-    fi
-    unset _sock
-fi
+# Fall through: env var → PPID socket → newest socket WE OWN → static fallback (lib/socket.sh).
+# shellcheck source=socket.sh
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/socket.sh"
+KITTY_SOCKET="$(mux_resolve_socket)"
 
 kitty_remote() {
     kitty @ --to "$KITTY_SOCKET" "$@"
@@ -650,7 +638,7 @@ move_tab_for_window() {
 # ── Scratch tab tracking ──────────────────────────────────────────────────────
 
 scratch_tab_file_for_os_window() {
-    printf '/tmp/kitty-scratch-%s\n' "$1"
+    printf '%s/scratch-%s\n' "$(mux_runtime_dir)" "$1"
 }
 
 get_scratch_tab_id() {
@@ -957,7 +945,8 @@ sys.exit(1)
 # ── Detached helper ───────────────────────────────────────────────────────────
 
 spawn_detached_helper() {
-    local log_file="/tmp/kitty-session-helper.log"
+    local log_file
+    log_file="$(mux_runtime_dir)/session-helper.log"
     nohup env \
         HOME="$HOME" \
         PATH="$PATH" \

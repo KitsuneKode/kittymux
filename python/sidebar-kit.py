@@ -125,6 +125,9 @@ class PrCache:
         with self._lock:
             self._cache[key] = (time.monotonic(), pr)
             self._inflight.discard(key)
+            if len(self._cache) > 200:                       # bounded: drop the oldest half
+                for k in sorted(self._cache, key=lambda k: self._cache[k][0])[:100]:
+                    del self._cache[k]
 
 
 def _proc_ppids() -> dict:
@@ -611,11 +614,19 @@ class Sidebar(Handler):
             self._request_refresh()
 
 
+def _append_log(text: str) -> None:
+    """Append to the error log, never letting it grow past 64 KB."""
+    _STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if _ERR_LOG.exists() and _ERR_LOG.stat().st_size > 64 * 1024:
+        _ERR_LOG.write_text("")
+    fd = os.open(_ERR_LOG, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(fd, "a") as f:
+        f.write(text)
+
+
 def _log_line(text: str) -> None:
     try:
-        _STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-        with open(_ERR_LOG, "a") as f:
-            f.write(text + "\n")
+        _append_log(text + "\n")
     except Exception:
         pass
 
@@ -623,9 +634,7 @@ def _log_line(text: str) -> None:
 def _log_error() -> None:
     import traceback
     try:
-        _STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-        with open(_ERR_LOG, "a") as f:
-            f.write(traceback.format_exc())
+        _append_log(traceback.format_exc())
     except Exception:
         pass
 

@@ -102,6 +102,15 @@ def _rgb(value: int) -> int:
     return as_rgb(value)
 
 
+def _bar_hot() -> bool:
+    """True while the pointer is over the bar's drag handle or dragging it."""
+    try:
+        import kittymux_barsize
+        return bool(kittymux_barsize.HOT)
+    except Exception:
+        return False
+
+
 def _kb_mode() -> str:
     """Name of the active kitty keyboard mode (e.g. 'leader'), or ''."""
     try:
@@ -724,7 +733,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         _paint_rows(screen, y0, n_rows, row_bg)
     if index == 1 and not extra_data.for_layout:
         # one full-height separator line, drawn once; each tab re-asserts its rows
-        _sep_column(screen, 0, screen.lines, bar, _rgb(pal.line))
+        _sep_column(screen, 0, screen.lines, bar, _rgb(pal.accent if _bar_hot() else pal.line))
 
     y = y0
     if header and mode:
@@ -799,7 +808,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
             if avail >= _cells(text):
                 x = _put(screen, x, sep + text, _rgb(color))
 
-    _sep_column(screen, y0, n_rows, row_bg, _rgb(pal.line))
+    _sep_column(screen, y0, n_rows, row_bg, _rgb(pal.accent if _bar_hot() else pal.line))
 
     # Leave the cursor on the last used row (kitty measures height from it),
     # and never leak our colours into kitty's later erase/draw calls.
@@ -826,7 +835,10 @@ def _profile_record(elapsed: float) -> None:
             p["since"] = now
         if p["n"] >= 200:
             _ERR_LOG.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            with open(_ERR_LOG.parent / "tab_bar-profile.log", "a", encoding="utf-8") as f:
+            plog = _ERR_LOG.parent / "tab_bar-profile.log"
+            if plog.exists() and plog.stat().st_size > 64 * 1024:
+                plog.write_text("")
+            with open(plog, "a", encoding="utf-8") as f:
                 f.write(f"draw_tab calls={p['n']} avg_ms={p['total'] / p['n'] * 1000:.3f} "
                         f"max_ms={p['max'] * 1000:.3f} calls_per_sec={p['n'] / max(now - p['since'], 1e-6):.1f}\n")
             p.update(n=0, total=0.0, max=0.0, since=0.0)
@@ -899,9 +911,10 @@ def _log_exception(tab, index: int) -> None:
         _ERR_LOG.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         if _ERR_LOG.exists() and _ERR_LOG.stat().st_size > 64 * 1024:
             _ERR_LOG.write_text("")
-        with open(_ERR_LOG, "a", encoding="utf-8") as f:
+        fd = os.open(_ERR_LOG, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(fd, "a", encoding="utf-8") as f:
             f.write(f"--- {time.strftime('%F %T')} pid={os.getpid()} tab={index} "
-                    f"active={getattr(tab, 'is_active', '?')} edge={getattr(tab, 'layout_name', '')}\n{text}\n")
+                    f"active={getattr(tab, 'is_active', '?')}\n{text}\n")
     except Exception:
         pass
 

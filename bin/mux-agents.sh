@@ -27,8 +27,11 @@ AGENT_RE='claude|codex|cursor-agent|cursor|gemini|opencode|amp|devin|aider|crush
 # Columns: label \t wid \t osid \t tabid \t session \t os_active_session \t sortkey \t socket \t status
 list_agents() {
     local sock pid
-    for sock in ${KITTYMUX_SOCKET_GLOB:-/tmp/mykitty-*}; do
-        [[ -S "$sock" ]] || continue
+    local sockets
+    if [[ -n "${KITTYMUX_SOCKET_GLOB:-}" ]]; then sockets="$(ls $KITTYMUX_SOCKET_GLOB 2>/dev/null)"   # tests only
+    else sockets="$(mux_kitty_sockets)"; fi
+    for sock in $sockets; do
+        mux_owned_socket "$sock" || continue          # never talk to a socket we don't own
         pid="${sock##*-}"
         kitty @ --to "unix:$sock" ls 2>/dev/null | python3 -c '
 import json, os, re, sys, time

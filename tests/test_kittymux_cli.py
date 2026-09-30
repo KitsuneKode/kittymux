@@ -97,6 +97,17 @@ class HooksTests(unittest.TestCase):
         self.assertEqual(self.m.hooks(["--install", "--settings", path]), 0)      # second run: no-op
         self.assertEqual(len([f for f in os.listdir(d) if ".bak-kittymux-" in f]), 1)
 
+    def test_install_preserves_restrictive_permissions(self):
+        import stat, tempfile
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "settings.json")
+        open(path, "w").write("{}")
+        os.chmod(path, 0o600)
+        self.assertEqual(self.m.hooks(["--install", "--settings", path]), 0)
+        self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
+        backup = [f for f in os.listdir(d) if ".bak-kittymux-" in f][0]
+        self.assertEqual(stat.S_IMODE(os.stat(os.path.join(d, backup)).st_mode), 0o600)
+
     def test_invalid_json_untouched(self):
         import tempfile
         d = tempfile.mkdtemp()

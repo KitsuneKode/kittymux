@@ -25,6 +25,8 @@ PIDFILE="$STATE/panel.pid"
 SOCK="${XDG_RUNTIME_DIR:-$STATE}/kittymux-panel-$(id -u).sock"
 WIDTHFILE="$STATE/panel-columns"
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/socket.sh
+source "$HERE/../lib/socket.sh"
 # canonical path: a `..` segment makes `kitten <path>` exit silently inside a panel
 DECK="$(cd -- "$HERE/../python" && pwd -P)/sidebar-kit.py"
 COLUMNS_N="${KITTYMUX_PANEL_COLUMNS:-$(cat "$WIDTHFILE" 2>/dev/null || echo 32)}"
@@ -38,9 +40,9 @@ pick_target() {
     local pid sock
     if command -v hyprctl >/dev/null 2>&1; then     # the kitty you are in right now
         pid="$(hyprctl activewindow -j 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("pid",""))' 2>/dev/null)"
-        [[ -n "$pid" && -S "/tmp/mykitty-$pid" ]] && { printf 'unix:/tmp/mykitty-%s' "$pid"; return; }
+        [[ -n "$pid" ]] && mux_owned_socket "/tmp/mykitty-$pid" && { printf 'unix:/tmp/mykitty-%s' "$pid"; return; }
     fi
-    sock="$(ls -t /tmp/mykitty-* 2>/dev/null | head -1)"
+    sock="$(mux_kitty_sockets | head -n1)"
     [[ -n "$sock" ]] && printf 'unix:%s' "$sock"
 }
 

@@ -142,6 +142,35 @@ def describe(layout: Layout) -> str:
     return f"{lay.edge} bar" + (f", width {lay.width}" if is_vertical(lay) else "")
 
 
+# ── drag-to-resize maths (used by kittymux_barsize) ───────────────────────────
+BAR_PADDING_COLS = 8          # measured: a vertical bar is tab_title_max_length + 8 columns wide
+MAX_WINDOW_FRACTION = 1 / 3   # kitty itself caps a vertical bar at a third of the window (measured: 43 of 130 cols)
+
+
+def max_width_for(window_cols: int) -> int:
+    """Largest tab_title_max_length whose bar fits kitty's one-third-of-the-window cap (and the hard cap)."""
+    if window_cols <= 0:
+        return WIDTH_MAX
+    return max(WIDTH_MIN, min(WIDTH_MAX, int(window_cols * MAX_WINDOW_FRACTION) - BAR_PADDING_COLS))
+
+
+def width_from_pointer(x_px: float, cell_w: float, window_px: float, edge: str) -> int:
+    """tab_title_max_length for a vertical bar whose inner edge is dragged to pixel `x_px`
+    (measured from the window's left edge). Clamped: never below WIDTH_MIN, never above
+    the hard cap or a third of the window."""
+    if cell_w <= 0:
+        return DEFAULT_WIDTH
+    cols = (window_px - x_px) / cell_w if edge == "right" else x_px / cell_w
+    window_cols = int(window_px // cell_w)
+    n = int(round(cols)) - BAR_PADDING_COLS
+    return max(WIDTH_MIN, min(max_width_for(window_cols), n))
+
+
+def in_grab_zone(x_px: float, bar_edge_px: float, cell_w: float, zone_cells: float = 0.75) -> bool:
+    """Pointer close enough to the bar's inner edge to grab it."""
+    return abs(x_px - bar_edge_px) <= max(1.0, cell_w * zone_cells)
+
+
 # ── storage ──────────────────────────────────────────────────────────────────
 def state_dir() -> str:
     return os.environ.get("KITTYMUX_STATE") or os.path.join(
