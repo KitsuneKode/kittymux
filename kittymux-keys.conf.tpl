@@ -37,6 +37,19 @@ map ctrl+alt+6           launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh
 map ctrl+alt+7           launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 7
 map ctrl+alt+8           launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 8
 map ctrl+alt+9           launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 9
+# alt+N — one-hand aliases (WezTerm/mux convention), session-scoped same as
+# ctrl+alt+N. Costs readline's alt-digit repeat-arg — a fair trade.
+map alt+1                launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 1
+map alt+2                launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 2
+map alt+3                launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 3
+map alt+4                launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 4
+map alt+5                launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 5
+map alt+6                launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 6
+map alt+7                launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 7
+map alt+8                launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 8
+map alt+9                launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 9
+# ctrl+alt+` — flip to previously active tab (MRU, like alt-tab)
+map ctrl+alt+grave_accent       goto_tab -1
 
 map ctrl+shift+comma     move_tab_backward
 map ctrl+shift+period    move_tab_forward
