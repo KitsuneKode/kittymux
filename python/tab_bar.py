@@ -32,8 +32,19 @@ for _d in ((os.path.dirname(os.path.realpath(_here)) if _here else ""),
            os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty")):
     if _d and _d not in sys.path:
         sys.path.insert(0, _d)
+import importlib  # noqa: E402
 import kittymux_agents  # noqa: E402
 import kittymux_theme  # noqa: E402
+
+# kitty re-runs this file on every config reload, but Python keeps imported modules
+# for the life of the process — so after an upgrade a running kitty would keep serving
+# the OLD helpers to the NEW tab bar (AttributeError on any name added since). Reload
+# them every time this file runs.
+for _mod in (kittymux_theme, kittymux_agents):
+    try:
+        importlib.reload(_mod)
+    except Exception:
+        pass
 
 _SESSION_SOFT_MAX = 16
 _GENERIC_TITLES = {"kitty", "zsh", "bash", "fish", "sh", "node"}
