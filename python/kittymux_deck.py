@@ -201,3 +201,36 @@ def ports_for(root: int, children: dict, listeners: list) -> tuple:
     """Sorted unique listening ports owned by root's process tree."""
     tree = descendants(root, children)
     return tuple(sorted({port for port, pid in listeners if pid in tree}))
+
+
+# ── docked-panel edge drag ───────────────────────────────────────────────────
+PANEL_MIN_COLS, PANEL_MAX_COLS = 16, 80
+
+
+def in_grab_zone(cell_x: int, cols: int, zone: int = 2) -> bool:
+    """Pointer over the resize handle of a LEFT-docked panel (its inner, right edge)."""
+    return cols > 0 and cell_x >= cols - zone
+
+
+def drag_columns(cell_x: int) -> int:
+    """New panel width for a left-docked panel while the handle is dragged to `cell_x`
+    (the panel is anchored at the screen edge, so the width is the pointer's column + 1)."""
+    return max(PANEL_MIN_COLS, min(PANEL_MAX_COLS, cell_x + 1))
+
+
+class DragThrottle:
+    """Send resize requests at most every `interval` seconds and only when the target
+    actually changes; `final` always goes through (release must land on the exact width)."""
+
+    def __init__(self, interval: float = 0.06):
+        self.interval = interval
+        self.last_sent = -1e9
+        self.last_cols = -1
+
+    def should_send(self, now: float, cols: int, final: bool = False) -> bool:
+        if cols == self.last_cols and not final:
+            return False
+        if not final and now - self.last_sent < self.interval:
+            return False
+        self.last_sent, self.last_cols = now, cols
+        return True

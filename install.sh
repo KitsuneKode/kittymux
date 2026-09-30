@@ -119,6 +119,11 @@ if grep -rqs "include-tab-edge.conf" "$KITTY_CONF_DIR"/*.conf 2>/dev/null; then
 else
     add_include "include $EDGE_FILE"
 fi
+# Per-window bar layout (kittymux layout …): kitty runs this on every (re)load and takes
+# its output as config. It must come LAST so a saved layout wins; with none saved it prints
+# nothing and your own tab_bar_* settings stay in charge.
+chmod +x "$KITTYMUX_HOME/python/kittymux_layout.py" 2>/dev/null || true
+add_include "geninclude $KITTYMUX_HOME/python/kittymux_layout.py"
 ok "kitty.conf includes added (backup: kitty.conf.bak.*)"
 
 # ── state dir + exec bits ───────────────────────────────────────────────────

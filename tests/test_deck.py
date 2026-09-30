@@ -131,5 +131,26 @@ class PortTests(unittest.TestCase):
         self.assertEqual(D.descendants(1, children), {1, 2})
 
 
+class PanelDragTests(unittest.TestCase):
+    def test_grab_zone_is_the_inner_edge(self):
+        self.assertTrue(D.in_grab_zone(31, 32))
+        self.assertTrue(D.in_grab_zone(30, 32))
+        self.assertFalse(D.in_grab_zone(29, 32))
+        self.assertFalse(D.in_grab_zone(0, 0))
+
+    def test_drag_columns_clamped(self):
+        self.assertEqual(D.drag_columns(43), 44)
+        self.assertEqual(D.drag_columns(2), D.PANEL_MIN_COLS)
+        self.assertEqual(D.drag_columns(500), D.PANEL_MAX_COLS)
+
+    def test_throttle_rate_and_dedupe(self):
+        t = D.DragThrottle(interval=0.1)
+        self.assertTrue(t.should_send(0.0, 40))
+        self.assertFalse(t.should_send(0.02, 41))           # too soon
+        self.assertFalse(t.should_send(0.2, 40))            # same target as last sent
+        self.assertTrue(t.should_send(0.2, 42))
+        self.assertTrue(t.should_send(0.21, 42, final=True))  # release always lands
+
+
 if __name__ == "__main__":
     unittest.main()

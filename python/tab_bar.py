@@ -68,6 +68,7 @@ _APP_LABELS = {
 _ICON_BRANCH = ""   # nerd-font git-branch
 _ICON_FOLDER = ""   # nerd-font folder
 _RAIL = "▌"
+COMPACT_MAX_COLS = 12   # a vertical bar at most this wide draws compact one-line rows
 _DOT = "●"
 
 
@@ -699,7 +700,10 @@ def _session_stats(tab: TabBarData) -> tuple[int, int]:
 def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     cols = screen.columns
     y0 = screen.cursor.y
-    lines_avail = min(max(1, draw_data.max_tab_title_lines), screen.lines - y0)
+    # A slim rail (kittymux_layout "compact", ≤ 12 columns): one line per tab — logo,
+    # a few title characters, status — no session header, no subtitle.
+    compact = cols <= COMPACT_MAX_COLS
+    lines_avail = 1 if compact else min(max(1, draw_data.max_tab_title_lines), screen.lines - y0)
     active = tab.is_active
 
     cwd, foreground, _last_cmd = _active_window_info(tab.tab_id)

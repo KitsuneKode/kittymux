@@ -4,6 +4,10 @@
   kittymux doctor      check your install and tell you exactly how to fix what's off
   kittymux demo        try kittymux in an isolated window (your config is never touched)
   kittymux hooks       print the Claude Code hook config;  --install merges it (backup first)
+  kittymux layout      switch this kitty's bar on the fly:
+                         layout mode [full|compact|hidden|cycle]   layout edge [left|right|bottom|top|cycle]
+                         layout width [+N|-N|N]   layout preset NAME   layout pick   layout show
+                         layout default [clear]   (make the current layout the start for new windows)
   kittymux version
 
 `demo` is the 30-second tour: a scratch kitty with a sample session, fake agents in
@@ -14,6 +18,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -22,6 +27,7 @@ import time
 HOME_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(HOME_DIR, "python"))
 import kittymux_agents  # noqa: E402
+import kittymux_layout  # noqa: E402
 import kittymux_theme  # noqa: E402
 
 VERSION = "0.2.0"
@@ -380,6 +386,123 @@ def demo(argv: list[str]) -> int:
     return 0
 
 
+# ── layout ───────────────────────────────────────────────────────────────────
+def _owned_socket(path: str) -> bool:
+    """A kitty socket we may trust: a real socket owned by us (anyone can create files
+    in /tmp — never send window contents to a socket someone else planted)."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return False
+    return stat.S_ISSOCK(st.st_mode) and st.st_uid == os.getuid()
+
+
+def _target_socket() -> str | None:
+    """The kitty instance this command was launched from.
+
+    Order matters: an explicit KITTYMUX_TARGET; then our *actual parent process* (kitty
+    itself spawns key-bound commands, so its PID names the right socket even if the
+    environment is stale); only then environment hints; finally the newest socket we own."""
+    explicit = os.environ.get("KITTYMUX_TARGET", "")
+    if explicit.startswith("unix:") and _owned_socket(explicit[5:]):
+        return explicit
+    ppid = str(os.getppid())
+    if _owned_socket(f"/tmp/mykitty-{ppid}"):
+        return f"unix:/tmp/mykitty-{ppid}"
+    env = os.environ.get("KITTY_LISTEN_ON", "")
+    if env.startswith("unix:") and _owned_socket(env[5:]):
+        return env
+    pid = os.environ.get("KITTY_PID", "")
+    if pid.isdigit() and _owned_socket(f"/tmp/mykitty-{pid}"):
+        return f"unix:/tmp/mykitty-{pid}"
+    import glob
+    socks = sorted((g for g in glob.glob("/tmp/mykitty-*") if _owned_socket(g)),
+                   key=lambda g: os.stat(g).st_mtime, reverse=True)
+    return f"unix:{socks[0]}" if socks else None
+
+
+def _socket_pid(sock: str) -> int | None:
+    tail = sock.rsplit("-", 1)[-1]
+    return int(tail) if tail.isdigit() else None
+
+
+def _notify(msg: str) -> None:
+    if os.environ.get("KITTYMUX_NOTIFY") == "0" or os.path.exists(os.path.join(STATE, "notify-off")):
+        return                                     # same off-switch as the agent notifications
+    if shutil.which("notify-send"):
+        subprocess.Popen(["notify-send", "-a", "kittymux", "-t", "1400", "--", "tab bar", msg],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+def layout(argv: list[str]) -> int:
+    cmd = argv[0] if argv else "show"
+    arg = argv[1] if len(argv) > 1 else ""
+    sdir = kittymux_layout.state_dir()
+    sock = _target_socket()
+    pid = _socket_pid(sock) if sock else None
+    if pid is None:
+        print("kittymux layout: no kitty remote-control socket found "
+              "(set listen_on unix:/tmp/mykitty in kitty.conf)", file=sys.stderr)
+        return 1
+    current = kittymux_layout.base_layout(sdir, pid, CFG)
+
+    if cmd == "show":
+        saved = kittymux_layout.load(sdir, pid)
+        print(f"{kittymux_layout.describe(current)}  ({'saved for this kitty' if saved else 'from your kitty.conf'})")
+        print("presets: " + ", ".join(kittymux_layout.PRESETS))
+        return 0
+    if cmd == "default":
+        if arg == "clear":
+            try:
+                os.unlink(os.path.join(sdir, "layout-default.json"))
+            except OSError:
+                pass
+            print("default cleared")
+        else:
+            kittymux_layout.save(sdir, None, current)
+            print(f"default for new kitty windows: {kittymux_layout.describe(current)}")
+        return 0
+    if cmd == "pick":
+        return _layout_pick(sock, sdir, pid, current)
+    try:
+        new = kittymux_layout.apply_command(current, cmd, arg)
+    except ValueError as e:
+        print(f"kittymux layout: {e}", file=sys.stderr)
+        return 2
+    return _apply_layout(sock, sdir, pid, new)
+
+
+def _apply_layout(sock: str, sdir: str, pid: int, new) -> int:
+    kittymux_layout.save(sdir, pid, new)
+    rc, _ = _run(["kitty", "@", "--to", sock, "load-config"], 6)   # this instance only
+    label = kittymux_layout.describe(new)
+    if rc != 0:
+        print(f"saved ({label}) but could not reload {sock} — reload it with ctrl+shift+alt+r", file=sys.stderr)
+        return 1
+    print(label)
+    _notify(label)
+    return 0
+
+
+def _layout_pick(sock: str, sdir: str, pid: int, current) -> int:
+    if not shutil.which("fzf"):
+        print("fzf not found", file=sys.stderr)
+        return 1
+    here = kittymux_layout.describe(current)
+    rows = [f"{name:<14}\t{desc}" for name, (lay, desc) in kittymux_layout.PRESETS.items()]
+    colors = kittymux_theme.fzf_args(kittymux_theme.palette_from_kitty(sock))
+    p = subprocess.run(
+        ["fzf", "--ansi", "--layout=reverse", "--height=100%", "--border=rounded", "--margin=1,2",
+         "--padding=1,2", "--delimiter=\t", "--with-nth=1,2", "--no-sort", "--cycle",
+         "--prompt=  tab bar › ", f"--header=now: {here}", "--header-first",
+         "--footer=enter: apply   esc: cancel", *colors],
+        input="\n".join(rows), text=True, capture_output=True)
+    if p.returncode != 0 or not p.stdout.strip():
+        return 0
+    name = p.stdout.split("\t", 1)[0].strip()
+    return _apply_layout(sock, sdir, pid, kittymux_layout.apply_command(current, "preset", name))
+
+
 # ── hooks ────────────────────────────────────────────────────────────────────
 HOOK_EVENTS = {"UserPromptSubmit": "working", "Notification": "waiting", "Stop": "done"}
 
@@ -444,6 +567,8 @@ def main(argv: list[str]) -> int:
         return demo(argv[1:])
     if cmd == "hooks":
         return hooks(argv[1:])
+    if cmd == "layout":
+        return layout(argv[1:])
     if cmd in ("version", "--version", "-V"):
         print(f"kittymux {VERSION}")
         return 0

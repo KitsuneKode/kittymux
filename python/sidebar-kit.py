@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 
 from kittens.tui.handler import Handler, kitten_ui, result_handler
-from kittens.tui.loop import Loop
+from kittens.tui.loop import EventType as MouseEventType, Loop, MouseButton  # noqa: E402
 from kittens.tui.operations import MouseTracking, set_cursor_position, styled
 from kitty.fast_data_types import wcswidth
 from kitty.key_encoding import EventType
@@ -59,6 +59,8 @@ def _cells(s: str) -> int:
 # talks to a *target* kitty over its socket; it stays open after a jump.
 _TARGET = os.environ.get("KITTYMUX_TARGET", "")
 _PANEL = os.environ.get("KITTYMUX_PANEL") == "1"
+_PANEL_SOCK = os.environ.get("KITTYMUX_PANEL_SOCK", "")       # the panel's own RC socket (for drag-resize)
+_PANEL_EDGE = os.environ.get("KITTYMUX_PANEL_EDGE", "left")
 
 
 def _rc(*args: str) -> str:
@@ -355,7 +357,12 @@ class Sidebar(Handler):
     def _geom(self):
         cols, rows = self.screen_size.cols, self.screen_size.rows
         bar_w = 36 if cols >= 64 else cols
+        if self._can_drag():
+            bar_w = min(bar_w, cols - 1)          # the last column is the resize handle
         return cols, rows, bar_w
+
+    def _can_drag(self) -> bool:
+        return _PANEL and bool(_PANEL_SOCK) and _PANEL_EDGE == "left"
 
     def _avail(self) -> int:
         return max(1, self.screen_size.rows - 3)   # 2 header lines + 1 footer line
@@ -492,6 +499,10 @@ class Sidebar(Handler):
                     deck.fit(f"{r.agent or 'pane'} · {_short_home(r.cwd)}", pw, _cells), fg=p.faint))
                 for j, ln in enumerate(self.preview[:rows_n - 2]):
                     w(set_cursor_position(px, j + 2) + self._seg(deck.fit(ln, pw, _cells), fg=p.muted))
+        if self._can_drag():                      # the drag handle: lights up on hover / while dragging
+            hot = getattr(self, "_drag", False) or getattr(self, "_handle_hot", False)
+            for y2 in range(rows_n):
+                w(set_cursor_position(cols - 1, y2) + self._seg("▕", fg=p.accent if hot else p.line, bg=p.bar))
         self.flush()
 
     # ---- events -----------------------------------------------------------
@@ -526,6 +537,61 @@ class Sidebar(Handler):
         self._request_preview()
         self.draw_screen()
 
+    # ---- drag the panel's inner edge to resize it ------------------------------
+    def on_mouse_event(self, mouse_event) -> None:
+        if self._can_drag():
+            cols = self.screen_size.cols
+            over = deck.in_grab_zone(mouse_event.pixel_x // max(1, self.screen_size.cell_width), cols)
+            if getattr(self, "_drag", False):
+                # cell_x is clamped to the panel's own surface, so it can never say "wider";
+                # the raw pixel position can (Wayland keeps delivering it during a drag)
+                col = mouse_event.pixel_x // max(1, self.screen_size.cell_width)
+                if mouse_event.type is MouseEventType.MOVE:
+                    self._resize_panel(col)
+                elif mouse_event.type is MouseEventType.RELEASE:
+                    self._resize_panel(col, final=True)
+                    self._drag = False
+                    self.draw_screen()
+                return
+            if mouse_event.type is MouseEventType.PRESS and (mouse_event.buttons & MouseButton.LEFT) and over:
+                self._drag = True
+                self._throttle = deck.DragThrottle()
+                self.draw_screen()
+                return
+            if mouse_event.type is MouseEventType.MOVE and over != getattr(self, "_handle_hot", False):
+                self._handle_hot = over
+                self.draw_screen()
+        super().on_mouse_event(mouse_event)
+
+    def _resize_panel(self, cell_x: int, final: bool = False) -> None:
+        cols = deck.drag_columns(cell_x)
+        if not self._throttle.should_send(time.monotonic(), cols, final):
+            return
+        lock = self.__dict__.setdefault("_rz_lock", threading.Lock())
+        if not lock.acquire(blocking=final):          # a request is in flight: drop non-final ones
+            return
+
+        def work() -> None:
+            try:
+                r = subprocess.run(["kitten", "@", "--to", f"unix:{_PANEL_SOCK}", "resize-os-window",
+                                    "--action=os-panel", "--incremental", f"columns={cols}"],
+                                   capture_output=True, text=True, timeout=3)
+                if r.returncode != 0 or os.environ.get("KITTYMUX_DEBUG"):
+                    _log_line(f"panel resize to {cols} rc={r.returncode} final={final} "
+                              f"out={r.stdout.strip()[:100]!r} err={r.stderr.strip()[:200]!r}")
+                if final:
+                    try:
+                        _STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+                        (_STATE_DIR / "panel-columns").write_text(str(cols))
+                    except OSError:
+                        pass
+            except Exception:
+                _log_error()
+            finally:
+                lock.release()
+
+        threading.Thread(target=work, daemon=True).start()
+
     def _row_at(self, y: int) -> int:
         return deck.row_at(self.snap.items, self.scroll, self._avail(), y - 2)
 
@@ -556,6 +622,15 @@ class Sidebar(Handler):
             self.quit_loop()
         else:
             self._request_refresh()
+
+
+def _log_line(text: str) -> None:
+    try:
+        _STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with open(_ERR_LOG, "a") as f:
+            f.write(text + "\n")
+    except Exception:
+        pass
 
 
 def _log_error() -> None:

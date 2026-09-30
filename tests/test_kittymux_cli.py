@@ -106,5 +106,58 @@ class HooksTests(unittest.TestCase):
         self.assertEqual(open(path).read(), "{not json")
 
 
+class TargetSocketTests(unittest.TestCase):
+    """The layout command must act on the kitty that launched it — never a stale env hint."""
+
+    def setUp(self):
+        self.m = load()
+        self.saved = (self.m._owned_socket, os.getppid, dict(os.environ))
+        for k in ("KITTYMUX_TARGET", "KITTY_LISTEN_ON", "KITTY_PID"):
+            os.environ.pop(k, None)
+
+    def tearDown(self):
+        self.m._owned_socket, os.getppid = self.saved[0], self.saved[1]
+        os.environ.clear(); os.environ.update(self.saved[2])
+
+    def owned(self, *paths):
+        self.m._owned_socket = lambda p: p in paths
+
+    def test_parent_kitty_beats_stale_env(self):
+        os.getppid = lambda: 111
+        os.environ["KITTY_PID"] = "999"                       # stale (inherited from another kitty)
+        os.environ["KITTY_LISTEN_ON"] = "unix:/tmp/mykitty-999"
+        self.owned("/tmp/mykitty-111", "/tmp/mykitty-999")
+        self.assertEqual(self.m._target_socket(), "unix:/tmp/mykitty-111")
+
+    def test_explicit_target_wins(self):
+        os.getppid = lambda: 111
+        os.environ["KITTYMUX_TARGET"] = "unix:/tmp/mykitty-555"
+        self.owned("/tmp/mykitty-111", "/tmp/mykitty-555")
+        self.assertEqual(self.m._target_socket(), "unix:/tmp/mykitty-555")
+
+    def test_env_used_when_parent_is_not_kitty(self):
+        os.getppid = lambda: 42                               # e.g. launched from a shell
+        os.environ["KITTY_PID"] = "999"
+        self.owned("/tmp/mykitty-999")
+        self.assertEqual(self.m._target_socket(), "unix:/tmp/mykitty-999")
+
+    def test_unowned_sockets_are_never_trusted(self):
+        os.getppid = lambda: 111
+        os.environ["KITTY_LISTEN_ON"] = "unix:/tmp/mykitty-111"
+        self.owned()                                          # someone else planted them
+        self.m._owned_socket = lambda p: False
+        import glob
+        real_glob = glob.glob
+        glob.glob = lambda pattern: ["/tmp/mykitty-666"]
+        try:
+            self.assertIsNone(self.m._target_socket())
+        finally:
+            glob.glob = real_glob
+
+    def test_socket_pid_parse(self):
+        self.assertEqual(self.m._socket_pid("unix:/tmp/mykitty-2165171"), 2165171)
+        self.assertIsNone(self.m._socket_pid("unix:/tmp/kitty-abc"))
+
+
 if __name__ == "__main__":
     unittest.main()

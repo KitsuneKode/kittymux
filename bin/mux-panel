@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # mux-panel — the sidebar deck as a persistent docked panel (Wayland, wlr-layer-shell).
 #
-#   mux-panel toggle|start|stop|status
+#   mux-panel toggle|start|stop|status|wider|narrower|width N
 #
 # Runs python/sidebar-kit.py inside `kitten panel` docked to the left screen edge. On a
 # compositor that honours the layer-shell exclusive zone (Hyprland does) the panel
 # reserves its width, so tiled windows sit beside it — the cmux-style always-visible
 # sidebar. It watches the kitty you were last in and jumps there on click / Enter.
 #
-# Env: KITTYMUX_PANEL_COLUMNS (default 32), KITTYMUX_PANEL_EDGE (left|right, default left),
+# The panel is resizable: `wider` / `narrower` / `width N`, or drag its inner edge with the
+# mouse (the deck handles the drag). The chosen width is remembered.
+#
+# Env: KITTYMUX_PANEL_COLUMNS (default: your last width, else 32), KITTYMUX_PANEL_EDGE (left|right, default left),
 #      KITTYMUX_TARGET (kitty socket to watch; default: the active kitty, else the newest)
 # Notes: Wayland only (X11 ignores the exclusive zone). The panel is a separate kitty
 # instance — it needs no config of its own.
@@ -17,10 +20,15 @@ set -u
 
 STATE="${KITTYMUX_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/kittymux}"
 PIDFILE="$STATE/panel.pid"
+# the panel's own remote-control socket: $XDG_RUNTIME_DIR is private (0700) and short — unix
+# socket paths are limited to ~107 bytes, so a long state path would silently fail to connect
+SOCK="${XDG_RUNTIME_DIR:-$STATE}/kittymux-panel-$(id -u).sock"
+WIDTHFILE="$STATE/panel-columns"
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # canonical path: a `..` segment makes `kitten <path>` exit silently inside a panel
 DECK="$(cd -- "$HERE/../python" && pwd -P)/sidebar-kit.py"
-COLUMNS_N="${KITTYMUX_PANEL_COLUMNS:-32}"
+COLUMNS_N="${KITTYMUX_PANEL_COLUMNS:-$(cat "$WIDTHFILE" 2>/dev/null || echo 32)}"
+[[ "$COLUMNS_N" =~ ^[0-9]+$ ]] && (( COLUMNS_N >= 16 && COLUMNS_N <= 80 )) || COLUMNS_N=32
 EDGE="${KITTYMUX_PANEL_EDGE:-left}"
 
 alive() { [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; }
@@ -44,10 +52,11 @@ start() {
     target="$(pick_target)"
     [[ -n "$target" ]] || { echo "mux-panel: no kitty remote-control socket found (set listen_on unix:/tmp/mykitty)" >&2; return 1; }
     mkdir -p "$STATE"
-    KITTYMUX_TARGET="$target" KITTYMUX_PANEL=1 setsid nohup kitten panel \
+    KITTYMUX_TARGET="$target" KITTYMUX_PANEL=1 KITTYMUX_PANEL_SOCK="$SOCK" KITTYMUX_PANEL_EDGE="$EDGE" setsid nohup kitten panel \
         --edge="$EDGE" --columns="$COLUMNS_N" --layer=top --focus-policy=on-demand \
         --name kittymux-panel \
-        -o allow_remote_control=no -o confirm_os_window_close=0 -o background_opacity=1 \
+        --listen-on "unix:$SOCK" \
+        -o allow_remote_control=socket-only -o confirm_os_window_close=0 -o background_opacity=1 \
         kitten "$DECK" >"$STATE/panel.log" 2>&1 &
     echo $! > "$PIDFILE"
     echo "panel started → watching $target"
@@ -56,7 +65,7 @@ start() {
 stop() {
     if alive; then
         kill -- "-$(cat "$PIDFILE")" 2>/dev/null || kill "$(cat "$PIDFILE")" 2>/dev/null
-        rm -f "$PIDFILE"
+        rm -f "$PIDFILE" "$SOCK"
         echo "panel stopped"
     else
         rm -f "$PIDFILE"
@@ -64,10 +73,29 @@ stop() {
     fi
 }
 
+resize() {  # absolute column count, clamped, remembered
+    local n="$1"
+    [[ "$n" =~ ^[0-9]+$ ]] || { echo "mux-panel: width must be a number of columns" >&2; return 2; }
+    (( n < 16 )) && n=16
+    (( n > 80 )) && n=80
+    mkdir -p "$STATE"; printf '%s' "$n" > "$WIDTHFILE"
+    if alive && [[ -S "$SOCK" ]]; then
+        # a panel is resized with its own action, not --action=resize (which refuses panels)
+        kitten @ --to "unix:$SOCK" resize-os-window --action=os-panel --incremental "columns=$n" >/dev/null 2>&1 \
+            || { echo "mux-panel: could not resize the running panel" >&2; return 1; }
+    fi
+    echo "panel width: $n columns"
+}
+
+current_width() { cat "$WIDTHFILE" 2>/dev/null || echo "$COLUMNS_N"; }
+
 case "${1:-toggle}" in
+    wider)    resize $(( $(current_width) + 4 )) ;;
+    narrower) resize $(( $(current_width) - 4 )) ;;
+    width)    resize "${2:-}" ;;
     start)  start ;;
     stop)   stop ;;
     status) alive && echo "running (pid $(cat "$PIDFILE"))" || echo "stopped" ;;
     toggle) if alive; then stop; else start; fi ;;
-    *) echo "usage: mux-panel toggle|start|stop|status" >&2; exit 2 ;;
+    *) echo "usage: mux-panel toggle|start|stop|status|wider|narrower|width N" >&2; exit 2 ;;
 esac

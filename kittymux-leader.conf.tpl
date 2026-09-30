@@ -86,7 +86,15 @@ map --mode leader shift+b launch --type=background @KITTYMUX_HOME@/bin/mux-panel
 map --mode leader u launch --type=overlay /usr/bin/python3 @KITTYMUX_HOME@/bin/mux-usage.py
 # location pill
 map --mode leader i launch --type=overlay --cwd=current @KITTYMUX_HOME@/bin/mux-cwd.sh
-# cycle tab bar edge
-map --mode leader e launch --type=background @KITTYMUX_HOME@/bin/mux-edge.sh
+# cycle tab bar edge (this window)
+map --mode leader e launch --type=background @KITTYMUX_HOME@/bin/kittymux layout edge cycle
+# bar: sidebar → rail → hidden
+map --mode leader t launch --type=background @KITTYMUX_HOME@/bin/kittymux layout mode cycle
+# narrower sidebar
+map --mode leader bracketleft launch --type=background @KITTYMUX_HOME@/bin/kittymux layout width -2
+# wider sidebar
+map --mode leader bracketright launch --type=background @KITTYMUX_HOME@/bin/kittymux layout width +2
+# bar layout presets
+map --mode leader shift+l launch --type=overlay @KITTYMUX_HOME@/bin/kittymux layout pick
 # this card
 map --mode leader shift+slash launch --type=overlay /usr/bin/python3 @KITTYMUX_HOME@/bin/mux-keys.py --leader
