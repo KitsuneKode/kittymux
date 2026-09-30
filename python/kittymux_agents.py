@@ -58,8 +58,23 @@ def resolve_status(entry: dict | None, has_agent: bool, now: float,
     return "waiting" if ts and (now - ts) > stale_after else "working"
 
 
-# Shape + colour: state must be readable without colour vision.
-STATE_GLYPH = {"working": "◐", "waiting": "◆", "done": "✓"}
+# Shape + colour: state must be readable without colour vision, and calm — no orbs.
+#   working  an animated braille spinner
+#   waiting  a bold "!"   (the only one that asks for you)
+#   done     a dim "✓"
+#   unread   a faint "•"  (output arrived in a tab that has no agent)
+SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+STATE_GLYPH = {"working": SPINNER[0], "waiting": "!", "done": "✓", "unread": "•"}
+SPINNER_FPS = 10.0
+
+
+def state_glyph(state: str, now: float | None = None) -> str:
+    """Glyph for a state; `working` animates with the clock (pass `now` in tests)."""
+    if state == "working":
+        import time as _t
+        t = _t.monotonic() if now is None else now
+        return SPINNER[int(t * SPINNER_FPS) % len(SPINNER)]
+    return STATE_GLYPH.get(state, "")
 
 
 def resolve_msg(entry: dict | None, status: str) -> str:

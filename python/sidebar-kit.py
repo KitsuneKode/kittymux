@@ -215,7 +215,7 @@ class Collector:
                     panes.get(str(aw["id"])), agent is not None, time.monotonic(), _STALE_AFTER)
                 unread = bool(tab.get("needs_attention") or aw.get("needs_attention")
                               or aw.get("has_activity_since_last_focus"))
-                status = ("" if st == "idle" else st) if agent else ("done" if unread else "")
+                status = ("" if st == "idle" else st) if agent else ("unread" if unread else "")
                 current = bool((osw.get("is_focused") or (_PANEL and osw.get("last_focused"))) and tab.get("is_active"))
                 session = aw.get("session_name", "") or ""
                 if current:
@@ -299,6 +299,21 @@ class Sidebar(Handler):
         self._clamp()
         self._request_preview(force=True)
         self.draw_screen()
+        self._schedule_spin()
+
+    # ---- spinner: redraw at frame rate only while something is working ----
+    def _schedule_spin(self) -> None:
+        if getattr(self, "_spin_pending", False) or not self._alive:
+            return
+        if any(r.status == "working" for r in self.snap.rows):
+            self._spin_pending = True
+            self.asyncio_loop.call_later(0.1, self._spin)
+
+    def _spin(self) -> None:
+        self._spin_pending = False
+        if self._alive and any(r.status == "working" for r in self.snap.rows):
+            self.draw_screen()
+            self._schedule_spin()
 
     def _request_preview(self, force: bool = False) -> None:
         if not self.snap.rows:
@@ -379,10 +394,11 @@ class Sidebar(Handler):
         else:
             icon = (r.glyph or " ",
                     glyph_fg if selected or r.current else kittymux_theme.blend(glyph_fg, p.bg, 0.6), False)
-        state_fg = {"waiting": p.waiting, "working": p.working, "done": p.done}.get(r.status)
+        state_fg = {"waiting": p.waiting, "working": p.working,
+                    "done": kittymux_theme.blend(p.done, p.bg, 0.65), "unread": p.faint}.get(r.status)
         title_fg = p.text if (selected or r.current) else p.muted
         title = deck.pad(r.title or "—", bar_w - 3 - 2, _cells)
-        dot = (kittymux_agents.STATE_GLYPH[r.status], state_fg, False) if state_fg is not None else (" ", p.text, False)
+        dot = (kittymux_agents.state_glyph(r.status), state_fg, r.status == "waiting") if state_fg is not None else (" ", p.text, False)
         line1 = self._line([rail, icon, (" ", p.text, False),
                             (title, title_fg, selected or r.current), dot, (" ", p.text, False)], bar_w, bg)
 
@@ -400,7 +416,7 @@ class Sidebar(Handler):
             parts.append((" ".join(f":{n}" for n in r.ports[:3]), p.info))
         if r.panes > 1:
             parts.append((f"{r.panes} panes", p.faint))
-        tail = [(r.status, state_fg)] if r.status in ("working", "waiting") else []
+        tail = [(r.status, state_fg)] if r.status == "waiting" else []
         if r.msg:                                   # what it is waiting for beats everything
             parts, tail = [(r.msg, state_fg)], []
         reserve = sum(_cells(t) + 2 for t, _ in tail)
@@ -433,7 +449,7 @@ class Sidebar(Handler):
         waiting = sum(1 for r in snap.rows if r.status == "waiting")
         head = [(f" {len(snap.rows)} tabs", p.text, True)]
         if waiting:
-            head.append((f"  {kittymux_agents.STATE_GLYPH['waiting']} {waiting} waiting", p.waiting, True))
+            head.append((f"  {kittymux_agents.state_glyph('waiting')} {waiting} waiting", p.waiting, True))
         w(set_cursor_position(0, 0) + self._line(head, bar_w, p.bar))
         w(set_cursor_position(0, 1) + self._line([(" " + deck.hint(bar_w - 1), p.faint, False)], bar_w, p.bar))
         # list

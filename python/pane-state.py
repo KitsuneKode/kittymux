@@ -100,10 +100,77 @@ def on_cmd_startstop(boss, window, data) -> None:
     _flush(e["ts_cmd"], force=True)
 
 
+def _refresh_bar(tm) -> None:
+    """Redraw a TabManager's bar now. Kitty's own refresh_active_tab_bar does both:
+    re-run the draw (update_tab_bar_data) AND flag the OS window dirty — a bare dirty
+    flag waits for some unrelated event to repaint."""
+    tm.update_tab_bar_data()
+    tm.mark_tab_bar_dirty()
+
+
 def _mark_tab_bar_dirty(window) -> None:
     # Redraw the tab bar now instead of waiting for some other event to.
     try:
-        window.tabref().mark_tab_bar_dirty()
+        _refresh_bar(window.tabref().tab_manager_ref())
+    except Exception:
+        pass
+
+
+# ── spinner ticks ────────────────────────────────────────────────────────────
+# The tab bar only redraws on kitty events, so an agent that works silently (no title
+# churn) would freeze the spinner on one frame. While — and only while — some window
+# has an explicit `working` status, a timer marks those tabs' bars dirty at the spinner's
+# frame rate; it stops itself the moment nothing is working.
+_SPIN_INTERVAL = 0.1
+_spin_timer = None
+
+
+def _working_windows() -> list:
+    return [wid for wid, e in _state.items() if e.get("status") == "working"]
+
+
+def _spin_tick(timer_id) -> None:
+    global _spin_timer
+    try:
+        from kitty.fast_data_types import get_boss
+        boss = get_boss()
+        wids = _working_windows()
+        if not wids:
+            _stop_spinner()
+            return
+        seen = set()
+        for wid in wids:
+            w = boss.window_id_map.get(wid)
+            tab = w.tabref() if w is not None else None
+            tm = tab.tab_manager_ref() if tab is not None else None
+            if tm is not None and id(tm) not in seen:   # once per OS window per tick
+                seen.add(id(tm))
+                _refresh_bar(tm)
+    except Exception:
+        _stop_spinner()
+
+
+def _stop_spinner() -> None:
+    global _spin_timer
+    if _spin_timer is not None:
+        try:
+            from kitty.fast_data_types import remove_timer
+            remove_timer(_spin_timer)
+        except Exception:
+            pass
+        _spin_timer = None
+
+
+def _sync_spinner() -> None:
+    """Start the timer when something is working, stop it when nothing is."""
+    global _spin_timer
+    try:
+        if _working_windows():
+            if _spin_timer is None:
+                from kitty.fast_data_types import add_timer
+                _spin_timer = add_timer(_spin_tick, _SPIN_INTERVAL, True)
+        else:
+            _stop_spinner()
     except Exception:
         pass
 
@@ -154,6 +221,7 @@ def on_set_user_var(boss, window, data) -> None:
                 _notify_waiting(window, e)
         _flush(now, force=True)
         _mark_tab_bar_dirty(window)
+        _sync_spinner()
     except Exception:
         pass
 
@@ -169,4 +237,6 @@ def on_focus_change(boss, window, data) -> None:
 
 def on_close(boss, window, data) -> None:
     _state.pop(window.id, None)
+    _last_notify.pop(window.id, None)
+    _sync_spinner()
     _flush(time.monotonic(), force=True)

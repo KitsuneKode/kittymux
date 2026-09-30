@@ -571,11 +571,10 @@ def _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal) -> i
         screen.draw("] ")
 
     last = extra_data.next_tab is None
-    activity = _DOT if tab.needs_attention or tab.has_activity_since_last_focus else ""
     cwd, foreground, _last_cmd = _active_window_info(tab.tab_id)
     info = _agent_from_fg(foreground)
-    waiting = bool(info) and _agent_waiting(tab.tab_id)
-    marks_w = (1 if activity else 0) + (2 if waiting else 0)
+    state = _tab_state(tab, info)
+    marks_w = 2 if state else 0
     title_limit = _title_limit(max_title_length, index, session_name, tab.is_active, marks_w)
     title = _compact_title(tab, title_limit)
 
@@ -601,12 +600,11 @@ def _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal) -> i
     screen.cursor.bold = tab.is_active
     screen.draw(f"{index}:{title}")
     screen.cursor.bold = False
-    if activity:
-        screen.cursor.fg = _rgb(pal.done)
-        screen.draw(activity)
-    if waiting:
-        screen.cursor.fg = _rgb(pal.waiting)
-        screen.draw(" " + kittymux_agents.STATE_GLYPH["waiting"])
+    if state:
+        screen.cursor.fg = _rgb(_state_color(state, pal))
+        screen.cursor.bold = state == "waiting"
+        screen.draw(" " + kittymux_agents.state_glyph(state))
+        screen.cursor.bold = False
     screen.draw(" " if tab.is_active else "")
 
     if not last:
@@ -660,12 +658,23 @@ def _put(screen: Screen, x: int, text: str, fg: int, bold: bool = False) -> int:
 
 
 def _tab_state(tab: TabBarData, info) -> str:
+    """working | waiting | done (agents) · unread (any other tab with fresh output) · ''."""
     if info:
         st = _agent_status(tab.tab_id, True)
         return "" if st == "idle" else st
     if tab.needs_attention or tab.has_activity_since_last_focus:
-        return "done"
+        return "unread"
     return ""
+
+
+def _state_color(state: str, pal) -> int | None:
+    """Calm palette: only `waiting` shouts; done recedes; unread is barely there."""
+    return {
+        "working": pal.working,
+        "waiting": pal.waiting,
+        "done": kittymux_theme.blend(pal.done, pal.bg, 0.65),
+        "unread": pal.faint,
+    }.get(state)
 
 
 def _session_stats(tab: TabBarData) -> tuple[int, int]:
@@ -696,7 +705,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     cwd, foreground, _last_cmd = _active_window_info(tab.tab_id)
     info = _agent_from_fg(foreground)
     state = _tab_state(tab, info)
-    state_fg = {"waiting": pal.waiting, "working": pal.working, "done": pal.done}.get(state)
+    state_fg = _state_color(state, pal)
 
     branch = _git_anchor(cwd)[1] if cwd else ""
     subtitle: list[tuple[str, int]] = []
@@ -709,8 +718,8 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     msg = kittymux_agents.resolve_msg(_pane_entry(tab.tab_id), state) if info else ""
     if msg:
         subtitle = [(msg, state_fg)]          # what it is waiting for beats the branch
-    elif state in ("waiting", "working"):
-        subtitle.append((state, state_fg))
+    elif state == "waiting":
+        subtitle.append((state, state_fg))    # working needs no word — the spinner says it
 
     header = index == 1 and lines_avail >= 3
     want_sub = lines_avail >= (3 if header else 2) and bool(subtitle)
@@ -744,7 +753,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         name = "TABS" if name == "—" else name.upper()
         total, waiting_n = _session_stats(tab)
         right = f"{total} tabs" if total else ""
-        w_right = f"{kittymux_agents.STATE_GLYPH['waiting']} {waiting_n}  " if waiting_n else ""
+        w_right = f"{kittymux_agents.state_glyph('waiting')} {waiting_n}  " if waiting_n else ""
         room = cols - 2 - _cells(right) - _cells(w_right) - 2
         screen.cursor.bg = bar
         screen.cursor.y = y
@@ -760,7 +769,9 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     # Title row: [rail][glyph][space] title ............ dot
     screen.cursor.bg = row_bg
     screen.cursor.y = y
-    _put(screen, 0, _RAIL if active else " ", _rgb(pal.accent))
+    # rail: accent on the active tab; a waiting tab keeps a stripe in the waiting colour
+    stripe = state == "waiting" and not active
+    _put(screen, 0, _RAIL if (active or stripe) else " ", _rgb(pal.waiting if stripe else pal.accent))
     if info:
         glyph, brand, _n = info
         _put(screen, 1, glyph, _rgb(brand if active else _mute(brand, pal)))
@@ -772,15 +783,15 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         _put(screen, 3, title,
              _rgb(pal.text) if active else _rgb(pal.muted), bold=active)
     if state_fg is not None and cols >= 6:
-        _put(screen, cols - 2, kittymux_agents.STATE_GLYPH[state], _rgb(state_fg))
+        _put(screen, cols - 2, kittymux_agents.state_glyph(state), _rgb(state_fg), bold=state == "waiting")
     title_y = y
 
     if want_sub and n_rows > (2 if header else 1):
         y += 1
         screen.cursor.bg = row_bg
         screen.cursor.y = y
-        if active:
-            _put(screen, 0, _RAIL, _rgb(pal.accent))
+        if active or stripe:
+            _put(screen, 0, _RAIL, _rgb(pal.waiting if stripe else pal.accent))
         idx = str(index)
         _put(screen, cols - 1 - len(idx), idx, _rgb(pal.faint))
         room = cols - 3 - 1 - len(idx) - 1

@@ -64,7 +64,26 @@ class MsgTests(unittest.TestCase):
         self.assertEqual(A.resolve_msg(None, "waiting"), "")
 
     def test_state_glyphs_distinct(self):
-        self.assertEqual(len(set(A.STATE_GLYPH.values())), 3)
+        self.assertEqual(len(set(A.STATE_GLYPH.values())), len(A.STATE_GLYPH))
+
+
+class SpinnerTests(unittest.TestCase):
+    def test_working_animates_through_all_frames(self):
+        frames = {A.state_glyph("working", t / A.SPINNER_FPS) for t in range(len(A.SPINNER))}
+        self.assertEqual(frames, set(A.SPINNER))
+
+    def test_frame_is_a_pure_function_of_time(self):
+        self.assertEqual(A.state_glyph("working", 3.14), A.state_glyph("working", 3.14))
+
+    def test_static_states(self):
+        self.assertEqual(A.state_glyph("waiting"), "!")
+        self.assertEqual(A.state_glyph("done"), "✓")
+        self.assertEqual(A.state_glyph("unread"), "•")
+        self.assertEqual(A.state_glyph(""), "")
+        self.assertEqual(A.state_glyph("idle"), "")
+
+    def test_spinner_uses_braille_block(self):
+        self.assertTrue(all(0x2800 <= ord(c) <= 0x28FF for c in A.SPINNER))
 
 
 class ToolTests(unittest.TestCase):
