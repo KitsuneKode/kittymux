@@ -44,6 +44,21 @@ ICONS = [
     (0x10EA07, "devin"),       # authored hexagon below
     (0x10EA08, "claudecode"),
     (0x10EA09, "anthropic"),
+    # dev tools — quiet glyph column (Simple Icons single-path SVGs)
+    (0x10EA0A, "bun"),        # E0E1
+    (0x10EA0B, "docker"),     # E0E2
+    (0x10EA0C, "kubernetes"), # E0E3
+    (0x10EA0D, "rust"),       # E0E4
+    (0x10EA0E, "go"),         # E0E5
+    (0x10EA0F, "python"),     # E0E6
+    (0x10EA10, "nodedotjs"),  # E0E7
+    (0x10EA11, "git"),        # E0E8
+    (0x10EA12, "neovim"),     # E0E9
+    (0x10EA13, "postgresql"), # E0EA
+    (0x10EA14, "deno"),       # E0EB
+    (0x10EA15, "pnpm"),       # E0EC
+    (0x10EA16, "yarn"),       # E0ED
+    (0x10EA17, "npm"),        # E0EE
 ]
 
 # Cognition's mark is a pointy-top hexagon — authored, 24×24 space.

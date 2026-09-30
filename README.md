@@ -38,7 +38,7 @@ Like it? Install:
   agent logo, title, git branch, pane count, and one status glyph — **◐ working**,
   **◆ waiting on you**, **✓ done** (shape *and* colour, so it is readable without colour vision).
   Every colour is derived from *your* kitty theme, so it follows theme switches.
-- **Quiet tool glyphs.** Agents get their brand logo; recognised tools (editor, git, ssh, docker, node, python…) get a small muted glyph; a plain shell stays blank — so the icon column tells you what is running without adding noise.
+- **Quiet tool glyphs.** Agents get their brand logo; recognised tools get their *real* logo rendered muted — bun, docker, kubernetes, rust, go, python, node, git, neovim, postgres, deno, pnpm, yarn, npm (all built into the bundled icon font); a plain shell stays blank — so the icon column tells you what is running without adding noise.
 - **The sidebar deck** (`ctrl+alt+b`). Every tab across every session, grouped, with live
   pane preview, hover/click, the agent's own message ("Approve: rm -rf node_modules?"), the
   PR number and listening ports (`:3000`).
