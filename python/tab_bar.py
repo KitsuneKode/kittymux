@@ -800,10 +800,60 @@ def draw_tab(
     is_last: bool,
     extra_data: ExtraData,
 ) -> int:
-    pal = _palette(draw_data)
-    if draw_data.tab_bar_edge in ("left", "right"):
-        end = _draw_vertical(draw_data, screen, tab, index, extra_data, pal)
-    else:
-        end = _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal)
-    screen.cursor.bold = False
-    return end
+    x0, y0 = screen.cursor.x, screen.cursor.y
+    try:
+        pal = _palette(draw_data)
+        if draw_data.tab_bar_edge in ("left", "right"):
+            end = _draw_vertical(draw_data, screen, tab, index, extra_data, pal)
+        else:
+            end = _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal)
+        screen.cursor.bold = False
+        return end
+    except Exception:
+        # Never let a bug turn the whole bar into kitty's anonymous fallback. Record
+        # the traceback (kitty's own stderr is usually /dev/null) and draw a plain but
+        # still readable tab so the bar degrades gracefully.
+        _log_exception(tab, index)
+        screen.cursor.x, screen.cursor.y = x0, y0
+        return _draw_safe(draw_data, screen, tab, index, max_title_length)
+
+
+_ERR_LOG = Path(os.environ.get("KITTYMUX_STATE") or (
+    os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")) + "/kittymux") / "tab_bar-error.log"
+_ERR_SEEN: dict = {}
+
+
+def _log_exception(tab, index: int) -> None:
+    """Append the current traceback to tab_bar-error.log (deduplicated, bounded)."""
+    try:
+        import traceback
+        text = traceback.format_exc()
+        key = text.strip().splitlines()[-1] if text.strip() else ""
+        now = time.monotonic()
+        if now - _ERR_SEEN.get(key, -1e9) < 60:
+            return
+        _ERR_SEEN[key] = now
+        _ERR_LOG.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if _ERR_LOG.exists() and _ERR_LOG.stat().st_size > 64 * 1024:
+            _ERR_LOG.write_text("")
+        with open(_ERR_LOG, "a", encoding="utf-8") as f:
+            f.write(f"--- {time.strftime('%F %T')} pid={os.getpid()} tab={index} "
+                    f"active={getattr(tab, 'is_active', '?')} edge={getattr(tab, 'layout_name', '')}\n{text}\n")
+    except Exception:
+        pass
+
+
+def _draw_safe(draw_data, screen, tab, index: int, max_title_length: int) -> int:
+    """Last-resort renderer: numbered title in the tab's own kitty colours. Cannot
+    depend on anything the main renderer uses."""
+    try:
+        screen.cursor.bg = as_rgb(int(draw_data.tab_bg(tab)))
+        screen.cursor.fg = as_rgb(int(draw_data.tab_fg(tab)))
+        screen.cursor.bold = bool(tab.is_active)
+        room = max(4, min(max_title_length, screen.columns - 2))
+        text = f" {index}:{' '.join((tab.title or '').split())}"
+        screen.draw(text[:room] + ("…" if len(text) > room else "") + " ")
+        screen.cursor.bold = False
+        return screen.cursor.x
+    except Exception:
+        return screen.cursor.x
