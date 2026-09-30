@@ -204,6 +204,14 @@ def doctor() -> int:
         else:
             r.warning(f"could not query {socks[0]}", "is allow_remote_control on for that instance?")
 
+    elog = os.path.join(STATE, "tab_bar-error.log")
+    if os.path.exists(elog) and os.path.getsize(elog) > 0:
+        last = [l for l in open(elog, encoding="utf-8", errors="replace").read().splitlines() if l.strip()][-1]
+        r.warning(f"the tab bar hit an error: {last[:110]}",
+                  f"details in {elog} — fix, then reload with ctrl+shift+alt+r (clear the log afterwards)")
+    else:
+        r.ok("no tab bar errors logged")
+
     print("\nagent hooks (status dots, messages, notifications)")
     hooks_ok = False
     sj = os.path.expanduser("~/.claude/settings.json")
