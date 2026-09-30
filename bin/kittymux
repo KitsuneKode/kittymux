@@ -186,7 +186,8 @@ def doctor() -> int:
             r.ok("remote control + listen_on enabled")
         else:
             r.warning("remote control may be off", "add to kitty.conf: allow_remote_control yes / listen_on unix:/tmp/mykitty")
-    for f in ("tab_bar.py", "kittymux_theme.py", "kittymux_agents.py", "kittymux_deck.py"):
+    import glob as _glob
+    for f in ["tab_bar.py"] + sorted(os.path.basename(g) for g in _glob.glob(os.path.join(HOME_DIR, "python", "kittymux_*.py"))):
         p = os.path.join(CFG, f)
         (r.ok(f"{f} → linked") if os.path.exists(p) else r.fail(f"{f} missing from {CFG}", "run ./install.sh"))
     fonts = _run(["fc-list", ":family=kittymux icons"])[1] if shutil.which("fc-list") else ""
@@ -308,8 +309,9 @@ def demo(argv: list[str]) -> int:
     cfg, state = os.path.join(tmp, "cfg"), os.path.join(tmp, "state")
     os.makedirs(cfg)
     os.makedirs(state, mode=0o700)
-    for name in ("tab_bar.py", "kittymux_theme.py", "kittymux_agents.py", "kittymux_deck.py"):
-        os.symlink(os.path.join(HOME_DIR, "python", name), os.path.join(cfg, name))
+    import glob
+    for path in [os.path.join(HOME_DIR, "python", "tab_bar.py")] + sorted(glob.glob(os.path.join(HOME_DIR, "python", "kittymux_*.py"))):
+        os.symlink(path, os.path.join(cfg, os.path.basename(path)))
     tpl = open(os.path.join(HOME_DIR, "kittymux-keys.conf.tpl"), encoding="utf-8").read()
     open(os.path.join(cfg, "kittymux-keys.conf"), "w").write(tpl.replace("@KITTYMUX_HOME@", HOME_DIR))
     ltpl = open(os.path.join(HOME_DIR, "kittymux-leader.conf.tpl"), encoding="utf-8").read()

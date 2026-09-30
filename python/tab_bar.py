@@ -34,13 +34,14 @@ for _d in ((os.path.dirname(os.path.realpath(_here)) if _here else ""),
         sys.path.insert(0, _d)
 import importlib  # noqa: E402
 import kittymux_agents  # noqa: E402
+import kittymux_git  # noqa: E402
 import kittymux_theme  # noqa: E402
 
 # kitty re-runs this file on every config reload, but Python keeps imported modules
 # for the life of the process — so after an upgrade a running kitty would keep serving
 # the OLD helpers to the NEW tab bar (AttributeError on any name added since). Reload
 # them every time this file runs.
-for _mod in (kittymux_theme, kittymux_agents):
+for _mod in (kittymux_theme, kittymux_agents, kittymux_git):
     try:
         importlib.reload(_mod)
     except Exception:
@@ -203,34 +204,61 @@ def _title_from_cmdline(cmdline: list[str]) -> str:
 
 # draw_tab runs twice per tab per redraw (kitty measures, then draws) and the
 # foreground-process read is not free — cache it briefly.
-_AWI_CACHE: dict[int, tuple[float, tuple[str, list[list[str]], str]]] = {}
+_AWI_CACHE: dict[int, tuple[float, tuple[str, list[list[str]], str], bool]] = {}
 _AWI_TTL = 0.25
+
+
+def _leader_cmdlines(window) -> list[list[str]] | None:
+    """Command line of the pty's foreground process-group leader — two cheap syscalls
+    (tcgetpgrp + one /proc read). kitty's own `foreground_processes` also lists every
+    member of the group, which walks ALL of /proc (~7 ms each; 88% of our draw time in a
+    20-tab profile). The leader is enough: wrappers (`trmw -- claude`, `node …/codex`)
+    still carry the agent's name in their arguments."""
+    fd = getattr(window.child, "child_fd", None)
+    if fd is None:
+        return None
+    pgrp = os.tcgetpgrp(fd)
+    if pgrp <= 0:
+        return None
+    with open(f"/proc/{pgrp}/cmdline", "rb") as f:
+        args = [a.decode("utf-8", "replace") for a in f.read().split(b"\0") if a]
+    return [args] if args else None
+
+
+_SLOW_TTL = 3.0        # the /proc-scanning fallback is cached much longer
 
 
 def _active_window_info(tab_id: int) -> tuple[str, list[list[str]], str]:
     now = time.monotonic()
     hit = _AWI_CACHE.get(tab_id)
-    if hit is not None and now - hit[0] < _AWI_TTL:
+    if hit is not None and now - hit[0] < (_SLOW_TTL if hit[2] else _AWI_TTL):
         return hit[1]
     result: tuple[str, list[list[str]], str] = ("", [], "")
+    slow = False
     try:
         tab = get_boss().tab_for_id(tab_id)
         window = tab.active_window if tab else None
         if window:
             cwd = window.child.current_cwd or window.child.cwd or ""
             last_cmd = getattr(window, "last_cmd_cmdline", "") or ""
-            foreground = []
-            for process in window.child.foreground_processes:
-                cmdline = process.get("cmdline") or []
-                if cmdline:
-                    foreground.append(list(cmdline))
+            try:
+                foreground = _leader_cmdlines(window)
+            except Exception:
+                foreground = None
+            if foreground is None:                       # unusual pty state: use kitty's scan, rarely
+                slow = True
+                foreground = []
+                for process in window.child.foreground_processes:
+                    cmdline = process.get("cmdline") or []
+                    if cmdline:
+                        foreground.append(list(cmdline))
             result = (cwd, foreground, last_cmd)
     except Exception:
         pass
     if len(_AWI_CACHE) > 64:
-        for k in [k for k, v in _AWI_CACHE.items() if now - v[0] > 5.0]:
+        for k in [k for k, v in _AWI_CACHE.items() if now - v[0] > 10.0]:
             del _AWI_CACHE[k]
-    _AWI_CACHE[tab_id] = (now, result)
+    _AWI_CACHE[tab_id] = (now, result, slow)
     return result
 
 
@@ -419,43 +447,10 @@ def _compact_title(tab: TabBarData, limit: int) -> str:
     return _truncate(title, limit)
 
 
-_GIT_CACHE: dict[str, tuple[float, tuple[str, str]]] = {}
-_GIT_TTL = 1.0
-
-
 def _git_anchor(cwd: str) -> tuple[str, str]:
-    """(label, branch) — label is project[:worktree]/inner-path inside a repo,
-    else the abbreviated ~ path."""
-    now = time.monotonic()
-    hit = _GIT_CACHE.get(cwd)
-    if hit is not None and now - hit[0] < _GIT_TTL:
-        return hit[1]
-
-    label, branch = _short_cwd(cwd, 34), ""
-    try:
-        out = subprocess.run(
-            ["git", "-C", cwd, "rev-parse", "--show-toplevel",
-             "--abbrev-ref", "HEAD", "--git-dir", "--git-common-dir"],
-            capture_output=True, text=True, timeout=0.15)
-        if out.returncode == 0:
-            top, branch, gitdir, common = (out.stdout.splitlines() + [""] * 4)[:4]
-            if branch == "HEAD":
-                branch = "detached"
-            if not os.path.isabs(common):
-                common = os.path.normpath(os.path.join(cwd, common))
-            project = os.path.basename(os.path.dirname(common)) or os.path.basename(top)
-            label = project
-            # worktree: gitdir lives under <main>/.git/worktrees/<name>
-            if "worktrees" in gitdir.split(os.sep):
-                label += ":" + (os.path.basename(top) or "worktree")
-            if top and cwd != top:
-                rel = os.path.relpath(cwd, top)
-                if rel != ".":
-                    label += "/" + rel
-    except Exception:
-        pass
-    _GIT_CACHE[cwd] = (now, (label, branch))
-    return label, branch
+    """(label, branch): project[:worktree]/inner-path inside a repo, else the ~ path.
+    Reads .git/HEAD directly (kittymux_git) — no subprocess on the draw path."""
+    return kittymux_git.label(cwd)
 
 
 def _os_window_active_cwd(tab_id: int) -> str:
@@ -474,20 +469,7 @@ def _os_window_active_cwd(tab_id: int) -> str:
 
 
 def _short_cwd(cwd: str, limit: int) -> str:
-    home = os.path.expanduser("~")
-    if cwd == home:
-        path = "~"
-    elif cwd.startswith(home + "/"):
-        path = "~/" + cwd[len(home) + 1:]
-    else:
-        path = cwd
-    if len(path) <= limit:
-        return path
-    parts = [p for p in path.split("/") if p]
-    if len(parts) >= 2:
-        prefix = "~/" if path.startswith("~/") else ""
-        path = f"{prefix}…/{parts[-2]}/{parts[-1]}"
-    return _truncate(path, limit)
+    return kittymux_git.short_path(cwd, None, limit)
 
 
 def _title_limit(max_tab_length: int, index: int, session_name: str, is_active: bool,
@@ -829,7 +811,49 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
 
 
 # ── entry point ──────────────────────────────────────────────────────────────
+_PROFILE = os.environ.get("KITTYMUX_PROFILE") == "1"     # opt-in: per-draw timing → tab_bar-profile.log
+_prof = {"n": 0, "total": 0.0, "max": 0.0, "since": 0.0}
+
+
+def _profile_record(elapsed: float) -> None:
+    try:
+        p = _prof
+        p["n"] += 1
+        p["total"] += elapsed
+        p["max"] = max(p["max"], elapsed)
+        now = time.monotonic()
+        if p["since"] == 0.0:
+            p["since"] = now
+        if p["n"] >= 200:
+            _ERR_LOG.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            with open(_ERR_LOG.parent / "tab_bar-profile.log", "a", encoding="utf-8") as f:
+                f.write(f"draw_tab calls={p['n']} avg_ms={p['total'] / p['n'] * 1000:.3f} "
+                        f"max_ms={p['max'] * 1000:.3f} calls_per_sec={p['n'] / max(now - p['since'], 1e-6):.1f}\n")
+            p.update(n=0, total=0.0, max=0.0, since=0.0)
+    except Exception:
+        pass
+
+
 def draw_tab(
+    draw_data: DrawData,
+    screen: Screen,
+    tab: TabBarData,
+    before: int,
+    max_title_length: int,
+    index: int,
+    is_last: bool,
+    extra_data: ExtraData,
+) -> int:
+    if not _PROFILE:
+        return _draw_tab(draw_data, screen, tab, before, max_title_length, index, is_last, extra_data)
+    t0 = time.perf_counter()
+    try:
+        return _draw_tab(draw_data, screen, tab, before, max_title_length, index, is_last, extra_data)
+    finally:
+        _profile_record(time.perf_counter() - t0)
+
+
+def _draw_tab(
     draw_data: DrawData,
     screen: Screen,
     tab: TabBarData,

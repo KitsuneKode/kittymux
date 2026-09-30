@@ -32,6 +32,7 @@ for _d in (_CONFIG_DIR, os.path.dirname(os.path.realpath(sys.argv[0])) if sys.ar
         sys.path.insert(0, _d)
 import kittymux_agents  # noqa: E402
 import kittymux_deck as deck  # noqa: E402
+import kittymux_git  # noqa: E402
 import kittymux_theme  # noqa: E402
 
 _STATE_DIR = Path(os.environ["KITTYMUX_STATE"]) if os.environ.get("KITTYMUX_STATE") else \
@@ -42,7 +43,6 @@ _ICON_BRANCH = ""
 _ICON_FOLDER = ""
 _RAIL = "▌"
 _STALE_AFTER = 15.0
-_GIT_TTL = 5.0
 _PR_TTL = 120.0
 _REFRESH_EVERY = 1.5
 
@@ -165,24 +165,11 @@ class Collector:
     """Builds a Snapshot from `kitty @ ls`. Runs on a worker thread only."""
 
     def __init__(self):
-        self._git: dict[str, tuple[float, str]] = {}
         self._pr = PrCache()
 
     def branch(self, cwd: str) -> str:
-        now = time.monotonic()
-        hit = self._git.get(cwd)
-        if hit and now - hit[0] < _GIT_TTL:
-            return hit[1]
-        b = ""
-        try:
-            p = subprocess.run(["git", "-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"],
-                               capture_output=True, text=True, timeout=0.4)
-            b = p.stdout.strip() if p.returncode == 0 else ""
-            b = "" if b == "HEAD" else b
-        except Exception:
-            pass
-        self._git[cwd] = (now, b)
-        return b
+        gi = kittymux_git.info(cwd)                 # reads .git/HEAD; no subprocess
+        return "" if gi is None or gi.branch == "detached" else gi.branch
 
     def collect(self) -> Snapshot | None:
         try:
