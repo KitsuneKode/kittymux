@@ -17,6 +17,7 @@ import os
 import queue
 import re
 import select
+import signal
 import sys
 import threading
 import time
@@ -357,6 +358,37 @@ def _pad(s: str, w: int) -> str:
     return s + " " * max(0, w - _vlen(s))
 
 
+def _trunc(s: str, w: int) -> str:
+    """ANSI-aware hard truncate — escapes pass through, visible cells capped."""
+    out, n, i = [], 0, 0
+    while i < len(s) and n < w:
+        if s[i] == "\x1b":
+            m = _ANSI_RE.match(s, i)
+            if m:
+                out.append(m.group(0))
+                i = m.end()
+                continue
+        out.append(s[i])
+        n += 1
+        i += 1
+    return "".join(out)
+
+
+def _sev(r: dict) -> str:
+    """maxed → at/over the cap; high → ≥80%; warn → ≥60%; ok otherwise."""
+    pct = r.get("pct")
+    if not isinstance(pct, (int, float)):
+        return "ok"
+    return "maxed" if pct >= 95 else "high" if pct >= 80 \
+        else "warn" if pct >= 60 else "ok"
+
+
+def _maxed(providers: list) -> list[str]:
+    """Providers with at least one exhausted quota."""
+    return [p["name"] for p in providers
+            if any(_sev(r) == "maxed" for r in p["rows"])]
+
+
 def _bar_color(pct: float) -> str:
     return C_OK if pct < 60 else C_WARN if pct < 85 else C_BAD
 
@@ -429,11 +461,17 @@ def build_summary(data: dict, sel: int, status: str = "",
     """One scannable row per provider; sel marks the focused row with ▸."""
     age = int(time.time() - data["ts"]) if data.get("ts") else 0
     tag = status or (f"cached {age}s" if data.get("ts") else "loading")
-    rows = [(f" agent usage · {tag}{_live_tag(data)} ", C_NAME), ("", C_DIM)]
+    maxed = _maxed(data["providers"])
+    badge = _rgb(C_BAD, 100) + f"✗ {'/'.join(maxed)} maxed " + "\033[0m" \
+        if maxed else ""
+    rows = [(f" agent usage · {badge}{tag}{_live_tag(data)} ", C_NAME),
+            ("", C_DIM)]
     for i, p in enumerate(data["providers"]):
         mark = "▸" if i == sel else " "
+        sev_worst = "maxed" if p["name"] in maxed else "ok"
         brand = _BRAND.get(p["name"], C_NAME)
-        name = _pad(f"{_rgb(brand, 100)}{_GLYPHS.get(p['name'], '·')} {p['name']}\033[0m", 10)
+        name = _pad(f"{_rgb(C_BAD if sev_worst == 'maxed' else brand, 100)}"
+                    f"{_GLYPHS.get(p['name'], '·')} {p['name']}\033[0m", 10)
         if p.get("pending"):
             rows.append((f" {mark} {name} {spin} {p.get('note') or 'scanning…'}",
                          C_DIM))
@@ -444,16 +482,26 @@ def build_summary(data: dict, sel: int, status: str = "",
         pcts, text = _headline(p)
         if not pcts:
             tail = (text or {}).get("text") or p.get("note") or "—"
-            rows.append((f" {mark} {name} {tail}", C_DIM))
+            color = C_BAD if sev_worst == "maxed" or "limit hit" in tail else C_DIM
+            rows.append((f" {mark} {name} {tail}", color))
             continue
         r0 = pcts[0]
-        tail = f"{r0['label']}"
+        color = C_BAD if _sev(r0) == "maxed" else \
+            C_CLOCK if r0.get("clock") else _bar_color(r0["pct"])
+        tail = r0["label"] + (" exhausted" if _sev(r0) == "maxed" else "")
         if r0.get("reset"):
             tail += f" · {r0['reset']}"
-        for r in pcts[1:2]:
-            tail += f" · {r['label']} {r['pct']:.0f}%"
-        color = C_CLOCK if r0.get("clock") else _bar_color(r0["pct"])
-        rows.append((f" {mark} {name} {_bar(r0['pct'], 8, brand)} {r0['pct']:>3.0f}% {tail}", color))
+        # Secondary quotas: the most exhausted surfaces first, in its own colour.
+        rest = sorted(pcts[1:], key=lambda r: _sev(r) == "maxed", reverse=True)
+        for r in rest[:2]:
+            s = f"{r['label']} {r['pct']:.0f}%"
+            if _sev(r) == "maxed":
+                tail += f" · {_rgb(C_BAD, 100)}{s} exhausted\033[0m{_rgb(color, 100)}"
+            else:
+                tail += f" · {s}"
+        fill = C_BAD if _sev(r0) == "maxed" else brand
+        rows.append((f" {mark} {name} {_bar(r0['pct'], 8, fill)} "
+                     f"{r0['pct']:>3.0f}% {tail}", color))
     spark = _sparkline("burn")
     if spark:
         rows.append((f"   7d burn  {spark}", C_DIM))
@@ -477,9 +525,14 @@ def build_detail(p: dict, spin: str = "◐") -> list[tuple[str, str]]:
     for r in p["rows"]:
         label = r["label"]
         if "pct" in r:
+            sev = _sev(r)
             reset = f" · {r['reset']}" if r.get("reset") else ""
-            color = C_CLOCK if r.get("clock") else _bar_color(r["pct"])
-            rows.append((f"   {label:<7} {_bar(r['pct'], 12, brand)} {r['pct']:.0f}%{reset}", color))
+            word = " exhausted" if sev == "maxed" else ""
+            color = C_BAD if sev == "maxed" else \
+                C_CLOCK if r.get("clock") else _bar_color(r["pct"])
+            fill = C_BAD if sev == "maxed" else brand
+            rows.append((f"   {label:<7} {_bar(r['pct'], 12, fill)} "
+                         f"{r['pct']:.0f}%{word}{reset}", color))
             rem = r.get("rem_s") or 0
             period = _PERIODS.get(label)
             if period and rem > 0:
@@ -488,7 +541,9 @@ def build_detail(p: dict, spin: str = "◐") -> list[tuple[str, str]]:
         elif "stack" in r:
             rows.append((f"   {label:<7} {_stack_bar(r['stack'])} {r.get('text', '')}", C_TXT))
         else:
-            rows.append((f"   {label:<7} {r.get('text', '')}", C_TXT))
+            hit = label == "cap" or "limit hit" in (r.get("text") or "")
+            rows.append((f"   {label:<7} {r.get('text', '')}",
+                         C_BAD if hit else C_TXT))
     if not p["rows"]:
         rows.append((f"   {p.get('note') or '—'}", C_DIM))
     if p.get("note") and p["rows"]:
@@ -525,14 +580,20 @@ def build_all(data: dict, status: str = "", spin: str = "◐") -> list[tuple[str
         for i, r in enumerate(p["rows"]):
             note = f" · {p['note']}" if i == 0 and p.get("note") else ""
             if "pct" in r:
+                sev = _sev(r)
                 reset = f" · {r['reset']}" if r.get("reset") else ""
-                color = C_CLOCK if r.get("clock") else _bar_color(r["pct"])
-                rows.append((f"   {name} {r['label']} {_bar(r['pct'], 10, brand)} {r['pct']:.0f}%{reset}{note}",
-                             color))
+                word = " exhausted" if sev == "maxed" else ""
+                color = C_BAD if sev == "maxed" else \
+                    C_CLOCK if r.get("clock") else _bar_color(r["pct"])
+                fill = C_BAD if sev == "maxed" else brand
+                rows.append((f"   {name} {r['label']} {_bar(r['pct'], 10, fill)} "
+                             f"{r['pct']:.0f}%{word}{reset}{note}", color))
             elif "stack" in r:
                 rows.append((f"   {name} {r['label']} {_stack_bar(r['stack'])} {r.get('text', '')}{note}", C_TXT))
             else:
-                rows.append((f"   {name} {r['label']} {r.get('text', '')}{note}", C_TXT))
+                hit = r["label"] == "cap" or "limit hit" in (r.get("text") or "")
+                rows.append((f"   {name} {r['label']} {r.get('text', '')}{note}",
+                             C_BAD if hit else C_TXT))
     spark = _sparkline("burn")
     if spark:
         rows.append((f"   7d burn  {spark}", C_DIM))
@@ -545,21 +606,31 @@ _last_box = [0, 0, 0, 0]  # top, left, w, h of the previous frame
 
 
 def draw(rows: list[tuple[str, str]], p: int, cols: int, lines: int) -> None:
-    w = max(_vlen(t) for t, _ in rows) + 2
+    pt, pl, pw, ph = _last_box
+    out = []
+    if ph:
+        # erase the previous frame's footprint so smaller boxes leave no trail
+        blank = " " * pw
+        out += [f"\033[{pt + i};{pl}H{blank}" for i in range(ph)]
+    if cols < 24 or lines < 6:
+        # pane too small for the panel — a bare centered tag instead
+        msg = " usage "
+        top = max(lines // 2, 1)
+        left = max((cols - len(msg)) // 2, 0)
+        out.append(f"\033[{top};{left}H{_rgb(C_DIM, p)}{msg}")
+        _last_box[:] = [top, left, len(msg), 1]
+        sys.stdout.write("".join(out) + "\033[0m")
+        sys.stdout.flush()
+        return
+    w = min(max(_vlen(t) for t, _ in rows) + 2, cols - 2)
     left = max((cols - w - 2) // 2, 0)
     n = min(len(rows), max(0, lines - 4))
     top = max((lines - n - 3) // 2, 0)
     b = _rgb(C_BORDER, p)
-    pt, pl, pw, ph = _last_box
-    if ph:
-        # erase the previous frame's footprint so smaller boxes leave no trail
-        blank = " " * pw
-        out = [f"\033[{pt + i};{pl}H{blank}" for i in range(ph)]
-    else:
-        out = []
     out.append(f"\033[{top};{left}H{b}╭{'─' * w}╮")
     for i, (text, fg) in enumerate(rows[:n]):
-        out.append(f"\033[{top + 1 + i};{left}H{b}│{_rgb(fg, p)}{_pad(text, w)}{b}│")
+        out.append(f"\033[{top + 1 + i};{left}H{b}│{_rgb(fg, p)}"
+                   f"{_pad(_trunc(text, w), w)}{b}│")
     out.append(f"\033[{top + 1 + n};{left}H{b}╰{'─' * w}╯")
     _last_box[:] = [top, left, w + 2, n + 2]
     sys.stdout.write("".join(out) + "\033[0m")
@@ -615,6 +686,12 @@ def interactive() -> None:
         sys.stdout.write("\033[?25l")
         data, loader = _seed(C.LIVE, load_collectors())
         frame = 0
+        # SIGWINCH → self-pipe so a resize redraws instantly instead of
+        # waiting out the select timeout.
+        winch_r, winch_w = os.pipe()
+        os.set_blocking(winch_w, False)
+        signal.set_wakeup_fd(winch_w)
+        signal.signal(signal.SIGWINCH, lambda *_: None)
         for p_ in (20, 45, 70, 100):
             draw(build_summary(data, sel, _status(loader, data, _SPIN[0])),
                  p_, cols, lines)
@@ -623,8 +700,14 @@ def interactive() -> None:
         while True:
             # 90ms tick only while something is loading — settles to 1s idle.
             tick = 0.09 if loader.alive() else 1.0
-            r, _, _ = select.select([sys.stdin], [], [], tick)
+            r, _, _ = select.select([sys.stdin, winch_r], [], [], tick)
             cols, lines = os.get_terminal_size()
+            if winch_r in r:
+                try:
+                    os.read(winch_r, 4096)
+                except BlockingIOError:
+                    pass
+                r = [f for f in r if f != winch_r]
             if r:
                 k = _read_key()
                 if k in ("q", "\x03"):
@@ -661,6 +744,12 @@ def interactive() -> None:
                     if mode == "detail" else build_all(data, status, spin))
             draw(rows, 100, cols, lines)
     finally:
+        signal.set_wakeup_fd(-1)
+        try:
+            os.close(winch_r)
+            os.close(winch_w)
+        except OSError:
+            pass
         termios.tcsetattr(fd, termios.TCSANOW, old)
         sys.stdout.write("\033[?25h\033[0m")
 
