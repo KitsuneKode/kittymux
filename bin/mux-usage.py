@@ -14,9 +14,11 @@ r force refresh, q/Esc dismiss. Stays open until dismissed.
 import importlib.util
 import json
 import os
+import queue
 import re
 import select
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -143,6 +145,166 @@ def get_data(force: bool) -> dict:
     return d
 
 
+# ---------- progressive loader ------------------------------------------------
+# Collectors run one thread each; the overlay paints a skeleton instantly and
+# merges rows as they land. Order is fixed so rows never jump — a provider's
+# content just fills in. Live fetches (the slow tail) run in parallel and
+# merge last. Anything still pending past STUCK_S is reported "timed out".
+
+STUCK_S = 10.0
+_SPIN = "◐◓◑◒"
+
+
+def _skeleton(name: str) -> dict:
+    return {"name": name, "rows": [], "note": "scanning…", "pending": True}
+
+
+def _apply_live(p: dict, lv: dict) -> None:
+    # _live markers make re-merging idempotent: a refresh replaces the old
+    # live rows in place instead of stacking duplicates.
+    p["rows"] = [r for r in p["rows"]
+                 if not r.get("_live") and r["label"] != "5h"]
+    p["rows"] = [dict(r, _live=1) for r in lv["rows"]] + p["rows"]
+
+
+def _sanitise(d: dict) -> dict:
+    return {"ts": d["ts"], "live": d.get("live") or {},
+            "providers": [
+                {k: ([{rk: rv for rk, rv in r.items() if not rk.startswith("_")}
+                      for r in v] if k == "rows" else v)
+                 for k, v in p.items()
+                 if not k.startswith("_") and k != "pending"}
+                for p in d["providers"]]}
+
+
+class Loader:
+    """Fan-out collector threads; UI drains .q between keypresses."""
+
+    def __init__(self, mods: list) -> None:
+        self.mods = mods
+        self.q: queue.Queue = queue.Queue()
+        self.pending: set[str] = set()
+        self.live_pending: set[str] = set()
+        self.since: dict[str, float] = {}
+        self.local_done = False
+
+    def alive(self) -> bool:
+        return bool(self.pending or self.live_pending)
+
+    def start(self, live: bool) -> None:
+        now = time.time()
+        for mod in self.mods:
+            name = mod.__name__.rsplit(".", 1)[-1]
+            self.pending.add(name)
+            self.since[name] = now
+            threading.Thread(target=self._run_local, args=(name, mod.collect),
+                             daemon=True).start()
+        if live:
+            try:
+                cached = json.loads(C.CACHE.read_text()).get("live", {})
+            except (OSError, json.JSONDecodeError):
+                cached = {}
+            for mod in self.mods:
+                live_fn = getattr(mod, "live", None)
+                if not callable(live_fn):
+                    continue
+                name = mod.__name__.rsplit(".", 1)[-1]
+                self.live_pending.add(name)
+                self.since[name] = now
+                threading.Thread(target=self._run_live,
+                                 args=(name, live_fn, cached.get(name) or {}),
+                                 daemon=True).start()
+
+    def _run_local(self, name: str, fn) -> None:
+        try:
+            res = fn()
+        except Exception as e:  # a broken collector never kills the HUD
+            res = {"name": name, "rows": [], "note": "error",
+                   "err": str(e)[:48] or type(e).__name__}
+        self.q.put(("local", name, res))
+
+    def _run_live(self, name: str, fn, cached: dict) -> None:
+        try:
+            res = fn(cached)
+        except Exception:
+            res = cached
+        self.q.put(("live", name, res or {}))
+
+
+def _provider_order(mods: list) -> list[str]:
+    names = [m.__name__.rsplit(".", 1)[-1] for m in mods]
+    return [n for n in _ORDER if n in names] + \
+        sorted(n for n in names if n not in _ORDER)
+
+
+def _seed(live: bool, mods: list) -> tuple[dict, "Loader"]:
+    """Best instant state: fresh cache → done; stale cache → paint it while a
+    loader refreshes; no cache → skeletons."""
+    names = _provider_order(mods)
+    data = {"ts": 0.0, "providers": [_skeleton(n) for n in names], "live": {}}
+    loader = Loader(mods)
+    try:
+        cached = json.loads(C.CACHE.read_text())
+    except (OSError, json.JSONDecodeError):
+        cached = None
+    if cached and time.time() - cached.get("ts", 0) < C.TTL:
+        return cached, loader  # fresh — nothing to load
+    if cached and cached.get("providers"):
+        by_name = {p.get("name"): p for p in cached["providers"]
+                   if isinstance(p, dict)}
+        data["providers"] = [by_name.get(n) or _skeleton(n) for n in names]
+        data["ts"] = cached["ts"]
+        data["live"] = cached.get("live") or {}
+    loader.start(live)
+    return data, loader
+
+
+def _drain(loader: Loader, data: dict) -> None:
+    """Apply everything the loader delivered; mark stuck collectors."""
+    changed = False
+    while True:
+        try:
+            kind, name, res = loader.q.get_nowait()
+        except queue.Empty:
+            break
+        changed = True
+        p = next((x for x in data["providers"] if x["name"] == name), None)
+        if kind == "local":
+            loader.pending.discard(name)
+            if p is not None:
+                p.clear()
+                p.update(res)
+            lv = (data["live"] or {}).get(name)
+            if p is not None and lv and lv.get("rows"):
+                _apply_live(p, lv)
+        else:
+            loader.live_pending.discard(name)
+            if res.get("rows"):
+                data.setdefault("live", {})[name] = res
+                if p is not None and not p.get("pending"):
+                    _apply_live(p, res)
+    now = time.time()
+    for name in list(loader.pending):
+        if now - loader.since.get(name, now) > STUCK_S:
+            loader.pending.discard(name)
+            p = next((x for x in data["providers"] if x["name"] == name), None)
+            if p is not None:
+                p.clear()
+                p.update({"name": name, "rows": [], "note": "timed out",
+                          "err": "took too long"})
+            changed = True
+    for name in list(loader.live_pending):
+        if now - loader.since.get(name, now) > STUCK_S + 2:
+            loader.live_pending.discard(name)
+            changed = True
+    if changed:
+        if not loader.pending and not loader.local_done:
+            loader.local_done = True
+            data["ts"] = time.time()
+            _record_history(data["providers"])
+        C.write_private(C.CACHE, json.dumps(_sanitise(data)))
+
+
 # ---------- render ----------
 
 # UI chrome follows the live kitty theme; provider brand colours stay fixed.
@@ -262,14 +424,23 @@ def _headline(p: dict) -> tuple[list[dict], dict | None]:
     return pcts, (texts[0] if texts else None)
 
 
-def build_summary(data: dict, sel: int) -> list[tuple[str, str]]:
+def build_summary(data: dict, sel: int, status: str = "",
+                  spin: str = "◐") -> list[tuple[str, str]]:
     """One scannable row per provider; sel marks the focused row with ▸."""
-    age = int(time.time() - data["ts"])
-    rows = [(f" agent usage · cached {age}s{_live_tag(data)} ", C_NAME), ("", C_DIM)]
+    age = int(time.time() - data["ts"]) if data.get("ts") else 0
+    tag = status or (f"cached {age}s" if data.get("ts") else "loading")
+    rows = [(f" agent usage · {tag}{_live_tag(data)} ", C_NAME), ("", C_DIM)]
     for i, p in enumerate(data["providers"]):
         mark = "▸" if i == sel else " "
         brand = _BRAND.get(p["name"], C_NAME)
         name = _pad(f"{_rgb(brand, 100)}{_GLYPHS.get(p['name'], '·')} {p['name']}\033[0m", 10)
+        if p.get("pending"):
+            rows.append((f" {mark} {name} {spin} {p.get('note') or 'scanning…'}",
+                         C_DIM))
+            continue
+        if p.get("err"):
+            rows.append((f" {mark} {name} {p.get('err')}", C_BAD))
+            continue
         pcts, text = _headline(p)
         if not pcts:
             tail = (text or {}).get("text") or p.get("note") or "—"
@@ -291,11 +462,18 @@ def build_summary(data: dict, sel: int) -> list[tuple[str, str]]:
     return rows
 
 
-def build_detail(p: dict) -> list[tuple[str, str]]:
+def build_detail(p: dict, spin: str = "◐") -> list[tuple[str, str]]:
     """All rows for one provider — the old dense section, scoped down."""
     brand = _BRAND.get(p["name"], C_NAME)
     name = _GLYPHS.get(p["name"], "·") + " " + p["name"]
     rows = [(f" {name} ", brand), ("", C_DIM)]
+    if p.get("pending") or p.get("err"):
+        note = f"{spin} {p.get('note') or 'scanning…'}" \
+            if p.get("pending") else p.get("err") or "error"
+        rows.append((f"   {note}", C_DIM if p.get("pending") else C_BAD))
+        rows.append(("", C_DIM))
+        rows.append((" h/← back · r refresh · q", C_DIM))
+        return rows
     for r in p["rows"]:
         label = r["label"]
         if "pct" in r:
@@ -327,12 +505,20 @@ def build_detail(p: dict) -> list[tuple[str, str]]:
     return rows
 
 
-def build_all(data: dict) -> list[tuple[str, str]]:
+def build_all(data: dict, status: str = "", spin: str = "◐") -> list[tuple[str, str]]:
     """The classic dense dump — everything at once, one key away."""
-    rows = [(f" agent usage · all{_live_tag(data)} ", C_NAME), ("", C_DIM)]
+    tag = f" · {status}" if status else ""
+    rows = [(f" agent usage · all{tag}{_live_tag(data)} ", C_NAME), ("", C_DIM)]
     for p in data["providers"]:
         brand = _BRAND.get(p["name"], C_NAME)
         name = _pad(f"{_rgb(brand, 100)}{_GLYPHS.get(p['name'], '·')} {p['name']}\033[0m", 10)
+        if p.get("pending"):
+            rows.append((f"   {name} {spin} {p.get('note') or 'scanning…'}",
+                         C_DIM))
+            continue
+        if p.get("err"):
+            rows.append((f"   {name} {p.get('err')}", C_BAD))
+            continue
         if not p["rows"]:
             rows.append((f"   {name} {p.get('note') or '—'}", C_DIM))
             continue
@@ -394,7 +580,29 @@ def _read_key() -> str:
     return {"[A": "up", "[B": "dn", "[C": "rt", "[D": "lt"}.get(rest.decode("ascii", ""), "esc")
 
 
-def interactive(data: dict) -> None:
+def _status(loader: Loader, data: dict, spin: str) -> str:
+    """Header tag while anything is in flight — '' once settled."""
+    if not loader.alive():
+        return ""
+    n = len(loader.pending) + len(loader.live_pending)
+    word = "loading" if not data.get("ts") else "refreshing"
+    return f"{spin} {n} {word}"
+
+
+def _respawn(loader: Loader, data: dict) -> Loader:
+    """New loader for 'r'/auto-refresh: errored or empty providers go back
+    to skeletons; populated rows stay visible while fresh data loads."""
+    loader = Loader(loader.mods)
+    for p in data["providers"]:
+        if p.get("pending") or p.get("err") \
+                or (not p["rows"] and p.get("note") in (None, "scanning…")):
+            p.clear()
+            p.update(_skeleton(p["name"]))
+    loader.start(C.LIVE)
+    return loader
+
+
+def interactive() -> None:
     import termios
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
@@ -405,12 +613,17 @@ def interactive(data: dict) -> None:
         mode, sel = "summary", 0
         cols, lines = os.get_terminal_size()
         sys.stdout.write("\033[?25l")
+        data, loader = _seed(C.LIVE, load_collectors())
+        frame = 0
         for p_ in (20, 45, 70, 100):
-            draw(build_summary(data, sel), p_, cols, lines)
+            draw(build_summary(data, sel, _status(loader, data, _SPIN[0])),
+                 p_, cols, lines)
             time.sleep(0.03)
         dirty_ts = 0.0
         while True:
-            r, _, _ = select.select([sys.stdin], [], [], 1.0)
+            # 90ms tick only while something is loading — settles to 1s idle.
+            tick = 0.09 if loader.alive() else 1.0
+            r, _, _ = select.select([sys.stdin], [], [], tick)
             cols, lines = os.get_terminal_size()
             if r:
                 k = _read_key()
@@ -431,15 +644,21 @@ def interactive(data: dict) -> None:
                     mode = "summary"
                 elif k == "a":
                     mode = "summary" if mode == "all" else "all"
-                elif k == "r":
-                    data = get_data(force=True)
-                    sel = min(sel, len(data["providers"]) - 1)
-            elif time.time() - data["ts"] > C.TTL and dirty_ts != data["ts"]:
+                elif k == "r" and not loader.alive():
+                    loader = _respawn(loader, data)
+            elif not loader.alive() and data.get("ts") \
+                    and time.time() - data["ts"] > C.TTL \
+                    and dirty_ts != data["ts"]:
                 dirty_ts = data["ts"]
-                data = get_data(force=False)
-            rows = (build_summary(data, sel) if mode == "summary"
-                    else build_detail(data["providers"][sel]) if mode == "detail"
-                    else build_all(data))
+                loader = _respawn(loader, data)
+            _drain(loader, data)
+            if loader.alive():
+                frame += 1
+            spin = _SPIN[frame % len(_SPIN)]
+            status = _status(loader, data, spin)
+            rows = (build_summary(data, sel, status, spin) if mode == "summary"
+                    else build_detail(data["providers"][sel], spin)
+                    if mode == "detail" else build_all(data, status, spin))
             draw(rows, 100, cols, lines)
     finally:
         termios.tcsetattr(fd, termios.TCSANOW, old)
@@ -451,14 +670,13 @@ def main() -> None:
         # quiet refresh for tab_bar's quota warning — no UI, no tty needed
         get_data(force=True)
         return
-    data = get_data(force=False)
     if "--once" in sys.argv:
-        for text, fg in build_all(data):
+        for text, fg in build_all(get_data(force=False)):
             print(f"{_rgb(fg, 100)}{text}")
         print("\033[0m", end="")
         return
     sys.stdin = open("/dev/tty", "rb", buffering=0)
-    interactive(data)
+    interactive()
 
 
 if __name__ == "__main__":
