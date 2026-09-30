@@ -128,13 +128,6 @@ if grep -rqs "include-tab-edge.conf" "$KITTY_CONF_DIR"/*.conf 2>/dev/null; then
 else
     add_include "include $EDGE_FILE"
 fi
-# Same rule for the bar-collapse file: it must come after kittymux.conf or its
-# tab_bar_style hidden/custom wins/loses backwards.
-if grep -rqs "include-tab-bar.conf" "$KITTY_CONF_DIR"/*.conf 2>/dev/null; then
-    warn "include-tab-bar.conf is already included by your config — make sure it comes after kittymux.conf"
-else
-    add_include "include $BAR_FILE"
-fi
 # Per-window bar layout (kittymux layout …): kitty runs this on every (re)load and takes
 # its output as config. It must come LAST so a saved layout wins; with none saved it prints
 # nothing and your own tab_bar_* settings stay in charge.

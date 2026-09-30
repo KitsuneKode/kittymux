@@ -129,7 +129,6 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+shift+b` | **docked sidebar panel** — the deck as an always-visible left column that reserves screen space (Wayland/Hyprland) |
 | `ctrl+alt+;` | send a prompt to a background agent pane |
 | `ctrl+alt+shift+e` | tab bar bottom → left → right |
-| `ctrl+alt+v` | collapse/restore the tab bar (sidebar minimize) |
 | `ctrl+alt+\` | bar mode: full → slim rail → hidden ("zen") |
 | `ctrl+alt+shift+[` / `]` | narrower / wider sidebar |
 | `ctrl+alt+shift+l` | pick a layout preset (sidebar, rail, right, bottom, top, zen) |
