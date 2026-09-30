@@ -288,6 +288,12 @@ def _agent_from_fg(foreground: list[list[str]]) -> tuple[str, int, str] | None:
     return None
 
 
+def _tool_glyph(foreground: list) -> str:
+    """Quiet glyph for a recognised non-agent tool (editor, git, ssh, …), else ''."""
+    name = kittymux_agents.tool_in(foreground)
+    return kittymux_agents.TOOLS.get(name, "") if name else ""
+
+
 def _agent_info(tab_id: int) -> tuple[str, int, str] | None:
     return _agent_from_fg(_active_window_info(tab_id)[1])
 
@@ -583,6 +589,11 @@ def _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal) -> i
         glyph, brand, _name = info
         screen.cursor.fg = _rgb(brand if tab.is_active else _mute(brand, pal))
         screen.draw(glyph)
+    else:
+        tool = _tool_glyph(foreground)
+        if tool:
+            screen.cursor.fg = _rgb(pal.muted if tab.is_active else pal.faint)
+            screen.draw(tool)
     if screen.cursor.x < x0 + 3:
         screen.cursor.x = x0 + 3
 
@@ -753,6 +764,8 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     if info:
         glyph, brand, _n = info
         _put(screen, 1, glyph, _rgb(brand if active else _mute(brand, pal)))
+    elif _tool_glyph(foreground):
+        _put(screen, 1, _tool_glyph(foreground), _rgb(pal.muted if active else pal.faint))
     title_room = cols - 3 - 2
     if title_room >= 3:
         title = _fit(_compact_title(tab, max(4, title_room)), title_room)

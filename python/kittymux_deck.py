@@ -15,6 +15,7 @@ class RowData:
     title: str = ""
     glyph: str = ""
     agent: str = ""
+    tool: bool = False      # glyph is a quiet tool glyph, not an agent logo
     branch: str = ""
     cwd: str = ""
     panes: int = 1

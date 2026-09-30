@@ -209,6 +209,8 @@ class Collector:
                     if name:
                         break
                 agent = kittymux_agents.AGENTS.get(name) if name else None
+                tool_name = None if agent else kittymux_agents.tool_in(
+                    p.get("cmdline") or [] for p in aw.get("foreground_processes") or [])
                 st = kittymux_agents.resolve_status(
                     panes.get(str(aw["id"])), agent is not None, time.monotonic(), _STALE_AFTER)
                 unread = bool(tab.get("needs_attention") or aw.get("needs_attention")
@@ -224,7 +226,9 @@ class Collector:
                                       for p in deck.ports_for(int(pid), children, listeners)}))
                 rows.append(deck.RowData(
                     tab_id=tab["id"], win_id=aw["id"], session=session,
-                    title=tab.get("title") or "", glyph=agent.glyph if agent else "",
+                    title=tab.get("title") or "",
+                    glyph=agent.glyph if agent else kittymux_agents.TOOLS.get(tool_name, ""),
+                    tool=bool(tool_name and not agent),
                     agent=name or "", branch=branch, cwd=cwd,
                     panes=len(wins), status=status, unread=unread, current=current,
                     msg=kittymux_agents.resolve_msg(panes.get(str(aw["id"])), status) if agent else "",
@@ -370,8 +374,11 @@ class Sidebar(Handler):
         bg = p.surface_hi if selected else p.bar
         rail = (_RAIL, p.accent, False) if r.current else (" ", p.text, False)
         glyph_fg = kittymux_agents.AGENTS[r.agent].brand if r.agent in kittymux_agents.AGENTS else p.muted
-        icon = (r.glyph or " ",
-                glyph_fg if selected or r.current else kittymux_theme.blend(glyph_fg, p.bg, 0.6), False)
+        if r.tool:                                   # quiet tool glyph, not a brand mark
+            icon = (r.glyph, p.muted if selected or r.current else p.faint, False)
+        else:
+            icon = (r.glyph or " ",
+                    glyph_fg if selected or r.current else kittymux_theme.blend(glyph_fg, p.bg, 0.6), False)
         state_fg = {"waiting": p.waiting, "working": p.working, "done": p.done}.get(r.status)
         title_fg = p.text if (selected or r.current) else p.muted
         title = deck.pad(r.title or "—", bar_w - 3 - 2, _cells)

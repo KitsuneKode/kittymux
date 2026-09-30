@@ -67,5 +67,36 @@ class MsgTests(unittest.TestCase):
         self.assertEqual(len(set(A.STATE_GLYPH.values())), 3)
 
 
+class ToolTests(unittest.TestCase):
+    def test_plain_shell_has_no_glyph(self):
+        self.assertIsNone(A.tool_in([["zsh"], ["-zsh"]]))
+
+    def test_editor_wins_over_node_child(self):
+        self.assertEqual(A.tool_in([["node", "x.js"], ["nvim", "a.py"]]), "nvim")
+
+    def test_only_program_counts_not_arguments(self):
+        self.assertEqual(A.tool_in([["git", "commit", "-m", "vim"]]), "git")
+        self.assertIsNone(A.tool_in([["zsh", "-c", "echo nvim"]]))
+
+    def test_wrapper_separator(self):
+        self.assertEqual(A.tool_in([["zsh", "/x/trmw", "--profile", "font", "--", "nvim", "f"]]), "nvim")
+
+    def test_env_sudo_wrappers(self):
+        self.assertEqual(A.tool_in([["sudo", "-E", "htop"]]) or A.tool_in([["sudo", "htop"]]), "htop")
+        self.assertEqual(A.tool_in([["env", "docker", "ps"]]), "docker")
+
+    def test_full_paths_and_case(self):
+        self.assertEqual(A.tool_in([["/usr/bin/SSH", "host"]]), "ssh")
+
+    def test_all_glyphs_are_single_codepoints_in_nerd_ranges(self):
+        for name, glyph in A.TOOLS.items():
+            self.assertEqual(len(glyph), 1, name)
+            cp = ord(glyph)
+            self.assertTrue(0xE000 <= cp <= 0xF8FF or 0xF0000 <= cp <= 0xFFFFD, f"{name} U+{cp:X}")
+
+    def test_agents_and_tools_dont_collide(self):
+        self.assertFalse(set(A.TOOLS) & set(A.AGENTS))
+
+
 if __name__ == "__main__":
     unittest.main()

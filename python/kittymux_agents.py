@@ -68,3 +68,49 @@ def resolve_msg(entry: dict | None, status: str) -> str:
     if status not in ("waiting", "done"):
         return ""
     return str((entry or {}).get("msg") or "")
+
+
+# ── quiet glyphs for non-agent tools ─────────────────────────────────────────
+# Agents get their brand logo; a few well-known tools get a small muted Nerd Font
+# glyph; a plain shell gets nothing (a calm, empty icon column). Order = priority:
+# an editor beats the node process it spawned.
+TOOLS: dict[str, str] = {}
+for _glyph, _names in (
+    ("", ("nvim", "vim", "vi", "hx", "helix", "micro", "nano", "emacs")),
+    ("", ("git", "lazygit", "tig", "gitui")),
+    ("", ("docker", "podman", "lazydocker")),
+    ("\U000f10fe", ("kubectl", "k9s", "helm")),
+    ("", ("ssh", "mosh", "mosh-client")),
+    ("", ("psql", "pgcli", "mysql", "mycli", "sqlite3", "redis-cli")),
+    ("", ("htop", "btop", "top", "glances", "nvtop")),
+    ("", ("man", "less", "bat")),
+    ("", ("cargo", "rustc")),
+    ("", ("go",)),
+    ("", ("python", "python3", "ipython", "uv")),
+    ("", ("node", "bun", "deno", "npm", "pnpm", "yarn", "npx")),
+):
+    for _n in _names:
+        TOOLS[_n] = _glyph
+_TOOL_RANK = {name: i for i, name in enumerate(TOOLS)}
+_WRAPPERS = {"env", "sudo", "doas", "command", "exec", "nohup", "time"}
+
+
+def tool_in(cmdlines: Iterable[Iterable[str]]) -> str | None:
+    """Best-known tool among the foreground processes' command lines, else None.
+
+    Only the program itself counts (argv[0], or the program after a `--` wrapper
+    separator or after env/sudo-style wrappers) — never arbitrary arguments, so
+    `git commit -m vim` is git, not vim."""
+    best: str | None = None
+    for cmdline in cmdlines:
+        argv = [str(a) for a in cmdline]
+        if "--" in argv:                         # `trmw --profile x -- nvim file`
+            argv = argv[argv.index("--") + 1:]
+        while argv and os.path.basename(argv[0]).lower() in _WRAPPERS:
+            argv = argv[1:]
+        if not argv:
+            continue
+        name = os.path.basename(argv[0]).lower().lstrip("-")
+        if name in TOOLS and (best is None or _TOOL_RANK[name] < _TOOL_RANK[best]):
+            best = name
+    return best
