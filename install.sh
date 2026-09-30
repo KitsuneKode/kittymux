@@ -98,6 +98,11 @@ ok "tab_bar.py + helper modules → symlinks"
 [[ -f "$EDGE_FILE" ]] || printf '# managed by kittymux mux-edge.sh — do not edit\ntab_bar_edge bottom\n' > "$EDGE_FILE"
 ok "tab-edge include ready"
 
+# ── managed tab-bar-style file (mux-bar.sh rewrites it; hidden ⇄ custom) ────
+BAR_FILE="$KITTY_CONF_DIR/include-tab-bar.conf"
+[[ -f "$BAR_FILE" ]] || printf '# managed by kittymux mux-bar.sh — do not edit\ntab_bar_style custom\n' > "$BAR_FILE"
+ok "tab-bar include ready"
+
 # ── brand icon font (real provider logos via symbol_map) ─────────────────────
 FONT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/fonts"
 mkdir -p "$FONT_DIR"
@@ -122,6 +127,13 @@ if grep -rqs "include-tab-edge.conf" "$KITTY_CONF_DIR"/*.conf 2>/dev/null; then
     warn "include-tab-edge.conf is already included by your config — make sure it comes after kittymux.conf"
 else
     add_include "include $EDGE_FILE"
+fi
+# Same rule for the bar-collapse file: it must come after kittymux.conf or its
+# tab_bar_style hidden/custom wins/loses backwards.
+if grep -rqs "include-tab-bar.conf" "$KITTY_CONF_DIR"/*.conf 2>/dev/null; then
+    warn "include-tab-bar.conf is already included by your config — make sure it comes after kittymux.conf"
+else
+    add_include "include $BAR_FILE"
 fi
 # Per-window bar layout (kittymux layout …): kitty runs this on every (re)load and takes
 # its output as config. It must come LAST so a saved layout wins; with none saved it prints
