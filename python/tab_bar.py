@@ -624,7 +624,7 @@ def _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal) -> i
     state = _tab_state(tab)
     marks_w = 2 if state else 0
     title_limit = _title_limit(max_title_length, index, session_name, tab.is_active, marks_w)
-    title = _compact_title(tab, title_limit)
+    title = kittymux_agents.strip_agent_prefix(_compact_title(tab, title_limit), info[2] if info else None)
 
     chip = _rgb(pal.surface_hi) if tab.is_active else 0
     screen.cursor.bg = chip
@@ -819,7 +819,8 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         screen.cursor.bg = bar
         screen.cursor.y = y
         x = _put(screen, 1, _EXPAND, _rgb(pal.muted), True)               # the expand button
-        badge = " ".join(t.strip() for t, _c, _b in _attention_parts(_session_stats(tab)[1], pal))
+        counts = _session_stats(tab)[1]
+        badge = " ".join(f"{kittymux_agents.state_glyph(st)}{counts[st]}" for st in ("waiting", "limited", "done") if counts.get(st))
         if badge and cols - x - 2 >= 3:
             _put(screen, x + 1, _fit(badge, cols - x - 2), _rgb(pal.waiting), True)
         y += 1
@@ -858,8 +859,14 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     elif _tool_glyph(foreground):
         _put(screen, 1, _tool_glyph(foreground), _rgb(pal.muted if active else pal.faint))
     title_room = cols - 3 - 2
-    if title_room >= 3:
-        title = _fit(_compact_title(tab, max(4, title_room)), title_room)
+    if compact:
+        # the slim rail is icons only: the logo (or tool glyph), the tab number, the state mark — no title
+        if not info and not _tool_glyph(foreground):
+            _put(screen, 1, "›", _rgb(pal.faint))
+        _put(screen, 3, str(index), _rgb(pal.muted if active else pal.faint))
+    elif title_room >= 3:
+        title = _fit(kittymux_agents.strip_agent_prefix(_compact_title(tab, max(4, title_room)), info[2] if info else None),
+                     title_room)
         _put(screen, 3, title,
              _rgb(pal.text) if active else _rgb(pal.muted), bold=active)
     if state_fg is not None and cols >= 6:

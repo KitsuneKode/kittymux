@@ -196,6 +196,10 @@ Everything below only fires for an agent **you are not looking at**; focusing it
 | window-manager urgency (taskbar flash / urgent border) | an agent starts waiting or hits its limit — kitty's own bell path, so it follows your `window_alert_on_bell` / `enable_audio_bell` | `touch ~/.local/state/kittymux/bell-off` or `KITTYMUX_BELL=0` |
 | `ctrl+alt+y` | jump to the next agent that needs you, longest-waiting first | — |
 
+kittymux owns notifications: the agents' own desktop notifications (Claude Code's "waiting for your input", Codex's,
+Devin's…) are dropped with a `filter_notification` rule in `kittymux.conf`, so each event notifies **once**. Delete that
+line to let them through again; kitty's own "command finished" notice is untouched.
+
 Notifications carry a **Jump to it** action (`bin/mux-notify`): with a daemon that supports actions
 (dunst: middle-click or `dunstctl action`; mako, swaync: click) it focuses that window — through kitty's
 remote control, then `hyprctl` on Hyprland. A daemon without actions still shows the text. Each
@@ -296,7 +300,7 @@ instantly and survives config reloads: `kittymux layout <mode|edge|width|preset|
 New instances start from `kittymux layout default` (or your kitty.conf when nothing was chosen).
 
 **Collapse button.** The header row of the vertical bar ends in a `«` button: click it and the sidebar
-shrinks to the 9-column icon rail (like shadcn's collapsible sidebar); the rail's header row is a `»`
+shrinks to the 9-column icon rail (just each tab's logo, number and state mark, plus the `!2 ⊘1` badges) (like shadcn's collapsible sidebar); the rail's header row is a `»`
 that brings the full sidebar back at the width it had. It acts on mouse-up, like a button, and never
 activates a tab. `ctrl+alt+\` still cycles full → rail → hidden from the keyboard.
 

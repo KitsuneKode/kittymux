@@ -271,6 +271,23 @@ class TitlePrefixTests(unittest.TestCase):
             self.assertEqual(A.strip_title_prefix(raw), want)
 
 
+class AgentPrefixTests(unittest.TestCase):
+    def test_the_logo_already_says_it(self):
+        for raw, agent, want in (("devin: Full codebase audit", "devin", "Full codebase audit"),
+                                 ("Codex: Audit Rust backend", "codex", "Audit Rust backend"),
+                                 ("Claude Code - fix lint", "claude", "fix lint"),
+                                 ("antigravity: refactor", "agy", "refactor"),
+                                 ("Factory Droid: New Session", "droid", "New Session")):
+            self.assertEqual(A.strip_agent_prefix(raw, agent), want)
+
+    def test_left_alone_when_there_is_nothing_else_or_it_is_not_a_prefix(self):
+        self.assertEqual(A.strip_agent_prefix("devin:", "devin"), "devin:")
+        self.assertEqual(A.strip_agent_prefix("devin", "devin"), "devin")
+        self.assertEqual(A.strip_agent_prefix("devops: deploy", "devin"), "devops: deploy")
+        self.assertEqual(A.strip_agent_prefix("fix: devin crash", "devin"), "fix: devin crash")
+        self.assertEqual(A.strip_agent_prefix("anything", None), "anything")
+
+
 class StrictNamesTests(unittest.TestCase):
     def test_short_common_names_only_match_where_a_command_goes(self):
         self.assertEqual(A.agent_in(["kilo"]), "kilo")

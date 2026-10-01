@@ -168,6 +168,7 @@ def width_from_pointer(x_px: float, cell_w: float, window_px: float, edge: str) 
 
 COMPACT_MAX_COLS = 12       # a vertical bar at most this wide is the slim rail (one-line rows)
 TOGGLE_CELLS = 3            # the collapse/expand button: the last cells of the header row
+GRAB_CELLS = 1.5            # resize grab zone: this many cells inside the bar's inner edge (kitty sends the bar nothing outside it)
 
 
 def toggle_collapsed(layout: Layout) -> Layout:
@@ -184,10 +185,10 @@ def in_toggle_zone(x_px: float, y_px: float, left: float, right: float, top: flo
     if not (top <= y_px < top + cell_h):
         return False
     start = left if compact else right - TOGGLE_CELLS * cell_w
-    return start <= x_px < right - 0.8 * cell_w
+    return start <= x_px < right - GRAB_CELLS * cell_w
 
 
-def in_grab_zone(x_px: float, bar_edge_px: float, cell_w: float, zone_cells: float = 0.75) -> bool:
+def in_grab_zone(x_px: float, bar_edge_px: float, cell_w: float, zone_cells: float = GRAB_CELLS) -> bool:
     """Pointer close enough to the bar's inner edge to grab it."""
     return abs(x_px - bar_edge_px) <= max(1.0, cell_w * zone_cells)
 

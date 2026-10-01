@@ -228,7 +228,7 @@ class Collector:
                                       for p in deck.ports_for(int(pid), children, listeners)}))
                 rows.append(deck.RowData(
                     tab_id=tab["id"], win_id=jump_to, session=session,
-                    title=tab.get("title") or "",
+                    title=kittymux_agents.strip_agent_prefix(tab.get("title") or "", name),
                     glyph=agent.glyph if agent else kittymux_agents.TOOLS.get(tool_name, ""),
                     tool=bool(tool_name and not agent),
                     agent=name or "", branch=branch, cwd=cwd,

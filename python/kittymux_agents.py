@@ -189,6 +189,20 @@ _TITLE_PREFIX = re.compile(r"^[\s⠁-⣿✳✻✽✦•●◐◓◑◒∙·⛬.-
 def strip_title_prefix(title: str) -> str:
     return _TITLE_PREFIX.sub("", title or "").strip()
 
+
+_NAMES = {"claude": ("claude code", "claude"), "agy": ("antigravity", "agy"), "cursor-agent": ("cursor agent", "cursor-agent", "cursor"),
+          "droid": ("factory droid", "droid"), "vibe": ("mistral vibe", "vibe")}
+
+
+def strip_agent_prefix(title: str, agent: str | None) -> str:
+    """Drop a leading "<agent>: " from a title — the agent's logo already says it ("devin: Review PRs" →
+    "Review PRs"). Left alone when nothing but the name would remain."""
+    if not agent or not title:
+        return title
+    names = sorted(_NAMES.get(agent, (agent,)), key=len, reverse=True)
+    m = re.match(r"^\s*(?:%s)\s*[:\-–—]\s*(.+)$" % "|".join(re.escape(n) for n in names), title, re.I)
+    return m.group(1).strip() if m and m.group(1).strip() else title
+
 STATE_GLYPH = {"working": SPINNER[0], "waiting": "!", "limited": "⊘", "done": "✓", "unread": "•"}
 SPINNER_FPS = 10.0
 

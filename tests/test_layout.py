@@ -249,9 +249,9 @@ class CollapseButtonTests(unittest.TestCase):
         # bar 0..420 px, cell 15×22 px, header row = y 0..22
         z = lambda x, y, compact=False: L.in_toggle_zone(x, y, 0, 420, 0, 15, 22, compact)
         self.assertTrue(z(380, 10))
-        self.assertTrue(z(400, 10))
+        self.assertTrue(z(390, 10))
         self.assertFalse(z(300, 10))                 # the title area is not a button
-        self.assertFalse(z(410, 10))                 # inner edge: the resize grab zone wins
+        self.assertFalse(z(400, 10))                 # inner edge: the resize grab zone wins
         self.assertFalse(z(380, 30))                 # below the header row
 
     def test_the_whole_rail_header_is_the_expand_button(self):
