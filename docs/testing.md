@@ -25,6 +25,7 @@ bash tests/test_install.sh
 bash tests/smoke_state.sh
 bash tests/smoke_sidebar.sh
 bash tests/smoke_drag.sh
+bash tests/smoke_resize.sh
 bash tests/smoke_panes.sh
 bash tests/smoke_reload.sh
 bash tests/smoke_workflows.sh

@@ -55,6 +55,8 @@ jobs:
         run: bash tests/smoke_sidebar.sh
       - name: tab drag-to-reorder (real pointer events)
         run: bash tests/smoke_drag.sh
+      - name: bar resize keeps up with a fast pointer (real pointer events)
+        run: bash tests/smoke_resize.sh
       - name: pane jump keys agree with the pane overview (real key events)
         run: bash tests/smoke_panes.sh
       - name: keymap overlay closes in one keypress, searches, scrolls

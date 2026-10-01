@@ -94,6 +94,49 @@ class BarsizeTests(unittest.TestCase):
         self.fdt.remove_timer.assert_called_once_with(99)
         self.assertIsNone(self.boss.mouse_handler)
 
+    # ── trailing apply: the bar must never be left behind the pointer ──────────────────────────────
+    def test_next_apply_table(self):
+        n = self.m.next_apply
+        self.assertIsNone(n(1.0, 0.0, 0.0, 20, 20))                      # already there
+        self.assertEqual(n(1.0, 0.0, 0.0, 20, 24), 0.0)                  # long enough since the last one
+        self.assertAlmostEqual(n(1.0, 0.99, 0.0, 20, 24), 0.006)         # 10 ms ago: wait out the 16 ms
+        self.assertAlmostEqual(n(1.0, 0.99, 0.02, 20, 24), 0.02)         # a slow apply (20 ms) makes the next wait 30 ms
+
+    def test_a_motion_inside_the_pacing_window_is_applied_later_not_lost(self):
+        self.press()
+        with patch.object(self.m.time, "monotonic", return_value=10.0):
+            self.event(780)                                              # applies now (width 14)
+            self.event(700)                                              # 0 ms later: too soon → one timer, nothing applied yet
+        self.assertEqual(self.m.apply_width.call_count, 1)
+        self.assertIsNotNone(self.rt.trail)
+        with patch.object(self.m.time, "monotonic", return_value=10.2):
+            self.m._trail(self.rt.trail)                                 # the timer fires: the LATEST position is applied
+        self.assertEqual(self.m.apply_width.call_args_list[-1].args[1], 22)
+        self.assertEqual(self.m.apply_width.call_args_list[-1].kwargs, {"final": False})
+        self.assertIsNone(self.rt.trail)
+
+    def test_many_fast_motions_arm_at_most_one_timer(self):
+        self.press()
+        with patch.object(self.m.time, "monotonic", return_value=10.0):
+            self.event(780)
+            for x in (770, 760, 750, 740, 730):
+                self.event(x)
+        self.assertEqual(self.fdt.add_timer.call_count, 2)               # the watchdog from the press + exactly one trailing timer
+
+    def test_release_and_abandoned_drag_flow_every_tab(self):
+        self.press()
+        with patch.object(self.m.time, "monotonic", return_value=10.0):
+            self.event(780)                                              # lean apply (dirty)
+        self.m._end_capture(self.boss, finalize=True)                    # the watchdog / an error ended it: no release came
+        self.assertEqual(self.m.apply_width.call_args_list[-1].kwargs, {"final": True})
+        self.assertIsNone(self.rt.drag)
+
+    def test_release_applies_the_final_full_width(self):
+        self.press()
+        self.event(780)
+        self.event(700, button=0, action=0)
+        self.m.apply_width.assert_called_with(self.boss, 22)             # default final=True: all tabs re-flow once
+
 
 if __name__ == "__main__":
     unittest.main()

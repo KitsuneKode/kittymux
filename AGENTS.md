@@ -125,6 +125,12 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
 - `kittymux_barsize` keeps its drag/button state in `sys.modules["_kittymux_barsize_rt"]`: changing the width makes kitty
   re-run `tab_bar.py` (→ reloads helper modules) in the middle of a drag, and module globals would be wiped (the first
   motion applied a width, the second found no drag). Same rule as the scanner.
+- Bar drag-resize (`kittymux_barsize`): per mouse event `apply_width(final=False)` re-lays-out the bar and ONLY the visible tab; the release (or the watchdog /
+  an error, via `_end_capture(finalize=True)`) applies `final=True` once for every tab. Events inside the pacing window are NOT dropped: `next_apply` arms one
+  trailing timer that applies the pointer's latest width (the old code left the bar stuck until release after a fast burst). Why not relayout every tab per event:
+  kitty itself retains ~100 objects (~14 MB per 1000) per option-change+relayout of 23 tabs (measured identical in a vanilla kitty), so touching one tab is 28× less.
+  The pointer over the tab bar is ALWAYS a hand: kitty picks it in C for the whole bar rect, sends our code no hover and ignores OSC 22 there — a resize cursor over the bar
+  edge is not possible (only real window dividers and the docked panel get one).
 - The header row's `«`/`»` is a button: `kittymux_barsize._handle` consumes its press+release and toggles
   full ↔ rail via a saved layout + `load_config_file`. Build the toggled layout from the LIVE bar when nothing was saved.
 - kitty caps every vertical tab's HEIGHT at `tab_title_max_lines` (kittymux.conf sets 4): a tab that draws more rows spills into
@@ -149,6 +155,7 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   (a running kitty upgraded under itself must draw cleanly after two reloads; `SMOKE_KEEP_STALE=1` must FAIL).
   `bash tests/smoke_sidebar.sh` (collapse/expand button, right-click peek, edge drag with real mouse events),
   `bash tests/smoke_drag.sh` (tab drag-to-reorder with real pointer events — kitty's DnD works under Xvfb),
+  `bash tests/smoke_resize.sh` (a fast pointer burst: the bar edge reaches the pointer, every tab re-flows on release),
   `bash tests/smoke_panes.sh` (`ctrl+alt+shift+1..9` and the `ctrl+alt+e` overview agree on pane numbers; `ctrl+alt+PgUp/Home/End` scroll — real key events),
   `bash tests/smoke_keys.sh` (the keymap overlay: one Esc/q/the chord closes it, no stacking, typing filters),
   `bash tests/smoke_openref.sh` (ctrl+shift+click on `src/app.py:42:7` opens `$EDITOR +42`; kitty ≥ 0.49.2),

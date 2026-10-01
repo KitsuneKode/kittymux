@@ -36,6 +36,7 @@ _DEFAULTS = dict(
     toggle_down=False,      # a press landed on the collapse/expand button; the release decides
     peek_down=0,            # tab id under a right-button press; the release opens its peek card
     watchdog=None,          # timer id
+    trail=None,             # timer id of the pending "apply the latest pointer position" (see _drag_to)
 )
 _S = sys.modules.setdefault("_kittymux_barsize_rt", types.SimpleNamespace(**_DEFAULTS))
 for _k, _v in _DEFAULTS.items():        # a namespace made by an OLDER version of this file lacks the newer fields
@@ -72,16 +73,39 @@ def _set_hot(tm, value: bool) -> None:
             pass
 
 
-def apply_width(boss, n: int) -> None:
-    """Change tab_title_max_length live for THIS kitty instance (all its OS windows)."""
+def apply_width(boss, n: int, final: bool = True) -> None:
+    """Change tab_title_max_length live for THIS kitty instance (all its OS windows).
+
+    `final=False` is the per-mouse-event path while dragging: re-layout the bar, redraw it and re-flow only the tab you are looking at
+    (every other tab's panes are invisible, and re-flowing 20 of them was ~30 % of the cost). The release applies `final=True`, which
+    re-flows everything once, so no tab is left with a stale size."""
     from kitty.constants import is_wayland
-    from kitty.fast_data_types import get_options, set_options
+    from kitty.fast_data_types import get_options, mark_os_window_dirty, set_options, wakeup_main_loop
     opts = copy.copy(get_options())
     opts.tab_title_max_length = n
     set_options(opts, is_wayland(), boss.args.debug_rendering, boss.args.debug_font_fallback)
     for tm in boss.all_tab_managers:
-        tm.apply_options()
-        tm.resize()
+        if final:
+            tm.apply_options()
+            tm.resize()
+        else:
+            tm.tab_bar.apply_options()                 # the bar's draw data carries the new width
+            tm.layout_tab_bar()                        # …its screen takes the new column count…
+            tm.update_tab_bar_data()                   # …and is redrawn at that size
+            if tm.active_tab is not None:
+                tm.active_tab.relayout()
+        mark_os_window_dirty(tm.os_window_id)          # paint this frame, not whenever the cursor next blinks
+    wakeup_main_loop()
+
+
+def next_apply(now: float, last_apply: float, last_cost: float, applied: int, target: int, interval: float = 0.016):
+    """When to apply the pointer's latest width while dragging: None (already there), 0.0 (right now) or a delay in
+    seconds (too soon after the last one — wait, then apply whatever the pointer says THEN). Applying only inside the
+    pacing window and dropping the rest left the bar stuck behind the pointer once it stopped moving."""
+    if target == applied:
+        return None
+    wait = max(interval, 1.5 * last_cost) - (now - last_apply)
+    return 0.0 if wait <= 0 else wait
 
 
 def _bar_geometry(tm):
@@ -101,8 +125,15 @@ _WATCHDOG_S = 12.0          # a drag that goes silent this long is abandoned (th
                             # holding the edge while you think is not a lost release (it used to give up after 2.5 s)
 
 
-def _end_capture(boss) -> None:
-    """Give the mouse back to kitty. Always safe to call."""
+def _end_capture(boss, finalize: bool = False) -> None:
+    """Give the mouse back to kitty. Always safe to call. `finalize`: the drag did not end with a release (watchdog, error), so
+    re-flow every tab at the width it reached — the per-event path only re-flows the visible one."""
+    d = _S.drag
+    if finalize and d is not None and d.get("dirty") and boss is not None:
+        try:
+            apply_width(boss, d["width"], final=True)
+        except Exception:
+            pass
     try:
         from kitty.fast_data_types import redirect_mouse_handling, remove_timer
         redirect_mouse_handling(False)
@@ -111,9 +142,12 @@ def _end_capture(boss) -> None:
             boss.mouse_handler = None                 # (by name: a reload makes a NEW function object)
         if _S.watchdog is not None:
             remove_timer(_S.watchdog)
+        if _S.trail is not None:
+            remove_timer(_S.trail)
     except Exception:
         pass
     _S.watchdog = None
+    _S.trail = None
     _S.drag = None
 
 
@@ -126,7 +160,7 @@ def _watchdog(timer_id) -> None:
         try:
             from kitty.fast_data_types import get_boss
             tm = _S.drag["tm"]
-            _end_capture(get_boss())
+            _end_capture(get_boss(), finalize=True)
             _set_hot(tm, False)
         except Exception:
             _end_capture(None)
@@ -140,6 +174,41 @@ def _arm_watchdog() -> None:
         _S.watchdog = add_timer(_watchdog, _WATCHDOG_S, False)
     except Exception:
         _S.watchdog = None
+
+
+def _drag_to(boss) -> None:
+    """Bring the bar to the pointer's latest width: now if the pacing allows, else on a one-shot timer that applies
+    whatever the target is by then. One timer at most, cancelled when the drag ends."""
+    d = _S.drag
+    if d is None:
+        return
+    when = next_apply(time.monotonic(), _S.last_apply, _S.last_cost, d["width"], d.get("target", d["width"]), _APPLY_MIN)
+    if when is None:
+        return
+    if when > 0:
+        if _S.trail is None:
+            try:
+                from kitty.fast_data_types import add_timer
+                _S.trail = add_timer(_trail, when, False)
+            except Exception:
+                _S.trail = None
+        return
+    width = d["target"]
+    _S.last_apply = time.monotonic()
+    d["width"], d["dirty"] = width, True
+    t0 = time.perf_counter()
+    apply_width(boss, width, final=False)
+    _S.last_cost = time.perf_counter() - t0
+
+
+def _trail(timer_id) -> None:
+    _S.trail = None
+    try:
+        from kitty.fast_data_types import get_boss
+        _drag_to(get_boss())
+    except Exception:
+        import traceback
+        _debug(traceback.format_exc())
 
 
 def _mouse_handler(ev) -> None:
@@ -157,14 +226,8 @@ def _mouse_handler(ev) -> None:
         _, _edge, _inner, cell_w, window_px = _bar_geometry(d["tm"])
         edge = d["edge"]  # a config reload during capture must not change the drag's coordinate system
         if ev.button == -1:                                        # motion
-            now = time.monotonic()
-            width = L.width_from_pointer(ev.x, cell_w, window_px, edge)
-            if width != d["width"] and now - _S.last_apply >= max(_APPLY_MIN, 1.5 * _S.last_cost):
-                _S.last_apply = now
-                d["width"] = width
-                t0 = time.perf_counter()
-                apply_width(boss, width)
-                _S.last_cost = time.perf_counter() - t0
+            d["target"] = L.width_from_pointer(ev.x, cell_w, window_px, edge)
+            _drag_to(boss)
         elif ev.button == GLFW_MOUSE_BUTTON_LEFT and ev.action == GLFW_RELEASE:
             tm = d["tm"]
             width = L.width_from_pointer(ev.x, cell_w, window_px, edge)
@@ -173,7 +236,7 @@ def _mouse_handler(ev) -> None:
     except Exception:
         import traceback
         _debug(traceback.format_exc())
-        _end_capture(boss)
+        _end_capture(boss, finalize=True)
         _set_hot(d["tm"], False)
 
 
@@ -270,7 +333,7 @@ def _handle(tm, x: float, y: float, button: int, action: int) -> bool:
             boss.mouse_handler = None             # OUR capture, left behind by an older version across a reload: let go of it
         else:
             return False                          # another modal mouse mode is active
-    _S.drag = {"tm": tm, "edge": edge, "width": -1, "last": time.monotonic()}
+    _S.drag = {"tm": tm, "edge": edge, "width": -1, "target": -1, "dirty": False, "last": time.monotonic()}
     boss.mouse_handler = _mouse_handler
     redirect_mouse_handling(True)                                 # from now on we see every event
     _arm_watchdog()
