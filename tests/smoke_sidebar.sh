@@ -77,7 +77,7 @@ X mousemove 900 500; shot full
 echo "  full sidebar: $C0 columns, ${EDGE}px wide, collapse button near x=$BTN"
 [ "$(active)" = "two" ] || fail "setup: expected tab 'two' active, got '$(active)'"
 
-X mousemove "$BTN" 20 click 1
+X mousemove "$((BTN - 25))" 46 click 1             # the second header row, a button-and-a-half left of the glyph: still the button
 wait_cols "collapse button did not turn the sidebar into the rail" '[ "$c" -gt "$C0" ]'
 C1=$(cols)
 shot rail
@@ -86,7 +86,7 @@ echo "  ok   collapse button → slim rail ($C0 → $C1 columns)"
 echo "  ok   …and did not activate a tab"
 
 redraw
-X mousemove 40 20 click 1
+X mousemove 70 46 click 1                          # rail: the whole 2-row header is the button
 wait_cols "expand button did not bring the full sidebar back" '[ "$c" -eq "$C0" ]'
 echo "  ok   expand button → full sidebar again ($C0 columns)"
 [ "$(active)" = "two" ] || fail "the expand click activated a tab ('$(active)')"
@@ -102,8 +102,8 @@ for _ in $(seq 15); do [ "$(nwin)" -gt "$N0" ] && break; sleep 0.4; done
 shot peek
 echo "  ok   right-click on a tab opens its peek card"
 [ "$(active)" = "two" ] || fail "the right-click activated a tab ('$(active)')"
-X key Escape
-for _ in $(seq 15); do [ "$(nwin)" -le "$N0" ] && break; sleep 0.4; done
+sleep 1.5                                    # the card's TUI needs a moment before it reads keys
+for _ in 1 2 3; do X key Escape; for _ in $(seq 6); do [ "$(nwin)" -le "$N0" ] && break 2; sleep 0.4; done; done
 [ "$(nwin)" -le "$N0" ] || fail "Escape did not close the peek card"
 echo "  ok   Escape closes it"
 

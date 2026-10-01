@@ -166,11 +166,13 @@ def _mouse_handler(ev) -> None:
         _set_hot(d["tm"], False)
 
 
-def _toggle_zone(tm, x: float, y: float) -> bool:
+def _toggle_zone(tm, x: float, y: float, slop: float = 0.0) -> bool:
     bar = tm.tab_bar
     g = bar.window_geometry
-    compact = (g.right - g.left) / bar.cell_width <= L.COMPACT_MAX_COLS
-    return L.in_toggle_zone(x, y, g.left, g.right, g.top, bar.cell_width, bar.cell_height, compact)
+    cw, ch = bar.cell_width, bar.cell_height
+    compact = (g.right - g.left) / cw <= L.COMPACT_MAX_COLS
+    rows = L.header_rows(int((g.bottom - g.top) // ch))
+    return L.in_toggle_zone(x, y, g.left, g.right, g.top, cw, ch, compact, rows, slop)
 
 
 def _live_layout(tm) -> "L.Layout":
@@ -239,7 +241,7 @@ def _handle(tm, x: float, y: float, button: int, action: int) -> bool:
             return True
         if action == GLFW_RELEASE and _S.toggle_down:
             _S.toggle_down = False
-            if _toggle_zone(tm, x, y):                      # released still on the button
+            if _toggle_zone(tm, x, y, slop=tm.tab_bar.cell_height / 2):   # released on (or a half row off) the button
                 _toggle_collapsed(tm)
             return True
     if button != GLFW_MOUSE_BUTTON_LEFT or action != GLFW_PRESS or _S.drag is not None:

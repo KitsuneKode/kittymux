@@ -50,16 +50,17 @@ class TransitionTests(unittest.TestCase):
             seen.append(lay.mode)
         self.assertEqual(seen, ["compact", "hidden", "full", "compact"])
 
-    def test_edge_cycle_left_bottom_right(self):
+    def test_edge_cycle_visits_every_edge(self):
         lay = L.Layout("left")
         seen = []
-        for _ in range(4):
+        for _ in range(5):
             lay = L.next_edge(lay)
             seen.append(lay.edge)
-        self.assertEqual(seen, ["bottom", "right", "left", "bottom"])
+        self.assertEqual(seen, ["bottom", "top", "right", "left", "bottom"])
 
-    def test_top_edge_rejoins_cycle(self):
-        self.assertEqual(L.next_edge(L.Layout("top")).edge, "left")
+    def test_top_is_part_of_the_cycle(self):
+        self.assertEqual(L.next_edge(L.Layout("bottom")).edge, "top")
+        self.assertEqual(L.next_edge(L.Layout("top")).edge, "right")
 
     def test_width_clamped_and_leaves_compact(self):
         lay = L.adjust_width(L.Layout("left", "compact", 20), +2)
@@ -78,7 +79,7 @@ class StorageTests(unittest.TestCase):
 
     def test_fallback_chain_instance_default_none(self):
         self.assertIsNone(L.load(self.dir, 111))          # never chose one → hands off
-        L.save(self.dir, None, L.Layout("bottom", "full"))
+        L.pin_default(self.dir, L.Layout("bottom", "full"))
         self.assertEqual(L.load(self.dir, 111).edge, "bottom")
         L.save(self.dir, 111, L.Layout("right", "compact"))
         self.assertEqual(L.load(self.dir, 111).edge, "right")
@@ -126,7 +127,7 @@ class StorageTests(unittest.TestCase):
         L.save(self.dir, 1, L.Layout("right", "compact"))
         self.assertEqual(L.base_layout(self.dir, 1, cfg).edge, "right")
         self.assertIsNone(L.legacy_edge(tempfile.mkdtemp()))
-        self.assertEqual(L.base_layout(self.dir, 2, tempfile.mkdtemp()).edge, "bottom")
+        self.assertEqual(L.base_layout(self.dir, 2, tempfile.mkdtemp()).edge, "right")    # a new kitty follows the last choice
 
     def test_main_prints_conf_for_forced_pid(self):
         live = os.getpid()      # cleanup_stale() rightly deletes files of dead pids
@@ -245,20 +246,59 @@ class CollapseButtonTests(unittest.TestCase):
         self.assertEqual(L.toggle_collapsed(L.toggle_collapsed(full)), full)
         self.assertEqual(L.toggle_collapsed(L.Layout("right", "hidden", 20)).mode, "full")
 
-    def test_zone_is_the_header_rows_last_cells_and_leaves_the_edge_to_the_resizer(self):
-        # bar 0..420 px, cell 15×22 px, header row = y 0..22
-        z = lambda x, y, compact=False: L.in_toggle_zone(x, y, 0, 420, 0, 15, 22, compact)
-        self.assertTrue(z(380, 10))
-        self.assertTrue(z(390, 10))
+    def test_the_button_is_a_comfortable_target(self):
+        # bar 0..420 px, cell 15×22 px: header = 2 rows (44 px), zone starts 5 cells (75 px) from the edge
+        z = lambda x, y, **kw: L.in_toggle_zone(x, y, 0, 420, 0, 15, 22, kw.pop("compact", False), **kw)
+        self.assertTrue(z(350, 10))
+        self.assertTrue(z(380, 40))                  # the second header row counts too
         self.assertFalse(z(300, 10))                 # the title area is not a button
         self.assertFalse(z(400, 10))                 # inner edge: the resize grab zone wins
-        self.assertFalse(z(380, 30))                 # below the header row
+        self.assertFalse(z(380, 50))                 # below the header
+        zone_w = 420 - 1.5 * 15 - (420 - 5 * 15)
+        self.assertGreaterEqual(zone_w, 45)          # at least ~44 px wide
+
+    def test_a_one_row_header_only_counts_one_row(self):
+        self.assertFalse(L.in_toggle_zone(380, 30, 0, 420, 0, 15, 22, False, 1))
+
+    def test_release_slop_forgives_a_wobbly_click(self):
+        self.assertFalse(L.in_toggle_zone(335, 20, 0, 420, 0, 15, 22, False))
+        self.assertTrue(L.in_toggle_zone(335, 20, 0, 420, 0, 15, 22, False, slop=11))
+        self.assertFalse(L.in_toggle_zone(400, 20, 0, 420, 0, 15, 22, False, slop=11))   # never into the resize edge
+
+    def test_header_is_two_rows_only_on_a_tall_enough_bar(self):
+        self.assertEqual(L.header_rows(30), 2)
+        self.assertEqual(L.header_rows(5), 1)
 
     def test_the_whole_rail_header_is_the_expand_button(self):
         z = lambda x, y: L.in_toggle_zone(x, y, 0, 135, 0, 15, 22, True)
         self.assertTrue(z(10, 5))
-        self.assertTrue(z(100, 5))
-        self.assertFalse(z(10, 40))
+        self.assertTrue(z(100, 30))
+        self.assertFalse(z(10, 50))
+
+
+class DefaultFollowsLastChoiceTests(unittest.TestCase):
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+
+    def test_an_instances_choice_becomes_the_default_for_new_kitties(self):
+        L.save(self.d, 111, L.Layout("right", "compact", 24))
+        self.assertEqual(L.load(self.d, 222), L.Layout("right", "compact", 24))     # a different, new kitty
+        L.save(self.d, 333, L.Layout("top", "full", 20))                            # the latest choice wins
+        self.assertEqual(L.load(self.d, 444), L.Layout("top", "full", 20))
+        self.assertEqual(L.load(self.d, 111), L.Layout("right", "compact", 24))     # a running one keeps its own
+
+    def test_a_pinned_default_is_not_overwritten(self):
+        L.pin_default(self.d, L.Layout("left", "full", 28))
+        L.save(self.d, 111, L.Layout("bottom", "full", 20))
+        self.assertEqual(L.load(self.d, 999), L.Layout("left", "full", 28))
+        self.assertEqual(L.load(self.d, 111), L.Layout("bottom", "full", 20))
+
+    def test_clearing_unpins_and_forgets(self):
+        L.pin_default(self.d, L.Layout("left", "full", 28))
+        L.clear_default(self.d)
+        self.assertIsNone(L.load(self.d, 999))
+        L.save(self.d, 111, L.Layout("top", "full", 20))
+        self.assertEqual(L.load(self.d, 999), L.Layout("top", "full", 20))
 
 
 if __name__ == "__main__":

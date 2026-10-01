@@ -7,7 +7,7 @@
   kittymux layout      switch this kitty's bar on the fly:
                          layout mode [full|compact|hidden|cycle]   layout edge [left|right|bottom|top|cycle]
                          layout width [+N|-N|N]   layout preset NAME   layout pick   layout show
-                         layout default [clear]   (make the current layout the start for new windows)
+                         layout default [clear]   (pin the current layout as the start for new windows; otherwise new kitties start with your last choice)
   kittymux upgrade     after a git pull: refresh links, reload every running kitty twice, run doctor
   kittymux uninstall   show what install.sh added (dry run); --yes removes it, --purge also deletes the state dir
   kittymux version
@@ -493,14 +493,11 @@ def layout(argv: list[str]) -> int:
         return 0
     if cmd == "default":
         if arg == "clear":
-            try:
-                os.unlink(os.path.join(sdir, "layout-default.json"))
-            except OSError:
-                pass
-            print("default cleared")
+            kittymux_layout.clear_default(sdir)
+            print("default cleared — new kitty windows follow your kitty.conf until you choose a layout")
         else:
-            kittymux_layout.save(sdir, None, current)
-            print(f"default for new kitty windows: {kittymux_layout.describe(current)}")
+            kittymux_layout.pin_default(sdir, current)
+            print(f"pinned as the default for new kitty windows: {kittymux_layout.describe(current)}")
         return 0
     if cmd == "pick":
         return _layout_pick(sock, sdir, pid, current)

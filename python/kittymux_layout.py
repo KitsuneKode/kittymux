@@ -86,8 +86,7 @@ def next_mode(layout: Layout) -> Layout:
 
 def next_edge(layout: Layout) -> Layout:
     lay = layout.normalized()
-    cycle_order = ("left", "bottom", "right")          # the classic edge cycle (top on request)
-    edge = cycle(lay.edge, cycle_order) if lay.edge in cycle_order else "left"
+    edge = cycle(lay.edge, ("left", "bottom", "top", "right"))
     return Layout(edge, lay.mode, lay.width)
 
 
@@ -167,7 +166,13 @@ def width_from_pointer(x_px: float, cell_w: float, window_px: float, edge: str) 
 
 
 COMPACT_MAX_COLS = 12       # a vertical bar at most this wide is the slim rail (one-line rows)
-TOGGLE_CELLS = 3            # the collapse/expand button: the last cells of the header row
+TOGGLE_CELLS = 5            # the collapse/expand button: its hit area starts this many cells from the bar's inner edge
+HEADER_ROWS = 2             # the header is two rows tall (a ~44 px target, like a touch button) when the bar is tall enough
+HEADER_MIN_LINES = 8
+
+
+def header_rows(bar_lines: int) -> int:
+    return HEADER_ROWS if bar_lines >= HEADER_MIN_LINES else 1
 GRAB_CELLS = 1.5            # resize grab zone: this many cells inside the bar's inner edge (kitty sends the bar nothing outside it)
 
 
@@ -178,13 +183,14 @@ def toggle_collapsed(layout: Layout) -> Layout:
 
 
 def in_toggle_zone(x_px: float, y_px: float, left: float, right: float, top: float,
-                   cell_w: float, cell_h: float, compact: bool) -> bool:
-    """Pointer on the collapse/expand button: the header row of a vertical bar, its last
-    TOGGLE_CELLS cells (the whole row on the slim rail). It stops short of the inner edge so the
-    resize grab zone keeps working there."""
-    if not (top <= y_px < top + cell_h):
+                   cell_w: float, cell_h: float, compact: bool, rows: int = HEADER_ROWS, slop: float = 0.0) -> bool:
+    """Pointer on the collapse/expand button: the header (`rows` rows) of a vertical bar, the last
+    TOGGLE_CELLS cells (the whole width on the slim rail). It stops short of the inner edge so the
+    resize grab zone keeps working there. `slop` grows the zone (px) on every side but that edge:
+    used for the release, so a press that wobbled a little still counts."""
+    if not (top - slop <= y_px < top + rows * cell_h + slop):
         return False
-    start = left if compact else right - TOGGLE_CELLS * cell_w
+    start = (left if compact else right - TOGGLE_CELLS * cell_w) - slop
     return start <= x_px < right - GRAB_CELLS * cell_w
 
 
@@ -263,7 +269,7 @@ def base_layout(sdir: str, pid: int, config_dir: str) -> Layout:
     return Layout(legacy_edge(config_dir) or "bottom", "full", DEFAULT_WIDTH)
 
 
-def save(sdir: str, pid: int | None, layout: Layout) -> str:
+def _write(sdir: str, pid: int | None, layout: Layout) -> str:
     """Atomic, private (0600) write. pid=None writes the default."""
     os.makedirs(sdir, mode=0o700, exist_ok=True)
     path = _path(sdir, pid)
@@ -280,6 +286,36 @@ def save(sdir: str, pid: int | None, layout: Layout) -> str:
             pass
         raise
     return path
+
+
+def _pin_path(sdir: str) -> str:
+    return os.path.join(sdir, "layout-default.pinned")
+
+
+def save(sdir: str, pid: int | None, layout: Layout) -> str:
+    """Save a kitty instance's layout (pid) — or the default for new windows (pid=None).
+    Unless a default was pinned (`kittymux layout default`), an instance's choice also becomes the
+    default, so a NEW kitty starts the way you last left one; each running kitty keeps its own."""
+    path = _write(sdir, pid, layout)
+    if pid is not None and not os.path.exists(_pin_path(sdir)):
+        _write(sdir, None, layout)
+    return path
+
+
+def pin_default(sdir: str, layout: Layout) -> None:
+    """Make `layout` THE default for new kitty windows, whatever any instance does later."""
+    _write(sdir, None, layout)
+    with open(_pin_path(sdir), "w", encoding="utf-8"):
+        pass
+
+
+def clear_default(sdir: str) -> None:
+    """Forget the default and un-pin: new windows follow the user's kitty.conf until a layout is chosen."""
+    for path in (_path(sdir, None), _pin_path(sdir)):
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
 
 def cleanup_stale(sdir: str) -> int:

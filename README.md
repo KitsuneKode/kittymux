@@ -133,7 +133,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+b` | sidebar deck — tabs grouped by session, hover/click, live pane preview (`J`/`K` jump sessions, `a` pulls the selected tab's panes into this tab) |
 | `ctrl+alt+shift+b` | **docked sidebar panel** — the deck as an always-visible left column that reserves screen space (Wayland/Hyprland) |
 | `ctrl+alt+;` | send a prompt to a background agent pane |
-| `ctrl+alt+shift+e` | tab bar bottom → left → right |
+| `ctrl+alt+shift+e` | move the tab bar: left → bottom → top → right (this kitty only) |
 | `ctrl+alt+\` | bar mode: full → slim rail → hidden ("zen") |
 | `ctrl+alt+shift+[` / `]` | narrower / wider sidebar |
 | `ctrl+alt+shift+l` | pick a layout preset (sidebar, rail, right, bottom, top, zen) |
@@ -298,7 +298,18 @@ offline.
 
 Layout is **per kitty instance** (all OS windows of one kitty share it), takes effect
 instantly and survives config reloads: `kittymux layout <mode|edge|width|preset|pick|default|show>`.
-New instances start from `kittymux layout default` (or your kitty.conf when nothing was chosen).
+A new kitty starts the way you last left one (and with your own kitty.conf if you never chose a layout); `kittymux layout default` pins a layout as the start instead, `kittymux layout default clear` goes back to following your last choice.
+
+**Layout shortcuts** (all act on this kitty only):
+
+| | |
+|---|---|
+| `ctrl+alt+\` | full sidebar → slim icon rail → hidden ("zen") → back |
+| the `«` / `»` button | full sidebar ⇄ rail (click anywhere in its block, two rows tall) |
+| `ctrl+alt+shift+e` | move the bar: left → bottom → top → right (vertical sidebar or horizontal bar, top included) |
+| `ctrl+alt+shift+l` | pick a preset: sidebar, rail, right-sidebar, bottom, top, zen |
+| `ctrl+alt+shift+[` / `]` · drag the edge | narrower / wider sidebar |
+| `kittymux layout …` | the same from a shell: `mode`, `edge top`, `width 30`, `preset rail`, `show` |
 
 **Collapse button.** The header row of the vertical bar ends in a `«` button: click it and the sidebar
 shrinks to the 9-column icon rail (just each tab's logo, number and state mark, plus the `!2 ⊘1` badges) (like shadcn's collapsible sidebar); the rail's header row is a `»`

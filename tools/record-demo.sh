@@ -31,10 +31,10 @@ scene() {
   X key ctrl+alt+b; PAUSE 2.0; still deck
   X key j; PAUSE 0.7; X key j; PAUSE 0.7; X key j; PAUSE 0.7; X key j; PAUSE 0.7; X key j; PAUSE 1.0; still deck2
   X key q; PAUSE 1.0
-  X mousemove 120 392 click 3; PAUSE 2.2; still peek
+  X mousemove 120 396 click 3; PAUSE 2.2; still peek
   X key Escape; PAUSE 0.8
-  X mousemove 255 20 click 1; PAUSE 1.8; still rail
-  X mousemove 40 20 click 1; PAUSE 1.8
+  X mousemove 235 24 click 1; PAUSE 1.8; still rail
+  X mousemove 40 24 click 1; PAUSE 1.8
   X mousemove 700 400; PAUSE 1.0
 }
 if [ -n "${STILLS:-}" ]; then scene; exit 0; fi

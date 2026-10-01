@@ -761,14 +761,67 @@ def _attention_parts(counts: dict[str, int], pal) -> list[tuple[str, int, bool]]
     return parts
 
 
+def _button(screen: Screen, y: int, rows: int, x0: int, width: int, glyph: str, pal) -> None:
+    """The collapse/expand button: a filled block `width` cells × `rows` rows with the glyph in its middle."""
+    for r in range(rows):
+        screen.cursor.bg = _rgb(pal.surface_hi)
+        screen.cursor.y = y + r
+        _put(screen, x0, " " * width, _rgb(pal.muted))
+    screen.cursor.y = y + (rows - 1) // 2
+    screen.cursor.bg = _rgb(pal.surface_hi)
+    _put(screen, x0 + width // 2, glyph, _rgb(pal.text), True)
+
+
+def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: int, compact: bool) -> None:
+    """The first tab's header. Full bar: `TABS` over `N tabs  ! 1`, and the collapse button at the right
+    (3 cells × `rows` rows — the hit area in kittymux_layout.in_toggle_zone is a little larger).
+    Rail: the expand button across the top, the attention badges under it."""
+    total, counts = _session_stats(tab)
+    screen.cursor.bg = bar
+    if compact:
+        # one block, as wide as the rail allows: `»` on top, the attention badges inside it underneath
+        _button(screen, y, rows, 1, cols - 4, _EXPAND, pal)
+        badge = " ".join(f"{kittymux_agents.state_glyph(st)}{counts[st]}" for st in ("waiting", "limited", "done") if counts.get(st))
+        if badge and rows > 1:
+            screen.cursor.y = y + 1
+            screen.cursor.bg = _rgb(pal.surface_hi)
+            _put(screen, 1, _fit(badge, cols - 4).ljust(cols - 4), _rgb(pal.waiting), True)
+        return
+    name = _compact_session_name(getattr(tab, "session_name", "") or "")
+    name = "TABS" if name == "—" else name.upper()
+    btn_x = cols - kittymux_layout.TOGGLE_CELLS
+    room = btn_x - 3
+    screen.cursor.y = y
+    _put(screen, 1, _fit(name, max(4, room)), _rgb(pal.faint), True)
+    info_y = y + (1 if rows > 1 else 0)
+    parts = _attention_parts(counts, pal)
+    count_txt = f"{total} tabs" if total else ""
+    x = 1
+    screen.cursor.y = info_y
+    screen.cursor.bg = bar
+    if rows > 1 and count_txt:
+        x = _put(screen, 1, count_txt, _rgb(pal.faint)) + 2
+    elif rows == 1 and count_txt and room - _cells(name) - 2 >= _cells(count_txt):
+        x = _put(screen, 1 + _cells(name) + 2, count_txt, _rgb(pal.faint)) + 2
+    for text, color, bold in parts:
+        if x + _cells(text) > btn_x - 1:
+            break
+        x = _put(screen, x, text, _rgb(color), bold)
+    _button(screen, y, rows, btn_x, 3, _COLLAPSE, pal)
+
+
 def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     cols = screen.columns
     y0 = screen.cursor.y
     # A slim rail (kittymux_layout "compact", ≤ 12 columns): one line per tab — logo,
     # a few title characters, status — no session header, no subtitle.
     compact = cols <= COMPACT_MAX_COLS
-    # (the rail still gets a header row for the first tab: it carries the expand button)
-    lines_avail = (2 if index == 1 else 1) if compact else min(max(1, draw_data.max_tab_title_lines), screen.lines - y0)
+    # The first tab also draws the header: two rows (a comfortable click target for the collapse /
+    # expand button) when the bar is tall enough, else one. The rail has one for its expand button too.
+    want_header = index == 1 and (compact or draw_data.max_tab_title_lines >= 3)
+    hdr_rows = kittymux_layout.header_rows(screen.lines) if want_header else 0
+    lines_avail = (hdr_rows + 1) if compact else min(max(1, draw_data.max_tab_title_lines) + max(0, hdr_rows - 1),
+                                                       screen.lines - y0)
     active = tab.is_active
 
     cwd, foreground, _last_cmd = _active_window_info(tab.tab_id)
@@ -791,19 +844,19 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     elif state in kittymux_agents.NEEDS_YOU:
         subtitle.append((state, state_fg))    # working needs no word — the spinner says it
 
-    header = index == 1 and (lines_avail >= 3 or compact)
-    want_sub = lines_avail >= (3 if header else 2) and bool(subtitle)
-    n_rows = (1 if header else 0) + 1 + (1 if want_sub else 0)
+    header = hdr_rows > 0
+    want_sub = lines_avail >= hdr_rows + 2 and bool(subtitle) and not compact
+    n_rows = hdr_rows + 1 + (1 if want_sub else 0)
     n_rows = min(n_rows, lines_avail)
 
     bar = _rgb(pal.bar)
     row_bg = _rgb(pal.surface_hi) if active else bar
     mode = _kb_mode() if header else ""
     if header:
-        # the session header never takes the tab's fill; an armed keyboard mode
-        # (leader) turns it into an accent badge so you always know you're in it
-        _paint_rows(screen, y0, 1, _rgb(pal.accent) if mode else bar)
-        _paint_rows(screen, y0 + 1, n_rows - 1, row_bg)
+        # the header never takes the tab's fill; an armed keyboard mode (leader) turns
+        # it into an accent block so you always know you're in it
+        _paint_rows(screen, y0, hdr_rows, _rgb(pal.accent) if mode else bar)
+        _paint_rows(screen, y0 + hdr_rows, n_rows - hdr_rows, row_bg)
     else:
         _paint_rows(screen, y0, n_rows, row_bg)
     if index == 1 and not extra_data.for_layout:
@@ -817,37 +870,10 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         badge = f" {mode.upper()} "
         x = _put(screen, 0, badge, _rgb(pal.bg), True)
         _put(screen, x + 1, _fit("hjkl cnp saw g ?", max(0, cols - x - 2)), _rgb(pal.bg))
-        y += 1
-    elif header and compact:
-        screen.cursor.bg = bar
-        screen.cursor.y = y
-        x = _put(screen, 1, _EXPAND, _rgb(pal.muted), True)               # the expand button
-        counts = _session_stats(tab)[1]
-        badge = " ".join(f"{kittymux_agents.state_glyph(st)}{counts[st]}" for st in ("waiting", "limited", "done") if counts.get(st))
-        if badge and cols - x - 2 >= 3:
-            _put(screen, x + 1, _fit(badge, cols - x - 2), _rgb(pal.waiting), True)
-        y += 1
+        y += hdr_rows
     elif header:
-        name = _compact_session_name(getattr(tab, "session_name", "") or "")
-        name = "TABS" if name == "—" else name.upper()
-        total, counts = _session_stats(tab)
-        right = f"{total} tabs" if total else ""
-        badges = _attention_parts(counts, pal)
-        w_right = "".join(text for text, _c, _b in badges)
-        end = cols - kittymux_layout.TOGGLE_CELLS - 1          # the collapse button owns the cells after this
-        room = end - 1 - _cells(right) - _cells(w_right) - 2
-        screen.cursor.bg = bar
-        screen.cursor.y = y
-        _put(screen, 1, _fit(name, max(4, room)), _rgb(pal.faint), True)
-        rx = end - _cells(right)
-        if right and rx > 1 + _cells(name) + 1:
-            xr = rx - _cells(w_right)
-            for text, color, bold in badges:
-                _put(screen, xr, text, _rgb(color), bold)
-                xr += _cells(text)
-            _put(screen, rx, right, _rgb(pal.faint))
-        _put(screen, cols - kittymux_layout.TOGGLE_CELLS, _COLLAPSE, _rgb(pal.muted), True)   # the collapse button
-        y += 1
+        _draw_header(screen, y, hdr_rows, cols, tab, pal, bar, compact)
+        y += hdr_rows
 
     # Title row: [rail][glyph][space] title ............ dot
     screen.cursor.bg = row_bg
@@ -873,7 +899,9 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         _put(screen, 3, title,
              _rgb(pal.text) if active else _rgb(pal.muted), bold=active)
     if state_fg is not None and cols >= 6:
-        _put(screen, cols - 2, kittymux_agents.state_glyph(state), _rgb(state_fg), bold=state == "waiting")
+        # full bar: state mark at the right edge; rail: tucked right after the number so the row reads as one cluster
+        _put(screen, 5 if compact else cols - 2, kittymux_agents.state_glyph(state), _rgb(state_fg),
+             bold=state in kittymux_agents.NEEDS_YOU)
     title_y = y
 
     if want_sub and n_rows > (2 if header else 1):

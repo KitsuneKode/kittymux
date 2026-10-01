@@ -106,6 +106,7 @@ map ctrl+alt+shift+g     launch --type=overlay --cwd=current @KITTYMUX_HOME@/bin
 map ctrl+alt+semicolon   launch --type=overlay @KITTYMUX_HOME@/bin/mux-send.sh
 # per-window activity state feeding the picker's busy/waiting markers
 watcher @KITTYMUX_HOME@/python/pane-state.py
+# ctrl+alt+shift+e — move this window's bar: left → bottom → top → right
 map ctrl+alt+shift+e     launch --type=background @KITTYMUX_HOME@/bin/mux-edge.sh
 # ctrl+alt+backslash — this window's bar: sidebar → slim rail → hidden (zen), like a browser sidebar
 map ctrl+alt+backslash   launch --type=background @KITTYMUX_HOME@/bin/kittymux layout mode cycle
