@@ -328,7 +328,7 @@ Tab titles show only what fits. kitty does not deliver hover events to its tab b
 preview gesture is a **right-click on a tab**: a peek card opens over the active window with the tab's
 state and the question it is asking, branch, folder, its panes, and the tail of its screen. `⏎` jumps there
 (to the pane that is asking, if one is), `esc` or a click closes it. The deck (`ctrl+alt+b`) and the docked
-panel (`ctrl+alt+shift+b`, also drag-resizable) do get real hover: moving over a tab or pane previews its screen. Set `KITTYMUX_DEBUG=1` to log drag errors to `barsize-debug.log`.
+panel (`ctrl+alt+shift+b`, also drag-resizable) do get real hover: moving over a tab or pane previews its screen (beside the list in the wide deck, in a drawer under the list in the narrow panel). Set `KITTYMUX_DEBUG=1` to log drag errors to `barsize-debug.log`.
 
 ### Reordering tabs, and moving splits ↔ tabs
 

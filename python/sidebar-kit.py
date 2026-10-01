@@ -371,8 +371,14 @@ class Sidebar(Handler):
     def _can_drag(self) -> bool:
         return _PANEL and bool(_PANEL_SOCK) and _PANEL_EDGE == "left"
 
+    def _drawer_rows(self) -> int:
+        """A narrow deck (the docked panel) has no room for a preview column, so it gets a drawer under the
+        list instead: the hovered tab/pane's screen, like a link preview. 0 when the window is wide or short."""
+        cols, rows = self.screen_size.cols, self.screen_size.rows
+        return min(13, rows // 3) if cols < 64 and rows >= 24 else 0
+
     def _avail(self) -> int:
-        return max(1, self.screen_size.rows - 3)   # 2 header lines + 1 footer line
+        return max(1, self.screen_size.rows - 3 - self._drawer_rows())   # 2 header lines + 1 footer line + the drawer
 
     def _clamp(self) -> None:
         n = len(self.snap.rows)
@@ -506,15 +512,29 @@ class Sidebar(Handler):
                 w(set_cursor_position(0, y + off) + l1)
                 w(set_cursor_position(0, y + off + 1) + l2)
                 drawn = off + 2
-        for yy in range(y + drawn, rows_n):
+        dr = self._drawer_rows()
+        for yy in range(y + drawn, rows_n - dr):
             w(set_cursor_position(0, yy) + blank)
         shown = sum(1 for _o, it in deck.visible(snap.items, self.scroll, avail) if it.kind == "row")
         hidden = sum(1 for it in snap.items[self.scroll:] if it.kind == "row") - shown
         if hidden > 0:
-            w(set_cursor_position(0, rows_n - 1) + self._line(
+            w(set_cursor_position(0, rows_n - 1 - dr) + self._line(
                 [(f" +{hidden} more", p.faint, False)], bar_w, p.bar))
         if not snap.rows:
             w(set_cursor_position(0, 2) + self._line([(" no tabs", p.faint, False)], bar_w, p.bar))
+        if dr and snap.rows:                      # the preview drawer: what the hovered tab/pane shows right now
+            r = snap.rows[self.sel]
+            row, pane = self._hover_pane
+            pd = r.pane_rows[pane] if row == self.sel and 0 <= pane < len(r.pane_rows) else None
+            top = rows_n - dr
+            w(set_cursor_position(0, top) + self._line([("─" * bar_w, p.line, False)], bar_w, p.bar))
+            who = (pd.agent or pd.title) if pd else (r.agent or "pane")
+            w(set_cursor_position(0, top + 1) + self._line(
+                [(" " + deck.fit(f"{who} · {_short_home(r.cwd)}", bar_w - 2, _cells), p.faint, True)], bar_w, p.bar))
+            body = [ln.strip() for ln in self.preview if ln.strip()][-(dr - 2):]
+            for j in range(dr - 2):
+                text = body[j] if j < len(body) else ""
+                w(set_cursor_position(0, top + 2 + j) + self._line([(" " + text, p.muted, False)], bar_w, p.bar))
         # separator + preview
         if cols >= 64:
             px = bar_w + 2
