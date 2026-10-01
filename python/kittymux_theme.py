@@ -19,6 +19,18 @@ def blend(fg: int, bg: int, w: float) -> int:
     return out
 
 
+# Tailwind-style tone scale: a shade is the base darkened toward black (500 = the base itself; 950 is nearly black) or, below 500,
+# lightened toward white. Derived from the live theme's own colours, so every theme gets a matching pair, never a fixed grey.
+_SHADE_TOWARD = {50: (0xFFFFFF, 0.90), 100: (0xFFFFFF, 0.80), 200: (0xFFFFFF, 0.62), 300: (0xFFFFFF, 0.40), 400: (0xFFFFFF, 0.20),
+                 500: (0, 0.0), 600: (0, 0.20), 700: (0, 0.40), 800: (0, 0.60), 900: (0, 0.75), 950: (0, 0.88)}
+
+
+def shade(base: int, level: int) -> int:
+    """`base` at Tailwind tone `level` (50…950): 700 is a firm mid-dark, 950 close to black."""
+    target, w = _SHADE_TOWARD.get(level, (0, 0.0))
+    return blend(target, base, w)
+
+
 def dim(rgb: int, factor: float = 0.55) -> int:
     r, g, b = (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF
     return (int(r * factor) << 16) | (int(g * factor) << 8) | int(b * factor)
@@ -71,6 +83,8 @@ class Palette:
     alert: int
     info: int
     border: int = 0   # the divider between sidebar and panes: kitty's own pane-border colour, so it reads as a split
+    sep_700: int = 0  # the divider is two hairlines: this one (tone 700 of the theme's mid-grey) at the bar's inner edge…
+    sep_950: int = 0  # …and this one (tone 950, nearly black) right next to it, towards the panes
 
 
 def _parse_hex(value: str) -> int | None:
@@ -118,6 +132,8 @@ def from_colors(c: dict[str, int]) -> Palette:
         alert=ansi(9, fg),
         info=ansi(12, fg),
         border=ensure_contrast(c.get("inactive_border_color", blend(fg, bg, 0.24)), bg, 1.5),
+        sep_700=shade(blend(fg, bg, 0.5), 700),
+        sep_950=shade(blend(fg, bg, 0.5), 950),
     )
 
 

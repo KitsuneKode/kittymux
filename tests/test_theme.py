@@ -117,5 +117,30 @@ class FzfTests(unittest.TestCase):
         self.assertEqual(out.returncode, 2)
 
 
+class SeparatorShadeTests(unittest.TestCase):
+    def lum(self, c):
+        return (0.2126 * ((c >> 16) & 255) + 0.7152 * ((c >> 8) & 255) + 0.0722 * (c & 255))
+
+    def test_shade_scale_goes_darker_towards_950(self):
+        base = 0x808080
+        tones = [self.lum(T.shade(base, n)) for n in (300, 500, 600, 700, 800, 900, 950)]
+        self.assertEqual(tones, sorted(tones, reverse=True))
+        self.assertEqual(T.shade(base, 500), base)
+        self.assertLess(self.lum(T.shade(base, 950)), 0.15 * self.lum(base))
+
+    def test_palette_has_a_700_line_and_a_darker_950_line_for_dark_and_light_themes(self):
+        for colors in ({"background": 0x282828, "foreground": 0xEBDBB2}, {"background": 0xFAFAFA, "foreground": 0x202020},
+                       {"background": 0x000000, "foreground": 0xFFFFFF}):
+            p = T.from_colors(colors)
+            self.assertNotEqual(p.sep_700, 0)
+            self.assertLess(self.lum(p.sep_950), self.lum(p.sep_700), colors)       # 950 is always the darker of the pair
+            self.assertNotEqual(p.sep_700, p.sep_950)
+
+    def test_dark_theme_pair_straddles_the_pane_background(self):
+        p = T.from_colors({"background": 0x282828, "foreground": 0xEBDBB2})
+        self.assertGreater(self.lum(p.sep_700), self.lum(p.bg))                     # the inner line is visible against the panes
+        self.assertLess(self.lum(p.sep_950), self.lum(p.bg))                        # the outer line is a shadow edge
+
+
 if __name__ == "__main__":
     unittest.main()

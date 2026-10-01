@@ -342,7 +342,7 @@ shrinks to the 9-column icon rail (just each tab's logo, number and state mark, 
 that brings the full sidebar back at the width it had. It acts on mouse-up, like a button, and never
 activates a tab. `ctrl+alt+\` still cycles full → rail → hidden from the keyboard.
 
-**Drag to resize.** The vertical bar is divided from your panes by a line in kitty's own pane-border colour, like a split, with a thin hairline between tabs. Grab the bar's inner edge (a zone about 1.5 cells wide; the divider lights up while you
+**Drag to resize.** The vertical bar is divided from your panes by a two-tone edge — a firm tone-700 hairline and, right beside it, a near-black tone-950 one (~4 px in all), both derived from your theme (`kittymux_theme.shade`) — with a thin hairline between tabs. Grab the bar's inner edge (a zone about 1.5 cells wide; the divider lights up while you
 drag) and pull. The pointer is captured for the drag, so it works even outside the bar; release
 saves the width for this kitty. Constraints:
 
