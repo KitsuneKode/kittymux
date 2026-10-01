@@ -121,6 +121,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+1..9` · `alt+1..9` | jump to tab N (session-scoped) |
 | `ctrl+alt+\`` | flip to previously active tab (MRU) |
 | `ctrl+alt+h j k l` | pane nav (`shift+alt+arrows`) · `ctrl+alt+o` last pane |
+| `ctrl+alt+p` · `ctrl+alt+shift+x` | number every pane on screen, press its digit to **focus** it · to **swap** with it (tmux's display-panes) |
 | `ctrl+alt+enter` | split horizontal · `+shift` vertical |
 | `ctrl+alt+d` / `+shift` | pane → new tab / chooser · `ctrl+alt+shift+h` shows/hides pane title bars (the drag handles) |
 | `ctrl+alt+z` / `0` | zoom pane / equalize |

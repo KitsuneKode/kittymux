@@ -78,6 +78,10 @@ map shift+alt+right      neighboring_window right
 map ctrl+alt+o           nth_window -1
 map ctrl+alt+d           detach_window new-tab-right
 map ctrl+alt+shift+d     detach_window ask
+# ctrl+alt+p — number every pane on screen, then press its digit to focus it (tmux's display-panes; two panes: jumps straight over)
+map ctrl+alt+p           focus_visible_window
+# ctrl+alt+shift+x — number every pane, press a digit to swap the current pane with that one
+map ctrl+alt+shift+x     swap_with_window
 # ctrl+alt+shift+h — show/hide pane title bars: drag handles for moving a split to a tab, another tab, or elsewhere
 map ctrl+alt+shift+h     toggle_window_title_bars
 

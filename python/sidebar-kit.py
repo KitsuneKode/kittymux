@@ -261,6 +261,8 @@ class Sidebar(Handler):
 
     def finalize(self) -> None:
         self._alive = False
+        if self._can_drag():
+            self._pointer("")
 
     # ---- data (worker threads → event loop) -------------------------------
     def _request_refresh(self) -> None:
@@ -591,8 +593,17 @@ class Sidebar(Handler):
                 return
             if mouse_event.type is MouseEventType.MOVE and over != getattr(self, "_handle_hot", False):
                 self._handle_hot = over
+                self._pointer("ew-resize" if over else "")     # the resize cursor, like a split border
                 self.draw_screen()
         super().on_mouse_event(mouse_event)
+
+    def _pointer(self, shape: str) -> None:
+        """Pointer-shape protocol (OSC 22): `=name` sets it, `=` alone puts the default back."""
+        try:
+            self.write(f"\x1b]22;={shape}\x1b\\")
+            self.flush()
+        except Exception:
+            pass
 
     def _resize_panel(self, cell_x: int, final: bool = False) -> None:
         cols = deck.drag_columns(cell_x)
