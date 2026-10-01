@@ -233,7 +233,10 @@ class TabVerdictTests(unittest.TestCase):
 
 class MascotGlyphTests(unittest.TestCase):
     def test_the_glyph_is_in_the_icon_font(self):
-        from fontTools.ttLib import TTFont
+        try:
+            from fontTools.ttLib import TTFont
+        except ImportError:
+            self.skipTest("fontTools is not installed")
         cmap = TTFont(os.path.join(os.path.dirname(__file__), "..", "assets", "kittymux-icons.ttf")).getBestCmap()
         self.assertIn(ord(A.MASCOT_GLYPH), cmap)
 

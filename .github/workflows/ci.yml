@@ -15,7 +15,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: python unit tests
-        run: python3 -m unittest discover -s tests
+        run: |
+          python3 -m pip install --quiet fonttools      # the icon-font coverage tests read the font's real glyph table
+          python3 -m unittest discover -s tests
       - name: shell tests
         run: bash tests/test_mux_status.sh && bash tests/test_socket_lib.sh
       - name: shellcheck
