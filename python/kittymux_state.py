@@ -59,6 +59,9 @@ WORKING_RE = re.compile(
     r"\besc(?:ape)?(?:\s+twice)?\s+to\s+(?:interrupt|cancel|stop)\b"
     r"|\bctrl\+c\s+to\s+(?:interrupt|stop|cancel)\b"
     r"|\besc\s+interrupt\b"
+    # Devin swaps its input placeholder while it works ("Guide Devin while it works" vs "Ask Devin to build features…"):
+    # present for the WHOLE turn, including moments when its "Thinking ·" line is not drawn
+    r"|\bguide\s+devin\s+while\s+it\s+works\b"
     # Claude Code's spinner line, which newer versions print WITHOUT an "esc to interrupt" hint:
     # "· Undulating… (6m 52s · ↓ 35.8k tokens)"
     r"|[a-z][\w'’-]*(?:…|\.\.\.)\s*\(\s*(?:\d+\s*[hms]\s*)+(?:[·•]|\))"

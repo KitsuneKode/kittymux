@@ -150,6 +150,12 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual(S.resolve(dict(e), "claude", "", 200.0, False), "waiting")
         self.assertEqual(S.resolve(dict(e), "claude", "", 100.0 + 400, False), "idle")
 
+    def test_devin_is_working_whenever_its_input_says_guide_it_while_it_works(self):
+        busy = "└ Exited with code 0\n─ ~/p ──────\n❭ Guide Devin while it works\n──────\nSWE-2 Max\n"
+        idle = "─ ~/p ──────\n❭ Ask Devin to build features, fix bugs, or work on your code\n──────\nSWE-2 Max\n2 subagents · ↓ select\n"
+        self.assertEqual(marker(busy), "working")          # no "Thinking ·" line at this instant
+        self.assertEqual(marker(idle), "")
+
     def test_codex_status_lines_without_an_esc_hint_still_count_as_work(self):
         for text in ("• Reviewing approval request (3s)\n", "• Working (1m 10s • esc to interrupt)\n",
                      "◦ Searching the web (12s • esc to interrupt)\n", "• Running tests (2m 3s)\n"):
