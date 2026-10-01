@@ -90,6 +90,11 @@ def live(cached_live: dict) -> dict:
             ("dailyQuotaRemainingPercent", "dailyQuotaResetAtUnix", "day"),
             ("weeklyQuotaRemainingPercent", "weeklyQuotaResetAtUnix", "wk")):
         rem = plan.get(rem_key)
+        # proto3 JSON omits zero-valued fields: a present reset timestamp with an
+        # absent remaining-percent means the quota is exhausted (0% left =
+        # 100% used) — exactly the state that must surface, not be skipped.
+        if rem is None and plan.get(reset_key):
+            rem = 0.0
         if isinstance(rem, (int, float)):
             reset = plan.get(reset_key)
             try:

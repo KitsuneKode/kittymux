@@ -181,6 +181,15 @@ class CollectorTests(unittest.TestCase):
                     subprocess.CompletedProcess([], 0, json.dumps({"five_hour": {"utilization": percent}}), "")):
                 self.assertEqual(claude.live({})["rows"][0]["pct"], percent)
 
+    def test_devin_proto_zero_remaining_with_reset_is_exhausted_not_absent(self):
+        self.credentials("fake-proto-token")
+        response = {"userStatus": {"planStatus": {
+            "dailyQuotaResetAtUnix": "1800003600",
+            "weeklyQuotaResetAtUnix": "1800086400"}}}
+        with patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, json.dumps(response), "")):
+            rows = devin.live({})["rows"]
+        self.assertEqual([(r["label"], r["pct"]) for r in rows], [("day", 100), ("wk", 100)])
+
     def test_failed_fetch_keeps_last_success_and_cools_down_attempts(self):
         self.credentials("fake-cache-token")
         for mod in RESPONSES:

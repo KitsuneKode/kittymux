@@ -61,6 +61,8 @@ class UsageTests(unittest.TestCase):
         hist = json.loads(usage.C.HIST.read_text())
         self.assertNotIn("burn", hist["2026-03-08"])
         self.assertEqual(hist["2026-03-08"]["other"], "preserved")
+        self.assertEqual(hist["2026-03-08"]["_legacy_counters"], {
+            "claude_fresh": 9900000, "devin_tok": 2000, "burn": 9902000})
         self.assertEqual(hist["2026-03-09"]["burn"], 17)
 
     def test_history_chart_uses_calendar_dates_across_dst(self):

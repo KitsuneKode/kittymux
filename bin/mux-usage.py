@@ -82,9 +82,14 @@ def _history() -> dict:
         entry = dict(entry)
         # Old Claude counters were rolling weekly totals, and old Devin values
         # were rounded display text. They cannot be recovered as exact daily burn.
+        legacy = {}
         for key in (*_DAILY_KEYS.values(), "burn"):
             if entry.get("_daily_version") != 2 or not _counter(entry.get(key)):
-                entry.pop(key, None)
+                if key in entry:
+                    legacy[key] = entry.pop(key)
+        if legacy:
+            prior = entry.get("_legacy_counters")
+            entry["_legacy_counters"] = {**(prior if isinstance(prior, dict) else {}), **legacy}
         clean[stamp] = entry
     return clean
 
