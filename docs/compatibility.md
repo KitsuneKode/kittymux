@@ -26,7 +26,9 @@ and a TUI that rewords its prompts needs a one-line change in `python/kittymux_s
 | Devin | tested (working; idle prompt; "N subagents" footers are not read as work) | — |
 | OpenCode | idle screen checked live; its working marker (`esc interrupt`) follows the documented hint | — |
 | Gemini CLI, Cursor Agent, Amp, Antigravity (`agy`) | patterns follow each tool's documented hints; **not verified against live sessions** | — |
-| aider, crush, grok | no readable TUI markers → hooks or title activity only | — |
+| Factory `droid` | "No active subscription found" read as `limited` (seen live); working/permission markers not verified; its `⛬` title icon is stripped | — |
+| grok, qwen, kimi, goose, kilo, vibe (Mistral), junie, auggie | logo + hooks/title activity only | — |
+| aider, crush | no readable TUI markers → hooks or title activity only | — |
 
 ## Things that depend on the environment
 

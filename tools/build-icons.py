@@ -60,17 +60,35 @@ ICONS = [
     (0x10EA16, "yarn"),       # E0ED
     (0x10EA17, "npm"),        # E0EE
     (0x10EA18, "antigravity"),  # E0EF — Google Antigravity (agy), lobehub icons, MIT
+    # agent CLIs — marks as shipped in Zed's agent registry on this machine (monochrome, currentColor)
+    (0x10EA19, "factorydroid"),   # E0F0 — Factory `droid`
+    (0x10EA1A, "grok"),           # E0F1 — xAI Grok
+    (0x10EA1B, "qwen"),           # E0F2 — Qwen Code
+    (0x10EA1C, "kimi"),           # E0F3 — Kimi CLI
+    (0x10EA1D, "goose"),          # E0F4 — Block's goose
+    (0x10EA1E, "kilo"),           # E0F5 — Kilo Code
+    (0x10EA1F, "mistralvibe"),    # E0F6 — Mistral Vibe
+    (0x10EA20, "junie"),          # E0F7 — JetBrains Junie
+    (0x10EA21, "auggie"),         # E0F8 — Augment's auggie
 ]
 
+def _rect_path(m: re.Match) -> str:
+    x, y, w, h = (float(m.group(k)) for k in ("x", "y", "w", "h"))
+    return f"M{x} {y}h{w}v{h}h{-w}z"
+
+
 def svg_path(name: str) -> tuple[str, float]:
-    """(path data, longest viewBox side). Icons are fitted by their longest side, so a
-    non-square mark (Devin is 263×300) keeps its proportions instead of being stretched."""
+    """(path data, longest viewBox side). Every <path> and plain <rect> of the SVG is merged into one
+    outline. Icons are fitted by their longest side, so a non-square mark (Devin is 263×300) keeps its
+    proportions instead of being stretched."""
     svg = (ICONS_DIR / f"{name}.svg").read_text()
-    m = re.search(r'\sd="([^"]+)"', svg)
-    if not m:
+    parts = re.findall(r'<path\b[^>]*?\sd="([^"]+)"', svg)
+    parts += [_rect_path(m) for m in re.finditer(
+        r'<rect\b[^>]*?\bx="(?P<x>[-\d.]+)"[^>]*?\by="(?P<y>[-\d.]+)"[^>]*?\bwidth="(?P<w>[-\d.]+)"[^>]*?\bheight="(?P<h>[-\d.]+)"', svg)]
+    if not parts:
         raise SystemExit(f"no path data in {name}.svg")
     vb = re.search(r'viewBox="[-\d.]+[ ,]+[-\d.]+[ ,]+([\d.]+)[ ,]+([\d.]+)"', svg)
-    return m.group(1), (max(float(vb.group(1)), float(vb.group(2))) if vb else 24.0)
+    return " ".join(parts), (max(float(vb.group(1)), float(vb.group(2))) if vb else 24.0)
 
 
 def glyph_for(path_d: str, extent: float):

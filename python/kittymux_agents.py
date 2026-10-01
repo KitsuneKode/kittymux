@@ -3,6 +3,7 @@
 # tools/build-icons.py (aider/crush/grok fall back to plain symbols).
 
 import os
+import re
 from typing import Iterable, NamedTuple
 
 import kittymux_state
@@ -26,17 +27,36 @@ AGENTS: dict[str, Agent] = {
     "antigravity":  Agent("\ue0ef", 0x3186ff),
     "aider":        Agent("✎", 0xa6e3a1),
     "crush":        Agent("♥", 0xf38ba8),
-    "grok":         Agent("✗", 0xf9e2af),
+    "grok":         Agent("\ue0f1", 0xd0d0d0),
+    "droid":        Agent("\ue0f0", 0xee6018),     # Factory
+    "qwen":         Agent("\ue0f2", 0x615ced),
+    "kimi":         Agent("\ue0f3", 0x1783ff),
+    "goose":        Agent("\ue0f4", 0xe0a458),
+    "kilo":         Agent("\ue0f5", 0xf0e442),
+    "vibe":         Agent("\ue0f6", 0xfa520f),     # Mistral Vibe
+    "junie":        Agent("\ue0f7", 0xfe315d),
+    "auggie":       Agent("\ue0f8", 0x4fd1c5),
 }
 FALLBACK = Agent("⚡", 0x94e2d5)
 
 
+# Short, common words: matched only as the command itself (`kilo`) or as the script a runtime/shell
+# runs (`node /…/bin/kilo`), never as just any argument (`nvim vibe`, `cat goose`).
+_STRICT = frozenset({"droid", "qwen", "kimi", "goose", "kilo", "vibe", "junie", "auggie"})
+_RUNTIMES = frozenset({"node", "nodejs", "bun", "deno", "python", "python3", "uv", "uvx", "npx", "bunx", "sh", "bash", "zsh"})
+
+
 def agent_in(cmdline_args: Iterable[str]) -> str | None:
-    """First arg whose basename (lowercased) names a known agent CLI."""
-    for arg in cmdline_args:
-        name = os.path.basename(str(arg)).lower()
-        if name in AGENTS:
-            return name
+    """The known agent CLI this command line runs, else None. Ordinary agent names match any
+    argument's basename (lowercased); the short common ones in _STRICT only where a command goes."""
+    args = [str(a) for a in cmdline_args]
+    for i, arg in enumerate(args):
+        name = os.path.basename(arg).lower()
+        if name not in AGENTS:
+            continue
+        if name in _STRICT and not (i == 0 or (i == 1 and os.path.basename(args[0]).lower() in _RUNTIMES)):
+            continue
+        return name
     return None
 
 
@@ -137,6 +157,14 @@ def load_panes(panes_path: str) -> dict:
 #   done     a dim "✓"    (finished while you were away; clears when you look)
 #   unread   a faint "•"  (output arrived in a tab that has no agent)
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+# status icons agents put in front of their window title (spinners, bullets, Droid's ⛬) — most fonts
+# have no glyph for them (a box in the bar), and the bar draws its own state mark and agent logo
+_TITLE_PREFIX = re.compile(r"^[\s⠁-⣿✳✻✽✦•●◐◓◑◒∙·⛬.-]+")
+
+
+def strip_title_prefix(title: str) -> str:
+    return _TITLE_PREFIX.sub("", title or "").strip()
+
 STATE_GLYPH = {"working": SPINNER[0], "waiting": "!", "limited": "⊘", "done": "✓", "unread": "•"}
 SPINNER_FPS = 10.0
 

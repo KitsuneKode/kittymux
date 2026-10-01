@@ -89,6 +89,11 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   cursor blinks (a 10 fps spinner ran at ~1 fps on an idle window). Use `kittymux_scan.refresh_bar`.
 - `sys.path`: a module's OWN directory must win over the config dir (insert config first, own last),
   or tests/rigs silently import the installed copy instead of the code under test.
+- `kittymux_barsize` keeps its drag/button state in `sys.modules["_kittymux_barsize_rt"]`: changing the width makes kitty
+  re-run `tab_bar.py` (→ reloads helper modules) in the middle of a drag, and module globals would be wiped (the first
+  motion applied a width, the second found no drag). Same rule as the scanner.
+- The header row's `«`/`»` is a button: `kittymux_barsize._handle` consumes its press+release and toggles
+  full ↔ rail via a saved layout + `load_config_file`. Build the toggled layout from the LIVE bar when nothing was saved.
 - Vertical-bar hit testing: kitty's tab extents skip the spacer line between tabs; `kittymux_barsize` wraps
   `TabBar.tab_id_at` (`kittymux_layout.snap_tab_id`) so drag-sorting and clicks on the gap resolve to the nearer tab.
 - Python kittens are `exec`'d, not imported — no `__file__`, use
@@ -100,6 +105,7 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
 - Real-kitty smoke tests (Xvfb, private config/socket, SKIP if tools are missing): `bash tests/smoke_state.sh`
   (states from screens, spinner frame rate on an idle window, spacer-row click) and `bash tests/smoke_reload.sh`
   (a running kitty upgraded under itself must draw cleanly after two reloads; `SMOKE_KEEP_STALE=1` must FAIL).
+  `bash tests/smoke_sidebar.sh` (collapse/expand button + edge drag with real mouse events).
   They need modules as real copies in ONE config dir — a rig that mixes repo and config dirs hides real bugs.
 - Kitten UI can be screenshotted offscreen: Xvfb + `env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa
   LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=:99 kitty -o linux_display_server=x11 …`, then `xdotool windowsize` (forces a

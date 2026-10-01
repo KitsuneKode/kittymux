@@ -14,6 +14,7 @@ import copy
 import os
 import sys
 import time
+import types
 
 _here = globals().get("__file__")
 for _d in (os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty"),
@@ -22,11 +23,18 @@ for _d in (os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.co
         sys.path.insert(0, _d)
 import kittymux_layout as L  # noqa: E402
 
-HOT = False                 # pointer over the handle or dragging — the tab bar draws it lit
-_drag: dict | None = None   # active drag: {"tm": TabManager, "edge": "left|right", "width": int}
-_last_apply = 0.0
+# Live state lives in sys.modules, NOT in module globals: changing the width makes kitty re-run
+# tab_bar.py, which reloads this module — globals would be wiped in the middle of a drag (the
+# first motion event applied a width, the second found no drag and the mouse was given back).
+_S = sys.modules.setdefault("_kittymux_barsize_rt", types.SimpleNamespace(
+    hot=False,              # pointer over the handle or dragging — the tab bar draws it lit
+    drag=None,              # active drag: {"tm": TabManager, "edge": "left|right", "width": int, "last": float}
+    last_apply=0.0,
+    installed=False,
+    toggle_down=False,      # a press landed on the collapse/expand button; the release decides
+    watchdog=None,          # timer id
+))
 _APPLY_EVERY = 0.03         # seconds — plenty smooth, keeps re-layout cost bounded
-_installed = False
 
 
 def _debug(text: str) -> None:
@@ -39,10 +47,13 @@ def _debug(text: str) -> None:
             pass
 
 
+def is_hot() -> bool:
+    return bool(_S.hot)
+
+
 def _set_hot(tm, value: bool) -> None:
-    global HOT
-    if HOT != value:
-        HOT = value
+    if _S.hot != value:
+        _S.hot = value
         try:
             tm.update_tab_bar_data()
             tm.mark_tab_bar_dirty()
@@ -79,35 +90,33 @@ def _bar_geometry(tm):
 
 
 _WATCHDOG_S = 2.5           # a drag that goes silent this long is abandoned (mouse never stays captured)
-_watchdog_timer = None
 
 
 def _end_capture(boss) -> None:
     """Give the mouse back to kitty. Always safe to call."""
-    global _drag, _watchdog_timer
     try:
         from kitty.fast_data_types import redirect_mouse_handling, remove_timer
         redirect_mouse_handling(False)
-        if boss is not None and getattr(boss, "mouse_handler", None) is _mouse_handler:
-            boss.mouse_handler = None
-        if _watchdog_timer is not None:
-            remove_timer(_watchdog_timer)
+        if boss is not None and getattr(boss, "mouse_handler", None) is not None \
+                and getattr(boss.mouse_handler, "__name__", "") == "_mouse_handler":
+            boss.mouse_handler = None                 # (by name: a reload makes a NEW function object)
+        if _S.watchdog is not None:
+            remove_timer(_S.watchdog)
     except Exception:
         pass
-    _watchdog_timer = None
-    _drag = None
+    _S.watchdog = None
+    _S.drag = None
 
 
 def _watchdog(timer_id) -> None:
     """No event for _WATCHDOG_S while dragging → assume the release was lost; restore the mouse."""
-    global _watchdog_timer
-    _watchdog_timer = None
-    if _drag is None:
+    _S.watchdog = None
+    if _S.drag is None:
         return
-    if time.monotonic() - _drag["last"] >= _WATCHDOG_S:
+    if time.monotonic() - _S.drag["last"] >= _WATCHDOG_S:
         try:
             from kitty.fast_data_types import get_boss
-            tm = _drag["tm"]
+            tm = _S.drag["tm"]
             _end_capture(get_boss())
             _set_hot(tm, False)
         except Exception:
@@ -117,21 +126,19 @@ def _watchdog(timer_id) -> None:
 
 
 def _arm_watchdog() -> None:
-    global _watchdog_timer
     try:
         from kitty.fast_data_types import add_timer
-        _watchdog_timer = add_timer(_watchdog, _WATCHDOG_S, False)
+        _S.watchdog = add_timer(_watchdog, _WATCHDOG_S, False)
     except Exception:
-        _watchdog_timer = None
+        _S.watchdog = None
 
 
 def _mouse_handler(ev) -> None:
     """Boss.mouse_handler while dragging: kitty forwards EVERY mouse event here — motion and
     the final release too, even far outside the tab bar (that is what pointer capture is)."""
-    global _last_apply
     from kitty.fast_data_types import get_boss
     from kitty.fast_data_types import GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE
-    d = _drag
+    d = _S.drag
     boss = get_boss()
     if d is None:
         _end_capture(boss)
@@ -142,8 +149,8 @@ def _mouse_handler(ev) -> None:
         if ev.button == -1:                                        # motion
             now = time.monotonic()
             width = L.width_from_pointer(ev.x, cell_w, window_px, edge)
-            if width != d["width"] and now - _last_apply >= _APPLY_EVERY:
-                _last_apply = now
+            if width != d["width"] and now - _S.last_apply >= _APPLY_EVERY:
+                _S.last_apply = now
                 d["width"] = width
                 apply_width(boss, width)
         elif ev.button == GLFW_MOUSE_BUTTON_LEFT and ev.action == GLFW_RELEASE:
@@ -157,12 +164,53 @@ def _mouse_handler(ev) -> None:
         _set_hot(d["tm"], False)
 
 
+def _toggle_zone(tm, x: float, y: float) -> bool:
+    bar = tm.tab_bar
+    g = bar.window_geometry
+    compact = (g.right - g.left) / bar.cell_width <= L.COMPACT_MAX_COLS
+    return L.in_toggle_zone(x, y, g.left, g.right, g.top, bar.cell_width, bar.cell_height, compact)
+
+
+def _live_layout(tm) -> "L.Layout":
+    """The layout the bar has RIGHT NOW (edge from kitty's options, mode from its width) — the truth
+    when nothing was saved for this kitty, e.g. a bar placed by a plain `tab_bar_edge left` line."""
+    from kitty.fast_data_types import LEFT_EDGE, RIGHT_EDGE, TOP_EDGE, get_options
+    opts = get_options()
+    edge = {LEFT_EDGE: "left", RIGHT_EDGE: "right", TOP_EDGE: "top"}.get(opts.tab_bar_edge, "bottom")
+    bar = tm.tab_bar
+    compact = (bar.window_geometry.right - bar.window_geometry.left) / bar.cell_width <= L.COMPACT_MAX_COLS
+    return L.Layout(edge, "compact" if compact else "full", int(opts.tab_title_max_length or L.DEFAULT_WIDTH)).normalized()
+
+
+def _toggle_collapsed(tm) -> None:
+    """The sidebar's collapse button: save the toggled layout for this kitty and reload its config
+    (the layout include reads it). Deferred one tick so we are out of the mouse handler."""
+    try:
+        from kitty.fast_data_types import add_timer, get_boss
+        sdir, pid = L.state_dir(), os.getpid()
+        base = L.load(sdir, pid) or _live_layout(tm)
+        L.save(sdir, pid, L.toggle_collapsed(base))
+        add_timer(lambda _id: get_boss().load_config_file(), 0.01, False)
+    except Exception:
+        import traceback
+        _debug(traceback.format_exc())
+
+
 def _handle(tm, x: float, y: float, button: int, action: int) -> bool:
-    """True when the event was ours: a left press on the bar's inner edge starts a drag."""
-    global _drag
+    """True when the event was ours: the collapse/expand button (acts on release, like a button),
+    or a left press on the bar's inner edge, which starts a resize drag."""
     from kitty.fast_data_types import get_boss
-    from kitty.fast_data_types import GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, redirect_mouse_handling
-    if button != GLFW_MOUSE_BUTTON_LEFT or action != GLFW_PRESS or _drag is not None:
+    from kitty.fast_data_types import GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, GLFW_RELEASE, redirect_mouse_handling
+    if button == GLFW_MOUSE_BUTTON_LEFT and _S.drag is None and tm.tab_bar.is_vertical:
+        if action == GLFW_PRESS and _toggle_zone(tm, x, y):
+            _S.toggle_down = True
+            return True
+        if action == GLFW_RELEASE and _S.toggle_down:
+            _S.toggle_down = False
+            if _toggle_zone(tm, x, y):                      # released still on the button
+                _toggle_collapsed(tm)
+            return True
+    if button != GLFW_MOUSE_BUTTON_LEFT or action != GLFW_PRESS or _S.drag is not None:
         return False
     geo = _bar_geometry(tm)
     if geo is None:
@@ -173,7 +221,7 @@ def _handle(tm, x: float, y: float, button: int, action: int) -> bool:
     boss = get_boss()
     if getattr(boss, "mouse_handler", None) is not None:          # another modal mouse mode is active
         return False
-    _drag = {"tm": tm, "edge": edge, "width": -1, "last": time.monotonic()}
+    _S.drag = {"tm": tm, "edge": edge, "width": -1, "last": time.monotonic()}
     boss.mouse_handler = _mouse_handler
     redirect_mouse_handling(True)                                 # from now on we see every event
     _arm_watchdog()
@@ -229,14 +277,13 @@ def _install_tab_hit_testing() -> None:
 def install() -> bool:
     """Wrap TabManager.handle_tab_bar_mouse once (+ the spacer-row hit test). Safe to call
     repeatedly; never raises."""
-    global _installed
     _install_tab_hit_testing()
-    if _installed:
+    if _S.installed:
         return True
     try:
         from kitty.tabs import TabManager
         if getattr(TabManager.handle_tab_bar_mouse, "_kittymux_wrapped", False):
-            _installed = True
+            _S.installed = True
             return True
         original = TabManager.handle_tab_bar_mouse
 
@@ -251,7 +298,7 @@ def install() -> bool:
 
         wrapped._kittymux_wrapped = True                        # type: ignore[attr-defined]
         TabManager.handle_tab_bar_mouse = wrapped               # type: ignore[method-assign]
-        _installed = True
+        _S.installed = True
         return True
     except Exception:
         return False

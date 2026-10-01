@@ -22,7 +22,6 @@ source "$SCRIPT_DIR/fzf-style.sh"
 
 STATE_DIR="${KITTYMUX_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/kittymux}"
 SOURCE_OS_WIN_ID="$(source_os_window_id 2>/dev/null || true)"
-AGENT_RE='claude|codex|cursor-agent|cursor|gemini|opencode|amp|devin|agy|antigravity|aider|crush|grok'
 
 # Columns: label \t wid \t osid \t tabid \t session \t os_active_session \t sortkey \t socket \t status
 list_agents() {
@@ -36,21 +35,13 @@ list_agents() {
         kitty @ --to "unix:$sock" ls 2>/dev/null | python3 -c '
 import json, os, re, sys, time
 
-AGENT_RE = re.compile(r"^(" + sys.argv[1] + r")$")
-PANES = sys.argv[2]
-SRC_OS = int(sys.argv[3] or 0)
-SOCK = sys.argv[4]
-sys.path.insert(0, sys.argv[5])
+PANES = sys.argv[1]
+SRC_OS = int(sys.argv[2] or 0)
+SOCK = sys.argv[3]
+sys.path.insert(0, sys.argv[4])
 import kittymux_agents as KA
 SYM = {"limited": "⊘", "waiting": "◆", "working": "◐", "done": "✓", "idle": "○"}
 RANK = {"limited": 0, "waiting": 0, "done": 1, "working": 2, "idle": 3}
-
-GLYPH = {
-    "claude": "", "codex": "", "cursor-agent": "", "cursor": "",
-    "gemini": "", "opencode": "", "amp": "", "devin": "",
-    "agy": "\ue0ef", "antigravity": "\ue0ef",
-    "aider": "✎", "crush": "♥", "grok": "✗",
-}
 
 # hook status + the scanner'"'"'s verdicts (scan-<pid>.json), merged — the same view the tab bar has
 panes = KA.load_panes(PANES)
@@ -81,7 +72,7 @@ def abbrev(path):
     return path if len(parts) <= 3 else "…/" + "/".join(parts[-2:])
 
 def clean(title):
-    return re.sub(r"^[\s⠁-⣿✳✻✽✦•●◐◓◑◒∙·.-]+", "", title or "").strip()
+    return KA.strip_title_prefix(title)
 
 for ow in data:
     oid = ow.get("id")
@@ -100,11 +91,7 @@ for ow in data:
         for w in t.get("windows") or []:
             agent = ""
             for p in w.get("foreground_processes") or []:
-                for arg in p.get("cmdline") or []:
-                    name = os.path.basename(str(arg)).lower()
-                    if AGENT_RE.match(name):
-                        agent = name
-                        break
+                agent = KA.agent_in(p.get("cmdline") or []) or ""
                 if agent:
                     break
             if not agent:
@@ -131,14 +118,14 @@ for ow in data:
             if sess:
                 where.append(sess)
             label = "%s %s %-12s %-38s %-26s %s" % (
-                status, GLYPH.get(agent, "⚡"), agent,
+                status, KA.AGENTS.get(agent, KA.FALLBACK).glyph, agent,
                 title[:38], cwd[:26], " · ".join(where))
             if msg:
                 label += "  — " + msg[:60]
             key = "%d:%014.3f" % (rank, ts)      # oldest first: longest-waiting on top
             print("\t".join([label, str(w["id"]), str(oid), str(t["id"]),
                              sess, os_sess, key, SOCK, status_word]))
-' "$AGENT_RE" "$STATE_DIR/panes-$pid.json" "$SOURCE_OS_WIN_ID" "$sock" "$SCRIPT_DIR/../python" || true
+' "$STATE_DIR/panes-$pid.json" "$SOURCE_OS_WIN_ID" "$sock" "$SCRIPT_DIR/../python" || true
     done
 }
 

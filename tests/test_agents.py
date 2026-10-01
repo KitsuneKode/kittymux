@@ -231,5 +231,26 @@ class TabVerdictTests(unittest.TestCase):
         self.assertEqual(A.tab_verdict({}, [1, 2], 1, False, self.NOW), ("", ""))
 
 
+class TitlePrefixTests(unittest.TestCase):
+    def test_status_icons_in_front_of_a_title_are_dropped(self):
+        for raw, want in (("⛬ New Session", "New Session"), ("⠋ Thinking", "Thinking"), ("✳ Claude Code", "Claude Code"),
+                          ("plain title", "plain title"), ("", "")):
+            self.assertEqual(A.strip_title_prefix(raw), want)
+
+
+class StrictNamesTests(unittest.TestCase):
+    def test_short_common_names_only_match_where_a_command_goes(self):
+        self.assertEqual(A.agent_in(["kilo"]), "kilo")
+        self.assertEqual(A.agent_in(["/home/u/.local/bin/droid", "--resume"]), "droid")
+        self.assertEqual(A.agent_in(["node", "/usr/lib/node_modules/@factory/cli/bin/droid"]), "droid")
+        self.assertEqual(A.agent_in(["bash", "/opt/vibe"]), "vibe")
+        for argv in (["nvim", "vibe"], ["cat", "goose"], ["ls", "kimi"], ["node", "server.js", "kilo"], ["man", "droid"]):
+            self.assertIsNone(A.agent_in(argv), argv)
+
+    def test_every_known_agent_has_a_distinct_glyph_or_a_plain_symbol(self):
+        glyphs = [a.glyph for n, a in A.AGENTS.items() if n not in ("agy", "antigravity", "cursor", "cursor-agent")]
+        self.assertEqual(len(glyphs), len(set(glyphs)))
+
+
 if __name__ == "__main__":
     unittest.main()

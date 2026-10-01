@@ -238,6 +238,28 @@ class SnapTabIdTests(unittest.TestCase):
         self.assertEqual(L.snap_tab_id([(0, 0, 5)], 2), 0)
 
 
+class CollapseButtonTests(unittest.TestCase):
+    def test_toggle_flips_between_full_and_rail_and_restores_from_hidden(self):
+        full = L.Layout("left", "full", 24)
+        self.assertEqual(L.toggle_collapsed(full), L.Layout("left", "compact", 24))
+        self.assertEqual(L.toggle_collapsed(L.toggle_collapsed(full)), full)
+        self.assertEqual(L.toggle_collapsed(L.Layout("right", "hidden", 20)).mode, "full")
+
+    def test_zone_is_the_header_rows_last_cells_and_leaves_the_edge_to_the_resizer(self):
+        # bar 0..420 px, cell 15×22 px, header row = y 0..22
+        z = lambda x, y, compact=False: L.in_toggle_zone(x, y, 0, 420, 0, 15, 22, compact)
+        self.assertTrue(z(380, 10))
+        self.assertTrue(z(400, 10))
+        self.assertFalse(z(300, 10))                 # the title area is not a button
+        self.assertFalse(z(410, 10))                 # inner edge: the resize grab zone wins
+        self.assertFalse(z(380, 30))                 # below the header row
+
+    def test_the_whole_rail_header_is_the_expand_button(self):
+        z = lambda x, y: L.in_toggle_zone(x, y, 0, 135, 0, 15, 22, True)
+        self.assertTrue(z(10, 5))
+        self.assertTrue(z(100, 5))
+        self.assertFalse(z(10, 40))
+
 
 if __name__ == "__main__":
     unittest.main()

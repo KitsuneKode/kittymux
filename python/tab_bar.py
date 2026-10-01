@@ -79,7 +79,8 @@ _APP_LABELS = {
 _ICON_BRANCH = ""   # nerd-font git-branch
 _ICON_FOLDER = ""   # nerd-font folder
 _RAIL = "▌"
-COMPACT_MAX_COLS = 12   # a vertical bar at most this wide draws compact one-line rows
+_COLLAPSE, _EXPAND = "«", "»"   # sidebar collapse / expand button glyphs (kittymux_layout.toggle_collapsed)
+COMPACT_MAX_COLS = kittymux_layout.COMPACT_MAX_COLS   # a vertical bar at most this wide draws compact one-line rows
 _DOT = "●"
 
 
@@ -116,7 +117,7 @@ def _bar_hot() -> bool:
     """True while the pointer is over the bar's drag handle or dragging it."""
     try:
         import kittymux_barsize
-        return bool(kittymux_barsize.HOT)
+        return kittymux_barsize.is_hot()
     except Exception:
         return False
 
@@ -170,7 +171,7 @@ def _basename(value: str) -> str:
 
 
 def _strip_spinner(title: str) -> str:
-    return re.sub(r"^[\s⠁-⣿✳✻✽✦•●◐◓◑◒∙·.-]+", "", title).strip()
+    return kittymux_agents.strip_title_prefix(title)
 
 
 def _compact_session_name(session_name: str) -> str:
@@ -590,8 +591,8 @@ def _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal) -> i
         screen.draw(session_name)
         screen.cursor.fg = _rgb(pal.faint)
         screen.draw("] ")
-        _total, needs_n, done_n = _session_stats(tab)
-        for text, color, bold in _attention_parts(needs_n, done_n, pal):
+        _total, counts = _session_stats(tab)
+        for text, color, bold in _attention_parts(counts, pal):
             screen.cursor.fg = _rgb(color)
             screen.cursor.bold = bold
             screen.draw(text)
@@ -705,31 +706,35 @@ def _state_color(state: str, pal) -> int | None:
     }.get(state)
 
 
-def _session_stats(tab: TabBarData) -> tuple[int, int, int]:
-    """(tabs in the active session, agent tabs that need you, agent tabs finished unseen). The two
-    attention counts cover EVERY tab of the window — an agent in another session still asks."""
+def _session_stats(tab: TabBarData) -> tuple[int, dict[str, int]]:
+    """(tabs in the active session, {state: agent tabs in it}). The counts cover EVERY tab of the
+    window — an agent in another session still asks for you."""
     try:
         boss = get_boss()
         tab_obj = boss.tab_for_id(tab.tab_id)
         tm = boss.os_window_map.get(tab_obj.os_window_id) if tab_obj else None
         if tm is None:
-            return 0, 0, 0
+            return 0, {}
         active = tab.active_session_name
         total = sum(1 for t in tm.tabs if t.created_in_session_name == active)
-        states = [_agent_status(t.id) for t in tm.tabs]
-        return (total, sum(1 for st in states if st in kittymux_agents.NEEDS_YOU),
-                sum(1 for st in states if st == "done"))
+        counts: dict[str, int] = {}
+        for t in tm.tabs:
+            st = _agent_status(t.id)
+            if st in ("waiting", "limited", "done"):
+                counts[st] = counts.get(st, 0) + 1
+        return total, counts
     except Exception:
-        return 0, 0, 0
+        return 0, {}
 
 
-def _attention_parts(needs: int, done: int, pal) -> list[tuple[str, int, bool]]:
-    """Right-aligned header badges: `! 2` (needs you) and `✓ 1` (finished, unseen) — (text, rgb, bold)."""
+def _attention_parts(counts: dict[str, int], pal) -> list[tuple[str, int, bool]]:
+    """Right-aligned header badges, each with the SAME glyph and colour its tabs carry:
+    `! 2` waiting, `⊘ 1` limited, `✓ 3` finished unseen — (text, rgb, bold)."""
     parts = []
-    if needs:
-        parts.append((f"{kittymux_agents.state_glyph('waiting')} {needs}  ", pal.waiting, True))
-    if done:
-        parts.append((f"{kittymux_agents.state_glyph('done')} {done}  ", _state_color("done", pal), False))
+    for state in ("waiting", "limited", "done"):
+        if counts.get(state):
+            parts.append((f"{kittymux_agents.state_glyph(state)} {counts[state]}  ", _state_color(state, pal),
+                          state in kittymux_agents.NEEDS_YOU))
     return parts
 
 
@@ -739,7 +744,8 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     # A slim rail (kittymux_layout "compact", ≤ 12 columns): one line per tab — logo,
     # a few title characters, status — no session header, no subtitle.
     compact = cols <= COMPACT_MAX_COLS
-    lines_avail = 1 if compact else min(max(1, draw_data.max_tab_title_lines), screen.lines - y0)
+    # (the rail still gets a header row for the first tab: it carries the expand button)
+    lines_avail = (2 if index == 1 else 1) if compact else min(max(1, draw_data.max_tab_title_lines), screen.lines - y0)
     active = tab.is_active
 
     cwd, foreground, _last_cmd = _active_window_info(tab.tab_id)
@@ -761,7 +767,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     elif state in kittymux_agents.NEEDS_YOU:
         subtitle.append((state, state_fg))    # working needs no word — the spinner says it
 
-    header = index == 1 and lines_avail >= 3
+    header = index == 1 and (lines_avail >= 3 or compact)
     want_sub = lines_avail >= (3 if header else 2) and bool(subtitle)
     n_rows = (1 if header else 0) + 1 + (1 if want_sub else 0)
     n_rows = min(n_rows, lines_avail)
@@ -788,24 +794,34 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         x = _put(screen, 0, badge, _rgb(pal.bg), True)
         _put(screen, x + 1, _fit("hjkl cnp saw g ?", max(0, cols - x - 2)), _rgb(pal.bg))
         y += 1
+    elif header and compact:
+        screen.cursor.bg = bar
+        screen.cursor.y = y
+        x = _put(screen, 1, _EXPAND, _rgb(pal.muted), True)               # the expand button
+        badge = " ".join(t.strip() for t, _c, _b in _attention_parts(_session_stats(tab)[1], pal))
+        if badge and cols - x - 2 >= 3:
+            _put(screen, x + 1, _fit(badge, cols - x - 2), _rgb(pal.waiting), True)
+        y += 1
     elif header:
         name = _compact_session_name(getattr(tab, "session_name", "") or "")
         name = "TABS" if name == "—" else name.upper()
-        total, needs_n, done_n = _session_stats(tab)
+        total, counts = _session_stats(tab)
         right = f"{total} tabs" if total else ""
-        badges = _attention_parts(needs_n, done_n, pal)
+        badges = _attention_parts(counts, pal)
         w_right = "".join(text for text, _c, _b in badges)
-        room = cols - 2 - _cells(right) - _cells(w_right) - 2
+        end = cols - kittymux_layout.TOGGLE_CELLS - 1          # the collapse button owns the cells after this
+        room = end - 1 - _cells(right) - _cells(w_right) - 2
         screen.cursor.bg = bar
         screen.cursor.y = y
         _put(screen, 1, _fit(name, max(4, room)), _rgb(pal.faint), True)
-        rx = cols - 1 - _cells(right)
+        rx = end - _cells(right)
         if right and rx > 1 + _cells(name) + 1:
             xr = rx - _cells(w_right)
             for text, color, bold in badges:
                 _put(screen, xr, text, _rgb(color), bold)
                 xr += _cells(text)
             _put(screen, rx, right, _rgb(pal.faint))
+        _put(screen, cols - kittymux_layout.TOGGLE_CELLS, _COLLAPSE, _rgb(pal.muted), True)   # the collapse button
         y += 1
 
     # Title row: [rail][glyph][space] title ............ dot

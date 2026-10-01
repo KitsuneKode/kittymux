@@ -54,6 +54,9 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(marker("You've hit your usage limit."), "limited")
         self.assertEqual(marker("Resource has been exhausted (e.g. check quota)."), "limited")
 
+    def test_droid_without_a_subscription_is_limited(self):
+        self.assertEqual(marker("No active subscription found.\nSubscribe to start using Droid.\n> \n"), "limited")
+
     def test_waiting_outranks_working(self):
         self.assertEqual(marker(CLAUDE_PERMISSION + CLAUDE_WORKING), "waiting")
 

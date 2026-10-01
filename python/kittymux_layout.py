@@ -166,6 +166,27 @@ def width_from_pointer(x_px: float, cell_w: float, window_px: float, edge: str) 
     return max(WIDTH_MIN, min(max_width_for(window_cols), n))
 
 
+COMPACT_MAX_COLS = 12       # a vertical bar at most this wide is the slim rail (one-line rows)
+TOGGLE_CELLS = 3            # the collapse/expand button: the last cells of the header row
+
+
+def toggle_collapsed(layout: Layout) -> Layout:
+    """The sidebar's collapse button: full → slim rail, rail or hidden → full (width kept)."""
+    lay = layout.normalized()
+    return Layout(lay.edge, "compact" if lay.mode == "full" else "full", lay.width)
+
+
+def in_toggle_zone(x_px: float, y_px: float, left: float, right: float, top: float,
+                   cell_w: float, cell_h: float, compact: bool) -> bool:
+    """Pointer on the collapse/expand button: the header row of a vertical bar, its last
+    TOGGLE_CELLS cells (the whole row on the slim rail). It stops short of the inner edge so the
+    resize grab zone keeps working there."""
+    if not (top <= y_px < top + cell_h):
+        return False
+    start = left if compact else right - TOGGLE_CELLS * cell_w
+    return start <= x_px < right - 0.8 * cell_w
+
+
 def in_grab_zone(x_px: float, bar_edge_px: float, cell_w: float, zone_cells: float = 0.75) -> bool:
     """Pointer close enough to the bar's inner edge to grab it."""
     return abs(x_px - bar_edge_px) <= max(1.0, cell_w * zone_cells)

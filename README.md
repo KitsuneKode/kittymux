@@ -172,8 +172,9 @@ bottom of each *agent* pane's screen for the markers real agents print — `esc 
 `Do you want to proceed?`, `usage limit reached` — and combines that with hook status when you have
 hooks. A state needs positive evidence: a quiet title is **never** read as "waiting", an agent you
 interrupted does not spin forever, and a "waiting for your input" idle notification is not a request.
-Works for Claude, Codex, Devin, Gemini, Cursor, OpenCode, Amp and Antigravity (`agy`) with no setup;
-aider/crush/grok (no readable TUI) use hooks or title activity.
+Works for Claude, Codex, Devin, Gemini, Cursor, OpenCode, Amp, Antigravity (`agy`) and Factory `droid`
+with no setup; the others with a logo (grok, qwen, kimi, goose, kilo, vibe, junie, auggie) and aider/crush
+use hooks or title activity. Logos are the real brand marks, compiled into the bundled icon font.
 The design follows how t3code's sidebar resolves thread status: one ordered
 resolver (limited › waiting › working › done › idle), "done" only while unseen.
 
@@ -288,6 +289,11 @@ offline.
 Layout is **per kitty instance** (all OS windows of one kitty share it), takes effect
 instantly and survives config reloads: `kittymux layout <mode|edge|width|preset|pick|default|show>`.
 New instances start from `kittymux layout default` (or your kitty.conf when nothing was chosen).
+
+**Collapse button.** The header row of the vertical bar ends in a `«` button: click it and the sidebar
+shrinks to the 9-column icon rail (like shadcn's collapsible sidebar); the rail's header row is a `»`
+that brings the full sidebar back at the width it had. It acts on mouse-up, like a button, and never
+activates a tab. `ctrl+alt+\` still cycles full → rail → hidden from the keyboard.
 
 **Drag to resize.** Grab the vertical bar's inner edge (the separator line lights up while you
 drag) and pull. The pointer is captured for the drag, so it works even outside the bar; release

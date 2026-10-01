@@ -24,7 +24,7 @@ PRIORITY = {"limited": 5, "waiting": 4, "working": 3, "done": 2, "idle": 1, "": 
 # only have hooks / title activity to go on.
 SCREEN_AGENTS = frozenset({
     "claude", "codex", "cursor-agent", "cursor", "gemini", "opencode", "amp", "devin",
-    "agy", "antigravity",
+    "agy", "antigravity", "droid",
 })
 
 _TAIL_LINES = 14            # only the bottom of the screen: footers/prompts live there, stale output does not
@@ -37,7 +37,8 @@ LIMITED_RE = re.compile(
     r"(?:usage|rate|weekly|daily|monthly|5-?hour|session)\s+limit\s+(?:reached|hit|exceeded)"
     r"|you(?:'|’)ve\s+(?:hit|reached)\s+(?:your|the)\s+[\w\s-]{0,20}limit"
     r"|quota\s+(?:exceeded|exhausted)|resource\s+has\s+been\s+exhausted"
-    r"|credits?\s+(?:exhausted|depleted)|out\s+of\s+(?:acus?|credits)",
+    r"|credits?\s+(?:exhausted|depleted)|out\s+of\s+(?:acus?|credits)"
+    r"|no\s+active\s+subscription",                         # Factory droid: "No active subscription found."
     _I)
 WAITING_RE = re.compile(
     r"do\s+you\s+want\s+to\s+(?:proceed|make\s+this\s+edit|create|allow|run|apply|overwrite)"
