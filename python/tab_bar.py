@@ -815,9 +815,9 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     compact = cols <= COMPACT_MAX_COLS
     # The first tab also draws the header: two rows (a comfortable click target for the collapse /
     # expand button) when the bar is tall enough, else one. The rail has one for its expand button too.
-    want_header = index == 1 and (compact or draw_data.max_tab_title_lines >= 3)
-    hdr_rows = kittymux_layout.header_rows(screen.lines) if want_header else 0
-    lines_avail = (hdr_rows + 1) if compact else min(max(1, draw_data.max_tab_title_lines) + max(0, hdr_rows - 1),
+    want_header = index == 1
+    hdr_rows = kittymux_layout.header_rows(screen.lines, draw_data.max_tab_title_lines, compact) if want_header else 0
+    lines_avail = (hdr_rows + 1) if compact else min(max(1, draw_data.max_tab_title_lines),
                                                        screen.lines - y0)
     active = tab.is_active
 

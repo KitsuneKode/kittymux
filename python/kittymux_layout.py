@@ -169,11 +169,15 @@ COMPACT_MAX_COLS = 12       # a vertical bar at most this wide is the slim rail 
 TOGGLE_CELLS = 5            # the collapse/expand button: its hit area starts this many cells from the bar's inner edge
 HEADER_ROWS = 2             # the header is two rows tall (a ~44 px target, like a touch button) when the bar is tall enough
 HEADER_MIN_LINES = 8
-
-
-def header_rows(bar_lines: int) -> int:
-    return HEADER_ROWS if bar_lines >= HEADER_MIN_LINES else 1
 GRAB_CELLS = 1.5            # resize grab zone: this many cells inside the bar's inner edge (kitty sends the bar nothing outside it)
+
+
+def header_rows(bar_lines: int, max_title_lines: int, compact: bool = False) -> int:
+    """Rows of the first tab's header: two when the bar is tall enough AND kitty lets a tab be tall enough.
+    kitty caps every tab's height at `tab_title_max_lines`; a tab that draws more spills into the blank
+    spacer row (no gap, no divider), so the header must fit inside the cap: header + title + subtitle."""
+    needed = 3 if compact else 4
+    return HEADER_ROWS if bar_lines >= HEADER_MIN_LINES and max_title_lines >= needed else 1
 
 
 def toggle_collapsed(layout: Layout) -> Layout:
@@ -200,6 +204,26 @@ def in_grab_zone(x_px: float, bar_edge_px: float, cell_w: float, zone_cells: flo
 
 
 # ── vertical-bar hit testing (used by kittymux_barsize) ───────────────────────
+def drag_target(extents, dragged_id: int, target_id: int, row: float) -> int:
+    """Which tab counts as "under the pointer" while `dragged_id` is being dragged. kitty swaps the dragged
+    tab with whatever tab is under the pointer the moment it touches ANY of its rows; with tabs of different
+    heights each swap shifts the layout under the pointer and the order cascades. So a tab only counts once
+    the pointer has passed its MIDPOINT in the direction of travel; before that the dragged tab itself does
+    (kitty then does nothing). `extents` is [(tab_id, first_row, last_row)] in the current order; `row` is the
+    pointer's row as a float (rows span [first, last + 1))."""
+    if not target_id or target_id <= 0 or target_id == dragged_id:
+        return target_id
+    order = [e[0] for e in extents]
+    if dragged_id not in order or target_id not in order:
+        return target_id
+    first, last = next((a, b) for t, a, b in extents if t == target_id)
+    mid = (first + last + 1) / 2
+    below = order.index(target_id) > order.index(dragged_id)
+    passed = row >= mid if below else row < mid
+    return target_id if passed else dragged_id
+
+
+
 def snap_tab_id(extents, row: int) -> int:
     """Tab id for a pointer on `row` of a vertical bar, forgiving the blank spacer lines kitty puts
     between tabs. `extents` is [(tab_id, first_row, last_row)] top to bottom.

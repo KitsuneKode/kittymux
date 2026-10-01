@@ -99,6 +99,12 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   motion applied a width, the second found no drag). Same rule as the scanner.
 - The header row's `«`/`»` is a button: `kittymux_barsize._handle` consumes its press+release and toggles
   full ↔ rail via a saved layout + `load_config_file`. Build the toggled layout from the LIVE bar when nothing was saved.
+- kitty caps every vertical tab's HEIGHT at `tab_title_max_lines` (kittymux.conf sets 4): a tab that draws more rows spills into
+  the spacer row (no gap, no hairline, wrong extent). The first tab's header (2 rows) + title + subtitle must fit in the cap —
+  `kittymux_layout.header_rows` degrades to a 1-row header when the cap is 3.
+- Tab drag-and-drop: kitty's first `on_tab_drop_move` of a drag has x=y=0 and seeds the dragged tab at the END (it jumped to the
+  top of a vertical bar); `kittymux_barsize.make_on_tab_drop_move` seeds the real order, and `make_tab_id_at` applies
+  `kittymux_layout.drag_target` (a tab counts only past its midpoint) so unequal tab heights cannot cascade swaps.
 - Vertical-bar hit testing: kitty's tab extents skip the spacer line between tabs; `kittymux_barsize` wraps
   `TabBar.tab_id_at` (`kittymux_layout.snap_tab_id`) so drag-sorting and clicks on the gap resolve to the nearer tab.
 - Python kittens are `exec`'d, not imported — no `__file__`, use
@@ -110,7 +116,8 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
 - Real-kitty smoke tests (Xvfb, private config/socket, SKIP if tools are missing): `bash tests/smoke_state.sh`
   (states from screens, spinner frame rate on an idle window, spacer-row click) and `bash tests/smoke_reload.sh`
   (a running kitty upgraded under itself must draw cleanly after two reloads; `SMOKE_KEEP_STALE=1` must FAIL).
-  `bash tests/smoke_sidebar.sh` (collapse/expand button, right-click peek, edge drag with real mouse events) and
+  `bash tests/smoke_sidebar.sh` (collapse/expand button, right-click peek, edge drag with real mouse events),
+  `bash tests/smoke_drag.sh` (tab drag-to-reorder with real pointer events — kitty's DnD works under Xvfb) and
   `bash tests/test_install.sh` (fresh-$HOME install → reinstall → config valid → uninstall; needs only kitty).
   They need modules as real copies in ONE config dir — a rig that mixes repo and config dirs hides real bugs.
 - Kitten UI can be screenshotted offscreen: Xvfb + `env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa

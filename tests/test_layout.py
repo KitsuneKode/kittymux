@@ -265,9 +265,11 @@ class CollapseButtonTests(unittest.TestCase):
         self.assertTrue(L.in_toggle_zone(335, 20, 0, 420, 0, 15, 22, False, slop=11))
         self.assertFalse(L.in_toggle_zone(400, 20, 0, 420, 0, 15, 22, False, slop=11))   # never into the resize edge
 
-    def test_header_is_two_rows_only_on_a_tall_enough_bar(self):
-        self.assertEqual(L.header_rows(30), 2)
-        self.assertEqual(L.header_rows(5), 1)
+    def test_header_is_two_rows_only_when_the_bar_and_kittys_per_tab_cap_allow(self):
+        self.assertEqual(L.header_rows(30, 4), 2)
+        self.assertEqual(L.header_rows(5, 4), 1)                  # short bar
+        self.assertEqual(L.header_rows(30, 3), 1)                 # tab_title_max_lines 3: header+title+subtitle must fit
+        self.assertEqual(L.header_rows(30, 3, compact=True), 2)   # the rail's tab 1 is header + one row
 
     def test_the_whole_rail_header_is_the_expand_button(self):
         z = lambda x, y: L.in_toggle_zone(x, y, 0, 135, 0, 15, 22, True)
@@ -299,6 +301,33 @@ class DefaultFollowsLastChoiceTests(unittest.TestCase):
         self.assertIsNone(L.load(self.d, 999))
         L.save(self.d, 111, L.Layout("top", "full", 20))
         self.assertEqual(L.load(self.d, 999), L.Layout("top", "full", 20))
+
+
+class DragTargetTests(unittest.TestCase):
+    # tab 1 is tall (header): rows 2-5; tab 2 rows 7-8; tab 3 rows 10-11; tab 4 rows 13-14
+    E = [(1, 2, 5), (2, 7, 8), (3, 10, 11), (4, 13, 14)]
+
+    def test_dragging_down_a_tab_counts_only_past_its_midpoint(self):
+        # dragging tab 2 down over tab 3 (rows 10-11, midpoint 11.0)
+        self.assertEqual(L.drag_target(self.E, 2, 3, 10.2), 2)       # just touched it: nothing yet
+        self.assertEqual(L.drag_target(self.E, 2, 3, 10.9), 2)
+        self.assertEqual(L.drag_target(self.E, 2, 3, 11.1), 3)       # past the middle: swap
+
+    def test_dragging_up_mirrors_it(self):
+        # dragging tab 3 up over tab 2 (rows 7-8, midpoint 8.0)
+        self.assertEqual(L.drag_target(self.E, 3, 2, 8.8), 3)
+        self.assertEqual(L.drag_target(self.E, 3, 2, 7.9), 2)
+
+    def test_a_tall_tab_needs_the_pointer_past_its_own_middle(self):
+        # dragging tab 2 up over the tall tab 1 (rows 2-5, midpoint 4.0)
+        self.assertEqual(L.drag_target(self.E, 2, 1, 5.5), 2)
+        self.assertEqual(L.drag_target(self.E, 2, 1, 3.5), 1)
+
+    def test_over_itself_nothing_or_unknown_ids_pass_through(self):
+        self.assertEqual(L.drag_target(self.E, 2, 2, 7.5), 2)
+        self.assertEqual(L.drag_target(self.E, 2, 0, 9.0), 0)
+        self.assertEqual(L.drag_target(self.E, 2, -1, 9.0), -1)     # the "+" button
+        self.assertEqual(L.drag_target(self.E, 99, 3, 10.5), 3)     # dragged tab not in the bar (another window's)
 
 
 if __name__ == "__main__":

@@ -340,7 +340,7 @@ panel (`ctrl+alt+shift+b`, also drag-resizable) do get real hover: moving over a
 
 Kitty has native drag and drop; kittymux makes it work in the vertical bar:
 
-- **Reorder tabs** — press and drag a tab in the bar. (Kitty used to treat the blank line between
+- **Reorder tabs** — press and drag a tab in the bar. A tab swaps once you pass the middle of the one you're crossing, so the order follows your hand instead of jumping (kitty's own drag teleported the grabbed tab to the top and cascaded swaps between tabs of different heights; both are fixed and covered by a real-pointer test). (Kitty used to treat the blank line between
   vertical tabs as "no tab", so dragging over it threw the tab to the end of the list; the gap now
   belongs to the nearer tab, and clicking it selects that tab.)
 - **Split → tab** — press `ctrl+alt+shift+h` to show a thin title bar on every pane (they are hidden

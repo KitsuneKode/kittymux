@@ -49,5 +49,7 @@ jobs:
         run: bash tests/smoke_state.sh
       - name: sidebar collapse button + drag (real mouse events)
         run: bash tests/smoke_sidebar.sh
+      - name: tab drag-to-reorder (real pointer events)
+        run: bash tests/smoke_drag.sh
       - name: an upgraded, running kitty draws cleanly after two reloads
         run: bash tests/smoke_reload.sh

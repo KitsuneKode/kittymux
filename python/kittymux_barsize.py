@@ -171,7 +171,7 @@ def _toggle_zone(tm, x: float, y: float, slop: float = 0.0) -> bool:
     g = bar.window_geometry
     cw, ch = bar.cell_width, bar.cell_height
     compact = (g.right - g.left) / cw <= L.COMPACT_MAX_COLS
-    rows = L.header_rows(int((g.bottom - g.top) // ch))
+    rows = L.header_rows(int((g.bottom - g.top) // ch), bar.max_tab_title_lines, compact)
     return L.in_toggle_zone(x, y, g.left, g.right, g.top, cw, ch, compact, rows, slop)
 
 
@@ -279,24 +279,70 @@ def _finish(tm, width: int) -> None:
 
 
 def make_tab_id_at(original):
-    """`TabBar.tab_id_at` that also resolves the spacer rows of a vertical bar (see
-    kittymux_layout.snap_tab_id). Anything unexpected falls back to kitty's own answer."""
+    """`TabBar.tab_id_at` for a vertical bar: spacer rows resolve to the nearer tab (see
+    kittymux_layout.snap_tab_id), and while a tab is being dragged a tab only counts once the pointer is
+    past its midpoint (kittymux_layout.drag_target), so reordering does not cascade. Anything unexpected
+    falls back to kitty's own answer."""
     def tab_id_at(self, x, y):
         tid = original(self, x, y)
-        if tid:
-            return tid
         try:
             if not (getattr(self, "is_vertical", False) and self.laid_out_once):
                 return tid
             g = self.window_geometry
-            if not (g.left <= x < g.right and g.top <= y < g.bottom):
-                return tid
-            row = int((y - g.top) // self.cell_height)
-            return L.snap_tab_id([(te.tab_id, te.y.start, te.y.end) for te in self.tab_extents], row)
+            inside = g.left <= x < g.right and g.top <= y < g.bottom
+            extents = [(te.tab_id, te.y.start, te.y.end) for te in self.tab_extents]
+            if not tid and inside:
+                tid = L.snap_tab_id(extents, int((y - g.top) // self.cell_height))
+            from kitty.fast_data_types import get_tab_being_dragged
+            dragged, started = get_tab_being_dragged()[:2]
+            if started and dragged and inside:
+                compact = (g.right - g.left) / self.cell_width <= L.COMPACT_MAX_COLS
+                hdr = L.header_rows(int((g.bottom - g.top) // self.cell_height), self.max_tab_title_lines, compact)
+                if extents and extents[0][2] - extents[0][1] + 1 > hdr:       # the first tab's extent includes the header
+                    extents[0] = (extents[0][0], extents[0][1] + hdr, extents[0][2])
+                tid = L.drag_target(extents, dragged, tid, (y - g.top) / self.cell_height)
+            return tid
         except Exception:
             return tid
     tab_id_at._kittymux_wrapped = True                          # type: ignore[attr-defined]
     return tab_id_at
+
+
+def make_on_tab_drop_move(original):
+    """`TabManager.on_tab_drop_move` with a sane start. kitty's FIRST call of a drag has no pointer position
+    (x=y=0) and builds the new order from the laid-out tabs, which no longer include the dragged one, so the
+    dragged tab lands at the END and then swaps with whatever is at the top: on a vertical bar it jumped
+    around the moment you grabbed it. Seed the order as it is now and use the real drag-start position."""
+    def on_tab_drop_move(self, tab_id=0, is_dest=False, x=0, y=0):
+        try:
+            if is_dest and self.tab_being_dropped is None:
+                from kitty.fast_data_types import get_boss, get_tab_being_dragged
+                from kitty.tabs import TabBeingDropped
+                ids = [t.id for t in self.tabs_to_be_shown_in_tab_bar]
+                tab = get_boss().tab_for_id(tab_id)
+                _id, started, sx, sy = get_tab_being_dragged()
+                if tab is not None and tab_id in ids and started:
+                    self.tab_being_dropped = TabBeingDropped(
+                        data=tab.data_for_tab_bar(tab is get_boss().active_tab), tab_ids=ids,
+                        last_drop_move_coordinate=self.tab_bar.drag_axis_coordinate(int(sx), int(sy)))
+                    if x == 0 and y == 0:
+                        x, y = int(sx), int(sy)
+                    self.layout_tab_bar()
+        except Exception:
+            import traceback
+            _debug(traceback.format_exc())
+        return original(self, tab_id, is_dest, x, y)
+    on_tab_drop_move._kittymux_wrapped = True                   # type: ignore[attr-defined]
+    return on_tab_drop_move
+
+
+def _install_tab_drag() -> None:
+    try:
+        from kitty.tabs import TabManager
+        if not getattr(TabManager.on_tab_drop_move, "_kittymux_wrapped", False):
+            TabManager.on_tab_drop_move = make_on_tab_drop_move(TabManager.on_tab_drop_move)   # type: ignore[method-assign]
+    except Exception:
+        pass
 
 
 def _install_tab_hit_testing() -> None:
@@ -312,6 +358,7 @@ def install() -> bool:
     """Wrap TabManager.handle_tab_bar_mouse once (+ the spacer-row hit test). Safe to call
     repeatedly; never raises."""
     _install_tab_hit_testing()
+    _install_tab_drag()
     if _S.installed:
         return True
     try:
