@@ -399,7 +399,12 @@ def demo(argv: list[str]) -> int:
         shutil.copy(os.path.join(HOME_DIR, "assets", "kittymux-icons.ttf"), os.path.join(data, "fonts"))
         user_fonts = os.path.expanduser("~/.local/share/fonts")
         if os.path.isdir(user_fonts):
-            os.symlink(user_fonts, os.path.join(data, "fonts", "user"))
+            # the user's fonts, minus an installed copy of OUR icon font: two files of one family and kitty may
+            # pick the older (without the newest glyphs)
+            os.makedirs(os.path.join(data, "fonts", "user"))
+            for name in os.listdir(user_fonts):
+                if name != "kittymux-icons.ttf":
+                    os.symlink(os.path.join(user_fonts, name), os.path.join(data, "fonts", "user", name))
         env["XDG_DATA_HOME"] = data
     open(os.path.join(cfg, "kitty.conf"), "w").write(
         font_conf + "allow_remote_control yes\nlisten_on unix:/tmp/mykitty\n"

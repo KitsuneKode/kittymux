@@ -231,6 +231,24 @@ class TabVerdictTests(unittest.TestCase):
         self.assertEqual(A.tab_verdict({}, [1, 2], 1, False, self.NOW), ("", ""))
 
 
+class MascotGlyphTests(unittest.TestCase):
+    def test_the_glyph_is_in_the_icon_font(self):
+        from fontTools.ttLib import TTFont
+        cmap = TTFont(os.path.join(os.path.dirname(__file__), "..", "assets", "kittymux-icons.ttf")).getBestCmap()
+        self.assertIn(ord(A.MASCOT_GLYPH), cmap)
+
+    def test_only_a_kitty_that_started_after_the_font_was_installed_draws_it(self):
+        import tempfile
+        f = tempfile.NamedTemporaryFile(delete=False)
+        f.close()
+        mtime = os.stat(f.name).st_mtime
+        self.assertTrue(A.glyph_font_loaded(f.name, mtime + 100))        # kitty started after the install
+        self.assertFalse(A.glyph_font_loaded(f.name, mtime - 100))       # installed while kitty was running: still a box
+        self.assertTrue(A.glyph_font_loaded(f.name, mtime - 1.5))         # /proc start times are only accurate to ~1 s
+        self.assertFalse(A.glyph_font_loaded(f.name + ".missing", mtime))
+        os.unlink(f.name)
+
+
 class IdentifyTests(unittest.TestCase):
     def test_agent_beats_tool_and_shell_is_neither(self):
         win = lambda *cmds: {"foreground_processes": [{"cmdline": c} for c in cmds]}

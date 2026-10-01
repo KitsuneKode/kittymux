@@ -38,6 +38,17 @@ AGENTS: dict[str, Agent] = {
     "auggie":       Agent("\ue0f8", 0x4fd1c5),
 }
 FALLBACK = Agent("⚡", 0x94e2d5)
+MASCOT_GLYPH = "\ue0f9"      # the kittymux mascot (assets/icons/kittymux.svg → the icon font)
+
+
+def glyph_font_loaded(font_path: str, process_start: float) -> bool:
+    """Has THIS kitty loaded the current icon font? kitty reads fonts once, at start, so a glyph added by a later
+    install (kittymux upgrade) draws as a box until that kitty restarts. True only when the installed font file is
+    not newer than the process — callers draw the newest glyphs only then."""
+    try:
+        return os.stat(font_path).st_mtime <= process_start + 3.0       # /proc start time is only 1 s accurate
+    except OSError:
+        return False
 
 
 # Short, common words: matched only as the command itself (`kilo`) or as the script a runtime/shell

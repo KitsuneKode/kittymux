@@ -769,6 +769,29 @@ def _button(screen: Screen, y: int, rows: int, x0: int, width: int, glyph: str, 
     _put(screen, x0 + width // 2, glyph, _rgb(pal.text), True)
 
 
+def _process_start() -> float:
+    """When this kitty process started (epoch seconds), from /proc; 0.0 if unknown (→ no new glyphs)."""
+    try:
+        with open("/proc/self/stat") as f:
+            ticks = int(f.read().rsplit(")", 1)[1].split()[19])
+        with open("/proc/stat") as f:
+            btime = next(int(line.split()[1]) for line in f if line.startswith("btime"))
+        return btime + ticks / os.sysconf("SC_CLK_TCK")
+    except (OSError, ValueError, StopIteration, IndexError):
+        return 0.0
+
+
+_MASCOT_OK: dict = {}
+
+
+def _mascot_ready() -> bool:
+    """Draw the mascot glyph only if this kitty has loaded the font that has it (see glyph_font_loaded)."""
+    if "ok" not in _MASCOT_OK:
+        fonts = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+        _MASCOT_OK["ok"] = kittymux_agents.glyph_font_loaded(os.path.join(fonts, "fonts", "kittymux-icons.ttf"), _process_start())
+    return _MASCOT_OK["ok"]
+
+
 def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: int, compact: bool) -> None:
     """The first tab's header. Full bar: `TABS` over `N tabs  ! 1`, and the collapse button at the right
     (a bare glyph; its hit area, kittymux_layout.in_toggle_zone, is a good deal larger).
@@ -787,9 +810,12 @@ def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: in
     name = _compact_session_name(getattr(tab, "session_name", "") or "")
     name = "TABS" if name == "—" else name.upper()
     btn_x = cols - kittymux_layout.TOGGLE_CELLS
-    room = btn_x - 3
+    mascot = _mascot_ready()
+    room = btn_x - 3 - (2 if mascot else 0)
     screen.cursor.y = y
-    _put(screen, 1, _fit(name, max(4, room)), _rgb(pal.faint), True)
+    if mascot:
+        _put(screen, 1, kittymux_agents.MASCOT_GLYPH, _rgb(pal.accent), True)
+    _put(screen, 3 if mascot else 1, _fit(name, max(4, room)), _rgb(pal.faint), True)
     info_y = y + (1 if rows > 1 else 0)
     parts = _attention_parts(counts, pal)
     count_txt = f"{total} tabs" if total else ""

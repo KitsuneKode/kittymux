@@ -413,7 +413,7 @@ you reload or restart them.
 
 ## Brand
 
-The mascot is a kitten whose face is split in two colours — two panes. It is original artwork, MIT-licensed with the
+The mascot is a kitten whose face is split in two colours — two panes. It is also a one-colour glyph in the icon font (traced by `tools/trace-mascot.py`) that the bar header draws next to its title — once that kitty has been restarted after an upgrade, because kitty loads fonts only at start (until then the header simply omits it, never a box). It is original artwork, MIT-licensed with the
 rest of the repo (`assets/brand/`; sizes and the 1280×640 social card are built by `tools/build-brand.py`, the notification
 badge by `tools/build-notify-icons.py`; how it was made is in [docs/brand/](docs/brand/mascot-prompts.md)).
 The logos of Claude, Codex, Devin, Droid, Antigravity, Gemini and the other agents are **trademarks of their owners**, shown only

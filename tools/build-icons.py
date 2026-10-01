@@ -70,6 +70,7 @@ ICONS = [
     (0x10EA1F, "mistralvibe"),    # E0F6 — Mistral Vibe
     (0x10EA20, "junie"),          # E0F7 — JetBrains Junie
     (0x10EA21, "auggie"),         # E0F8 — Augment's auggie
+    (0x10EA22, "kittymux"),       # E0F9 — the mascot, traced by tools/trace-mascot.py (not a third-party mark)
 ]
 
 def _rect_path(m: re.Match) -> str:

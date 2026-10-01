@@ -74,6 +74,9 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   leave it half-edited.
 - Icons come from real brand marks: `assets/icons/*.svg` → `tools/build-icons.py` (append-only codepoints; fits non-square
   viewBoxes by their longest side). Devin's mark is Cognition's own; Antigravity's is the Google mark.
+- A glyph added to the icon font reaches a RUNNING kitty only after a restart (it loads fonts once): draw a new glyph only when
+  `kittymux_agents.glyph_font_loaded()` says that kitty started after the installed font (see the mascot in the bar header).
+  The mascot glyph (E0F9) is traced from `assets/brand/mascot.png` by `tools/trace-mascot.py` → `assets/icons/kittymux.svg`.
 - Anything that changes a key updates `kittymux-keys.conf.tpl` AND the README key table in one commit.
 
 ## Conventions
