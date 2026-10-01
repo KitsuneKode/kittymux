@@ -358,5 +358,34 @@ class HitAreaTests(unittest.TestCase):
             self.assertFalse(L.in_grab_zone(x, edge, cw) and L.in_toggle_zone(x, 30, edge - 200, edge, 0, cw, 20, False, 2, 0.0), x)
 
 
+class EdgeGeometryTests(unittest.TestCase):
+    def test_left_bar_lines_and_hit_strip_start_at_the_pane_area(self):
+        g = L.edge_geometry("left", 390, 1590, 15, 33)
+        self.assertEqual(g["lines"], [(390, 394, 700), (394, 398, 950)])         # 4 px each at a 15 px cell: the 700 line touches the bar
+        self.assertEqual(g["hit"], (390, 404))                                   # the 8 px of lines plus 6 px of slop
+        self.assertLessEqual(g["hit"][1] - 390, 33)                              # never wider than the padding
+
+    def test_right_bar_is_mirrored(self):
+        g = L.edge_geometry("right", 10, 1200, 15, 33)
+        self.assertEqual(g["lines"], [(1196, 1200, 700), (1192, 1196, 950)])
+        self.assertEqual(g["hit"], (1186, 1200))
+
+    def test_no_room_means_no_native_divider(self):
+        self.assertIsNone(L.edge_geometry("left", 390, 1590, 15, 9))             # padding too small: the cell divider is used instead
+        self.assertIsNone(L.edge_geometry("top", 0, 100, 15, 40))
+        self.assertIsNone(L.edge_geometry("left", 0, 100, 0, 40))
+
+    def test_lines_shrink_to_fit_a_small_padding(self):
+        g = L.edge_geometry("left", 100, 900, 30, 12)                            # a big font but only 12 px of padding
+        w = g["lines"][1][1] - g["lines"][0][0]
+        self.assertLessEqual(w, 12)
+        self.assertGreaterEqual(g["lines"][0][1] - g["lines"][0][0], 3)
+
+    def test_bar_side_grab_zone_hugs_the_edge_when_the_divider_is_native(self):
+        self.assertTrue(L.in_grab_zone(385, 390, 15, native=True))
+        self.assertFalse(L.in_grab_zone(360, 390, 15, native=True))               # tab content stays clickable
+        self.assertTrue(L.in_grab_zone(375, 390, 15))                             # cell divider: centred one cell in
+
+
 if __name__ == "__main__":
     unittest.main()

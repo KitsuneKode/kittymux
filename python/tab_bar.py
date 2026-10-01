@@ -732,12 +732,14 @@ _LEFT_BLOCK = {1: "▏", 2: "▎", 3: "▍"}          # the left n/8 of a cell
 _LEFT_REST = {1: "▉", 2: "▊", 3: "▋"}           # the left (8-n)/8 of a cell: painted in the fill colour it leaves the right n/8 to the background
 
 
-def _sep_column(screen: Screen, y0: int, n: int, bg: int, pal) -> None:
+def _sep_column(screen: Screen, y0: int, n: int, bg: int, pal, native: bool = False) -> None:
     """The divider between the bar and the panes: two full-height hairlines side by side — tone 700 at the bar's inner edge, tone 950
     right next to it (see kittymux_theme.shade). Cell N-2 holds the 700 line at its RIGHT edge (a left-(8-n)/8 block in the tab's fill
     over a 700 background), cell N-1 the 950 line at its LEFT edge (a left n/8 block on the pane background, so it reads as the pane's
     own edge). Both light up in the accent while the edge is being dragged. The mouse hit area is centred on the seam between them
     (kittymux_layout.in_grab_zone)."""
+    if native:
+        return          # kitty's own border renderer draws the divider (kittymux_barsize._borders_hook); the bar's last column stays blank
     hot = _bar_hot()
     inner = _rgb(pal.accent if hot else pal.sep_700)
     outer = _rgb(kittymux_theme.shade(pal.accent, 950) if hot else pal.sep_950)
@@ -889,6 +891,8 @@ def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: in
 def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     cols = screen.columns
     y0 = screen.cursor.y
+    native = kittymux_barsize.native_edge_active(draw_data.os_window_id)
+    sep_cols = 1 if native else SEP_COLS      # native divider: only a blank spacer column is left; the cell divider takes two
     # A slim rail (kittymux_layout "compact", ≤ 12 columns): one line per tab — logo,
     # a few title characters, status — no session header, no subtitle.
     compact = cols <= COMPACT_MAX_COLS
@@ -939,7 +943,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         _paint_rows(screen, y0, n_rows, row_bg)
     if index == 1 and not extra_data.for_layout:
         # one full-height separator line, drawn once; each tab re-asserts its rows
-        _sep_column(screen, 0, screen.lines, bar, pal)
+        _sep_column(screen, 0, screen.lines, bar, pal, native)
 
     y = y0
     if header and mode:
@@ -965,7 +969,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         _put(screen, 1, glyph, _rgb(brand if active else _mute(brand, pal)))
     elif _tool_glyph(foreground):
         _put(screen, 1, _tool_glyph(foreground), _rgb(pal.muted if active else pal.faint))
-    title_room = cols - 3 - 1 - SEP_COLS
+    title_room = cols - 3 - 1 - sep_cols
     if compact:
         # the slim rail is icons only: the logo (or tool glyph), the tab number, the state mark — no title
         if not info and not _tool_glyph(foreground):
@@ -978,7 +982,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
              _rgb(pal.text) if active else _rgb(pal.muted), bold=active)
     if state_fg is not None and cols >= 6:
         # full bar: state mark at the right edge; rail: tucked right after the number so the row reads as one cluster
-        _put(screen, 5 if compact else cols - 1 - SEP_COLS, kittymux_agents.state_glyph(state), _rgb(state_fg),
+        _put(screen, 5 if compact else cols - 1 - sep_cols, kittymux_agents.state_glyph(state), _rgb(state_fg),
              bold=state in kittymux_agents.NEEDS_YOU)
     title_y = y
 
@@ -989,8 +993,8 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         if active or stripe:
             _put(screen, 0, _RAIL, _rgb(pal.waiting if stripe else pal.accent))
         idx = str(index)
-        _put(screen, cols - SEP_COLS - len(idx), idx, _rgb(pal.faint))
-        room = cols - 3 - 1 - len(idx) - SEP_COLS
+        _put(screen, cols - sep_cols - len(idx), idx, _rgb(pal.faint))
+        room = cols - 3 - 1 - len(idx) - sep_cols
         # The state word (waiting/working) outranks the branch/path: reserve
         # its room first and give the rest to the leading pieces.
         tail = [p for p in subtitle if isinstance(p[0], str) and p[0] in ("working", "waiting")]
@@ -1024,8 +1028,8 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
             if avail >= _cells(text):
                 x = _put(screen, x, sep + text, _rgb(color))
 
-    _sep_column(screen, y0, hdr_rows, bar, pal)                     # the header rows never take the tab's fill
-    _sep_column(screen, y0 + hdr_rows, n_rows - hdr_rows, row_bg, pal)
+    _sep_column(screen, y0, hdr_rows, bar, pal, native)                     # the header rows never take the tab's fill
+    _sep_column(screen, y0 + hdr_rows, n_rows - hdr_rows, row_bg, pal, native)
 
     last_row = y if want_sub else title_y
     # a hairline in the blank row between this tab and the next (not after the last, not while kitty only measures)
@@ -1033,7 +1037,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         screen.cursor.bg = bar
         screen.cursor.y = last_row + 1
         _put(screen, 1, "─" * max(0, cols - 3), _rgb(kittymux_theme.blend(pal.line, pal.bar, 0.5)))
-        _sep_column(screen, last_row + 1, 1, bar, pal)
+        _sep_column(screen, last_row + 1, 1, bar, pal, native)
 
     # Leave the cursor on the last used row (kitty measures height from it),
     # and never leak our colours into kitty's later erase/draw calls.

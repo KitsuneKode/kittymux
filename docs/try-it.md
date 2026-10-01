@@ -31,7 +31,7 @@ The bar itself:
 - **Divider:** two hairlines side by side, a lighter one at the bar and a near-black one beside it (~4 px total).
 - **Collapse:** click `«` (header) → slim rail; `»` expands. `ctrl+alt+backslash` cycles sidebar → rail → hidden.
 - **Peek:** right-click a tab.
-- **Cursor:** over the bar it is always a hand — kitty decides that, we cannot change it. The docked panel (`ctrl+alt+shift+b`) does show a resize cursor on its edge.
+- **Cursor:** in a tab with **split panes** (the `panes` tab) hover the divider — it is kitty's native resize arrow, and the drag is kitty's own. In a single-pane tab kitty does not hit-test borders, so the cursor stays a hand there (over the bar kitty always shows a hand); the bar's last column is the grab zone. The docked panel (`ctrl+alt+shift+b`) shows a resize cursor on its edge everywhere.
 
 From a shell pane **inside the demo** (so the commands target the demo, not your real kitty):
 

@@ -37,6 +37,9 @@ _DEFAULTS = dict(
     peek_down=0,            # tab id under a right-button press; the release opens its peek card
     watchdog=None,          # timer id
     trail=None,             # timer id of the pending "apply the latest pointer position" (see _drag_to)
+    edge_installed=False,   # the native divider hooks (kitty.borders.set_borders_rects, Boss.drag_resize_*) are in place
+    pal_key=None,           # cache of the theme palette the native divider is coloured from
+    pal=None,
 )
 _S = sys.modules.setdefault("_kittymux_barsize_rt", types.SimpleNamespace(**_DEFAULTS))
 for _k, _v in _DEFAULTS.items():        # a namespace made by an OLDER version of this file lacks the newer fields
@@ -67,6 +70,8 @@ def _set_hot(tm, value: bool) -> None:
             tm.update_tab_bar_data()
             tm.mark_tab_bar_dirty()
             from kitty.fast_data_types import mark_os_window_dirty, wakeup_main_loop
+            if _S.edge_installed and tm.active_tab is not None:
+                tm.active_tab.relayout_borders()           # the native divider's colours follow the lit state
             mark_os_window_dirty(tm.os_window_id)          # the lit separator must paint now, not at the next blink
             wakeup_main_loop()
         except Exception:
@@ -126,26 +131,37 @@ _WATCHDOG_S = 12.0          # a drag that goes silent this long is abandoned (th
 
 
 def _end_capture(boss, finalize: bool = False) -> None:
-    """Give the mouse back to kitty. Always safe to call. `finalize`: the drag did not end with a release (watchdog, error), so
-    re-flow every tab at the width it reached — the per-event path only re-flows the visible one."""
+    """End the current drag. Always safe to call. For a captured (in-bar) drag this gives the mouse back to kitty; for a native one (kitty's own
+    divider machinery drives it) it only un-pauses the panes' resize notifications. `finalize`: the drag did not end with a release (watchdog,
+    error, a stale drag), so re-flow every tab at the width it reached — the per-event path only re-flows the visible one."""
     d = _S.drag
     if finalize and d is not None and d.get("dirty") and boss is not None:
         try:
             apply_width(boss, d["width"], final=True)
         except Exception:
             pass
+    native = bool(d and d.get("native"))
     try:
         from kitty.fast_data_types import redirect_mouse_handling, remove_timer
-        redirect_mouse_handling(False)
-        if boss is not None and getattr(boss, "mouse_handler", None) is not None \
-                and getattr(boss.mouse_handler, "__name__", "") == "_mouse_handler":
-            boss.mouse_handler = None                 # (by name: a reload makes a NEW function object)
+        if not native:
+            redirect_mouse_handling(False)
+            if boss is not None and getattr(boss, "mouse_handler", None) is not None \
+                    and getattr(boss.mouse_handler, "__name__", "") == "_mouse_handler":
+                boss.mouse_handler = None             # (by name: a reload makes a NEW function object)
         if _S.watchdog is not None:
             remove_timer(_S.watchdog)
         if _S.trail is not None:
             remove_timer(_S.trail)
     except Exception:
         pass
+    if native and boss is not None:
+        for wid in d.get("paused", ()):
+            try:
+                cw = boss.window_id_map.get(wid)
+                if cw is not None:
+                    cw.pause_resize_notifications_to_child(pause=False)
+            except Exception:
+                pass
     _S.watchdog = None
     _S.trail = None
     _S.drag = None
@@ -324,7 +340,7 @@ def _handle(tm, x: float, y: float, button: int, action: int) -> bool:
     if geo is None:
         return False
     _, edge, inner, cell_w, _window_px = geo
-    if not L.in_grab_zone(x, inner, cell_w):
+    if not L.in_grab_zone(x, inner, cell_w, native=native_edge_active(tm.os_window_id)):
         return False
     boss = get_boss()
     handler = getattr(boss, "mouse_handler", None)
@@ -474,11 +490,196 @@ def _install_tab_hit_testing() -> None:
         pass
 
 
+# ── the native divider ────────────────────────────────────────────────────────
+# kitty draws and hit-tests window borders itself: every tab's border rectangles (kitty.borders.set_borders_rects) are drawn by its GPU border
+# renderer, and a rectangle with a non-zero border_type is a hit target — hovering it shows the resize cursor IN C, and pressing it calls
+# Boss.drag_resize_start, after which kitty routes the whole drag to Boss.drag_resize_update/_end and restores the cursor. We hand kitty two
+# more rectangles (the 700 and 950 hairlines, in the pane padding right next to the bar) and one invisible hit rectangle over them, and answer
+# the drag callbacks for it. Facts measured in kitty 0.49.2: the cursor over the TAB BAR is always a hand (chosen in C); border hit-testing
+# only runs in tabs with 2+ visible windows, so a single-pane tab keeps the bar-side grab zone; the colour field takes (rgb << 8) | window_bg.
+EDGE_FALLBACK = None
+
+
+def _theme():
+    """The theme palette (cached per colour set) for the native hairlines. Never raises."""
+    try:
+        from kitty.fast_data_types import get_options
+        from kitty.rgb import color_as_int
+        import kittymux_theme as T
+        o = get_options()
+        bg = color_as_int(o.tab_bar_background or o.background)
+        colors = T.colors_from_options(o, bg, color_as_int)
+        key = (tuple(sorted(colors.items())), os.environ.get("KITTYMUX_ACCENT", ""))
+        if _S.pal_key != key:
+            _S.pal_key, _S.pal = key, T.from_colors(colors)
+        return _S.pal
+    except Exception:
+        return None
+
+
+def _edge_plan(os_window_id: int):
+    """(side, geometry, central_rect) for this OS window's vertical bar, or None when the native divider does not apply (horizontal bar,
+    too little padding, hooks missing, a kitty without the pieces)."""
+    if not _S.edge_installed:
+        return None
+    try:
+        from kitty.constants import version
+        if tuple(version) < L.NATIVE_EDGE_MIN:                  # a kitty we have not verified the border internals on: keep the cell divider
+            return None
+        from kitty.fast_data_types import LEFT_EDGE, RIGHT_EDGE, get_options, pt_to_px, viewport_for_window
+        opts = get_options()
+        if opts.tab_bar_edge not in (LEFT_EDGE, RIGHT_EDGE):
+            return None
+        side = "left" if opts.tab_bar_edge == LEFT_EDGE else "right"
+        central, bar, _vw, _vh, cell_w, _cell_h = viewport_for_window(os_window_id)
+        if bar.width <= 0:
+            return None
+        pad = pt_to_px(getattr(opts.window_padding_width, side), os_window_id)
+        geo = L.edge_geometry(side, central.left, central.right, cell_w, pad)
+        return (side, geo, central) if geo else None
+    except Exception:
+        return None
+
+
+def native_edge_active(os_window_id: int) -> bool:
+    """True when this OS window's divider is drawn by kitty itself (the bar then leaves its last columns blank)."""
+    return _edge_plan(os_window_id) is not None
+
+
+def _borders_hook(orig, os_window_id: int, tab_id: int, rects):
+    """Add the divider's rectangles to what kitty is about to hand to its border renderer for one tab. Must never raise."""
+    try:
+        plan = _edge_plan(os_window_id)
+        if plan is not None:
+            from kitty.borders import Border, BorderColor
+            import kittymux_theme as T
+            from kitty.fast_data_types import get_boss
+            side, geo, central = plan
+            pal = _theme()
+            if pal is not None:
+                hot = bool(_S.hot)
+                tone = {700: pal.accent if hot else pal.sep_700, 950: T.shade(pal.accent, 950) if hot else pal.sep_950}
+                extra = [Border(x0, central.top, x1, central.bottom, ((tone[t] & 0xFFFFFF) << 8) | int(BorderColor.window_bg), 0, False, True)
+                         for x0, x1, t in geo["lines"]]
+                tab = get_boss().tab_for_id(tab_id)
+                groups = list(tab.windows.iter_all_layoutable_groups(only_visible=True)) if tab is not None else []
+                if len(groups) > 1 and tab.active_window is not None:
+                    # the hit target: invisible, over the lines. border_type < 0 reads as a LEFT edge (horizontal resize cursor), > 0 as RIGHT.
+                    wid = tab.active_window.id
+                    extra.append(Border(geo["hit"][0], central.top, geo["hit"][1], central.bottom, BorderColor.default_bg,
+                                        -wid if side == "left" else wid, False, False))
+                rects = list(rects) + extra
+    except Exception:
+        _debug_exc()
+    return orig(os_window_id, tab_id, rects)
+
+
+def _debug_exc() -> None:
+    if os.environ.get("KITTYMUX_DEBUG"):
+        import traceback
+        _debug(traceback.format_exc())
+
+
+def _native_start(boss, edges: int, x: float, y: float, window_id: int, cell_w, cell_h):
+    """Boss.drag_resize_start for a press kitty found on one of OUR hit rectangles: begin the bar drag. None = not ours (kitty's own divider)."""
+    try:
+        w = boss.window_id_map.get(window_id)
+        tab = w.tabref() if w is not None else None
+        tm = tab.tab_manager_ref() if tab is not None else None
+        if tm is None:
+            return None
+        plan = _edge_plan(tm.os_window_id)
+        if plan is None:
+            return None
+        side, geo, _central = plan
+        from kitty.fast_data_types import LEFT_EDGE, RIGHT_EDGE
+        if edges != (LEFT_EDGE if side == "left" else RIGHT_EDGE):
+            return None
+        slop = 2 * (cell_w or 0) / 5.0                                       # kitty adds its own tolerance; this only rejects far-away dividers
+        if not (geo["hit"][0] - slop <= x <= geo["hit"][1] + slop):
+            return None
+        if _S.drag is not None:
+            _end_capture(boss, finalize=True)                                 # a stale drag (lost release): finish it, then start fresh
+        paused = []
+        for cw in tab:                                                        # like kitty's own divider drag: children get the final size once, not every step
+            cw.pause_resize_notifications_to_child()
+            paused.append(cw.id)
+        _S.drag = {"tm": tm, "edge": side, "width": -1, "target": -1, "dirty": False, "last": time.monotonic(), "native": True, "paused": paused}
+        _set_hot(tm, True)
+        return True
+    except Exception:
+        _debug_exc()
+        return None
+
+
+def _native_update(boss, x: float, y: float) -> bool:
+    d = _S.drag
+    if d is None or not d.get("native"):
+        return False
+    try:
+        _, _edge, _inner, cell_w, window_px = _bar_geometry(d["tm"])
+        d["last"] = time.monotonic()
+        d["target"] = L.width_from_pointer(x, cell_w, window_px, d["edge"])
+        _drag_to(boss)
+    except Exception:
+        _debug_exc()
+    return True
+
+
+def _native_end(boss) -> bool:
+    d = _S.drag
+    if d is None or not d.get("native"):
+        return False
+    tm, edge = d["tm"], d["edge"]
+    width = d["target"] if d["target"] >= 0 else d["width"]
+    _end_capture(boss)                                                        # cancels the trailing timer, un-pauses the panes, clears state
+    _finish(tm, width, edge)
+    return True
+
+
+def _install_native_edge() -> None:
+    """Hook kitty's border hand-off and its divider-drag callbacks, once per process. The wrappers only delegate to this module's functions
+    (looked up by name at call time), so a later reload's new code takes effect without re-wrapping."""
+    try:
+        import kitty.borders as B
+        from kitty.boss import Boss
+        if not getattr(B.set_borders_rects, "_kittymux_wrapped", False):
+            orig_rects = B.set_borders_rects
+
+            def set_borders_rects(os_window_id, tab_id, rects):
+                return _borders_hook(orig_rects, os_window_id, tab_id, rects)
+
+            set_borders_rects._kittymux_wrapped = True                         # type: ignore[attr-defined]
+            B.set_borders_rects = set_borders_rects
+        if not getattr(Boss.drag_resize_start, "_kittymux_wrapped", False):
+            o_start, o_update, o_end = Boss.drag_resize_start, Boss.drag_resize_update, Boss.drag_resize_end
+
+            def drag_resize_start(self, edges, x, y, window_id, cell_width, cell_height):
+                got = _native_start(self, edges, x, y, window_id, cell_width, cell_height)
+                return got if got is not None else o_start(self, edges, x, y, window_id, cell_width, cell_height)
+
+            def drag_resize_update(self, x, y):
+                if not _native_update(self, x, y):
+                    o_update(self, x, y)
+
+            def drag_resize_end(self):
+                if not _native_end(self):
+                    o_end(self)
+
+            drag_resize_start._kittymux_wrapped = True                         # type: ignore[attr-defined]
+            Boss.drag_resize_start, Boss.drag_resize_update, Boss.drag_resize_end = drag_resize_start, drag_resize_update, drag_resize_end
+        _S.edge_installed = True
+    except Exception:
+        _S.edge_installed = False
+        _debug_exc()
+
+
 def install() -> bool:
     """Wrap TabManager.handle_tab_bar_mouse once (+ the spacer-row hit test). Safe to call
     repeatedly; never raises."""
     _install_tab_hit_testing()
     _install_tab_drag()
+    _install_native_edge()
     if _S.installed:
         return True
     try:

@@ -131,7 +131,13 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   kitty itself retains ~100 objects (~14 MB per 1000) per option-change+relayout of 23 tabs (measured identical in a vanilla kitty), so touching one tab is 28× less.
   The pointer over the tab bar is ALWAYS a hand: kitty picks it in C for the whole bar rect, sends our code no hover and ignores OSC 22 there — a resize cursor over the bar
   edge is not possible (only real window dividers and the docked panel get one).
-- The divider is two hairlines in the bar's last two columns (`tab_bar.SEP_COLS`, `SEP_EIGHTS`); content stays left of them. The resize hit area is `kittymux_layout.in_grab_zone`: centred on
+- Native divider (kitty ≥ 0.49.2, `kittymux_barsize._install_native_edge`): we wrap `kitty.borders.set_borders_rects` to add (a) two coloured `Border` rects — colour `(rgb << 8) | BorderColor.window_bg`, exact
+  pixels, drawn by kitty's GPU border renderer in the pane padding next to the bar — and (b) one invisible hit rect (`border_type` < 0 = left edge, > 0 = right) over them. kitty hit-tests it IN C
+  (`mouse_region`): hover → native `sb_h_double_arrow`, press → `Boss.drag_resize_start` (we answer for our rect), then `drag_resize_update/_end` until release, cursor restored by C. C only runs
+  border hit-tests when the tab has 2+ visible windows, and the cursor over the tab bar rect is ALWAYS a hand (`in_tab_bar` → `POINTER_POINTER`) and the bar gets no motion events ("expensive and useless"
+  in `handle_tab_bar_mouse`). So: split tabs get the arrow, single-pane tabs the bar-side grab zone. Wrappers must delegate to module-level functions by name (a reload re-executes this module in place);
+  they never raise; the hook costs ~35 µs per border refresh and retains nothing. `L.edge_geometry` is the pure geometry; `tests/smoke_native.sh` reads the real X cursor and pixels.
+- The divider (cell fallback: padding < 10 px, or a kitty we have not verified) is two hairlines in the bar's last two columns (`tab_bar.SEP_COLS`, `SEP_EIGHTS`); content stays left of them. The resize hit area is `kittymux_layout.in_grab_zone`: centred on
   the seam between them (`DIVIDER_CELLS`), ±`GRAB_CELLS` — exactly those two columns — so it never steals a click meant for a tab; the collapse button stops where it starts.
   Right-edge bars still draw the divider on the screen-side (outer) edge: a known limitation, not mirrored yet.
 - The header row's `«`/`»` is a button: `kittymux_barsize._handle` consumes its press+release and toggles
@@ -158,6 +164,7 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   (a running kitty upgraded under itself must draw cleanly after two reloads; `SMOKE_KEEP_STALE=1` must FAIL).
   `bash tests/smoke_sidebar.sh` (collapse/expand button, right-click peek, edge drag with real mouse events),
   `bash tests/smoke_drag.sh` (tab drag-to-reorder with real pointer events — kitty's DnD works under Xvfb),
+  `bash tests/smoke_native.sh` (kitty ≥ 0.49.2: the native divider's pixels, the real X cursor name over it, a native drag, the single-pane fallback),
   `bash tests/smoke_resize.sh` (a fast pointer burst: the bar edge reaches the pointer, every tab re-flows on release),
   `bash tests/smoke_panes.sh` (`ctrl+alt+shift+1..9` and the `ctrl+alt+e` overview agree on pane numbers; `ctrl+alt+PgUp/Home/End` scroll — real key events),
   `bash tests/smoke_demo.sh` (`kittymux demo` opens every showcase tab — the front door must stay healthy),

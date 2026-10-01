@@ -137,6 +137,24 @@ def from_colors(c: dict[str, int]) -> Palette:
     )
 
 
+def colors_from_options(o, background: int, as_int) -> dict[str, int]:
+    """The colour dict `from_colors` wants, read from kitty's live options object `o` (inside kitty: no subprocess). `background` is the bar's
+    own background (kitty's tab_bar_background or background); `as_int` turns kitty's Color into 0xRRGGBB. Never raises."""
+    try:
+        colors = {"background": background, "foreground": as_int(o.foreground)}
+        abc = o.active_border_color
+        if abc is not None:
+            colors["active_border_color"] = as_int(abc)
+        ibc = o.inactive_border_color
+        if ibc is not None:
+            colors["inactive_border_color"] = as_int(ibc)
+        for n in range(1, 16):
+            colors[f"color{n}"] = int(o.color_table[n]) & 0xFFFFFF
+        return colors
+    except Exception:
+        return {}
+
+
 def _hex(c: int) -> str:
     return f"#{c & 0xFFFFFF:06x}"
 

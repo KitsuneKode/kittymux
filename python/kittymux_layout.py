@@ -268,10 +268,31 @@ def in_toggle_zone(x_px: float, y_px: float, left: float, right: float, top: flo
     return start <= x_px < right - (DIVIDER_CELLS + GRAB_CELLS) * cell_w      # stops where the divider's hit area starts
 
 
-def in_grab_zone(x_px: float, bar_edge_px: float, cell_w: float, zone_cells: float = GRAB_CELLS) -> bool:
+NATIVE_EDGE_MIN = (0, 49, 2)   # the kitty whose border internals (Border tuple, border_type edges, Boss.drag_resize_*) this was verified against
+EDGE_MIN_PAD_PX = 10        # the native divider lives in the pane's side padding: with less than this there is no room (cell divider is used)
+EDGE_HIT_MIN_PX = 12        # kitty's own border hit area is ~tolerance wide; ours is a comfortable strip
+
+
+def edge_geometry(side: str, region_left: float, region_right: float, cell_w: float, pad_px: float):
+    """Where the natively drawn divider and its hit strip go, in pixels, for a vertical bar on `side` ("left"/"right").
+    `region_left`/`region_right` bound the pane area (kitty's "central" region, which starts where the bar ends); `pad_px` is the
+    panes' padding on the bar's side. Returns {"lines": [(x0, x1, tone), …], "hit": (x0, x1)} — tone 700 is the line at the bar,
+    950 the one beside it — or None when the padding cannot hold it. Everything sits inside the padding, so it never covers text."""
+    if side not in ("left", "right") or pad_px < EDGE_MIN_PAD_PX or cell_w <= 0:
+        return None
+    line = int(max(3, min(round(cell_w / 4), pad_px // 3)))
+    hit_w = int(min(pad_px, max(EDGE_HIT_MIN_PX, 2 * line + 6)))
+    if side == "left":
+        x = int(region_left)
+        return {"lines": [(x, x + line, 700), (x + line, x + 2 * line, 950)], "hit": (x, x + hit_w)}
+    r = int(region_right)
+    return {"lines": [(r - line, r, 700), (r - 2 * line, r - line, 950)], "hit": (r - hit_w, r)}
+
+
+def in_grab_zone(x_px: float, bar_edge_px: float, cell_w: float, zone_cells: float = GRAB_CELLS, native: bool = False) -> bool:
     """Pointer on the divider (or within the hit slop around it): centred on the visible lines, which sit DIVIDER_CELLS inside the
     bar's inner edge. (The old zone was centred on the edge itself, so most of it was the part of the divider you do not see.)"""
-    centre = bar_edge_px - DIVIDER_CELLS * cell_w
+    centre = bar_edge_px - (0.0 if native else DIVIDER_CELLS) * cell_w      # native: the lines are on the pane side, the bar-side zone hugs the edge
     return abs(x_px - centre) <= max(GRAB_MIN_PX, cell_w * zone_cells)
 
 
