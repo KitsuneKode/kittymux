@@ -11,7 +11,7 @@ for n in $(seq 170 199); do [ -e "/tmp/.X$n-lock" ] || { D=:$n; break; }; done
 W=1200 H=700
 Xvfb "$D" -screen 0 ${W}x${H}x24 >/dev/null 2>&1 & XP=$!
 KP= FP=
-TMP=$(mktemp -d); trap 'kill $KP $XP $FP 2>/dev/null; rm -rf "$TMP"' EXIT
+TMP=$(mktemp -d); trap '[ -n "$KP" ] && pkill -P $KP 2>/dev/null; kill $KP $XP $FP 2>/dev/null; rm -rf "$TMP"' EXIT   # (pkill -P: the demo launcher'"'"'s kitty child)
 sleep 1
 export DISPLAY=$D __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1
 unset WAYLAND_DISPLAY
