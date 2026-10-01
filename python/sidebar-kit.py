@@ -234,7 +234,8 @@ class Collector:
                     agent=name or "", branch=branch, cwd=cwd,
                     panes=len(wins), status=status, unread=unread, current=current,
                     msg=kittymux_agents.resolve_msg(panes.get(str(deciding or aw["id"])), st) if st else "",
-                    pr=self._pr.get(cwd, branch), ports=ports, pane_rows=pane_rows))
+                    pr=self._pr.get(cwd, branch), ports=ports, pane_rows=pane_rows,
+                    win_ids=tuple(w["id"] for w in wins)))
         return Snapshot(rows, current_session)
 
 
@@ -557,6 +558,9 @@ class Sidebar(Handler):
         elif k == "ENTER":
             self._jump()
             return
+        elif k == "A" and not shifted:
+            self._absorb()
+            return
         else:
             return
         self._hover_pane = (-1, -1)
@@ -650,6 +654,19 @@ class Sidebar(Handler):
         self.screen_size = new_size
         self._clamp()
         self.draw_screen()
+
+    def _absorb(self) -> None:
+        """`a`: the selected tab's panes become splits of the tab you are in (reversible with
+        ctrl+alt+shift+d on a pane). The emptied tab closes itself."""
+        ids, target = deck.absorb_plan(self.snap.rows, self.sel)
+        if not ids:
+            return
+        _rc("detach-window", "--match", " or ".join(f"id:{i}" for i in ids), "--target-tab", f"id:{target}")
+        _rc("focus-window", "--match", f"id:{ids[0]}")
+        if not _PANEL:
+            self.quit_loop()
+        else:
+            self._request_refresh()
 
     def _jump(self, row: int = -1, pane: int = -1) -> None:
         if not self.snap.rows:

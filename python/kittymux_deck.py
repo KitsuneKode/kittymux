@@ -42,6 +42,7 @@ class RowData:
     current: bool = False   # the tab you are looking at right now
     index: int = 0          # 1-based position within its session (matches the tab bar)
     pane_rows: tuple = ()   # PaneData for every pane, when the tab is split (2+ panes)
+    win_ids: tuple = ()     # every window of the tab (what "absorb" moves)
 
 
 @dataclass
@@ -158,8 +159,21 @@ def step_group(flat: list[RowData], cur: int, delta: int) -> int:
     return firsts[sessions[there]]
 
 
+def absorb_plan(rows: list[RowData], sel: int) -> tuple[list[int], int]:
+    """([window ids], target tab id): pull the selected tab's panes into the tab you are looking at
+    (they become splits there). Nothing to do when the selection IS the current tab or none is current."""
+    if not (0 <= sel < len(rows)):
+        return [], 0
+    here = next((r for r in rows if r.current), None)
+    row = rows[sel]
+    if here is None or row.tab_id == here.tab_id or not row.win_ids:
+        return [], 0
+    return list(row.win_ids), here.tab_id
+
+
 def hint(width: int) -> str:
-    for cand in ("j/k move · J/K session · ⏎ go · click · q quit",
+    for cand in ("j/k move · J/K session · ⏎ go · a absorb · click · q quit",
+                 "j/k move · ⏎ go · a absorb · q quit",
                  "j/k move · ⏎ go · click · q quit",
                  "j/k · ⏎ go · q quit",
                  "⏎ go · q quit",

@@ -107,6 +107,20 @@ for _ in $(seq 15); do [ "$(nwin)" -le "$N0" ] && break; sleep 0.4; done
 [ "$(nwin)" -le "$N0" ] || fail "Escape did not close the peek card"
 echo "  ok   Escape closes it"
 
+# deck: `a` pulls the selected tab's panes into the tab you are in (tab → split, from the keyboard)
+tabs_of() { kitty @ --to "$SOCK" ls | python3 -c '
+import sys, json
+print(" ".join("%s:%d" % (t["title"], len(t["windows"])) for t in json.load(sys.stdin)[0]["tabs"]))'; }
+before=$(tabs_of)
+kitty @ --to "$SOCK" kitten "$HOME_DIR/python/sidebar-kit.py" >/dev/null 2>&1
+sleep 3
+X key j a                                   # select the next tab ("three"), absorb it into the current one ("two")
+for _ in $(seq 20); do [ "$(tabs_of)" = "one:1 two:2" ] && break; sleep 0.4; done   # (the deck overlay closes itself)
+after=$(tabs_of)
+[ "$after" = "one:1 two:2" ] || fail "absorb: expected 'one:1 two:2', got '$after' (before: '$before')"
+echo "  ok   deck 'a' absorbed the next tab's pane into the current tab ($before → $after)"
+sleep 1
+
 # drag the inner edge 120 px to the right → the sidebar grows, the panes shrink
 redraw
 X mousemove "$((EDGE - 3))" 400 mousedown 1

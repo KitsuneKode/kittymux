@@ -88,7 +88,7 @@ class TextTests(unittest.TestCase):
             self.assertLessEqual(len(D.hint(w)), w)
 
     def test_hint_full_when_wide(self):
-        self.assertIn("click", D.hint(36))
+        self.assertIn("a absorb", D.hint(36))
 
     def test_fit_and_pad(self):
         self.assertEqual(D.fit("abcdef", 4), "abc…")
@@ -190,6 +190,24 @@ class PaneRowsTests(unittest.TestCase):
         shown = [it for _o, it in D.visible(items, scroll, 6)]
         self.assertEqual(sum(1 for it in shown if it.kind == "pane"), 3)
         self.assertTrue(any(it.kind == "row" and it.row == 1 for it in shown))
+
+
+class AbsorbTests(unittest.TestCase):
+    def rows(self):
+        return [D.RowData(tab_id=1, win_id=10, win_ids=(10,), current=True),
+                D.RowData(tab_id=2, win_id=20, win_ids=(20, 21)),
+                D.RowData(tab_id=3, win_id=30)]            # no window list: nothing to move
+
+    def test_selected_tabs_windows_go_to_the_current_tab(self):
+        self.assertEqual(D.absorb_plan(self.rows(), 1), ([20, 21], 1))
+
+    def test_nothing_to_do_for_the_current_tab_an_empty_row_or_no_current_tab(self):
+        self.assertEqual(D.absorb_plan(self.rows(), 0), ([], 0))
+        self.assertEqual(D.absorb_plan(self.rows(), 2), ([], 0))
+        self.assertEqual(D.absorb_plan(self.rows(), 9), ([], 0))
+        rows = self.rows()
+        rows[0].current = False
+        self.assertEqual(D.absorb_plan(rows, 1), ([], 0))
 
 
 if __name__ == "__main__":

@@ -129,7 +129,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+g` | agent picker — every agent pane, live preview + status + message |
 | `ctrl+alt+y` | jump to the next agent waiting on you (round-robin, longest-waiting first) |
 | `ctrl+alt+shift+g` | new agent in its own git worktree + tab |
-| `ctrl+alt+b` | sidebar deck — tabs grouped by session, hover/click, live pane preview (`J`/`K` jump sessions) |
+| `ctrl+alt+b` | sidebar deck — tabs grouped by session, hover/click, live pane preview (`J`/`K` jump sessions, `a` pulls the selected tab's panes into this tab) |
 | `ctrl+alt+shift+b` | **docked sidebar panel** — the deck as an always-visible left column that reserves screen space (Wayland/Hyprland) |
 | `ctrl+alt+;` | send a prompt to a background agent pane |
 | `ctrl+alt+shift+e` | tab bar bottom → left → right |
@@ -328,7 +328,9 @@ Kitty has native drag and drop; kittymux makes it work in the vertical bar:
 - **Keyboard** — `ctrl+alt+d` pane → new tab · `ctrl+alt+shift+d` pane → a tab you pick (a one-pane tab
   moved this way *is* "tab → split") · `ctrl+alt+shift+←/→` or `↑/↓` move the tab itself.
 
-Kitty has no gesture for dropping a whole *tab* onto a pane; use the chooser above.
+- **Tab → split (pull it in)** — open the deck (`ctrl+alt+b`, or the docked panel), select a tab and press
+  **`a`**: all of its panes become splits of the tab you are in, and the emptied tab closes. Undo with
+  `ctrl+alt+shift+d` on a pane. (kitty has no gesture for dropping a whole *tab* onto a pane.)
 
 ## Upgrading
 
