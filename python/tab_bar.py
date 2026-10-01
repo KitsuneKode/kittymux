@@ -35,6 +35,7 @@ for _d in (os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.co
 import importlib  # noqa: E402
 import kittymux_agents  # noqa: E402
 import kittymux_barsize  # noqa: E402
+import kittymux_deck  # noqa: E402
 import kittymux_git  # noqa: E402
 import kittymux_layout  # noqa: E402
 import kittymux_scan  # noqa: E402
@@ -46,7 +47,7 @@ import kittymux_theme  # noqa: E402
 # the OLD helpers to the NEW tab bar (AttributeError on any name added since). Reload
 # them every time this file runs.
 for _mod in (kittymux_theme, kittymux_agents, kittymux_git, kittymux_layout, kittymux_state, kittymux_scan,
-             kittymux_barsize):
+             kittymux_barsize, kittymux_deck):
     try:
         importlib.reload(_mod)
     except Exception:
@@ -398,6 +399,44 @@ def _tab_verdict(tab_id: int) -> tuple[str, dict | None]:
         return state, panes.get(wid)
     except Exception:
         return "", None
+
+
+class _MiniMap(tuple):
+    """Cells (char, fg_rgb, bg_rgb) of a tab's layout picture — a subtitle piece drawn as it is, colours and all."""
+
+
+_STATE_TINT = {"working": "working", "waiting": "waiting", "limited": "alert"}
+
+
+def _pane_map(tab_id: int, pal, cols: int):
+    """A to-scale picture of a split tab's panes (one row of quadrant blocks), each pane tinted by its state, the focused
+    pane brighter. None when the tab is not split or its geometry is unavailable."""
+    try:
+        tab = get_boss().tab_for_id(tab_id)
+        wins = [w for w in tab.windows if getattr(w, "is_visible_in_layout", True)]
+        if len(wins) < 2:
+            return None
+        width = 8 if cols >= 26 else 6
+        grid = kittymux_deck.layout_minimap([(w.id, w.geometry.left, w.geometry.top, w.geometry.right, w.geometry.bottom)
+                                             for w in wins], width, 1)
+        if not grid:
+            return None
+        now = time.monotonic()
+        panes = _panes_state()
+        focused = tab.active_window.id if tab.active_window is not None else 0
+        colors = {}
+        for i, w in enumerate(wins):
+            state = kittymux_agents.fresh_verdict(panes.get(str(w.id)), now)
+            tint = getattr(pal, _STATE_TINT[state]) if state in _STATE_TINT else (
+                kittymux_theme.blend(pal.done, pal.bg, 0.6) if state == "done" else kittymux_theme.blend(pal.fg, pal.bg, 0.32))
+            if w.id == focused:
+                tint = kittymux_theme.blend(pal.fg, tint, 0.28)
+            elif i % 2:
+                tint = kittymux_theme.blend(pal.bg, tint, 0.2)           # neighbours in one colour still read as two panes
+            colors[w.id] = tint
+        return _MiniMap((ch, colors[a], colors[b]) for ch, a, b in grid[0])
+    except Exception:
+        return None
 
 
 def _pane_chips(tab_id: int, pal, active: bool) -> list[tuple[str, int]]:
@@ -859,11 +898,13 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     elif cwd:
         subtitle.append((f"{_ICON_FOLDER} {_short_cwd(cwd, 24)}", pal.muted if active else pal.faint))
     if tab.num_windows > 1:
-        chips = _pane_chips(tab.tab_id, pal, active)
-        subtitle.append((chips, pal.faint) if chips else (f"{tab.num_windows} panes", pal.faint))
+        pane_map = _pane_map(tab.tab_id, pal, cols)
+        chips = [] if pane_map else _pane_chips(tab.tab_id, pal, active)
+        subtitle.append((pane_map, pal.faint) if pane_map else (chips, pal.faint) if chips else (f"{tab.num_windows} panes", pal.faint))
     msg = kittymux_agents.resolve_msg(_tab_verdict(tab.tab_id)[1], state)
     if msg:
-        subtitle = [(msg, state_fg)]          # what it is waiting for beats the branch
+        # what it is waiting for beats the branch — but a split tab keeps its layout picture beside the question (room permitting)
+        subtitle = [p for p in subtitle if isinstance(p[0], _MiniMap) and cols >= 26] + [(msg, state_fg)]
     elif state in kittymux_agents.NEEDS_YOU:
         subtitle.append((state, state_fg))    # working needs no word — the spinner says it
 
@@ -947,6 +988,15 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
             avail = room - (x - 3) - reserve - _cells(sep)
             if avail <= 1:
                 break
+            if isinstance(text, _MiniMap):                   # the layout picture: cells with their own fg AND bg
+                if len(text) <= avail:
+                    x = _put(screen, x, sep, _rgb(color))
+                    for ch, fg, bg in text:
+                        screen.cursor.x, screen.cursor.fg, screen.cursor.bg = x, _rgb(fg), _rgb(bg)
+                        screen.draw(ch)
+                        x += 1
+                    screen.cursor.bg = row_bg
+                continue
             if isinstance(text, list):                       # pane chips: coloured runs, drawn whole or not at all
                 if sum(_cells(t) for t, _c in text) <= avail:
                     x = _put(screen, x, sep, _rgb(color))

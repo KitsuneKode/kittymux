@@ -89,6 +89,16 @@ def _run(cmd: list[str], timeout: float = 3.0) -> tuple[int, str]:
         return 1, ""
 
 
+def binary_replaced(pid: int) -> bool:
+    """True when the kitty process `pid` is running a binary that has since been replaced on disk (a package update): it keeps
+    running its old code but loads Python files from the NEW install on demand and at every config reload — a mixed state
+    kitty does not support (tab clicks, drags and reloads can misbehave until it is restarted)."""
+    try:
+        return os.readlink(f"/proc/{pid}/exe").endswith(" (deleted)")
+    except OSError:
+        return False
+
+
 def scanner_age(state_dir: str, pid: int, now: float | None = None) -> float | None:
     """Seconds since the scanner of kitty `pid` last wrote scan-<pid>.json (it rewrites on any change
     and at least every 3 s), or None if there is no such file."""
@@ -257,6 +267,10 @@ def doctor() -> int:
         pid = _socket_pid(sock)
         if pid is None:
             continue
+        if binary_replaced(pid):
+            r.warning(f"kitty {pid} was updated while it was running (its binary was replaced)",
+                      "restart it when convenient: a running kitty mixes old code with the new install's Python files, "
+                      "and clicks, drags and config reloads can misbehave until then (save sessions first: ctrl+alt+shift+s)")
         age = scanner_age(STATE, pid)
         if age is None:
             r.warning(f"agent scanner is not running in kitty {pid} (statuses fall back to hooks/titles)",

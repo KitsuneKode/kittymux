@@ -27,16 +27,22 @@ import kittymux_layout as L  # noqa: E402
 # Live state lives in sys.modules, NOT in module globals: changing the width makes kitty re-run
 # tab_bar.py, which reloads this module — globals would be wiped in the middle of a drag (the
 # first motion event applied a width, the second found no drag and the mouse was given back).
-_S = sys.modules.setdefault("_kittymux_barsize_rt", types.SimpleNamespace(
+_DEFAULTS = dict(
     hot=False,              # pointer over the handle or dragging — the tab bar draws it lit
     drag=None,              # active drag: {"tm": TabManager, "edge": "left|right", "width": int, "last": float}
     last_apply=0.0,
+    last_cost=0.0,          # how long the last width change took (s): the next one waits at least this long
     installed=False,
     toggle_down=False,      # a press landed on the collapse/expand button; the release decides
     peek_down=0,            # tab id under a right-button press; the release opens its peek card
     watchdog=None,          # timer id
-))
-_APPLY_EVERY = 0.03         # seconds — plenty smooth, keeps re-layout cost bounded
+)
+_S = sys.modules.setdefault("_kittymux_barsize_rt", types.SimpleNamespace(**_DEFAULTS))
+for _k, _v in _DEFAULTS.items():        # a namespace made by an OLDER version of this file lacks the newer fields
+    if not hasattr(_S, _k):
+        setattr(_S, _k, _v)
+_APPLY_MIN = 0.016         # seconds: at most ~60 width changes a second, and never faster than 1.5x what the last one cost
+                            # (a re-layout resizes every pane's terminal: queueing them faster than they finish is what janks)
 
 
 def _debug(text: str) -> None:
@@ -91,7 +97,8 @@ def _bar_geometry(tm):
     return True, edge, float(inner), float(bar.cell_width), float(size.get("width") or 0)
 
 
-_WATCHDOG_S = 2.5           # a drag that goes silent this long is abandoned (mouse never stays captured)
+_WATCHDOG_S = 12.0          # a drag that goes silent this long is abandoned (the mouse never stays captured). Long enough that
+                            # holding the edge while you think is not a lost release (it used to give up after 2.5 s)
 
 
 def _end_capture(boss) -> None:
@@ -152,10 +159,12 @@ def _mouse_handler(ev) -> None:
         if ev.button == -1:                                        # motion
             now = time.monotonic()
             width = L.width_from_pointer(ev.x, cell_w, window_px, edge)
-            if width != d["width"] and now - _S.last_apply >= _APPLY_EVERY:
+            if width != d["width"] and now - _S.last_apply >= max(_APPLY_MIN, 1.5 * _S.last_cost):
                 _S.last_apply = now
                 d["width"] = width
+                t0 = time.perf_counter()
                 apply_width(boss, width)
+                _S.last_cost = time.perf_counter() - t0
         elif ev.button == GLFW_MOUSE_BUTTON_LEFT and ev.action == GLFW_RELEASE:
             tm = d["tm"]
             width = L.width_from_pointer(ev.x, cell_w, window_px, edge)
@@ -255,8 +264,12 @@ def _handle(tm, x: float, y: float, button: int, action: int) -> bool:
     if not L.in_grab_zone(x, inner, cell_w):
         return False
     boss = get_boss()
-    if getattr(boss, "mouse_handler", None) is not None:          # another modal mouse mode is active
-        return False
+    handler = getattr(boss, "mouse_handler", None)
+    if handler is not None:
+        if getattr(handler, "__name__", "") == "_mouse_handler" and _S.drag is None:
+            boss.mouse_handler = None             # OUR capture, left behind by an older version across a reload: let go of it
+        else:
+            return False                          # another modal mouse mode is active
     _S.drag = {"tm": tm, "edge": edge, "width": -1, "last": time.monotonic()}
     boss.mouse_handler = _mouse_handler
     redirect_mouse_handling(True)                                 # from now on we see every event
@@ -295,6 +308,8 @@ def make_tab_id_at(original):
             extents = [(te.tab_id, te.y.start, te.y.end) for te in self.tab_extents]
             if not tid and inside:
                 tid = L.snap_tab_id(extents, int((y - g.top) // self.cell_height))
+            if native_insert_drag():                                  # kitty >= 0.49.2 handles the drag itself
+                return tid
             from kitty.fast_data_types import get_tab_being_dragged
             dragged, started = get_tab_being_dragged()[:2]
             if started and dragged and inside:
@@ -308,6 +323,17 @@ def make_tab_id_at(original):
             return tid
     tab_id_at._kittymux_wrapped = True                          # type: ignore[attr-defined]
     return tab_id_at
+
+
+def native_insert_drag() -> bool:
+    """kitty >= 0.49.2 reorders dragged tabs by INSERTING at the nearest boundary (with a drop marker) and lets a
+    pane dropped on a tab's outer 10% or a gap become a new tab. Our 0.49.1 drag fixes are then not just
+    unnecessary: kitty's internals changed shape (TabBeingDropped), so they must not run."""
+    try:
+        from kitty.tab_bar import TabBar
+        return hasattr(TabBar, "tab_insertion_target_at")
+    except Exception:
+        return False
 
 
 def make_on_tab_drop_move(original):
@@ -338,7 +364,36 @@ def make_on_tab_drop_move(original):
     return on_tab_drop_move
 
 
+def make_drop_spans(original):
+    """kitty >= 0.49.2 `TabBar._drop_spans` for a vertical bar: the first tab's extent includes the header, so its
+    insertion midpoint sat in the header and dropping at the top of the list landed AFTER the first tab. Count only
+    its content rows."""
+    def _drop_spans(self, x, y):
+        coordinate, spans = original(self, x, y)
+        try:
+            if getattr(self, "is_vertical", False) and spans:
+                g = self.window_geometry
+                compact = (g.right - g.left) / self.cell_width <= L.COMPACT_MAX_COLS
+                hdr_px = L.header_rows(int((g.bottom - g.top) // self.cell_height), self.max_tab_title_lines, compact) * self.cell_height
+                tid, start, end = spans[0]
+                if end - start > hdr_px and start == 0:
+                    spans = [(tid, start + hdr_px, end)] + list(spans[1:])
+        except Exception:
+            pass
+        return coordinate, spans
+    _drop_spans._kittymux_wrapped = True                          # type: ignore[attr-defined]
+    return _drop_spans
+
+
 def _install_tab_drag() -> None:
+    if native_insert_drag():
+        try:
+            from kitty.tab_bar import TabBar
+            if hasattr(TabBar, "_drop_spans") and not getattr(TabBar._drop_spans, "_kittymux_wrapped", False):
+                TabBar._drop_spans = make_drop_spans(TabBar._drop_spans)              # type: ignore[method-assign]
+        except Exception:
+            pass
+        return
     try:
         from kitty.tabs import TabManager
         if not getattr(TabManager.on_tab_drop_move, "_kittymux_wrapped", False):

@@ -134,7 +134,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+g` | agent picker — every agent pane, live preview + status + message |
 | `ctrl+alt+y` | jump to the next agent waiting on you (round-robin, longest-waiting first) |
 | `ctrl+alt+shift+g` | new agent in its own git worktree + tab |
-| `ctrl+alt+b` | sidebar deck — tabs grouped by session, hover/click, live pane preview (`J`/`K` jump sessions, `a` pulls the selected tab's panes into this tab) |
+| `ctrl+alt+b` | sidebar deck — tabs grouped by session, hover/click, live pane preview (`J`/`K` jump sessions · `/` search by title, branch, folder, agent, state or message · `a` pulls the selected tab's panes into this tab · `t` turns the hovered/focused pane into its own tab) |
 | `ctrl+alt+shift+b` | **docked sidebar panel** — the deck as an always-visible left column that reserves screen space (Wayland/Hyprland) |
 | `ctrl+alt+;` | send a prompt to a background agent pane |
 | `ctrl+alt+shift+e` | move the tab bar: left → bottom → top → right (this kitty only) |
@@ -183,7 +183,7 @@ use hooks or title activity. Logos are the real brand marks, compiled into the b
 The design follows how t3code's sidebar resolves thread status: one ordered
 resolver (limited › waiting › working › done › idle), "done" only while unseen.
 
-**Splits.** A split tab lists each agent pane on its own: in the deck/panel as indented child lines
+**Splits.** A split tab shows a to-scale **mini-map** of its panes under its title (a row of quadrant blocks: left/right and top/bottom splits at their real proportions, each pane tinted by its state — amber waiting, blue working, red limited — the focused one brighter), and lists each agent pane on its own: in the deck/panel as indented child lines
 (`├ ◆ claude !`, `└ ⠋ codex`) you can hover (live preview of *that* pane) and click (focus it); in the bar as
 `logo + state` chips under the tab. The tab itself shows the most important state of all its panes, and
 jumping to a tab that needs you lands on the pane that is asking. kitty rings a waiting split with its bell border.
@@ -354,7 +354,7 @@ Kitty has native drag and drop; kittymux makes it work in the vertical bar:
 - **Reorder tabs** — press and drag a tab in the bar. A tab swaps once you pass the middle of the one you're crossing, so the order follows your hand instead of jumping (kitty's own drag teleported the grabbed tab to the top and cascaded swaps between tabs of different heights; both are fixed and covered by a real-pointer test). (Kitty used to treat the blank line between
   vertical tabs as "no tab", so dragging over it threw the tab to the end of the list; the gap now
   belongs to the nearer tab, and clicking it selects that tab.)
-- **Split → tab** — press `ctrl+alt+shift+h` to show a thin title bar on every pane (they are hidden
+- **Split → tab** — fastest: `ctrl+alt+d` (focused pane → new tab), or `t` in the deck. By mouse: press `ctrl+alt+shift+h` to show a thin title bar on every pane (they are hidden
   otherwise, so splits stay clean), drag one onto **"+"** or empty bar space to turn that split into its
   own tab, then press the key again to hide the bars.
 - **Tab ← split** — drag a pane's title bar onto **a tab in the bar** to move the split into that tab.

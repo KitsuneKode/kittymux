@@ -107,7 +107,10 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
 - kitty caps every vertical tab's HEIGHT at `tab_title_max_lines` (kittymux.conf sets 4): a tab that draws more rows spills into
   the spacer row (no gap, no hairline, wrong extent). The first tab's header (2 rows) + title + subtitle must fit in the cap —
   `kittymux_layout.header_rows` degrades to a 1-row header when the cap is 3.
-- Tab drag-and-drop: kitty's first `on_tab_drop_move` of a drag has x=y=0 and seeds the dragged tab at the END (it jumped to the
+- kitty ≥ 0.49.2 reorders dragged tabs by INSERTION (`TabBar.tab_insertion_target_at`, drop marker, `TabBeingDropped(tab_id, tab_ids)`);
+  our 0.49.1 drag patches check `kittymux_barsize.native_insert_drag()` and stand down (only `_drop_spans` is nudged so the first tab's
+  header does not count). Never touch `TabBeingDropped` without checking its fields.
+- Tab drag-and-drop (0.49.1): kitty's first `on_tab_drop_move` of a drag has x=y=0 and seeds the dragged tab at the END (it jumped to the
   top of a vertical bar); `kittymux_barsize.make_on_tab_drop_move` seeds the real order, and `make_tab_id_at` applies
   `kittymux_layout.drag_target` (a tab counts only past its midpoint) so unequal tab heights cannot cascade swaps.
 - Vertical-bar hit testing: kitty's tab extents skip the spacer line between tabs; `kittymux_barsize` wraps

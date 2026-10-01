@@ -23,7 +23,7 @@ tab_bar_edge left
 tab_bar_min_tabs 1
 geninclude $HOME_DIR/python/kittymux_layout.py
 CONF
-printf 'new_tab one\nlaunch sh\nnew_tab two\nlaunch sh\nnew_tab three\nlaunch sh\nnew_tab four\nlaunch sh\nnew_tab five\nlaunch sh\nfocus_tab 0\n' > "$T/session"
+printf 'new_tab one\nlaunch sh\nlaunch --location=vsplit sh\nnew_tab two\nlaunch sh\nnew_tab three\nlaunch sh\nnew_tab four\nlaunch sh\nnew_tab five\nlaunch sh\nfocus_tab 0\n' > "$T/session"
 env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP \
   KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 KITTYMUX_DEBUG=1 \
   kitty -o linux_display_server=x11 --class kmx-drag --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
@@ -49,6 +49,18 @@ drag 270 135;  expect "…and dragged back up two places" "one two three four fi
 drag 75 300;   expect "the tall first tab (it carries the header) dragged down" "two three four one five"
 drag 140 150;  expect "a small wiggle changes nothing" "two three four one five"
 drag 340 60;   expect "the last tab dragged all the way to the top" "five two three four one"
+
+# a split pane promoted to a tab by dragging its title bar (shown with the toggle) onto the bar: empty space → its own tab,
+# a tab row → joins that tab
+tabs() { kitty @ --to "$SOCK" ls | python3 -c 'import sys,json;print(" ".join("%s:%d" % (t["title"], len(t["windows"])) for t in json.load(sys.stdin)[0]["tabs"]))'; }
+kitty @ --to "$SOCK" focus-tab --match "title:one" >/dev/null 2>&1; sleep 0.5
+kitty @ --to "$SOCK" action toggle_window_title_bars >/dev/null 2>&1; sleep 1
+before=$(tabs)
+X mousemove 1000 20 mousedown 1; sleep 0.4
+for i in 1 2 3 4 5 6 7 8; do X mousemove $((1000 - 110 * i)) $((20 + 85 * i)); sleep 0.12; done; sleep 0.5; X mouseup 1; sleep 1.2
+after=$(tabs)
+[ "$(printf '%s' "$after" | wc -w)" -eq "$(( $(printf '%s' "$before" | wc -w) + 1 ))" ] || fail "dragging a pane title onto empty bar space did not make a new tab ('$before' → '$after')"
+echo "  ok   a split pane dragged (by its title bar) onto the bar's empty space became its own tab ('$before' → '$after')"
 [ -s "$STATE/barsize-debug.log" ] && fail "barsize logged an error"
 kill -0 "$KPID" 2>/dev/null || fail "kitty died"
 echo "PASS: dragging tabs in the vertical bar reorders them predictably (no jump on grab, no cascade)"

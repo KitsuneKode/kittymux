@@ -161,12 +161,16 @@ def _listeners() -> list:
 
 
 class Snapshot:
-    __slots__ = ("rows", "items", "current_session")
+    __slots__ = ("rows", "items", "current_session", "source", "query")
 
-    def __init__(self, rows: list, current_session: str):
-        groups = deck.group_rows(rows, current_session)
+    def __init__(self, rows: list, current_session: str, query: str = ""):
+        self.source, self.query = rows, query
+        groups = deck.filter_groups(deck.group_rows(rows, current_session), query)   # indexes are assigned BEFORE filtering
         self.items, self.rows = deck.flatten(groups, current_session)
         self.current_session = current_session
+
+    def with_query(self, query: str) -> "Snapshot":
+        return Snapshot(self.source, self.current_session, query)
 
 
 class Collector:
@@ -257,6 +261,7 @@ class Sidebar(Handler):
         self.preview_for = 0
         self._preview_inflight = False
         self._hover_pane = (-1, -1)             # (row, pane) of the child line under the pointer
+        self.query, self.searching, self.full = "", False, None     # the `/` search
         self._alive = True
         self._preview_worker = deck.LatestWorker(
             self._fetch_preview, lambda generation, lines: self._post(self._apply_preview, generation, lines))
@@ -308,7 +313,9 @@ class Sidebar(Handler):
         if not self._alive or snap is None:
             return
         keep = self.snap.rows[self.sel].tab_id if self.snap.rows else None
-        self.snap = snap
+        self.full = snap                         # the unfiltered view; self.snap is what the `/` search leaves of it
+        self.snap = snap.with_query(self.query) if self.query else snap
+        snap = self.snap
         self._hover_pane = (-1, -1)             # row indices changed under it
         if not snap.rows:
             self._request_preview()
@@ -515,7 +522,13 @@ class Sidebar(Handler):
         if waiting:
             head.append((f"  {kittymux_agents.state_glyph('waiting')} {waiting} waiting", p.waiting, True))
         w(set_cursor_position(0, 0) + self._line(head, bar_w, p.bar))
-        w(set_cursor_position(0, 1) + self._line([(" " + deck.hint(bar_w - 1), p.faint, False)], bar_w, p.bar))
+        if self.searching or self.query:
+            total = len(self.full.rows) if self.full is not None else len(snap.rows)
+            line = [(" / ", p.accent, True), (self.query, p.text, True), ("▏" if self.searching else "", p.accent, False),
+                    (f"   {len(snap.rows)}/{total}", p.faint, False)]
+            w(set_cursor_position(0, 1) + self._line(line, bar_w, p.surface))
+        else:
+            w(set_cursor_position(0, 1) + self._line([(" " + deck.hint(bar_w - 1), p.faint, False)], bar_w, p.bar))
         # list
         avail = self._avail()
         y = 2
@@ -581,10 +594,74 @@ class Sidebar(Handler):
         self.flush()
 
     # ---- events -----------------------------------------------------------
+    def _refilter(self) -> None:
+        if self.full is None:
+            return
+        self.snap = self.full.with_query(self.query)
+        self._hover_pane = (-1, -1)
+        self.sel = 0
+        self._clamp()
+        self._request_preview()
+        self.draw_screen()
+
+    def on_text(self, text: str, in_bracketed_paste: bool = False) -> None:
+        """Typing while the `/` search is open: printable characters extend the query."""
+        if not self.searching:
+            return
+        clean = "".join(ch for ch in text if ch.isprintable())
+        if clean and len(self.query) < 60:
+            self.query = (self.query + clean)[:60]
+            self._refilter()
+
+    def _search_key(self, k: str) -> bool:
+        """Keys while the search is open. True when consumed."""
+        n = len(self.snap.rows)
+        if k == "ESCAPE":
+            if self.query:
+                self.query = ""
+                self._refilter()
+            else:
+                self.searching = False
+                self.draw_screen()
+            return True
+        if k == "BACKSPACE":
+            self.query = self.query[:-1]
+            self._refilter()
+            return True
+        if k == "ENTER":
+            self.searching = False
+            self._jump()
+            return True
+        if k in ("DOWN", "TAB"):
+            self.sel = deck.step_row(self.sel, 1, n)
+        elif k == "UP":
+            self.sel = deck.step_row(self.sel, -1, n)
+        else:
+            return True                           # printable keys arrive through on_text
+        self._clamp()
+        self._request_preview()
+        self.draw_screen()
+        return True
+
     def on_key_event(self, key_event, in_bracketed_paste: bool = False) -> None:
         if key_event.type == EventType.RELEASE:   # press+release both arrive; act once
             return
         k = (key_event.key or "").upper()
+        if self.searching:
+            ch = getattr(key_event, "text", "") or (key_event.key if len(key_event.key or "") == 1 and not (key_event.mods & ~1) else "")
+            if ch and k not in ("ESCAPE", "ENTER", "BACKSPACE", "TAB"):
+                self.on_text(ch)                  # with kitty's keyboard protocol, typing arrives as key events with text
+            else:
+                self._search_key(k)
+            return
+        if (key_event.key or "") == "/":
+            self.searching = True
+            self.draw_screen()
+            return
+        if k == "ESCAPE" and self.query:          # a finished search stays applied until Esc clears it
+            self.query = ""
+            self._refilter()
+            return
         if k in ("Q", "ESCAPE"):
             if not _PANEL or k == "Q":
                 self.quit_loop()
@@ -608,6 +685,9 @@ class Sidebar(Handler):
             return
         elif k == "A" and not shifted:
             self._absorb()
+            return
+        elif k == "T" and not shifted:
+            self._promote()
             return
         else:
             return
@@ -708,6 +788,19 @@ class Sidebar(Handler):
         self.screen_size = new_size
         self._clamp()
         self.draw_screen()
+
+    def _promote(self) -> None:
+        """`t`: the hovered pane (else the tab's focused pane) of a split tab becomes its own tab — the keyboard/deck
+        twin of dragging a pane's title bar onto the bar's empty space."""
+        win = deck.promote_target(self.snap.rows, self.sel, self._hover_pane)
+        if not win:
+            return
+        _rc("detach-window", "--match", f"id:{win}", "--target-tab", "new")
+        _rc("focus-window", "--match", f"id:{win}")
+        if not _PANEL:
+            self.quit_loop()
+        else:
+            self._request_refresh()
 
     def _absorb(self) -> None:
         """`a`: the selected tab's panes become splits of the tab you are in (reversible with

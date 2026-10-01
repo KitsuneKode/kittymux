@@ -6,6 +6,8 @@ author or by a test in this repo; everything else is an educated guess and is la
 | Area | Status |
 |---|---|
 | **kitty 0.49.1** | Tested — the version used day to day. `kittymux doctor` refuses < 0.48 (vertical tabs). |
+| **Updating kitty under a running kitty** | kitty keeps running its old binary but loads Python files from the new install on demand and at every config reload — an unsupported mixed state (after the 0.49.1 → 0.49.2 update, tab clicks/drags and reloads in still-running kitties are suspect). `kittymux doctor` now warns when a running kitty's binary was replaced; restart it. |
+| **Tab drag on 0.49.1 vs 0.49.2** | 0.49.1 swaps the dragged tab with whatever it touches (kittymux patches that: no jump on grab, no cascades); 0.49.2 reorders by insertion with a drop marker and lets a pane dropped on a tab gap/edge become a new tab, so kittymux's patches stand down there. Both are covered by `tests/smoke_drag.sh`. |
 | **kitty 0.49.2** | Tested (released 2026-10-01): the install test and all three real-kitty smoke tests (states, sidebar buttons/drag/peek/absorb, upgrade-under-a-running-kitty) pass. CI runs both versions. |
 | kitty 0.48.x | Untested. Vertical tab bar exists; native tab/window drag-and-drop (used for splits ↔ tabs) is newer and may be missing. |
 | **Arch Linux, Hyprland (Wayland)** | Tested — daily driver, incl. the docked panel (`kitten panel`, layer-shell). |

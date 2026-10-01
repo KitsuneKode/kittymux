@@ -216,7 +216,8 @@ class TextTests(unittest.TestCase):
             self.assertLessEqual(len(D.hint(w)), w)
 
     def test_hint_full_when_wide(self):
-        self.assertIn("a absorb", D.hint(36))
+        self.assertIn("/ find", D.hint(36))
+        self.assertIn("a absorb", D.hint(80))
 
     def test_fit_and_pad(self):
         self.assertEqual(D.fit("abcdef", 4), "abc…")
@@ -336,6 +337,85 @@ class AbsorbTests(unittest.TestCase):
         rows = self.rows()
         rows[0].current = False
         self.assertEqual(D.absorb_plan(rows, 1), ([], 0))
+
+
+class PromoteTests(unittest.TestCase):
+    def split(self):
+        return [D.RowData(tab_id=1, win_id=10, win_ids=(10,)),
+                D.RowData(tab_id=2, win_id=20, win_ids=(20, 21, 22),
+                          pane_rows=(D.PaneData(win_id=20), D.PaneData(win_id=21, active=True), D.PaneData(win_id=22)))]
+
+    def test_the_hovered_pane_is_promoted(self):
+        self.assertEqual(D.promote_target(self.split(), 1, (1, 2)), 22)
+
+    def test_without_a_hover_the_focused_pane_is_promoted(self):
+        self.assertEqual(D.promote_target(self.split(), 1), 21)
+        self.assertEqual(D.promote_target(self.split(), 1, (0, 1)), 21)           # a hover on ANOTHER tab's pane is ignored
+
+    def test_a_single_pane_tab_has_nothing_to_promote(self):
+        self.assertEqual(D.promote_target(self.split(), 0), 0)
+        self.assertEqual(D.promote_target(self.split(), 7), 0)
+
+
+class SearchTests(unittest.TestCase):
+    def groups(self):
+        rows = [D.RowData(tab_id=1, win_id=1, session="work", title="api server", branch="feat/login", agent="claude"),
+                D.RowData(tab_id=2, win_id=2, session="work", title="docs", branch="main", cwd="/home/u/docs", status="waiting",
+                          msg="Approve: rm -rf node_modules?"),
+                D.RowData(tab_id=3, win_id=3, session="play", title="sweep", branch="fix/resolve-gate", agent="codex")]
+        return D.group_rows(rows, "work")
+
+    def names(self, q):
+        return [r.title for _n, members in D.filter_groups(self.groups(), q) for r in members]
+
+    def test_every_word_must_match_somewhere(self):
+        self.assertEqual(self.names("claude login"), ["api server"])
+        self.assertEqual(self.names("fix gate"), ["sweep"])
+        self.assertEqual(self.names("waiting"), ["docs"])                # state
+        self.assertEqual(self.names("node_modules"), ["docs"])           # the agent's message
+        self.assertEqual(self.names("PLAY"), ["sweep"])                  # session, case-insensitive
+
+    def test_empty_query_keeps_everything_and_unknown_drops_everything(self):
+        self.assertEqual(len(self.names("")), 3)
+        self.assertEqual(self.names("zzz"), [])
+
+    def test_empty_sessions_disappear_and_indexes_stay_those_of_the_full_list(self):
+        groups = D.filter_groups(self.groups(), "docs")
+        self.assertEqual([n for n, _m in groups], ["work"])
+        self.assertEqual(groups[0][1][0].index, 2)                       # still tab 2 in its session, as the bar numbers it
+
+
+class MiniMapTests(unittest.TestCase):
+    def draw(self, rects, cols, rows):
+        return ["".join(c[0] for c in line) for line in D.layout_minimap(rects, cols, rows)]
+
+    def test_a_single_pane_is_one_solid_block(self):
+        self.assertEqual(self.draw([(1, 0, 0, 100, 40)], 4, 1), ["████"])
+
+    def test_two_panes_side_by_side_split_at_the_right_place(self):
+        cells = D.layout_minimap([(1, 0, 0, 50, 40), (2, 50, 0, 100, 40)], 4, 1)
+        self.assertEqual(["".join(c[0] for c in cells[0])], ["████"])                   # the split falls on a cell boundary
+        self.assertEqual([c[1] for c in cells[0]], [1, 1, 2, 2])
+
+    def test_a_split_inside_a_cell_uses_a_half_block(self):
+        cells = D.layout_minimap([(1, 0, 0, 50, 40), (2, 50, 0, 100, 40)], 3, 1)       # 100/3: the boundary is mid-cell
+        self.assertEqual(cells[0][1][0], "▌")
+        self.assertEqual((cells[0][1][1], cells[0][1][2]), (1, 2))
+
+    def test_stacked_panes_use_the_horizontal_half_blocks(self):
+        cells = D.layout_minimap([(1, 0, 0, 100, 20), (2, 0, 20, 100, 40)], 2, 1)
+        self.assertEqual(["".join(c[0] for c in cells[0])], ["▀▀"])
+        self.assertEqual({(c[1], c[2]) for c in cells[0]}, {(1, 2)})
+
+    def test_one_tall_left_and_two_stacked_right(self):
+        cells = D.layout_minimap([(1, 0, 0, 50, 40), (2, 50, 0, 100, 20), (3, 50, 20, 100, 40)], 4, 2)
+        ids = [[c[1] for c in line] for line in cells]
+        self.assertEqual(ids, [[1, 1, 2, 2], [1, 1, 3, 3]])
+
+    def test_gaps_between_panes_belong_to_the_nearest_one_and_empty_input_is_empty(self):
+        self.assertEqual(len(D.layout_minimap([(1, 0, 0, 48, 40), (2, 52, 0, 100, 40)], 4, 1)[0]), 4)
+        self.assertEqual(D.layout_minimap([], 4, 1), [])
+        self.assertEqual(D.layout_minimap([(1, 0, 0, 10, 10)], 0, 1), [])
 
 
 if __name__ == "__main__":

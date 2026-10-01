@@ -2,6 +2,7 @@ import importlib.machinery
 import importlib.util
 import os
 import unittest
+from unittest import mock
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 
@@ -178,6 +179,17 @@ class SocketListTests(unittest.TestCase):
             srv.close()
             os.unlink(path)
             os.rmdir(d)
+
+
+class BinaryReplacedTests(unittest.TestCase):
+    def test_a_replaced_binary_is_detected_and_a_normal_one_is_not(self):
+        m = load()
+        with mock.patch.object(m.os, "readlink", return_value="/usr/bin/kitty (deleted)"):
+            self.assertTrue(m.binary_replaced(123))
+        with mock.patch.object(m.os, "readlink", return_value="/usr/bin/kitty"):
+            self.assertFalse(m.binary_replaced(123))
+        with mock.patch.object(m.os, "readlink", side_effect=OSError):
+            self.assertFalse(m.binary_replaced(123))                  # gone or not ours: no claim
 
 
 class ScannerAgeTests(unittest.TestCase):

@@ -121,6 +121,17 @@ after=$(tabs_of)
 echo "  ok   deck 'a' absorbed the next tab's pane into the current tab ($before → $after)"
 sleep 1
 
+# deck search: `/`, type, Enter → the matching tab (a filter by title, branch, folder, agent, state, message)
+[ "$(active)" != "one" ] || fail "setup: expected the active tab not to be 'one' before searching"
+kitty @ --to "$SOCK" kitten "$HOME_DIR/python/sidebar-kit.py" >/dev/null 2>&1
+sleep 3
+X key slash; sleep 0.4; X type --delay 90 "one"; sleep 1
+X key Return
+for _ in $(seq 15); do [ "$(active)" = "one" ] && break; sleep 0.4; done
+[ "$(active)" = "one" ] || fail "deck search for 'one' did not land on tab 'one' (active: '$(active)')"
+echo "  ok   deck: / one ⏎ jumped to the matching tab"
+sleep 1
+
 # drag the inner edge 120 px to the right → the sidebar grows, the panes shrink
 redraw
 X mousemove "$((EDGE - 3))" 400 mousedown 1
@@ -129,8 +140,9 @@ sleep 0.3
 X mouseup 1
 wait_cols "dragging the edge did not resize" '[ "$c" -lt "$C0" ]'
 echo "  ok   dragging the inner edge resizes the sidebar ($C0 → $(cols) columns)"
+was=$(active)
 X mousemove 900 400 click 1; sleep 0.5          # the mouse must be ours again: a click in a pane focuses it
-[ "$(active)" = "two" ] || fail "mouse not returned after the drag ('$(active)')"
+[ "$(active)" = "$was" ] || fail "mouse not returned after the drag ('$was' → '$(active)')"
 echo "  ok   mouse handed back after the drag"
 
 [ -s "$STATE/tab_bar-error.log" ] && fail "tab bar logged an error"

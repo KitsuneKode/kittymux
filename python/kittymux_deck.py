@@ -159,6 +159,82 @@ def step_group(flat: list[RowData], cur: int, delta: int) -> int:
     return firsts[sessions[there]]
 
 
+# ── the layout mini-map: a split tab drawn to scale, two sub-pixels per cell each way ──────────────
+_QUADRANT = " ▘▝▀▖▌▞▛▗▚▐▜▄▙▟█"        # index = bit mask of the cell's sub-pixels that belong to colour A (TL=1 TR=2 BL=4 BR=8)
+
+
+def layout_minimap(rects: list, cols: int, rows: int) -> list:
+    """A picture of a tab's pane layout. `rects`: [(pane_id, left, top, right, bottom)] in any units (pixels).
+    Returns `rows` lists of `cols` cells (char, id_a, id_b): draw `char` with id_a as the foreground and id_b as the
+    background colour. Every cell holds 2x2 sub-pixels, each belonging to the pane under its centre, so the grid shows
+    where the splits are, to scale. A cell that straddles three or more panes shows its two most common."""
+    if not rects or cols < 1 or rows < 1:
+        return []
+    x0, y0 = min(r[1] for r in rects), min(r[2] for r in rects)
+    x1, y1 = max(r[3] for r in rects), max(r[4] for r in rects)
+    w, h = max(1, x1 - x0), max(1, y1 - y0)
+
+    def pane_at(sx: int, sy: int):
+        x = x0 + (sx + 0.5) * w / (2 * cols)
+        y = y0 + (sy + 0.5) * h / (2 * rows)
+        best, best_d = None, None
+        for pid, l, t, r, b in rects:
+            if l <= x < r and t <= y < b:
+                return pid
+            d = max(l - x, x - r, t - y, y - b, 0)            # a gap between panes (borders): the nearest one
+            if best_d is None or d < best_d:
+                best, best_d = pid, d
+        return best
+
+    out = []
+    for cy in range(rows):
+        line = []
+        for cx in range(cols):
+            quad = [pane_at(2 * cx, 2 * cy), pane_at(2 * cx + 1, 2 * cy), pane_at(2 * cx, 2 * cy + 1), pane_at(2 * cx + 1, 2 * cy + 1)]
+            counts: dict = {}
+            for q in quad:
+                counts[q] = counts.get(q, 0) + 1
+            ranked = sorted(counts, key=lambda k: (-counts[k], quad.index(k)))
+            a = ranked[0]
+            b = ranked[1] if len(ranked) > 1 else a
+            mask = sum(bit for bit, q in zip((1, 2, 4, 8), quad) if q == a)
+            line.append((_QUADRANT[mask], a, b))
+        out.append(line)
+    return out
+
+
+def matches(row: RowData, tokens: list) -> bool:
+    """Every token (lower-case) appears somewhere in the row's searchable text."""
+    hay = " ".join((row.title, row.branch, row.cwd, row.agent, row.status, row.msg, row.session, row.pr)).lower()
+    return all(t in hay for t in tokens)
+
+
+def filter_groups(groups: list, query: str) -> list:
+    """The deck's `/` search: keep the rows that contain every word of `query` (title, branch, folder, agent, state,
+    message, session, PR); drop sessions left empty. An empty query keeps everything."""
+    tokens = query.lower().split()
+    if not tokens:
+        return groups
+    out = []
+    for name, members in groups:
+        kept = [r for r in members if matches(r, tokens)]
+        if kept:
+            out.append((name, kept))
+    return out
+
+
+def promote_target(rows: list[RowData], sel: int, hover_pane: tuple = (-1, -1)) -> int:
+    """Window id of the pane to promote to its own tab: the pane line under the pointer, else the selected
+    split tab's focused pane. 0 when the selected tab is not split (nothing to promote)."""
+    if not (0 <= sel < len(rows)) or len(rows[sel].pane_rows) < 2:
+        return 0
+    row, pane = hover_pane
+    if row == sel and 0 <= pane < len(rows[sel].pane_rows):
+        return rows[sel].pane_rows[pane].win_id
+    active = next((p for p in rows[sel].pane_rows if p.active), None)
+    return (active or rows[sel].pane_rows[0]).win_id
+
+
 def absorb_plan(rows: list[RowData], sel: int) -> tuple[list[int], int]:
     """([window ids], target tab id): pull the selected tab's panes into the tab you are looking at
     (they become splits there). Nothing to do when the selection IS the current tab or none is current."""
@@ -172,7 +248,9 @@ def absorb_plan(rows: list[RowData], sel: int) -> tuple[list[int], int]:
 
 
 def hint(width: int) -> str:
-    for cand in ("j/k move · J/K session · ⏎ go · a absorb · click · q quit",
+    for cand in ("j/k move · J/K session · ⏎ go · / find · a absorb · t tab · q quit",
+                 "j/k move · ⏎ go · / find · a absorb · t tab · q quit",
+                 "j/k move · ⏎ go · / find · q quit",
                  "j/k move · ⏎ go · a absorb · q quit",
                  "j/k move · ⏎ go · click · q quit",
                  "j/k · ⏎ go · q quit",
