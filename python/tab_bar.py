@@ -762,30 +762,27 @@ def _attention_parts(counts: dict[str, int], pal) -> list[tuple[str, int, bool]]
 
 
 def _button(screen: Screen, y: int, rows: int, x0: int, width: int, glyph: str, pal) -> None:
-    """The collapse/expand button: a filled block `width` cells × `rows` rows with the glyph in its middle."""
-    for r in range(rows):
-        screen.cursor.bg = _rgb(pal.surface_hi)
-        screen.cursor.y = y + r
-        _put(screen, x0, " " * width, _rgb(pal.muted))
+    """The collapse/expand button: just the glyph, centred in its `width` cells (no fill — the hit area,
+    kittymux_layout.in_toggle_zone, is invisible and a good deal bigger than the glyph)."""
     screen.cursor.y = y + (rows - 1) // 2
-    screen.cursor.bg = _rgb(pal.surface_hi)
+    screen.cursor.bg = _rgb(pal.bar)
     _put(screen, x0 + width // 2, glyph, _rgb(pal.text), True)
 
 
 def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: int, compact: bool) -> None:
     """The first tab's header. Full bar: `TABS` over `N tabs  ! 1`, and the collapse button at the right
-    (3 cells × `rows` rows — the hit area in kittymux_layout.in_toggle_zone is a little larger).
+    (a bare glyph; its hit area, kittymux_layout.in_toggle_zone, is a good deal larger).
     Rail: the expand button across the top, the attention badges under it."""
     total, counts = _session_stats(tab)
     screen.cursor.bg = bar
     if compact:
-        # one block, as wide as the rail allows: `»` on top, the attention badges inside it underneath
-        _button(screen, y, rows, 1, cols - 4, _EXPAND, pal)
+        # `»` on top, the attention badges underneath (the whole two-row header is the button)
+        _button(screen, y, 1, 1, cols - 4, _EXPAND, pal)
         badge = " ".join(f"{kittymux_agents.state_glyph(st)}{counts[st]}" for st in ("waiting", "limited", "done") if counts.get(st))
         if badge and rows > 1:
             screen.cursor.y = y + 1
-            screen.cursor.bg = _rgb(pal.surface_hi)
-            _put(screen, 1, _fit(badge, cols - 4).ljust(cols - 4), _rgb(pal.waiting), True)
+            screen.cursor.bg = bar
+            _put(screen, 1, _fit(badge, cols - 3), _rgb(pal.waiting), True)
         return
     name = _compact_session_name(getattr(tab, "session_name", "") or "")
     name = "TABS" if name == "—" else name.upper()

@@ -305,7 +305,7 @@ A new kitty starts the way you last left one (and with your own kitty.conf if yo
 | | |
 |---|---|
 | `ctrl+alt+\` | full sidebar → slim icon rail → hidden ("zen") → back |
-| the `«` / `»` button | full sidebar ⇄ rail (click anywhere in its block, two rows tall) |
+| the `«` / `»` button | full sidebar ⇄ rail (the glyph is bare, but the click area around it is two rows tall and a few cells wide) |
 | `ctrl+alt+shift+e` | move the bar: left → bottom → top → right (vertical sidebar or horizontal bar, top included) |
 | `ctrl+alt+shift+l` | pick a preset: sidebar, rail, right-sidebar, bottom, top, zen |
 | `ctrl+alt+shift+[` / `]` · drag the edge | narrower / wider sidebar |
