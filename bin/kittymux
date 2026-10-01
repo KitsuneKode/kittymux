@@ -335,10 +335,14 @@ launch sh -c 'printf "• Working (12s • esc to interrupt)\\n"; exec -a codex 
 new_tab antigravity
 cd {home}
 launch sh -c 'printf "  Thinking · 2m 4s (esc to interrupt)\\n"; exec -a agy sleep 86400'
-new_tab logs
-cd /tmp
+new_tab droid
+cd {home}
+launch sh -c 'printf "No active subscription found.\\nSubscribe to start using Droid.\\n"; exec -a droid sleep 86400'
+new_tab review
+cd {home}
 launch
-launch
+launch --location=vsplit sh -c 'printf " Allow this command?\\n ❯ 1. Yes\\n   2. No\\n"; exec -a claude sleep 86400'
+launch --location=hsplit sh -c 'printf "• Working (3m 2s • esc to interrupt)\\n"; exec -a codex sleep 86400'
 new_tab notes
 cd {home}
 launch
@@ -389,7 +393,8 @@ def demo(argv: list[str]) -> int:
         font_conf + "allow_remote_control yes\nlisten_on unix:/tmp/mykitty\n"
         "include theme.conf\n"
         f"include {cfg}/kittymux-keys.conf\ninclude {cfg}/kittymux-leader.conf\n"
-        f"include {HOME_DIR}/kittymux.conf\ntab_bar_edge {edge}\nwindow_padding_width 10\n")
+        f"include {HOME_DIR}/kittymux.conf\ntab_bar_edge {edge}\nwindow_padding_width 10\n"
+        f"geninclude {HOME_DIR}/python/kittymux_layout.py\n")      # last: the collapse button / layout keys need it
     session = os.path.join(tmp, "demo.kitty")
     open(session, "w").write(DEMO_SESSION.format(home=os.path.expanduser("~")))
 

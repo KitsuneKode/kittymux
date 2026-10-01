@@ -9,7 +9,7 @@ blocked on you. A *config layer*, not a daemon — Linux, Wayland, Hyprland-frie
 zero background processes.
 
 <p align="center">
-  <img src="assets/demo.gif" alt="kittymux: an agent starts waiting, the sidebar deck lists every tab with its status and message, leader mode" width="720">
+  <img src="assets/demo.gif" alt="kittymux: a vertical tab bar with agent states, the deck with a split tab's pane tree and live preview, a right-click peek card, and the collapse button" width="720">
 </p>
 
 ## Try it in 30 seconds
@@ -122,7 +122,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+\`` | flip to previously active tab (MRU) |
 | `ctrl+alt+h j k l` | pane nav (`shift+alt+arrows`) · `ctrl+alt+o` last pane |
 | `ctrl+alt+enter` | split horizontal · `+shift` vertical |
-| `ctrl+alt+d` / `+shift` | pane → new tab / chooser |
+| `ctrl+alt+d` / `+shift` | pane → new tab / chooser · `ctrl+alt+shift+h` shows/hides pane title bars (the drag handles) |
 | `ctrl+alt+z` / `0` | zoom pane / equalize |
 | `ctrl+alt+i` (×2) | cwd pill → detail card (copy path/branch) |
 | `ctrl+alt+u` | agent usage HUD |
@@ -153,7 +153,7 @@ nothing gets silently swallowed.
 
 ## Agent status
 
-<img src="assets/status.png" alt="vertical tab bar: Claude waiting with its question as the reason, Codex and Antigravity working with spinners" width="640">
+<img src="assets/status.png" alt="vertical tab bar: Claude and a split tab waiting with their questions, Codex and Antigravity working, Factory droid out of quota (⊘), header badges" width="640">
 
 Every tab with an agent in it shows exactly one of these, and the tab bar, the deck, the docked
 panel and the `ctrl+alt+y` jump queue all show the *same* one:
@@ -321,8 +321,9 @@ Kitty has native drag and drop; kittymux makes it work in the vertical bar:
 - **Reorder tabs** — press and drag a tab in the bar. (Kitty used to treat the blank line between
   vertical tabs as "no tab", so dragging over it threw the tab to the end of the list; the gap now
   belongs to the nearer tab, and clicking it selects that tab.)
-- **Split → tab** — with two or more panes, each pane gets a thin title bar (`window_title_bar` in
-  `kittymux.conf`). Drag it onto **"+"** or empty bar space to turn that split into its own tab.
+- **Split → tab** — press `ctrl+alt+shift+h` to show a thin title bar on every pane (they are hidden
+  otherwise, so splits stay clean), drag one onto **"+"** or empty bar space to turn that split into its
+  own tab, then press the key again to hide the bars.
 - **Tab ← split** — drag a pane's title bar onto **a tab in the bar** to move the split into that tab.
 - **Re-split** — drop it on another pane's edge to insert it there, or on that pane's title bar to swap.
 - **Keyboard** — `ctrl+alt+d` pane → new tab · `ctrl+alt+shift+d` pane → a tab you pick (a one-pane tab

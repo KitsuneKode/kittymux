@@ -78,6 +78,8 @@ map shift+alt+right      neighboring_window right
 map ctrl+alt+o           nth_window -1
 map ctrl+alt+d           detach_window new-tab-right
 map ctrl+alt+shift+d     detach_window ask
+# ctrl+alt+shift+h — show/hide pane title bars: drag handles for moving a split to a tab, another tab, or elsewhere
+map ctrl+alt+shift+h     toggle_window_title_bars
 
 # ============================================
 # HUDS — location, agent usage, agent jump
