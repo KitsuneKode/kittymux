@@ -153,6 +153,8 @@ nothing gets silently swallowed.
 
 ## Agent status
 
+<img src="assets/status.png" alt="vertical tab bar: Claude waiting with its question as the reason, Codex and Antigravity working with spinners" width="640">
+
 Every tab with an agent in it shows exactly one of these, and the tab bar, the deck, the docked
 panel and the `ctrl+alt+y` jump queue all show the *same* one:
 

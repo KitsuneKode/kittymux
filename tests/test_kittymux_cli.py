@@ -156,6 +156,49 @@ class HooksTests(unittest.TestCase):
         self.assertFalse(os.path.exists(path))
 
 
+class SocketListTests(unittest.TestCase):
+    def test_a_socket_named_by_env_and_found_by_glob_is_listed_once(self):
+        import socket, tempfile
+        m = load()
+        d = tempfile.mkdtemp(dir="/tmp")
+        path = os.path.join(d, "mykitty-777")
+        srv = socket.socket(socket.AF_UNIX)
+        srv.bind(path)
+        old = (m._socket_dirs, os.environ.get("KITTY_LISTEN_ON"))
+        try:
+            m._socket_dirs = lambda: [d]
+            os.environ["KITTY_LISTEN_ON"] = "unix:" + path
+            self.assertEqual(m._sockets(), ["unix:" + path])
+        finally:
+            m._socket_dirs = old[0]
+            if old[1] is None:
+                os.environ.pop("KITTY_LISTEN_ON", None)
+            else:
+                os.environ["KITTY_LISTEN_ON"] = old[1]
+            srv.close()
+            os.unlink(path)
+            os.rmdir(d)
+
+
+class ScannerAgeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def test_missing_file_means_not_running(self):
+        import tempfile
+        self.assertIsNone(self.m.scanner_age(tempfile.mkdtemp(), 4242))
+
+    def test_age_is_seconds_since_last_write(self):
+        import tempfile, time
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "scan-4242.json")
+        open(path, "w").write("{}")
+        mtime = os.stat(path).st_mtime
+        self.assertAlmostEqual(self.m.scanner_age(d, 4242, now=mtime + 7.5), 7.5, places=3)
+        self.assertEqual(self.m.scanner_age(d, 4242, now=mtime - 100), 0.0)          # never negative
+
+
 class TargetSocketTests(unittest.TestCase):
     """The layout command must act on the kitty that launched it — never a stale env hint."""
 

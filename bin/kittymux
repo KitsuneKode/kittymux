@@ -76,6 +76,16 @@ def _run(cmd: list[str], timeout: float = 3.0) -> tuple[int, str]:
         return 1, ""
 
 
+def scanner_age(state_dir: str, pid: int, now: float | None = None) -> float | None:
+    """Seconds since the scanner of kitty `pid` last wrote scan-<pid>.json (it rewrites on any change
+    and at least every 3 s), or None if there is no such file."""
+    try:
+        mtime = os.stat(os.path.join(state_dir, f"scan-{pid}.json")).st_mtime
+    except OSError:
+        return None
+    return max(0.0, (time.time() if now is None else now) - mtime)
+
+
 def _kitty_version() -> tuple[int, int, int] | None:
     rc, out = _run(["kitty", "--version"])
     m = re.search(r"(\d+)\.(\d+)\.(\d+)", out)
@@ -96,7 +106,7 @@ def _sockets() -> list[str]:
     socks = [s for d in _socket_dirs() for s in glob.glob(os.path.join(d, "mykitty-*")) if _owned_socket(s)]
     env = os.environ.get("KITTY_LISTEN_ON", "")
     ok_env = [env] if env.startswith("unix:") and _owned_socket(env[5:]) else []
-    return ok_env + [f"unix:{s}" for s in socks]
+    return list(dict.fromkeys(ok_env + [f"unix:{s}" for s in socks]))      # one entry per socket, order kept
 
 
 def _fc_families() -> set:
@@ -224,6 +234,19 @@ def doctor() -> int:
             r.ok(f"connected ({socks[0]}); theme accent #{p.accent:06x}, bar #{p.bar:06x}")
         else:
             r.warning(f"could not query {socks[0]}", "is allow_remote_control on for that instance?")
+
+    for sock in socks:
+        pid = _socket_pid(sock)
+        if pid is None:
+            continue
+        age = scanner_age(STATE, pid)
+        if age is None:
+            r.warning(f"agent scanner is not running in kitty {pid} (statuses fall back to hooks/titles)",
+                      "reload that kitty twice (kittymux upgrade) — the tab bar starts the scanner on load")
+        elif age > 10:
+            r.warning(f"agent scanner in kitty {pid} last reported {age:.0f}s ago", "reload it twice (kittymux upgrade)")
+        else:
+            r.ok(f"agent scanner alive in kitty {pid}")
 
     elog = os.path.join(STATE, "tab_bar-error.log")
     if os.path.exists(elog) and os.path.getsize(elog) > 0:
