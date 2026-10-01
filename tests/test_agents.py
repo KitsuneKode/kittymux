@@ -39,29 +39,95 @@ class ResolveStatusTests(unittest.TestCase):
     def test_unknown_explicit_falls_back(self):
         self.assertEqual(A.resolve_status({"status": "bogus", "ts_title": self.NOW - 1}, True, self.NOW), "working")
 
-    def test_missing_entry_is_working(self):
-        self.assertEqual(A.resolve_status(None, True, self.NOW), "working")
+    def test_missing_entry_is_idle_not_working(self):
+        self.assertEqual(A.resolve_status(None, True, self.NOW), "idle")      # no evidence, no claim
 
-    def test_stale_title_is_waiting(self):
-        self.assertEqual(A.resolve_status({"ts_title": self.NOW - 16}, True, self.NOW), "waiting")
+    def test_quiet_title_is_never_waiting(self):
+        self.assertEqual(A.resolve_status({"ts_title": self.NOW - 16}, True, self.NOW), "idle")
+        self.assertEqual(A.resolve_status({"ts_title": self.NOW - 600}, True, self.NOW), "idle")
 
     def test_fresh_title_is_working(self):
         self.assertEqual(A.resolve_status({"ts_title": self.NOW - 3}, True, self.NOW), "working")
 
-    def test_zero_title_ts_is_working(self):
-        self.assertEqual(A.resolve_status({"ts_title": 0}, True, self.NOW), "working")
+    def test_zero_title_ts_is_idle(self):
+        self.assertEqual(A.resolve_status({"ts_title": 0}, True, self.NOW), "idle")
+
+    def test_fresh_scanner_verdict_beats_hooks_and_titles(self):
+        e = {"state": "working", "ts_scan": self.NOW - 1, "status": "waiting", "ts_title": self.NOW - 99}
+        self.assertEqual(A.resolve_status(e, True, self.NOW), "working")
+
+    def test_stale_scanner_verdict_is_ignored(self):
+        e = {"state": "working", "ts_scan": self.NOW - 60, "status": "waiting"}
+        self.assertEqual(A.resolve_status(e, True, self.NOW), "waiting")      # degrade to the hook
+
+    def test_limited_is_a_state_and_needs_you(self):
+        e = {"state": "limited", "ts_scan": self.NOW}
+        self.assertEqual(A.resolve_status(e, True, self.NOW), "limited")
+        self.assertIn("limited", A.NEEDS_YOU)
+        self.assertIn("waiting", A.NEEDS_YOU)
+        self.assertNotIn("working", A.NEEDS_YOU)
+
+    def test_scanner_verdict_without_agent_is_blank(self):
+        self.assertEqual(A.resolve_status({"state": "working", "ts_scan": self.NOW}, False, self.NOW), "")
+
+
+class MergeScanTests(unittest.TestCase):
+    def test_merges_verdicts_into_hook_entries(self):
+        panes = {"7": {"status": "waiting", "msg": "x"}}
+        scan = {"7": {"state": "working", "reason": "", "ts_scan": 5.0, "ts_state": 4.0},
+                "9": {"state": "idle", "ts_scan": 5.0}}
+        out = A.merge_scan(panes, scan)
+        self.assertEqual(out["7"]["status"], "waiting")
+        self.assertEqual(out["7"]["state"], "working")
+        self.assertEqual(out["9"]["state"], "idle")
+        self.assertNotIn("state", panes["7"])                                  # inputs untouched
+
+    def test_garbage_is_ignored(self):
+        self.assertEqual(A.merge_scan(None, None), {})
+        self.assertEqual(A.merge_scan({"1": "junk"}, {"2": 5}), {})
+
+    def test_load_panes_reads_sibling_scan_file(self):
+        import json, tempfile
+        d = tempfile.mkdtemp()
+        json.dump({"3": {"status": "done"}}, open(os.path.join(d, "panes-42.json"), "w"))
+        json.dump({"3": {"state": "idle", "ts_scan": 1.0}}, open(os.path.join(d, "scan-42.json"), "w"))
+        out = A.load_panes(os.path.join(d, "panes-42.json"))
+        self.assertEqual((out["3"]["status"], out["3"]["state"]), ("done", "idle"))
+        self.assertEqual(A.load_panes(os.path.join(d, "panes-nope.json")), {})
+
+
+class AgentTableTests(unittest.TestCase):
+    def test_antigravity_is_recognised_by_both_names(self):
+        self.assertEqual(A.agent_in(["/home/u/.local/bin/agy"]), "agy")
+        self.assertEqual(A.agent_in(["node", "/opt/antigravity/bin/antigravity"]), "antigravity")
+        self.assertEqual(A.AGENTS["agy"], A.AGENTS["antigravity"])
+
+    def test_every_agent_with_a_pua_glyph_is_in_the_icon_font(self):
+        import re
+        src = open(os.path.join(os.path.dirname(__file__), "..", "tools", "build-icons.py"), encoding="utf-8").read()
+        count = len(re.findall(r"\(0x10EA[0-9A-F]{2}, ", src))
+        bmp = {ord(a.glyph) for a in A.AGENTS.values() if len(a.glyph) == 1 and 0xE0D8 <= ord(a.glyph) <= 0xE1FF}
+        self.assertTrue(bmp)
+        self.assertLessEqual(max(bmp) - 0xE0D8, count - 1)                    # every glyph has an icon behind it
 
 
 class MsgTests(unittest.TestCase):
-    def test_msg_only_for_waiting_and_done(self):
+    def test_msg_only_for_waiting_limited_and_done(self):
         e = {"msg": "needs approval"}
         self.assertEqual(A.resolve_msg(e, "waiting"), "needs approval")
         self.assertEqual(A.resolve_msg(e, "done"), "needs approval")
+        self.assertEqual(A.resolve_msg(e, "limited"), "needs approval")
         self.assertEqual(A.resolve_msg(e, "working"), "")
         self.assertEqual(A.resolve_msg(e, ""), "")
 
     def test_missing(self):
         self.assertEqual(A.resolve_msg(None, "waiting"), "")
+
+    def test_screen_reason_fills_in_when_no_hook_message(self):
+        e = {"reason": "Do you want to proceed?"}
+        self.assertEqual(A.resolve_msg(e, "waiting"), "Do you want to proceed?")
+        self.assertEqual(A.resolve_msg(e, "done"), "")                         # a finished agent has no open question
+        self.assertEqual(A.resolve_msg({"msg": "hook says", "reason": "screen says"}, "waiting"), "hook says")
 
     def test_state_glyphs_distinct(self):
         self.assertEqual(len(set(A.STATE_GLYPH.values())), len(A.STATE_GLYPH))

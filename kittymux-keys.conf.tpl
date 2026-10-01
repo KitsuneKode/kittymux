@@ -40,8 +40,14 @@ map ctrl+alt+9           launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh
 
 map ctrl+shift+comma     move_tab_backward
 map ctrl+shift+period    move_tab_forward
+# ctrl+alt+shift+left — move this tab earlier (arrows follow the bar: ←/→ on a horizontal bar)
 map ctrl+alt+shift+left  move_tab_backward
+# ctrl+alt+shift+right — move this tab later (horizontal bar)
 map ctrl+alt+shift+right move_tab_forward
+# ctrl+alt+shift+up — move this tab up the list (↑/↓ on a vertical bar; both pairs always work)
+map ctrl+alt+shift+up    move_tab_backward
+# ctrl+alt+shift+down — move this tab down the list (vertical bar)
+map ctrl+alt+shift+down  move_tab_forward
 
 # ============================================
 # PANES — vim-style nav, detach, zoom

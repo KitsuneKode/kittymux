@@ -79,7 +79,7 @@ def _rc(*args: str) -> str:
 
 def _panes_state() -> dict:
     try:
-        return json.loads((_STATE_DIR / f"panes-{os.getppid()}.json").read_text())
+        return kittymux_agents.load_panes(str(_STATE_DIR / f"panes-{os.getppid()}.json"))
     except Exception:
         return {}
 
@@ -391,11 +391,11 @@ class Sidebar(Handler):
         else:
             icon = (r.glyph or " ",
                     glyph_fg if selected or r.current else kittymux_theme.blend(glyph_fg, p.bg, 0.6), False)
-        state_fg = {"waiting": p.waiting, "working": p.working,
+        state_fg = {"waiting": p.waiting, "working": p.working, "limited": p.alert,
                     "done": kittymux_theme.blend(p.done, p.bg, 0.65), "unread": p.faint}.get(r.status)
         title_fg = p.text if (selected or r.current) else p.muted
         title = deck.pad(r.title or "—", bar_w - 3 - 2, _cells)
-        dot = (kittymux_agents.state_glyph(r.status), state_fg, r.status == "waiting") if state_fg is not None else (" ", p.text, False)
+        dot = (kittymux_agents.state_glyph(r.status), state_fg, r.status in kittymux_agents.NEEDS_YOU) if state_fg is not None else (" ", p.text, False)
         line1 = self._line([rail, icon, (" ", p.text, False),
                             (title, title_fg, selected or r.current), dot, (" ", p.text, False)], bar_w, bg)
 
@@ -413,7 +413,7 @@ class Sidebar(Handler):
             parts.append((" ".join(f":{n}" for n in r.ports[:3]), p.info))
         if r.panes > 1:
             parts.append((f"{r.panes} panes", p.faint))
-        tail = [(r.status, state_fg)] if r.status == "waiting" else []
+        tail = [(r.status, state_fg)] if r.status in kittymux_agents.NEEDS_YOU else []
         if r.msg:                                   # what it is waiting for beats everything
             parts, tail = [(r.msg, state_fg)], []
         reserve = sum(_cells(t) + 2 for t, _ in tail)
@@ -443,7 +443,7 @@ class Sidebar(Handler):
         w = self.write
         snap = self.snap
         # header: counts + hint
-        waiting = sum(1 for r in snap.rows if r.status == "waiting")
+        waiting = sum(1 for r in snap.rows if r.status in kittymux_agents.NEEDS_YOU)
         head = [(f" {len(snap.rows)} tabs", p.text, True)]
         if waiting:
             head.append((f"  {kittymux_agents.state_glyph('waiting')} {waiting} waiting", p.waiting, True))

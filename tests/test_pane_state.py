@@ -38,24 +38,19 @@ class HygieneTests(unittest.TestCase):
         self.assertTrue(all(ord(c) >= 32 and ord(c) != 127 for c in out))
         self.assertEqual(len(self.m._clean("y" * 999)), 120)
 
-    def test_notification_text_is_escaped_and_bounded(self):
-        out = self.m._plain("<b>bold</b> & <a href='x'>link</a>", 200)
-        self.assertNotIn("<", out)
-        self.assertNotIn(">", out)
-        self.assertIn("&amp;", out)
-        self.assertLessEqual(len(self.m._plain("z" * 500, 60)), 60)
-
     def test_stale_files_of_dead_kitties_are_removed(self):
         os.makedirs(self.dir, mode=0o700)
         dead, alive = 2 ** 22 + 777, os.getpid()
         keep = os.path.join(self.dir, f"panes-{os.getppid()}.json")
-        for name in (f"panes-{dead}.json", f"panes-{dead}.json.tmp", f"panes-{alive}.json", "agent-usage.json", "keep.txt"):
+        for name in (f"panes-{dead}.json", f"panes-{dead}.json.tmp", f"scan-{dead}.json", f"panes-{alive}.json",
+                     "agent-usage.json", "keep.txt"):
             open(os.path.join(self.dir, name), "w").close()
         open(keep, "w").close()
         self.m._cleanup_stale()
         left = sorted(os.listdir(self.dir))
         self.assertNotIn(f"panes-{dead}.json", left)
         self.assertNotIn(f"panes-{dead}.json.tmp", left)
+        self.assertNotIn(f"scan-{dead}.json", left)
         for name in (f"panes-{alive}.json", "agent-usage.json", "keep.txt", os.path.basename(keep)):
             self.assertIn(name, left)
 

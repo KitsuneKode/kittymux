@@ -22,7 +22,7 @@ source "$SCRIPT_DIR/fzf-style.sh"
 
 STATE_DIR="${KITTYMUX_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/kittymux}"
 SOURCE_OS_WIN_ID="$(source_os_window_id 2>/dev/null || true)"
-AGENT_RE='claude|codex|cursor-agent|cursor|gemini|opencode|amp|devin|aider|crush|grok'
+AGENT_RE='claude|codex|cursor-agent|cursor|gemini|opencode|amp|devin|agy|antigravity|aider|crush|grok'
 
 # Columns: label \t wid \t osid \t tabid \t session \t os_active_session \t sortkey \t socket \t status
 list_agents() {
@@ -42,21 +42,18 @@ SRC_OS = int(sys.argv[3] or 0)
 SOCK = sys.argv[4]
 sys.path.insert(0, sys.argv[5])
 import kittymux_agents as KA
-SYM = {"waiting": "◆", "working": "◐", "done": "✓", "idle": "○"}
-RANK = {"waiting": 0, "done": 1, "working": 2, "idle": 3}
+SYM = {"limited": "⊘", "waiting": "◆", "working": "◐", "done": "✓", "idle": "○"}
+RANK = {"limited": 0, "waiting": 0, "done": 1, "working": 2, "idle": 3}
 
 GLYPH = {
     "claude": "", "codex": "", "cursor-agent": "", "cursor": "",
     "gemini": "", "opencode": "", "amp": "", "devin": "",
+    "agy": "\ue0e1", "antigravity": "\ue0e1",
     "aider": "✎", "crush": "♥", "grok": "✗",
 }
 
-panes = {}
-try:
-    with open(PANES) as f:
-        panes = json.load(f)
-except Exception:
-    pass
+# hook status + the scanner'"'"'s verdicts (scan-<pid>.json), merged — the same view the tab bar has
+panes = KA.load_panes(PANES)
 
 data = json.load(sys.stdin)
 now = time.monotonic()
@@ -113,8 +110,8 @@ for ow in data:
             if not agent:
                 continue
 
-            # Agent in the foreground tree = running. Explicit status (hooks) wins;
-            # otherwise title churn is the busy signal (quiet = waiting).
+            # Agent in the foreground tree = running. The scanner verdict (screen + hooks,
+            # see kittymux_state.py) is the answer; a quiet title is never read as waiting.
             entry = panes.get(str(w["id"])) or {}
             status_word = KA.resolve_status(entry, True, now)
             msg = KA.resolve_msg(entry, status_word)
@@ -188,7 +185,7 @@ for ow in json.load(sys.stdin):
 # --next-waiting: the attention queue. Round-robin over agents waiting on you,
 # longest-waiting first; never re-picks the pane you are already in.
 if [[ "${1:-}" == "--next-waiting" ]]; then
-    waiting="$(printf '%s\n' "$sorted" | awk -F'\t' '$9=="waiting"')"
+    waiting="$(printf '%s\n' "$sorted" | awk -F'\t' '$9=="waiting" || $9=="limited"')"
     [[ -n "$waiting" ]] || { notify_kitty "No agents are waiting on you"; exit 0; }
     last_file="$STATE_DIR/next-waiting.last"
     last="$(cat "$last_file" 2>/dev/null || true)"

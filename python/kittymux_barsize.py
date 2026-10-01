@@ -16,8 +16,8 @@ import sys
 import time
 
 _here = globals().get("__file__")
-for _d in ((os.path.dirname(os.path.realpath(_here)) if _here else ""),
-           os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty")):
+for _d in (os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty"),
+           (os.path.dirname(os.path.realpath(_here)) if _here else "")):   # own dir inserted LAST → searched FIRST
     if _d and _d not in sys.path:
         sys.path.insert(0, _d)
 import kittymux_layout as L  # noqa: E402
@@ -46,6 +46,9 @@ def _set_hot(tm, value: bool) -> None:
         try:
             tm.update_tab_bar_data()
             tm.mark_tab_bar_dirty()
+            from kitty.fast_data_types import mark_os_window_dirty, wakeup_main_loop
+            mark_os_window_dirty(tm.os_window_id)          # the lit separator must paint now, not at the next blink
+            wakeup_main_loop()
         except Exception:
             pass
 
@@ -193,9 +196,41 @@ def _finish(tm, width: int) -> None:
         _set_hot(tm, False)
 
 
+def make_tab_id_at(original):
+    """`TabBar.tab_id_at` that also resolves the spacer rows of a vertical bar (see
+    kittymux_layout.snap_tab_id). Anything unexpected falls back to kitty's own answer."""
+    def tab_id_at(self, x, y):
+        tid = original(self, x, y)
+        if tid:
+            return tid
+        try:
+            if not (getattr(self, "is_vertical", False) and self.laid_out_once):
+                return tid
+            g = self.window_geometry
+            if not (g.left <= x < g.right and g.top <= y < g.bottom):
+                return tid
+            row = int((y - g.top) // self.cell_height)
+            return L.snap_tab_id([(te.tab_id, te.y.start, te.y.end) for te in self.tab_extents], row)
+        except Exception:
+            return tid
+    tab_id_at._kittymux_wrapped = True                          # type: ignore[attr-defined]
+    return tab_id_at
+
+
+def _install_tab_hit_testing() -> None:
+    try:
+        from kitty.tab_bar import TabBar
+        if not getattr(TabBar.tab_id_at, "_kittymux_wrapped", False):
+            TabBar.tab_id_at = make_tab_id_at(TabBar.tab_id_at)  # type: ignore[method-assign]
+    except Exception:
+        pass
+
+
 def install() -> bool:
-    """Wrap TabManager.handle_tab_bar_mouse once. Safe to call repeatedly; never raises."""
+    """Wrap TabManager.handle_tab_bar_mouse once (+ the spacer-row hit test). Safe to call
+    repeatedly; never raises."""
     global _installed
+    _install_tab_hit_testing()
     if _installed:
         return True
     try:

@@ -28,24 +28,34 @@ from kitty.utils import color_as_int
 # The token/agent modules live next to this file (repo checkout) or, when the
 # installer copied/symlinked them, in the kitty config dir.
 _here = globals().get("__file__")
-for _d in ((os.path.dirname(os.path.realpath(_here)) if _here else ""),
-           os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty")):
+for _d in (os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty"),
+           (os.path.dirname(os.path.realpath(_here)) if _here else "")):   # own dir inserted LAST → searched FIRST
     if _d and _d not in sys.path:
         sys.path.insert(0, _d)
 import importlib  # noqa: E402
 import kittymux_agents  # noqa: E402
+import kittymux_barsize  # noqa: E402
 import kittymux_git  # noqa: E402
+import kittymux_layout  # noqa: E402
+import kittymux_scan  # noqa: E402
+import kittymux_state  # noqa: E402
 import kittymux_theme  # noqa: E402
 
 # kitty re-runs this file on every config reload, but Python keeps imported modules
 # for the life of the process — so after an upgrade a running kitty would keep serving
 # the OLD helpers to the NEW tab bar (AttributeError on any name added since). Reload
 # them every time this file runs.
-for _mod in (kittymux_theme, kittymux_agents, kittymux_git):
+for _mod in (kittymux_theme, kittymux_agents, kittymux_git, kittymux_layout, kittymux_state, kittymux_scan,
+             kittymux_barsize):
     try:
         importlib.reload(_mod)
     except Exception:
         pass
+try:
+    kittymux_scan.restart()          # the scan timer must run the reloaded code, and never stack
+    kittymux_barsize.install()       # drag-to-resize + spacer-aware tab hit test (idempotent; the
+except Exception:                    # watcher's on_load only runs once per kitty process)
+    pass
 
 _SESSION_SOFT_MAX = 16
 _GENERIC_TITLES = {"kitty", "zsh", "bash", "fish", "sh", "node"}
@@ -339,21 +349,33 @@ def _agent_info(tab_id: int) -> tuple[str, int, str] | None:
 _PANES_JSON = (Path(os.environ.get("KITTYMUX_STATE",
                os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))
                + "/kittymux")) / f"panes-{os.getpid()}.json")
-_PANES_CACHE: dict = {"mtime": 0.0, "data": {}}
-_STALE_AFTER = 15.0  # seconds without a title change → probably waiting
+_SCAN_JSON = _PANES_JSON.with_name(f"scan-{os.getpid()}.json")
+_PANES_CACHE: dict = {"mtime": (0.0, 0.0), "data": {}}
+_STALE_AFTER = 15.0  # legacy arg of resolve_status; the watcher's verdict (kittymux_state) normally decides
+
+
+def _mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _read_json(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text())
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
 
 
 def _panes_state() -> dict:
-    try:
-        mtime = _PANES_JSON.stat().st_mtime
-    except OSError:
-        return _PANES_CACHE["data"]
-    if mtime != _PANES_CACHE["mtime"]:
-        try:
-            _PANES_CACHE["data"] = json.loads(_PANES_JSON.read_text())
-            _PANES_CACHE["mtime"] = mtime
-        except Exception:
-            pass
+    """Hook status (panes-<pid>.json) merged with the scanner's verdicts (scan-<pid>.json),
+    re-read only when either file changed."""
+    stamp = (_mtime(_PANES_JSON), _mtime(_SCAN_JSON))
+    if stamp != _PANES_CACHE["mtime"]:
+        _PANES_CACHE["data"] = kittymux_agents.merge_scan(_read_json(_PANES_JSON), _read_json(_SCAN_JSON))
+        _PANES_CACHE["mtime"] = stamp
     return _PANES_CACHE["data"]
 
 
@@ -374,7 +396,7 @@ def _agent_status(tab_id: int, has_agent: bool) -> str:
 
 
 def _agent_waiting(tab_id: int) -> bool:
-    return _agent_status(tab_id, True) == "waiting"
+    return _agent_status(tab_id, True) in kittymux_agents.NEEDS_YOU
 
 
 _USAGE_CACHE = (Path(os.environ["KITTYMUX_STATE"])
@@ -594,7 +616,7 @@ def _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal) -> i
     screen.cursor.bold = False
     if state:
         screen.cursor.fg = _rgb(_state_color(state, pal))
-        screen.cursor.bold = state == "waiting"
+        screen.cursor.bold = state in kittymux_agents.NEEDS_YOU
         screen.draw(" " + kittymux_agents.state_glyph(state))
         screen.cursor.bold = False
     screen.draw(" " if tab.is_active else "")
@@ -664,6 +686,7 @@ def _state_color(state: str, pal) -> int | None:
     return {
         "working": pal.working,
         "waiting": pal.waiting,
+        "limited": pal.alert,
         "done": kittymux_theme.blend(pal.done, pal.bg, 0.65),
         "unread": pal.faint,
     }.get(state)
@@ -713,7 +736,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     msg = kittymux_agents.resolve_msg(_pane_entry(tab.tab_id), state) if info else ""
     if msg:
         subtitle = [(msg, state_fg)]          # what it is waiting for beats the branch
-    elif state == "waiting":
+    elif state in kittymux_agents.NEEDS_YOU:
         subtitle.append((state, state_fg))    # working needs no word — the spinner says it
 
     header = index == 1 and lines_avail >= 3
@@ -765,8 +788,9 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     screen.cursor.bg = row_bg
     screen.cursor.y = y
     # rail: accent on the active tab; a waiting tab keeps a stripe in the waiting colour
-    stripe = state == "waiting" and not active
-    _put(screen, 0, _RAIL if (active or stripe) else " ", _rgb(pal.waiting if stripe else pal.accent))
+    stripe = state in kittymux_agents.NEEDS_YOU and not active
+    _put(screen, 0, _RAIL if (active or stripe) else " ",
+             _rgb((pal.alert if state == "limited" else pal.waiting) if stripe else pal.accent))
     if info:
         glyph, brand, _n = info
         _put(screen, 1, glyph, _rgb(brand if active else _mute(brand, pal)))
@@ -877,6 +901,7 @@ def _draw_tab(
 ) -> int:
     x0, y0 = screen.cursor.x, screen.cursor.y
     try:
+        kittymux_scan.ensure_started()          # idempotent: a no-op once the timer runs
         pal = _palette(draw_data)
         if draw_data.tab_bar_edge in ("left", "right"):
             end = _draw_vertical(draw_data, screen, tab, index, extra_data, pal)
@@ -898,6 +923,9 @@ _ERR_LOG = Path(os.environ.get("KITTYMUX_STATE") or (
 _ERR_SEEN: dict = {}
 
 
+_ERR_DEDUPE = float(os.environ.get("KITTYMUX_ERR_DEDUPE", "60"))     # seconds; tests set 0 to see every repeat
+
+
 def _log_exception(tab, index: int) -> None:
     """Append the current traceback to tab_bar-error.log (deduplicated, bounded)."""
     try:
@@ -905,7 +933,7 @@ def _log_exception(tab, index: int) -> None:
         text = traceback.format_exc()
         key = text.strip().splitlines()[-1] if text.strip() else ""
         now = time.monotonic()
-        if now - _ERR_SEEN.get(key, -1e9) < 60:
+        if now - _ERR_SEEN.get(key, -1e9) < _ERR_DEDUPE:
             return
         _ERR_SEEN[key] = now
         _ERR_LOG.parent.mkdir(parents=True, exist_ok=True, mode=0o700)

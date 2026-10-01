@@ -8,14 +8,13 @@
 #                status, ts_status, msg} }
 #
 # `status` (working|waiting|done|idle) comes from the `kittymux_status` window user
-# variable, set by bin/mux-status from agent hooks (see README). It outranks the
-# "title went quiet" heuristic. `done` clears to `idle` once the window is focused.
+# variable, set by bin/mux-status from agent hooks (see README). It is one INPUT to the
+# resolver in kittymux_scan.py / kittymux_state.py, which combines it with what is actually
+# on the pane's screen and publishes the verdict in scan-<pid>.json for every consumer.
 
 import json
 import os
 import re
-import shutil
-import subprocess
 import time
 
 _STATE_DIR = os.environ.get("KITTYMUX_STATE") or os.path.join(
@@ -61,7 +60,7 @@ def _cleanup_stale() -> None:
     """Delete panes-<pid>.json left behind by kitty processes that no longer exist."""
     try:
         for name in os.listdir(_STATE_DIR):
-            m = re.fullmatch(r"panes-(\d+)\.json(?:\.tmp)?", name)
+            m = re.fullmatch(r"(?:panes|scan)-(\d+)\.json(?:\.tmp)?", name)
             if m and int(m.group(1)) != os.getpid() and not os.path.exists(f"/proc/{m.group(1)}"):
                 try:
                     os.unlink(os.path.join(_STATE_DIR, name))
@@ -101,8 +100,8 @@ def _install_bar_drag() -> None:
     try:
         import sys
         here = globals().get("__file__")
-        for d in ((os.path.dirname(os.path.realpath(here)) if here else ""),
-                  os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty")):
+        for d in (os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty"),
+                  (os.path.dirname(os.path.realpath(here)) if here else "")):   # own dir inserted LAST → searched FIRST
             if d and d not in sys.path:
                 sys.path.insert(0, d)
         import kittymux_barsize
@@ -114,6 +113,9 @@ def _install_bar_drag() -> None:
 def on_load(boss, data) -> None:
     _cleanup_stale()
     _install_bar_drag()
+    ks = _scan()
+    if ks is not None:
+        ks.ensure_started()
     now = time.monotonic()
     for w in getattr(boss, "all_windows", []):
         try:
@@ -160,99 +162,28 @@ def _mark_tab_bar_dirty(window) -> None:
         pass
 
 
-# ── spinner ticks ────────────────────────────────────────────────────────────
-# The tab bar only redraws on kitty events, so an agent that works silently (no title
-# churn) would freeze the spinner on one frame. While — and only while — some window
-# has an explicit `working` status, a timer marks those tabs' bars dirty at the spinner's
-# frame rate; it stops itself the moment nothing is working.
-_SPIN_INTERVAL = 0.1
-_spin_timer = None
-
-
-def _working_windows() -> list:
-    return [wid for wid, e in _state.items() if e.get("status") == "working"]
-
-
-def _spin_tick(timer_id) -> None:
-    global _spin_timer
+# Scanning, the spinner clock and notifications live in kittymux_scan.py — a helper module the
+# tab bar also (re)starts on every config load. kitty caches watcher modules for the life of the
+# process, so anything that must pick up an upgrade without a restart cannot live in this file.
+def _scan():
+    """kittymux_scan, imported from the config dir; None if it cannot be loaded."""
     try:
-        from kitty.fast_data_types import get_boss
-        boss = get_boss()
-        wids = _working_windows()
-        if not wids:
-            _stop_spinner()
-            return
-        seen = set()
-        for wid in wids:
-            w = boss.window_id_map.get(wid)
-            tab = w.tabref() if w is not None else None
-            tm = tab.tab_manager_ref() if tab is not None else None
-            if tm is not None and id(tm) not in seen:   # once per OS window per tick
-                seen.add(id(tm))
-                _refresh_bar(tm)
+        import sys
+        here = globals().get("__file__")
+        for d in (os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty"),
+                  (os.path.dirname(os.path.realpath(here)) if here else "")):   # own dir inserted LAST → searched FIRST
+            if d and d not in sys.path:
+                sys.path.insert(0, d)
+        import kittymux_scan
+        return kittymux_scan
     except Exception:
-        _stop_spinner()
+        return None
 
 
-def _stop_spinner() -> None:
-    global _spin_timer
-    if _spin_timer is not None:
-        try:
-            from kitty.fast_data_types import remove_timer
-            remove_timer(_spin_timer)
-        except Exception:
-            pass
-        _spin_timer = None
-
-
-def _sync_spinner() -> None:
-    """Start the timer when something is working, stop it when nothing is."""
-    global _spin_timer
-    try:
-        if _working_windows():
-            if _spin_timer is None:
-                from kitty.fast_data_types import add_timer
-                _spin_timer = add_timer(_spin_tick, _SPIN_INTERVAL, True)
-        else:
-            _stop_spinner()
-    except Exception:
-        pass
-
-
-_NOTIFY_EVERY = 10.0     # seconds, per window
-_last_notify: dict = {}
-
-
-def _notify_enabled() -> bool:
-    if os.environ.get("KITTYMUX_NOTIFY") == "0":
-        return False
-    return not os.path.exists(os.path.join(_STATE_DIR, "notify-off"))
-
-
-def _plain(text, limit: int) -> str:
-    """Notification text: cleaned, and markup-escaped (many daemons render Pango markup)."""
-    return _clean(text, limit).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-def _notify_waiting(window, e: dict) -> None:
-    """Desktop notification when an agent you are not looking at starts waiting."""
-    try:
-        if e.get("focused") or not _notify_enabled() or not shutil.which("notify-send"):
-            return
-        now = time.monotonic()
-        if now - _last_notify.get(window.id, -1e9) < _NOTIFY_EVERY:
-            return
-        _last_notify[window.id] = now
-        title = _plain(window.title or "agent", 60)
-        body = _plain(e.get("msg") or "Waiting for your input", 120)
-        subprocess.Popen(
-            # `--`: a message starting with "-" must not be parsed as an option
-            ["notify-send", "-a", "kittymux", "-i", "utilities-terminal", "--",
-             f"{title} needs you", body],
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            start_new_session=True)
-    except Exception:
-        pass
+def _poke(window) -> None:
+    ks = _scan()
+    if ks is not None:
+        ks.poke(window)
 
 
 def on_set_user_var(boss, window, data) -> None:
@@ -265,14 +196,11 @@ def on_set_user_var(boss, window, data) -> None:
         if key == "kittymux_msg":
             e["msg"] = _clean(value)
         else:
-            prev = e.get("status")
             e["status"] = value
             e["ts_status"] = now
-            if value == "waiting" and prev != "waiting":
-                _notify_waiting(window, e)
         _flush(now, force=True)
         _mark_tab_bar_dirty(window)
-        _sync_spinner()
+        _poke(window)                       # resolve the pane NOW, not at the next scan tick
     except Exception:
         pass
 
@@ -284,10 +212,9 @@ def on_focus_change(boss, window, data) -> None:
         e["status"] = "idle"   # you looked at it: no longer unread
         _mark_tab_bar_dirty(window)
     _flush(time.monotonic(), force=True)
+    _poke(window)              # focusing clears an unseen completion immediately
 
 
 def on_close(boss, window, data) -> None:
     _state.pop(window.id, None)
-    _last_notify.pop(window.id, None)
-    _sync_spinner()
     _flush(time.monotonic(), force=True)

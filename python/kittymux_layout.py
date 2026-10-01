@@ -171,6 +171,30 @@ def in_grab_zone(x_px: float, bar_edge_px: float, cell_w: float, zone_cells: flo
     return abs(x_px - bar_edge_px) <= max(1.0, cell_w * zone_cells)
 
 
+# ── vertical-bar hit testing (used by kittymux_barsize) ───────────────────────
+def snap_tab_id(extents, row: int) -> int:
+    """Tab id for a pointer on `row` of a vertical bar, forgiving the blank spacer lines kitty puts
+    between tabs. `extents` is [(tab_id, first_row, last_row)] top to bottom.
+
+    Kitty's own lookup only knows a tab's own rows. A pointer on a spacer row is "no tab", and while
+    dragging a tab that case falls through to "swap with the LAST tab" — so a third of the positions
+    in a two-line-per-tab bar threw the dragged tab to the end of the list. A row between two tabs
+    belongs to the nearer one (a tie goes to the lower tab); rows above the first or below the last
+    tab, and synthetic entries (id <= 0, e.g. the "+" button), stay "no tab"."""
+    real = [(t, a, b) for (t, a, b) in extents if t > 0]
+    if not real:
+        return 0
+    for t, a, b in real:
+        if a <= row <= b:
+            return t
+    if row < real[0][1] or row > real[-1][2]:
+        return 0
+    for prev, nxt in zip(real, real[1:]):
+        if prev[2] < row < nxt[1]:
+            return prev[0] if row - prev[2] < nxt[1] - row else nxt[0]
+    return 0
+
+
 # ── storage ──────────────────────────────────────────────────────────────────
 def state_dir() -> str:
     return os.environ.get("KITTYMUX_STATE") or os.path.join(

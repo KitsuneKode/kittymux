@@ -8,6 +8,7 @@
                          layout mode [full|compact|hidden|cycle]   layout edge [left|right|bottom|top|cycle]
                          layout width [+N|-N|N]   layout preset NAME   layout pick   layout show
                          layout default [clear]   (make the current layout the start for new windows)
+  kittymux upgrade     after a git pull: refresh links, reload every running kitty twice, run doctor
   kittymux version
 
 `demo` is the 30-second tour: a scratch kitty with a sample session, fake agents in
@@ -298,10 +299,13 @@ cd {home}
 launch
 new_tab claude
 cd {home}
-launch sh -c 'exec -a claude sleep 86400'
+launch sh -c 'printf " Bash command\\n   rm -rf node_modules\\n Do you want to proceed?\\n ❯ 1. Yes\\n   2. No\\n"; exec -a claude sleep 86400'
 new_tab codex
 cd {home}
-launch sh -c 'exec -a codex sleep 86400'
+launch sh -c 'printf "• Working (12s • esc to interrupt)\\n"; exec -a codex sleep 86400'
+new_tab antigravity
+cd {home}
+launch sh -c 'printf "  Thinking · 2m 4s (esc to interrupt)\\n"; exec -a agy sleep 86400'
 new_tab logs
 cd /tmp
 launch
@@ -370,28 +374,12 @@ def demo(argv: list[str]) -> int:
         time.sleep(0.1)
     time.sleep(1.5)
 
-    def rc(*args: str) -> str:
-        return _run(["kitty", "@", "--to", sock, *args], 4)[1]
-
-    ids = {}
-    try:
-        for osw in json.loads(rc("ls") or "[]"):
-            for tab in osw["tabs"]:
-                ids[tab["title"]] = tab["windows"][0]["id"]
-    except ValueError:
-        pass
-    if "claude" in ids:
-        rc("set-user-vars", "--match", f"id:{ids['claude']}",
-           "kittymux_msg=Approve: rm -rf node_modules?", "kittymux_status=waiting")
-    if "codex" in ids:
-        rc("set-user-vars", "--match", f"id:{ids['codex']}", "kittymux_status=working")
-
     print("  try:")
     print(f"    {c('1', 'ctrl+alt+b')}       sidebar deck — hover, click, live preview")
     print(f"    {c('1', 'ctrl+alt+y')}       jump to the agent that is waiting on you")
     print(f"    {c('1', 'ctrl+space')} then {c('1', '?')}   leader mode card")
     print(f"    {c('1', 'ctrl+alt+/')}       every key binding")
-    print(f"\n  the ◆ waiting / ◐ working dots are set by `mux-status` — see README → Agent status hooks.")
+    print(f"\n  status is read from each agent's screen — ! waiting on you, a spinner while it works — and from `mux-status` hooks if you add them.")
     print("  close the kitty window to end the demo.\n")
     try:
         proc.wait()
@@ -545,45 +533,121 @@ def merge_hooks(settings: dict) -> tuple[dict, list[str]]:
     return settings, added
 
 
-def hooks(argv: list[str]) -> int:
-    path = os.path.expanduser("~/.claude/settings.json")
-    if "--settings" in argv:
-        path = argv[argv.index("--settings") + 1]
-    if "--install" not in argv:
-        snippet, _ = merge_hooks({})
-        print(f"Add to {path} (or run: kittymux hooks --install):\n")
-        print(json.dumps(snippet, indent=2))
-        return 0
-    try:
-        current = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
-    except ValueError:
-        print(f"{BAD} {path} is not valid JSON — not touching it", file=sys.stderr)
-        return 1
-    merged, added = merge_hooks(current)
-    if not added:
-        print(f"{OK} hooks already installed in {path}")
-        return 0
+def remove_hooks(settings: dict) -> tuple[dict, list[str]]:
+    """Take exactly our hooks (commands that call mux-status) back out of a Claude Code
+    settings dict, leaving every other hook untouched and dropping only the containers we
+    emptied. Returns (new settings, events removed)."""
+    settings = json.loads(json.dumps(settings))            # deep copy
+    hooks = settings.get("hooks")
+    removed = []
+    if not isinstance(hooks, dict):
+        return settings, removed
+    for event in list(hooks):
+        groups = hooks[event]
+        if not isinstance(groups, list):
+            continue
+        kept_groups = []
+        for g in groups:
+            inner = g.get("hooks", []) if isinstance(g, dict) else []
+            keep = [h for h in inner if "mux-status" not in str(h.get("command", ""))]
+            if len(keep) != len(inner):
+                if event not in removed:
+                    removed.append(event)
+                if not keep:
+                    continue                              # a group that only held our hook
+                g = dict(g, hooks=keep)
+            kept_groups.append(g)
+        if kept_groups:
+            hooks[event] = kept_groups
+        else:
+            del hooks[event]
+    if removed and not hooks:                                # only drop a container we emptied
+        del settings["hooks"]
+    return settings, removed
+
+
+def _write_settings(path: str, data: dict) -> None:
+    """Backup, then atomic write that never widens the file's permissions."""
     if os.path.exists(path):
-        backup = f"{path}.bak-kittymux-{time.strftime('%Y%m%d-%H%M%S')}"
+        stem = f"{path}.bak-kittymux-{time.strftime('%Y%m%d-%H%M%S')}"
+        backup, n = stem, 1
+        while os.path.exists(backup):                       # never overwrite an earlier backup
+            n += 1
+            backup = f"{stem}-{n}"
         shutil.copy2(path, backup)
         print(f"  backup: {backup}")
     tmp = path + ".tmp-kittymux"
     mode = stat.S_IMODE(os.stat(path).st_mode) if os.path.exists(path) else 0o600
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)      # never wider than the original
     with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(merged, f, indent=2)
+        json.dump(data, f, indent=2)
         f.write("\n")
     os.chmod(tmp, mode)
     os.replace(tmp, path)
+
+
+def hooks(argv: list[str]) -> int:
+    path = os.path.expanduser("~/.claude/settings.json")
+    if "--settings" in argv:
+        path = argv[argv.index("--settings") + 1]
+    if "--install" not in argv and "--remove" not in argv:
+        snippet, _ = merge_hooks({})
+        print(f"Add to {path} (or run: kittymux hooks --install):\n")
+        print(json.dumps(snippet, indent=2))
+        print("\nRemove again any time with: kittymux hooks --remove (backs up first, touches only mux-status entries)")
+        return 0
+    try:
+        current = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
+    except ValueError:
+        print(f"{BAD} {path} is not valid JSON — not touching it", file=sys.stderr)
+        return 1
+    if "--remove" in argv:
+        pruned, gone = remove_hooks(current)
+        if not gone:
+            print(f"{OK} no kittymux hooks in {path} — nothing to remove")
+            return 0
+        _write_settings(path, pruned)
+        print(f"{OK} removed {', '.join(gone)} from {path} (other hooks untouched)")
+        return 0
+    merged, added = merge_hooks(current)
+    if not added:
+        print(f"{OK} hooks already installed in {path}")
+        return 0
+    _write_settings(path, merged)
     print(f"{OK} added {', '.join(added)} → {path}")
     print("  new Claude Code sessions pick this up; the tab dot flips working/waiting/done.")
     return 0
+
+
+# ── upgrade ──────────────────────────────────────────────────────────────────
+def upgrade(argv: list[str]) -> int:
+    """After `git pull`: refresh symlinks (install.sh), then reload every running kitty TWICE.
+    Kitty caches imported helper modules, and the tab bar reloads them on (re)load — the first
+    reload pulls in new files, the second draws with them. Sessions and processes are untouched."""
+    if "--no-install" not in argv:
+        print(c("1", "refreshing install…"))
+        rc = subprocess.run([os.path.join(HOME_DIR, "install.sh")], stdout=subprocess.DEVNULL).returncode
+        if rc != 0:
+            print(f"{BAD} install.sh failed (rc={rc}) — run it by hand to see why", file=sys.stderr)
+            return 1
+        print(f"  {OK} symlinks and rendered keys up to date")
+    socks = _sockets()
+    if not socks:
+        print(f"  {WARN} no kitty remote-control socket found — restart kitty to pick up the update")
+    for sock in socks:
+        ok = all(_run(["kitty", "@", "--to", sock, "load-config"], 8)[0] == 0 for _ in range(2))
+        print(f"  {OK if ok else WARN} reloaded {sock}" + ("" if ok else " (failed — reload it with ctrl+shift+alt+r)"))
+        time.sleep(0.5)
+    print()
+    return doctor()
 
 
 def main(argv: list[str]) -> int:
     cmd = argv[0] if argv else "help"
     if cmd == "doctor":
         return doctor()
+    if cmd == "upgrade":
+        return upgrade(argv[1:])
     if cmd == "demo":
         return demo(argv[1:])
     if cmd == "hooks":

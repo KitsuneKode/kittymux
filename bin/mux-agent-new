@@ -10,7 +10,7 @@
 #   git worktree remove .worktrees/<branch>
 #
 # Options:
-#   --agent NAME    claude|codex|cursor-agent|gemini|opencode|amp|devin|aider|crush|grok
+#   --agent NAME    claude|codex|cursor-agent|gemini|opencode|amp|devin|agy|aider|crush|grok
 #   --branch NAME   new branch (or an existing one to check out)
 #   --base REF      start point for a new branch (default: origin/HEAD, else current branch)
 #   --cmd CMD       run CMD instead of the agent binary (tests, custom flags)

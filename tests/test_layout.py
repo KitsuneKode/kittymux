@@ -205,6 +205,39 @@ class DragMathTests(unittest.TestCase):
     def test_bad_cell_width_is_safe(self):
         self.assertEqual(L.width_from_pointer(100, 0, 1300, "left"), L.DEFAULT_WIDTH)
 
+class SnapTabIdTests(unittest.TestCase):
+    # two-line tabs with one spacer row between them, header row on tab 11: rows 0-2 | 4-5 | 7-8
+    EXT = [(11, 0, 2), (12, 4, 5), (13, 7, 8)]
+
+    def test_rows_inside_a_tab_are_that_tab(self):
+        for row, want in ((0, 11), (2, 11), (4, 12), (5, 12), (7, 13), (8, 13)):
+            self.assertEqual(L.snap_tab_id(self.EXT, row), want)
+
+    def test_spacer_rows_snap_to_the_nearer_tab(self):
+        self.assertEqual(L.snap_tab_id([(11, 0, 1), (12, 3, 4)], 2), 12)          # tie → lower tab
+        self.assertEqual(L.snap_tab_id([(11, 0, 1), (12, 4, 5)], 2), 11)          # nearer the upper one
+        self.assertEqual(L.snap_tab_id([(11, 0, 1), (12, 4, 5)], 3), 12)          # nearer the lower one
+
+    def test_the_gap_never_means_the_last_tab(self):                               # the actual bug
+        self.assertEqual(L.snap_tab_id(self.EXT, 3), 12)
+        self.assertEqual(L.snap_tab_id(self.EXT, 6), 13)
+        self.assertNotEqual(L.snap_tab_id(self.EXT, 3), 13)
+
+    def test_outside_the_list_is_no_tab(self):
+        self.assertEqual(L.snap_tab_id(self.EXT, 9), 0)
+        self.assertEqual(L.snap_tab_id(self.EXT, 30), 0)
+        self.assertEqual(L.snap_tab_id([(11, 2, 3)], 0), 0)
+
+    def test_synthetic_tabs_are_ignored(self):
+        ext = [(11, 0, 1), (12, 3, 4), (-1, 6, 6)]                                 # "+" new-tab button
+        self.assertEqual(L.snap_tab_id(ext, 5), 0)                                  # between last tab and "+"
+        self.assertEqual(L.snap_tab_id(ext, 6), 0)
+
+    def test_empty(self):
+        self.assertEqual(L.snap_tab_id([], 3), 0)
+        self.assertEqual(L.snap_tab_id([(0, 0, 5)], 2), 0)
+
+
 
 if __name__ == "__main__":
     unittest.main()

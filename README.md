@@ -115,6 +115,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+shift+a` | last session |
 | `ctrl+alt+t` / `+shift` | new tab beside / at end |
 | `shift+←` / `shift+→` | prev / next tab (session-scoped) |
+| `ctrl+alt+shift+←/→` · `↑/↓` | move the tab — arrows follow the bar: ←/→ on a horizontal bar, ↑/↓ on a vertical one (both always work) |
 | `ctrl+alt+1..9` | jump to tab N |
 | `ctrl+alt+h j k l` | pane nav (`shift+alt+arrows`) · `ctrl+alt+o` last pane |
 | `ctrl+alt+enter` | split horizontal · `+shift` vertical |
@@ -147,14 +148,41 @@ On Hyprland's scrolling layout the `ctrl+alt+` layer is WM-owned — kittymux
 uses `ctrl+alt+g` (not `+a`), `shift+alt+arrows`, `ctrl+alt+0`, `ctrl+alt+q` so
 nothing gets silently swallowed.
 
-## Agent status hooks
+## Agent status
 
-Tab glyphs and the deck show what each agent is doing — **◐ working**, **◆ waiting** for
-you, **✓ done** (clears when you look). Without hooks kittymux guesses from title
-activity; with hooks it *knows*, and it also shows *why* the agent is waiting.
+Every tab with an agent in it shows exactly one of these, and the tab bar, the deck, the docked
+panel and the `ctrl+alt+y` jump queue all show the *same* one:
+
+| Glyph | State | Meaning |
+|---|---|---|
+| ⠋⠙⠹… (animated) | **working** | the agent is busy — the spinner runs at 10 fps, on any window |
+| **!** | **waiting** | it is asking you something (a permission prompt, a question) — the question is shown as the reason |
+| **⊘** | **limited** | usage limit / quota exhausted — nothing will happen until you act |
+| ✓ | **done** | it finished while you were looking elsewhere; clears the moment you focus it |
+| *(nothing)* | idle | an agent is running but not doing anything |
+| • | unread | output arrived in a tab that has no agent |
+
+**How it knows.** Twice a second (every 2 s when no agent is running) kittymux looks at the
+bottom of each *agent* pane's screen for the markers real agents print — `esc to interrupt`,
+`Do you want to proceed?`, `usage limit reached` — and combines that with hook status when you have
+hooks. A state needs positive evidence: a quiet title is **never** read as "waiting", an agent you
+interrupted does not spin forever, and a "waiting for your input" idle notification is not a request.
+Works for Claude, Codex, Devin, Gemini, Cursor, OpenCode, Amp and Antigravity (`agy`) with no setup;
+aider/crush/grok (no readable TUI) use hooks or title activity.
+The design follows how t3code's sidebar resolves thread status: one ordered
+resolver (limited › waiting › working › done › idle), "done" only while unseen.
+
+*Privacy:* only the matched marker and one short line of context (≤ 100 chars, control characters
+stripped) are kept, in `scan-<pid>.json` (mode 0600, inside the 0700 state dir). Nothing leaves your machine.
+
+## Agent status hooks (optional)
+
+Hooks add what the screen cannot say — the exact message an agent is waiting on and instant
+transitions — and are used as an input alongside the screen.
 
 ```sh
 kittymux hooks --install      # merges the Claude Code hooks into ~/.claude/settings.json (backup first, idempotent)
+kittymux hooks --remove       # takes exactly those entries back out (backup first; every other hook untouched)
 kittymux hooks                # or just print the snippet
 ```
 
@@ -166,8 +194,9 @@ redraws on instantly. The message comes from `--msg`, from the hook's JSON on st
 over ssh, no socket needed) and falls back to kitty remote control. It never blocks or
 fails the agent.
 
-When an agent you are not looking at starts waiting, kittymux sends a desktop notification
-(`notify-send`). Silence it with `touch ~/.local/state/kittymux/notify-off`.
+When an agent you are not looking at starts needing you (waiting or limited), kittymux sends a
+desktop notification (`notify-send`) — once, not on every redraw. Silence it with
+`touch ~/.local/state/kittymux/notify-off`.
 
 Claude Code hooks, by hand:
 
@@ -251,6 +280,32 @@ Tab titles show only what fits; kitty does not deliver hover events to its tab b
 richer per-tab detail use the deck (`ctrl+alt+b`) or the docked panel (`ctrl+alt+shift+b`,
 also drag-resizable). Set `KITTYMUX_DEBUG=1` to log drag errors to `barsize-debug.log`.
 
+### Reordering tabs, and moving splits ↔ tabs
+
+Kitty has native drag and drop; kittymux makes it work in the vertical bar:
+
+- **Reorder tabs** — press and drag a tab in the bar. (Kitty used to treat the blank line between
+  vertical tabs as "no tab", so dragging over it threw the tab to the end of the list; the gap now
+  belongs to the nearer tab, and clicking it selects that tab.)
+- **Split → tab** — with two or more panes, each pane gets a thin title bar (`window_title_bar` in
+  `kittymux.conf`). Drag it onto **"+"** or empty bar space to turn that split into its own tab.
+- **Tab ← split** — drag a pane's title bar onto **a tab in the bar** to move the split into that tab.
+- **Re-split** — drop it on another pane's edge to insert it there, or on that pane's title bar to swap.
+- **Keyboard** — `ctrl+alt+d` pane → new tab · `ctrl+alt+shift+d` pane → a tab you pick (a one-pane tab
+  moved this way *is* "tab → split") · `ctrl+alt+shift+←/→` or `↑/↓` move the tab itself.
+
+Kitty has no gesture for dropping a whole *tab* onto a pane; use the chooser above.
+
+## Upgrading
+
+```sh
+git pull && kittymux upgrade     # refreshes the links, reloads every running kitty twice, runs doctor
+```
+
+Reloading is enough for the tab bar, scanner and helpers — your sessions and processes are untouched.
+(`pane-state.py` itself is cached by kitty for the life of the process; it now only holds hook state, so
+nothing user-visible depends on restarting.)
+
 ## Layout
 
 ```
@@ -267,7 +322,9 @@ kittymux/
     ├── sidebar-kit.py     # ctrl+alt+b deck kitten (hover/click/preview)
     ├── pane-state.py      # watcher: per-window activity + agent status
     ├── kittymux_theme.py  # colour tokens derived from your kitty theme
-    ├── kittymux_agents.py # agent table + status resolution
+    ├── kittymux_agents.py # agent table, glyphs, status lookup
+    ├── kittymux_state.py  # screen markers + the ordered state resolver (pure, tested)
+    ├── kittymux_scan.py   # in-kitty scanner, spinner clock, notifier (timers never stack)
     ├── kittymux_layout.py # per-instance bar layout (geninclude) + drag maths
     ├── kittymux_barsize.py# drag-to-resize the vertical bar
     ├── kittymux_git.py    # branch/worktree reader (no subprocess)

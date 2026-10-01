@@ -116,6 +116,45 @@ class HooksTests(unittest.TestCase):
         self.assertEqual(self.m.hooks(["--install", "--settings", path]), 1)
         self.assertEqual(open(path).read(), "{not json")
 
+    def test_remove_roundtrip_restores_original(self):
+        cur = {"model": "opus", "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "echo mine"}]}]}}
+        merged, _ = self.m.merge_hooks(cur)
+        pruned, gone = self.m.remove_hooks(merged)
+        self.assertEqual(sorted(gone), ["Notification", "Stop", "UserPromptSubmit"])
+        self.assertEqual(pruned, cur)
+
+    def test_remove_from_empty_or_foreign_is_noop(self):
+        for cur in ({}, {"hooks": {}}, {"hooks": {"Stop": [{"hooks": [{"command": "echo x"}]}]}}, {"hooks": "junk"}):
+            pruned, gone = self.m.remove_hooks(cur)
+            self.assertEqual(gone, [])
+            self.assertEqual(pruned, cur)
+
+    def test_remove_keeps_a_group_that_mixes_ours_and_theirs(self):
+        cur = {"hooks": {"Stop": [{"matcher": "x", "hooks": [{"command": "/a/bin/mux-status done"},
+                                                              {"command": "echo mine"}]}]}}
+        pruned, gone = self.m.remove_hooks(cur)
+        self.assertEqual(gone, ["Stop"])
+        self.assertEqual(pruned["hooks"]["Stop"], [{"matcher": "x", "hooks": [{"command": "echo mine"}]}])
+
+    def test_remove_command_backs_up_and_is_idempotent(self):
+        import json, tempfile
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "settings.json")
+        open(path, "w").write(json.dumps({"theme": "dark"}))
+        self.m.hooks(["--install", "--settings", path])
+        self.assertEqual(self.m.hooks(["--remove", "--settings", path]), 0)
+        self.assertEqual(json.load(open(path)), {"theme": "dark"})
+        self.assertEqual(len([f for f in os.listdir(d) if ".bak-kittymux-" in f]), 2)   # install + remove
+        self.assertEqual(self.m.hooks(["--remove", "--settings", path]), 0)             # nothing left: no new backup
+        self.assertEqual(len([f for f in os.listdir(d) if ".bak-kittymux-" in f]), 2)
+
+    def test_remove_missing_file_creates_nothing(self):
+        import tempfile
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "settings.json")
+        self.assertEqual(self.m.hooks(["--remove", "--settings", path]), 0)
+        self.assertFalse(os.path.exists(path))
+
 
 class TargetSocketTests(unittest.TestCase):
     """The layout command must act on the kitty that launched it — never a stale env hint."""

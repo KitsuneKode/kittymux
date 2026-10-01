@@ -20,6 +20,8 @@ AGENTS: dict[str, Agent] = {
     "opencode":     Agent("", 0xfab283),
     "amp":          Agent("", 0xf5c2e7),
     "devin":        Agent("", 0x8b5cf6),
+    "agy":          Agent("\ue0e1", 0x3186ff),
+    "antigravity":  Agent("\ue0e1", 0x3186ff),
     "aider":        Agent("✎", 0xa6e3a1),
     "crush":        Agent("♥", 0xf38ba8),
     "grok":         Agent("✗", 0xf9e2af),
@@ -36,35 +38,76 @@ def agent_in(cmdline_args: Iterable[str]) -> str | None:
     return None
 
 
-STATES = ("working", "waiting", "done", "idle")
+STATES = ("working", "waiting", "limited", "done", "idle")
+NEEDS_YOU = ("waiting", "limited")      # states that ask for the user (jump queue, notifications, counts)
+SCAN_FRESH = 8.0                        # seconds: how old the watcher's own verdict may be and still be trusted
 
 
 def resolve_status(entry: dict | None, has_agent: bool, now: float,
                    stale_after: float = 15.0) -> str:
-    """Status of a pane's agent: working | waiting | done | idle | "" (no agent).
+    """Status of a pane's agent: working | waiting | limited | done | idle | "" (no agent).
 
-    An explicit status (set by `bin/mux-status` from agent hooks and recorded by
-    pane-state.py) wins. Without one, fall back to the heuristic: an agent whose
-    title has been quiet for `stale_after` seconds is probably waiting on you.
-    Explicit status is ignored once no agent process is in the pane, so a crash
-    can never leave a ghost "working" marker."""
+    The watcher (pane-state.py + kittymux_state.py) resolves each agent pane from what is
+    on its screen plus agent hooks, and stores the verdict as `state` with a `ts_scan`
+    heartbeat. While that heartbeat is fresh the verdict is the answer — one source of truth
+    for the tab bar, the deck, the panel and the jump queue. If the watcher is not scanning
+    (older install, timer lost) we degrade gracefully: an explicit hook status, else recent
+    title activity. A quiet title is NEVER read as "waiting" — silence is not evidence.
+    Everything is ignored once no agent process is in the pane, so a crash can never leave
+    a ghost "working" marker."""
     if not has_agent:
         return ""
     entry = entry or {}
+    state = entry.get("state")
+    if state in STATES and 0 <= now - float(entry.get("ts_scan") or 0) < SCAN_FRESH:
+        return state
     explicit = entry.get("status")
     if explicit in STATES:
         return explicit
     ts = float(entry.get("ts_title") or 0)
-    return "waiting" if ts and (now - ts) > stale_after else "working"
+    return "working" if ts and (now - ts) < 6.0 else "idle"
+
+
+def merge_scan(panes: dict | None, scan: dict | None) -> dict:
+    """panes-<pid>.json (hook status, title activity) + scan-<pid>.json (the scanner's verdicts)
+    → one entry per window, ready for resolve_status/resolve_msg. Inputs are not modified."""
+    out = {k: dict(v) for k, v in (panes or {}).items() if isinstance(v, dict)}
+    for wid, v in (scan or {}).items():
+        if not isinstance(v, dict):
+            continue
+        e = out.setdefault(str(wid), {})
+        for k in ("state", "reason", "ts_scan", "ts_state"):
+            if k in v:
+                e[k] = v[k]
+    return out
+
+
+def load_panes(panes_path: str) -> dict:
+    """Read panes-<pid>.json and its sibling scan-<pid>.json (same directory) and merge them.
+    Missing or unreadable files just contribute nothing."""
+    import json
+
+    def _read(path: str) -> dict:
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    head, tail = os.path.split(panes_path)
+    scan_path = os.path.join(head, tail.replace("panes-", "scan-", 1)) if tail.startswith("panes-") else ""
+    return merge_scan(_read(panes_path), _read(scan_path) if scan_path else {})
 
 
 # Shape + colour: state must be readable without colour vision, and calm — no orbs.
 #   working  an animated braille spinner
 #   waiting  a bold "!"   (the only one that asks for you)
-#   done     a dim "✓"
+#   limited  a bold "⊘"   (usage limit / quota exhausted — nothing will happen until you act)
+#   done     a dim "✓"    (finished while you were away; clears when you look)
 #   unread   a faint "•"  (output arrived in a tab that has no agent)
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-STATE_GLYPH = {"working": SPINNER[0], "waiting": "!", "done": "✓", "unread": "•"}
+STATE_GLYPH = {"working": SPINNER[0], "waiting": "!", "limited": "⊘", "done": "✓", "unread": "•"}
 SPINNER_FPS = 10.0
 
 
@@ -87,11 +130,12 @@ def sanitize_text(text, limit: int = 120) -> str:
 
 
 def resolve_msg(entry: dict | None, status: str) -> str:
-    """The one-line reason an agent is waiting/done (from hooks), else ''.
-    Only meaningful while the status is waiting or done."""
-    if status not in ("waiting", "done"):
+    """The one-line reason an agent needs you / finished: the hook's message, else the line the
+    watcher spotted on screen (the prompt's question, the limit notice). '' otherwise."""
+    if status not in ("waiting", "done", "limited"):
         return ""
-    return sanitize_text((entry or {}).get("msg") or "")
+    entry = entry or {}
+    return sanitize_text(entry.get("msg") or (entry.get("reason") if status != "done" else "") or "")
 
 
 # ── quiet glyphs for non-agent tools ─────────────────────────────────────────

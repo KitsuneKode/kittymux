@@ -44,6 +44,7 @@ ICONS = [
     (0x10EA07, "devin"),       # authored hexagon below
     (0x10EA08, "claudecode"),
     (0x10EA09, "anthropic"),
+    (0x10EA0A, "antigravity"),   # Google Antigravity (agy) — lobehub icons, MIT
 ]
 
 # Cognition's mark is a pointy-top hexagon — authored, 24×24 space.
