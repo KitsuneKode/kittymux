@@ -5,6 +5,8 @@
 import os
 from typing import Iterable, NamedTuple
 
+import kittymux_state
+
 
 class Agent(NamedTuple):
     glyph: str
@@ -66,6 +68,34 @@ def resolve_status(entry: dict | None, has_agent: bool, now: float,
         return explicit
     ts = float(entry.get("ts_title") or 0)
     return "working" if ts and (now - ts) < 6.0 else "idle"
+
+
+def fresh_verdict(entry: dict | None, now: float) -> str:
+    """The scanner's verdict for a pane, or "" when it is absent, stale, or the pane has no agent."""
+    entry = entry or {}
+    state = entry.get("state")
+    if state in STATES and 0 <= now - float(entry.get("ts_scan") or 0) < SCAN_FRESH:
+        return state
+    return ""
+
+
+def tab_verdict(panes: dict, window_ids: Iterable, active_id, active_has_agent: bool, now: float,
+                stale_after: float = 15.0) -> tuple[str, str]:
+    """(state, window id) for a whole tab: its panes rolled up, most important state first
+    (limited > waiting > working > done > idle). A split asking a question must light the tab
+    even when another pane has focus. The active pane keeps its full fallback chain
+    (hooks, title); the others count only on a fresh scanner verdict. Ties go to the active pane."""
+    active_id = str(active_id)
+    best_state, best_wid = "", ""
+    for wid in [active_id] + [str(w) for w in window_ids if str(w) != active_id]:
+        entry = panes.get(wid)
+        if wid == active_id:
+            state = resolve_status(entry, active_has_agent, now, stale_after)
+        else:
+            state = fresh_verdict(entry, now)
+        if kittymux_state.PRIORITY.get(state, 0) > kittymux_state.PRIORITY.get(best_state, 0):
+            best_state, best_wid = state, wid
+    return best_state, best_wid
 
 
 def merge_scan(panes: dict | None, scan: dict | None) -> dict:

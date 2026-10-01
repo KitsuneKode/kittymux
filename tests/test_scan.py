@@ -59,12 +59,26 @@ class FakeKitty:
 
 
 class FakeWindow:
+    """`screen` is what the test sets (the visible text); like a real window, `window.screen` also has `.bell()`."""
     def __init__(self, wid, agent, screen, focused=False, title="agent"):
-        self.id, self.agent, self.screen, self.is_focused, self.title = wid, agent, screen, focused, title
+        self.id, self.agent, self.is_focused, self.title = wid, agent, focused, title
         self.child = types.SimpleNamespace(child_fd=None)
+        self.text = screen
+        self.bells = 0
+
+    @property
+    def screen(self):
+        return types.SimpleNamespace(bell=self._bell)
+
+    @screen.setter
+    def screen(self, text):
+        self.text = text
+
+    def _bell(self):
+        self.bells += 1
 
     def as_text(self):
-        return self.screen
+        return self.text
 
     def tabref(self):
         return None
@@ -80,7 +94,7 @@ class ScanBase(unittest.TestCase):
         for attr, val in (("scan_timer", None), ("spin_timer", None), ("interval", 0.0), ("last_sig", ""),
                           ("last_write", 0.0), ("panes", (0.0, {}))):
             setattr(KS._RT, attr, val)
-        for d in (KS._RT.book, KS._RT.verdicts, KS._RT.notified):
+        for d in (KS._RT.book, KS._RT.verdicts, KS._RT.notified, vars(KS._RT).setdefault("alerted", {})):
             d.clear()
         self.agent = mock.patch.object(KS, "agent_of", side_effect=lambda w: w.agent)
         self.agent.start()
@@ -285,6 +299,84 @@ class FileTests(ScanBase):
         reason = KS._RT.verdicts["1"]["reason"]
         self.assertLessEqual(len(reason), 100)
         self.assertTrue(all(ord(c) >= 32 and ord(c) != 127 for c in reason))
+
+
+class CompletionNotifyTests(ScanBase):
+    def finish(self, worked, focused=False, first_sight=False):
+        w = FakeWindow(1, "claude", DEVIN_THINKING if not first_sight else IDLE, focused=focused)
+        self.add(w)
+        t = 1000.0
+        with mock.patch.object(KS.time, "monotonic", return_value=t):
+            KS.scan_all()
+        w.screen = IDLE
+        with mock.patch.object(KS, "_notify") as notify, \
+                mock.patch.object(KS.time, "monotonic", return_value=t + worked):
+            KS.scan_all()
+        return notify, KS._RT.verdicts["1"]["state"]
+
+    def test_a_long_run_that_finishes_unseen_notifies(self):
+        notify, state = self.finish(worked=40)
+        self.assertEqual(state, "done")
+        notify.assert_called_once()
+        self.assertEqual(notify.call_args[0][1], "done")
+
+    def test_a_quick_reply_does_not(self):
+        notify, state = self.finish(worked=5)
+        self.assertEqual(state, "done")
+        notify.assert_not_called()
+
+    def test_a_window_seen_for_the_first_time_never_notifies(self):
+        self.add(FakeWindow(2, "claude", IDLE))
+        with open(KS._panes_path(), "w") as f:
+            json.dump({"2": {"status": "done", "ts_status": 1.0}}, f)
+        with mock.patch.object(KS, "_notify") as notify:
+            KS.scan_all()
+        self.assertEqual(KS._RT.verdicts["2"]["state"], "done")
+        notify.assert_not_called()
+
+    def test_finishing_in_front_of_you_does_not(self):
+        notify, state = self.finish(worked=40, focused=True)
+        self.assertEqual(state, "idle")
+        notify.assert_not_called()
+
+    def test_needing_you_rings_the_bell_once_but_finishing_does_not(self):
+        w = FakeWindow(1, "claude", PERMISSION)
+        self.add(w)
+        with mock.patch.object(KS, "_notify"):
+            KS.scan_all()
+            KS.scan_all()
+        self.assertEqual(w.bells, 1)
+        done, _ = self.finish(worked=40)
+        self.assertEqual(self.k.boss.window_id_map[1].bells, 0)
+
+    def test_bell_is_silent_when_focused_or_switched_off(self):
+        focused = FakeWindow(1, "claude", PERMISSION, focused=True)
+        off = FakeWindow(2, "claude", PERMISSION)
+        self.add(focused, off)
+        with mock.patch.object(KS, "_notify"), mock.patch.dict(os.environ, {"KITTYMUX_BELL": "0"}):
+            KS.scan_all()
+        self.assertEqual((focused.bells, off.bells), (0, 0))
+
+    def test_done_has_its_own_off_switch(self):
+        w = FakeWindow(1, "claude", "")
+        with mock.patch("kittymux_scan.subprocess.Popen") as popen, mock.patch("kittymux_scan.shutil.which", return_value="x"):
+            with mock.patch.dict(os.environ, {"KITTYMUX_NOTIFY": "1", "KITTYMUX_NOTIFY_DONE": "0"}):
+                KS._notify(w, "done", "")
+                popen.assert_not_called()
+                KS._notify(w, "waiting", "Approve?")
+                popen.assert_called_once()
+
+    def test_the_helper_gets_a_safe_argv(self):
+        w = FakeWindow(7, "claude", "", title="-rf <b>x</b>")
+        with mock.patch("kittymux_scan.subprocess.Popen") as popen, mock.patch("kittymux_scan.shutil.which", return_value="x"), \
+                mock.patch.dict(os.environ, {"KITTYMUX_NOTIFY": "1"}):
+            KS._notify(w, "done", "")
+        argv = popen.call_args[0][0]
+        self.assertTrue(argv[0].endswith("bin/mux-notify"))
+        self.assertEqual(argv[2], "7")
+        self.assertEqual(argv[4:6], ["low", "kittymux.done"])
+        self.assertNotIn("<", argv[6])
+        self.assertTrue(os.access(argv[0], os.X_OK))
 
 
 if __name__ == "__main__":

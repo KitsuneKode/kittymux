@@ -379,24 +379,31 @@ def _panes_state() -> dict:
     return _PANES_CACHE["data"]
 
 
-def _pane_entry(tab_id: int) -> dict | None:
+def _tab_verdict(tab_id: int) -> tuple[str, dict | None]:
+    """(state, entry) for a tab: every pane rolled up (kittymux_agents.tab_verdict), plus the
+    entry of the pane that decided it (its message says what the agent wants)."""
     try:
-        window = get_boss().tab_for_id(tab_id).active_window
-        return _panes_state().get(str(window.id)) if window else None
+        tab = get_boss().tab_for_id(tab_id)
+        window = tab.active_window if tab else None
+        if window is None:
+            return "", None
+        has_agent = _agent_from_fg(_active_window_info(tab_id)[1]) is not None
+        panes = _panes_state()
+        state, wid = kittymux_agents.tab_verdict(panes, [w.id for w in tab.windows], window.id,
+                                                 has_agent, time.monotonic(), _STALE_AFTER)
+        return state, panes.get(wid)
     except Exception:
-        return None
+        return "", None
 
 
-def _agent_status(tab_id: int, has_agent: bool) -> str:
-    """working | waiting | done | idle | "" for the tab's active window.
-    An explicit status from agent hooks (bin/mux-status) wins; otherwise the
-    title-went-quiet heuristic decides. See kittymux_agents.resolve_status."""
-    entry = _pane_entry(tab_id)
-    return kittymux_agents.resolve_status(entry, has_agent, time.monotonic(), _STALE_AFTER)
+def _agent_status(tab_id: int) -> str:
+    """working | waiting | limited | done | idle | "" for the tab (all its panes). A scanner
+    verdict (screen + hooks) wins; see kittymux_agents.resolve_status for the fallbacks."""
+    return _tab_verdict(tab_id)[0]
 
 
 def _agent_waiting(tab_id: int) -> bool:
-    return _agent_status(tab_id, True) in kittymux_agents.NEEDS_YOU
+    return _agent_status(tab_id) in kittymux_agents.NEEDS_YOU
 
 
 _USAGE_CACHE = (Path(os.environ["KITTYMUX_STATE"])
@@ -583,11 +590,17 @@ def _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal) -> i
         screen.draw(session_name)
         screen.cursor.fg = _rgb(pal.faint)
         screen.draw("] ")
+        _total, needs_n, done_n = _session_stats(tab)
+        for text, color, bold in _attention_parts(needs_n, done_n, pal):
+            screen.cursor.fg = _rgb(color)
+            screen.cursor.bold = bold
+            screen.draw(text)
+        screen.cursor.bold = False
 
     last = extra_data.next_tab is None
     cwd, foreground, _last_cmd = _active_window_info(tab.tab_id)
     info = _agent_from_fg(foreground)
-    state = _tab_state(tab, info)
+    state = _tab_state(tab)
     marks_w = 2 if state else 0
     title_limit = _title_limit(max_title_length, index, session_name, tab.is_active, marks_w)
     title = _compact_title(tab, title_limit)
@@ -671,10 +684,10 @@ def _put(screen: Screen, x: int, text: str, fg: int, bold: bool = False) -> int:
     return screen.cursor.x
 
 
-def _tab_state(tab: TabBarData, info) -> str:
-    """working | waiting | done (agents) · unread (any other tab with fresh output) · ''."""
-    if info:
-        st = _agent_status(tab.tab_id, True)
+def _tab_state(tab: TabBarData) -> str:
+    """working | waiting | limited | done (any pane runs an agent) · unread (any other tab with fresh output) · ''."""
+    st = _agent_status(tab.tab_id)
+    if st:
         return "" if st == "idle" else st
     if tab.needs_attention or tab.has_activity_since_last_focus:
         return "unread"
@@ -692,23 +705,32 @@ def _state_color(state: str, pal) -> int | None:
     }.get(state)
 
 
-def _session_stats(tab: TabBarData) -> tuple[int, int]:
-    """(tabs in the active session, agent tabs waiting on the user)."""
+def _session_stats(tab: TabBarData) -> tuple[int, int, int]:
+    """(tabs in the active session, agent tabs that need you, agent tabs finished unseen). The two
+    attention counts cover EVERY tab of the window — an agent in another session still asks."""
     try:
         boss = get_boss()
         tab_obj = boss.tab_for_id(tab.tab_id)
         tm = boss.os_window_map.get(tab_obj.os_window_id) if tab_obj else None
         if tm is None:
-            return 0, 0
+            return 0, 0, 0
         active = tab.active_session_name
-        visible = [t for t in tm.tabs if t.created_in_session_name == active]
-        waiting = 0
-        for t in visible:
-            if _agent_from_fg(_active_window_info(t.id)[1]) and _agent_waiting(t.id):
-                waiting += 1
-        return len(visible), waiting
+        total = sum(1 for t in tm.tabs if t.created_in_session_name == active)
+        states = [_agent_status(t.id) for t in tm.tabs]
+        return (total, sum(1 for st in states if st in kittymux_agents.NEEDS_YOU),
+                sum(1 for st in states if st == "done"))
     except Exception:
-        return 0, 0
+        return 0, 0, 0
+
+
+def _attention_parts(needs: int, done: int, pal) -> list[tuple[str, int, bool]]:
+    """Right-aligned header badges: `! 2` (needs you) and `✓ 1` (finished, unseen) — (text, rgb, bold)."""
+    parts = []
+    if needs:
+        parts.append((f"{kittymux_agents.state_glyph('waiting')} {needs}  ", pal.waiting, True))
+    if done:
+        parts.append((f"{kittymux_agents.state_glyph('done')} {done}  ", _state_color("done", pal), False))
+    return parts
 
 
 def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
@@ -722,7 +744,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
 
     cwd, foreground, _last_cmd = _active_window_info(tab.tab_id)
     info = _agent_from_fg(foreground)
-    state = _tab_state(tab, info)
+    state = _tab_state(tab)
     state_fg = _state_color(state, pal)
 
     branch = _git_anchor(cwd)[1] if cwd else ""
@@ -733,7 +755,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         subtitle.append((f"{_ICON_FOLDER} {_short_cwd(cwd, 24)}", pal.muted if active else pal.faint))
     if tab.num_windows > 1:
         subtitle.append((f"{tab.num_windows} panes", pal.faint))
-    msg = kittymux_agents.resolve_msg(_pane_entry(tab.tab_id), state) if info else ""
+    msg = kittymux_agents.resolve_msg(_tab_verdict(tab.tab_id)[1], state)
     if msg:
         subtitle = [(msg, state_fg)]          # what it is waiting for beats the branch
     elif state in kittymux_agents.NEEDS_YOU:
@@ -769,9 +791,10 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     elif header:
         name = _compact_session_name(getattr(tab, "session_name", "") or "")
         name = "TABS" if name == "—" else name.upper()
-        total, waiting_n = _session_stats(tab)
+        total, needs_n, done_n = _session_stats(tab)
         right = f"{total} tabs" if total else ""
-        w_right = f"{kittymux_agents.state_glyph('waiting')} {waiting_n}  " if waiting_n else ""
+        badges = _attention_parts(needs_n, done_n, pal)
+        w_right = "".join(text for text, _c, _b in badges)
         room = cols - 2 - _cells(right) - _cells(w_right) - 2
         screen.cursor.bg = bar
         screen.cursor.y = y
@@ -779,8 +802,9 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         rx = cols - 1 - _cells(right)
         if right and rx > 1 + _cells(name) + 1:
             xr = rx - _cells(w_right)
-            if w_right:
-                _put(screen, xr, w_right, _rgb(pal.waiting), True)
+            for text, color, bold in badges:
+                _put(screen, xr, text, _rgb(color), bold)
+                xr += _cells(text)
             _put(screen, rx, right, _rgb(pal.faint))
         y += 1
 

@@ -41,7 +41,8 @@ SCAN_FAST, SCAN_IDLE = 0.5, 2.0
 SPIN_INTERVAL = 0.1
 HEARTBEAT = 3.0
 NOTIFY_EVERY = 10.0
-_PRIVATE = ("marker", "marker_ts", "seen_working", "unseen", "ack_ts")
+NOTIFY_DONE_MIN = 15.0        # a completion only notifies after this much work: a quick reply is not news
+_PRIVATE = ("marker", "marker_ts", "seen_working", "unseen", "ack_ts", "work_ts")
 
 _helper_dirs_done = False
 
@@ -168,8 +169,17 @@ def scan_window(window, now: float) -> bool:
     changed = new != old_state or reason != prev.get("reason", "")
     _RT.verdicts[wid] = {"state": new, "reason": reason,
                          "ts_state": now if changed else prev.get("ts_state", now), "ts_scan": now}
+    if new == "working" and old_state != "working":
+        book["work_ts"] = now                      # when this run of work began (completion threshold)
     if changed and new in agents.NEEDS_YOU and old_state not in agents.NEEDS_YOU:
         _notify(window, new, entry.get("msg") or reason)
+        _alert(window)
+    elif changed and new == "done" and old_state and old_state != "done":
+        # first sight of a window (no previous verdict) never notifies: after a scanner restart every
+        # old unseen completion would fire at once
+        worked = now - book["work_ts"] if book.get("work_ts") else None
+        if worked is None or worked >= NOTIFY_DONE_MIN:
+            _notify(window, "done", "")
     return changed
 
 
@@ -217,8 +227,9 @@ def scan_all(timer_id=None) -> None:
         for wid in [k for k in _RT.verdicts if k not in live]:      # closed windows
             _RT.verdicts.pop(wid, None)
             _RT.book.pop(wid, None)
-        for wid in [k for k in _RT.notified if k not in live]:
-            _RT.notified.pop(wid, None)
+        for table in (_RT.notified, vars(_RT).get("alerted", {})):
+            for wid in [k for k in table if k not in live]:
+                table.pop(wid, None)
         for tm in bars.values():
             try:
                 refresh_bar(tm)
@@ -335,10 +346,15 @@ def _sync_spinner() -> None:
 
 
 # ── notifications ────────────────────────────────────────────────────────────
-def _notify_enabled() -> bool:
-    if os.environ.get("KITTYMUX_NOTIFY") == "0":
+def _notify_enabled(kind: str = "needs") -> bool:
+    """Off switches: KITTYMUX_NOTIFY=0 or the file `notify-off` silence everything;
+    KITTYMUX_NOTIFY_DONE=0 or the file `notify-done-off` silence only "finished" notifications."""
+    if os.environ.get("KITTYMUX_NOTIFY") == "0" or os.path.exists(os.path.join(state_dir(), "notify-off")):
         return False
-    return not os.path.exists(os.path.join(state_dir(), "notify-off"))
+    if kind == "done":
+        return os.environ.get("KITTYMUX_NOTIFY_DONE") != "0" and \
+            not os.path.exists(os.path.join(state_dir(), "notify-done-off"))
+    return True
 
 
 def _plain(text, limit: int) -> str:
@@ -346,22 +362,59 @@ def _plain(text, limit: int) -> str:
     return _clean(text, limit).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def _notify(window, state: str, detail: str) -> None:
-    """Desktop notification when an agent you are not looking at starts needing you."""
+def _helper() -> str:
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "bin", "mux-notify")
+
+
+_TEXT = {   # state -> (title suffix, default body, urgency, category)
+    "waiting": ("needs you", "Waiting for your input", "normal", "kittymux.attention"),
+    "limited": ("hit a limit", "Usage limit reached", "normal", "kittymux.attention"),
+    "done": ("finished", "Ready for your next prompt", "low", "kittymux.done"),
+}
+
+
+def _alert(window) -> None:
+    """Ask the window manager for attention (taskbar flash / urgent border) when an agent you are not
+    looking at needs you. This is kitty's own bell path (`screen.bell()`), so it obeys the user's
+    `window_alert_on_bell` / `enable_audio_bell`. Only for needs-you: a bell per completion would
+    flash constantly. Off with KITTYMUX_BELL=0 or the file `bell-off`."""
     try:
-        if getattr(window, "is_focused", False) or not _notify_enabled() or not shutil.which("notify-send"):
+        if getattr(window, "is_focused", False) or os.environ.get("KITTYMUX_BELL") == "0" \
+                or os.path.exists(os.path.join(state_dir(), "bell-off")):
+            return
+        now = time.monotonic()
+        alerted = vars(_RT).setdefault("alerted", {})      # (an _RT made by an older version lacks it)
+        wid = str(window.id)
+        if now - alerted.get(wid, -1e9) < NOTIFY_EVERY:
+            return
+        alerted[wid] = now
+        window.screen.bell()
+    except Exception:
+        pass
+
+
+def _notify(window, state: str, detail: str) -> None:
+    """Desktop notification when an agent you are not looking at starts needing you or finishes.
+    bin/mux-notify shows it and, if you invoke its action, jumps to this window."""
+    try:
+        kind = "done" if state == "done" else "needs"
+        if getattr(window, "is_focused", False) or not _notify_enabled(kind) or not shutil.which("notify-send"):
             return
         now = time.monotonic()
         wid = str(window.id)
         if now - _RT.notified.get(wid, -1e9) < NOTIFY_EVERY:
             return
         _RT.notified[wid] = now
+        suffix, default_body, urgency, category = _TEXT[state]
         title = _plain(window.title or "agent", 60)
-        verb = "hit a limit" if state == "limited" else "needs you"
-        body = _plain(detail or ("Usage limit reached" if state == "limited" else "Waiting for your input"), 120)
+        body = _plain(detail or default_body, 120)
+        try:
+            from kitty.fast_data_types import get_boss
+            socket = getattr(get_boss(), "listening_on", "") or ""
+        except Exception:
+            socket = ""
         subprocess.Popen(
-            # `--`: a message starting with "-" must not be parsed as an option
-            ["notify-send", "-a", "kittymux", "-i", "utilities-terminal", "--", f"{title} {verb}", body],
+            [_helper(), socket, wid, str(os.getpid()), urgency, category, f"{title} {suffix}", body],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             start_new_session=True)
     except Exception:

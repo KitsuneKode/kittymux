@@ -41,7 +41,7 @@ ICONS = [
     (0x10EA04, "googlegemini"),
     (0x10EA05, "opencode"),
     (0x10EA06, "amp"),
-    (0x10EA07, "devin"),       # authored hexagon below
+    (0x10EA07, "devin"),       # Cognition's three-hexagon mark (non-square viewBox, fitted below)
     (0x10EA08, "claudecode"),
     (0x10EA09, "anthropic"),
     # dev tools — quiet glyph column (Simple Icons single-path SVGs)
@@ -62,26 +62,21 @@ ICONS = [
     (0x10EA18, "antigravity"),  # E0EF — Google Antigravity (agy), lobehub icons, MIT
 ]
 
-# Cognition's mark is a pointy-top hexagon — authored, 24×24 space.
-DEVIN_HEXAGON = (
-    "M12 2 L20.66 7 L20.66 17 L12 22 L3.34 17 L3.34 7 Z"
-)
-
-
-def svg_path(name: str) -> str:
-    if name == "devin":
-        return DEVIN_HEXAGON
+def svg_path(name: str) -> tuple[str, float]:
+    """(path data, longest viewBox side). Icons are fitted by their longest side, so a
+    non-square mark (Devin is 263×300) keeps its proportions instead of being stretched."""
     svg = (ICONS_DIR / f"{name}.svg").read_text()
-    m = re.search(r'd="([^"]+)"', svg)
+    m = re.search(r'\sd="([^"]+)"', svg)
     if not m:
         raise SystemExit(f"no path data in {name}.svg")
-    return m.group(1)
+    vb = re.search(r'viewBox="[-\d.]+[ ,]+[-\d.]+[ ,]+([\d.]+)[ ,]+([\d.]+)"', svg)
+    return m.group(1), (max(float(vb.group(1)), float(vb.group(2))) if vb else 24.0)
 
 
-def glyph_for(path_d: str, name: str):
-    """Draw an SVG path (24×24, y-down) into a TT glyph, bounds-centered
-    horizontally in the advance and flipped to font y-up."""
-    s = (UPM * SCALE) / 24
+def glyph_for(path_d: str, extent: float):
+    """Draw an SVG path (y-down, `extent` units on its longest side) into a TT glyph,
+    bounds-centered horizontally in the advance and flipped to font y-up."""
+    s = (UPM * SCALE) / extent
     base = (s, 0, 0, -s, 0, ASCENT)
     bp = BoundsPen(None)
     parse_path(path_d, TransformPen(bp, base))
@@ -110,7 +105,7 @@ def main() -> None:
     metrics[".notdef"] = (0, 0)
     for cp, name in ICONS:
         gname = f"icon-{cp:x}"
-        glyph, bounds = glyph_for(svg_path(name), name)
+        glyph, bounds = glyph_for(*svg_path(name))
         glyphs[gname] = glyph
         lsb = int(bounds[0]) if bounds else 0
         metrics[gname] = (UPM, lsb)

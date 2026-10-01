@@ -29,12 +29,45 @@ remote work.
 - `python/kittymux_theme.py` / `kittymux_agents.py` / `kittymux_deck.py` — pure helper modules
   (no kitty imports; unit-tested in `tests/`). Theme tokens derive from live kitty colours; symlinked
   into the config dir by `install.sh`. Never hardcode a palette in `tab_bar.py`/`sidebar-kit.py`.
+- `bin/mux-notify` — one desktop notification with a "Jump to it" action (focuses the window via kitty
+  remote control, then `hyprctl`); started detached by the scanner, lives ≤ 30 s
+- `python/kittymux_barsize.py` — bar sizing + the `TabBar.tab_id_at` hit-test wrapper (installed by `tab_bar.py`)
+- `docs/` — `compatibility.md` (which agent markers are verified), `audit-*.md`, `launch-checklist.md`
 - `bin/mux-status` — agent hooks → `kittymux_status` window user var → recorded by `pane-state.py`
 - `python/sidebar-kit.py` — `kitten` overlay: sidebar with real hover/click
   + live pane preview (bound `ctrl+alt+b`)
 - `python/collectors/` — per-provider usage collectors (claude/codex/cursor/devin)
 - `tools/build-icons.py` — builds the PUA icon font the glyphs live in
 - `install.sh` — symlinks/copies into `~/.config/kitty`, renders the tpl
+
+## Status & attention contract
+
+States, most important first — a state needs positive evidence, and silence is never "waiting":
+
+| State | Evidence | Shown as |
+|---|---|---|
+| `limited` | "usage limit reached" / quota text on screen | `⊘`, alert colour |
+| `waiting` | a permission/question prompt on screen, or a hook message that is a real request | `!`, bold, rail stripe |
+| `working` | an activity marker on screen (`esc to interrupt`, Claude's `Verb… (6m 52s · ↓ tokens)`), or a hook inside its grace | animated spinner |
+| `done` | it was busy and is not, or a Stop hook — *unseen*; focusing the pane clears it | dim `✓` |
+| `idle` | an agent runs and nothing above applies | nothing |
+
+A tab shows its panes rolled up (`kittymux_agents.tab_verdict`), not just the active pane. When the user is
+elsewhere (agent not focused): tab glyph, header badges `! N  ✓ N` (all tabs), a desktop notification for needs-you
+and for runs ≥ 15 s that finish, a WM urgency bell for needs-you only, `ctrl+alt+y` to jump. Off switches
+(`notify-off`, `notify-done-off`, `bell-off` files / `KITTYMUX_NOTIFY`, `KITTYMUX_NOTIFY_DONE`, `KITTYMUX_BELL`) are in the README.
+A window seen for the first time never notifies (a scanner restart must not replay old completions).
+Markers are verified against live sessions per agent in `docs/compatibility.md` — check a real screen
+(`kitty @ get-text --match id:N` → `kittymux_state.classify_screen`) before adding or changing one.
+
+## Rules
+
+- No hardcoded palettes (theme tokens come from kitty's live colours); no module-level timer state; never read silence as waiting.
+- Never restart the user's live kitties. Work in the `feature/roadmap` worktree, test with the smoke rigs, apply to live by
+  reload only (`kittymux upgrade`); record `kitty @ ls` window counts before/after. `main` is what live kitties load.
+- Icons come from real brand marks: `assets/icons/*.svg` → `tools/build-icons.py` (append-only codepoints; fits non-square
+  viewBoxes by their longest side). Devin's mark is Cognition's own; Antigravity's is the Google mark.
+- Anything that changes a key updates `kittymux-keys.conf.tpl` AND the README key table in one commit.
 
 ## Conventions
 

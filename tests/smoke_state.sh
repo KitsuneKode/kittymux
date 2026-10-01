@@ -38,6 +38,7 @@ printf '#!/bin/sh\nprintf "  Read last 25 lines in ./a.ts\\n\\n  Thinking · 37m
 chmod +x "$BIN/devin"
 mk claude "printf ' Bash command\n   rm -rf node_modules\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n'"
 mk codex  "printf '╭──────────╮\n│ >        │\n╰──────────╯\n  ? for shortcuts\n'"
+mk opencode "printf ' Allow this command?\n ❯ 1. Yes\n   2. No\n'"      # lives in a split nobody is looking at
 
 for f in tab_bar.py kittymux_theme.py kittymux_deck.py kittymux_git.py kittymux_layout.py kittymux_barsize.py \
          kittymux_agents.py kittymux_state.py kittymux_scan.py; do
@@ -59,6 +60,9 @@ new_tab codex
 launch $BIN/codex
 new_tab shell
 launch
+new_tab split
+launch
+launch --location=vsplit $BIN/opencode
 focus_tab 4
 SESS
 
@@ -107,6 +111,21 @@ ID_D=$(wid_of devin); ID_C=$(wid_of claude); ID_X=$(wid_of codex)
 expect "devin thinking"        "$ID_D" working
 expect "claude permission"     "$ID_C" waiting
 expect "codex idle prompt"     "$ID_X" idle
+
+# a question in a split the user is not looking at: the scanner must still see it (the tab bar rolls
+# every pane of the tab up — kittymux_agents.tab_verdict — so the tab lights up too)
+read -r ID_S ID_SH < <(kitty @ --to "$SOCK" ls | python3 -c '
+import sys, json
+for o in json.load(sys.stdin):
+    for t in o["tabs"]:
+        for w in t["windows"]:
+            if any("opencode" in " ".join(p["cmdline"]) for p in w["foreground_processes"]):
+                other = [x["id"] for x in t["windows"] if x["id"] != w["id"]]
+                print(w["id"], other[0] if other else ""); raise SystemExit')
+[ -n "${ID_S:-}" ] && [ -n "${ID_SH:-}" ] || fail "could not find the split tab (opencode=${ID_S:-} shell=${ID_SH:-})"
+kitty @ --to "$SOCK" focus-window --match "id:$ID_SH" >/dev/null 2>&1        # the shell pane is the active one
+expect "question in a background split" "$ID_S" waiting
+kitty @ --to "$SOCK" focus-tab --match "title:codex" >/dev/null 2>&1
 
 if [ -n "${SMOKE_SHOT:-}" ] && command -v import >/dev/null 2>&1; then
   DISPLAY=$DISP import -window root "$SMOKE_SHOT" 2>/dev/null && echo "  screenshot: $SMOKE_SHOT"

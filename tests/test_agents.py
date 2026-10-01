@@ -201,5 +201,35 @@ class SanitizeTests(unittest.TestCase):
         self.assertEqual(A.sanitize_text("Approve: rm -rf node_modules? ✓ 日本"), "Approve: rm -rf node_modules? ✓ 日本")
 
 
+class TabVerdictTests(unittest.TestCase):
+    NOW = 1000.0
+
+    def panes(self, **states):
+        return {wid: {"state": st, "ts_scan": self.NOW - 1.0} for wid, st in states.items()}
+
+    def test_a_question_in_a_background_split_lights_the_tab(self):
+        panes = self.panes(**{"1": "idle", "2": "waiting"})
+        self.assertEqual(A.tab_verdict(panes, [1, 2], 1, True, self.NOW), ("waiting", "2"))
+
+    def test_most_important_state_wins(self):
+        panes = self.panes(**{"1": "working", "2": "done", "3": "limited"})
+        self.assertEqual(A.tab_verdict(panes, [1, 2, 3], 1, True, self.NOW), ("limited", "3"))
+
+    def test_active_pane_wins_ties(self):
+        panes = self.panes(**{"1": "waiting", "2": "waiting"})
+        self.assertEqual(A.tab_verdict(panes, [2, 1], 1, True, self.NOW), ("waiting", "1"))
+
+    def test_stale_background_verdicts_are_ignored(self):
+        panes = {"1": {"state": "idle", "ts_scan": self.NOW - 1}, "2": {"state": "waiting", "ts_scan": self.NOW - 60}}
+        self.assertEqual(A.tab_verdict(panes, [1, 2], 1, True, self.NOW)[0], "idle")
+
+    def test_active_shell_with_agent_elsewhere_shows_the_agent(self):
+        panes = self.panes(**{"2": "working"})
+        self.assertEqual(A.tab_verdict(panes, [1, 2], 1, False, self.NOW), ("working", "2"))
+
+    def test_no_agents_means_no_state(self):
+        self.assertEqual(A.tab_verdict({}, [1, 2], 1, False, self.NOW), ("", ""))
+
+
 if __name__ == "__main__":
     unittest.main()

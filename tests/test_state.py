@@ -24,6 +24,8 @@ CLAUDE_PERMISSION = """\
    3. No, and tell Claude what to do differently (esc)
 """
 CLAUDE_WORKING = "✻ Cogitating… (12s · ↓ 1.2k tokens · esc to interrupt)\n"
+CLAUDE_WORKING_NEW = ("· Undulating… (6m 52s · ↓ 35.8k tokens)\n  ⎿  Tip: Use /btw to ask a quick side question\n"
+                      "──────────\n❯\n──────────\n  [me@host repo:main] [Sonnet 5.5]\n  ⏵⏵ auto mode on (shift+tab to cycle)\n")
 CODEX_WORKING = "• Working (3s • esc to interrupt)\n"
 CODEX_APPROVAL = "Would you like to run the following command?\nPress enter to confirm or esc to cancel\n"
 LIMIT = "Claude usage limit reached. Your limit will reset at 5pm.\n"
@@ -44,7 +46,7 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(marker("Overwrite file? (y/n)"), "waiting")
 
     def test_working_markers(self):
-        for text in (CLAUDE_WORKING, CODEX_WORKING, "(esc to cancel, 5s)", "ctrl+c to stop"):
+        for text in (CLAUDE_WORKING, CLAUDE_WORKING_NEW, "✻ Pondering… (2h 3m 1s)", CODEX_WORKING, "(esc to cancel, 5s)", "ctrl+c to stop"):
             self.assertEqual(marker(text), "working", text)
 
     def test_limit_outranks_everything(self):
@@ -66,6 +68,10 @@ class ClassifyTests(unittest.TestCase):
 
     def test_returns_the_matching_line(self):
         self.assertIn("Do you want to proceed", S.classify_screen(CLAUDE_PERMISSION)[1])
+
+    def test_elapsed_time_in_prose_is_not_a_spinner(self):
+        for text in ("I waited (3s) for it", "see the docs… (section 4)", "Done in 6m 52s", "ok (12s)"):
+            self.assertEqual(marker(text), "", text)
 
     def test_ordinary_prose_is_not_a_marker(self):
         self.assertEqual(marker("I'll allow the user to approve changes later and retry."), "")

@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""mux-notify — one desktop notification for an agent window, with a "Jump" action.
+
+usage: mux-notify SOCKET WINDOW_ID KITTY_PID URGENCY CATEGORY TITLE BODY
+
+Started detached by kittymux_scan when an agent you are not looking at needs you or finishes.
+It lives only as long as the notification (hard cap: 30 s), so it can never pile up. If the
+notification daemon reports the "jump" action being invoked, it focuses that window — through
+kitty's remote control, then the compositor — so the notification takes you to the agent.
+Daemons without action support still show the notification; they just cannot jump.
+"""
+import shutil
+import subprocess
+import sys
+import time
+
+TIMEOUT = 30            # seconds; also what bounds the lifetime of this process
+EXPIRE_MS = 20000
+
+
+def notify(urgency: str, category: str, title: str, body: str, with_action: bool) -> str:
+    cmd = ["notify-send", "-a", "kittymux", "-i", "utilities-terminal", "-u", urgency, "-c", category,
+           "-t", str(EXPIRE_MS)]
+    if with_action:
+        cmd += ["--wait", "--action=jump=Jump to it"]
+    cmd += ["--", title, body]        # `--`: text starting with "-" must not parse as an option
+    try:
+        run = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return run.stdout.strip() if run.returncode == 0 else "\0failed"
+
+
+def focus(socket: str, window_id: str, kitty_pid: str) -> None:
+    if shutil.which("kitty"):
+        subprocess.run(["kitty", "@", "--to", socket, "focus-window", "--match", f"id:{window_id}"],
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+    if shutil.which("hyprctl"):
+        subprocess.run(["hyprctl", "dispatch", "focuswindow", f"pid:{kitty_pid}"],
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 8 or not shutil.which("notify-send"):
+        return 2
+    socket, window_id, kitty_pid, urgency, category, title, body = argv[1:]
+    if not window_id.isdigit() or not kitty_pid.isdigit() or urgency not in ("low", "normal", "critical"):
+        return 2
+    started = time.monotonic()
+    answer = ""
+    if socket:
+        answer = notify(urgency, category, title, body, with_action=True)
+    if not socket or (answer == "\0failed" and time.monotonic() - started < 2):
+        notify(urgency, category, title, body, with_action=False)      # libnotify without --action
+        return 0
+    if answer == "jump":
+        focus(socket, window_id, kitty_pid)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

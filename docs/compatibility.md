@@ -21,10 +21,11 @@ and a TUI that rewords its prompts needs a one-line change in `python/kittymux_s
 
 | Agent | Screen markers | Hooks |
 |---|---|---|
-| Claude Code | tested (working, permission prompt, usage limit) | `kittymux hooks --install` |
+| Claude Code | tested (working — both the `esc to interrupt` form and the newer `· Verb… (6m 52s · ↓ 35k tokens)` line, permission prompt, usage limit) | `kittymux hooks --install` |
 | Codex CLI | tested (working, usage limit) | `notify` → `mux-status` |
-| Devin | tested (working) | — |
-| Gemini CLI, Cursor Agent, OpenCode, Amp, Antigravity (`agy`) | patterns follow each tool's documented hints; **not verified against live sessions** | — |
+| Devin | tested (working; idle prompt; "N subagents" footers are not read as work) | — |
+| OpenCode | idle screen checked live; its working marker (`esc interrupt`) follows the documented hint | — |
+| Gemini CLI, Cursor Agent, Amp, Antigravity (`agy`) | patterns follow each tool's documented hints; **not verified against live sessions** | — |
 | aider, crush, grok | no readable TUI markers → hooks or title activity only | — |
 
 ## Things that depend on the environment

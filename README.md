@@ -177,6 +177,24 @@ aider/crush/grok (no readable TUI) use hooks or title activity.
 The design follows how t3code's sidebar resolves thread status: one ordered
 resolver (limited › waiting › working › done › idle), "done" only while unseen.
 
+### When you are elsewhere
+
+Everything below only fires for an agent **you are not looking at**; focusing it clears it.
+
+| Cue | When | Turn it off |
+|---|---|---|
+| tab glyph + rail stripe | any tab, any pane of it (a question in a split you are not in still lights the tab) | — |
+| header badges `! 2  ✓ 1` | agents that need you / finished unseen, across **all** tabs of the window (vertical header and horizontal prefix) | — |
+| desktop notification, "needs you" / "hit a limit" | an agent starts waiting or hits its limit; shows the question | `touch ~/.local/state/kittymux/notify-off` or `KITTYMUX_NOTIFY=0` (everything) |
+| desktop notification, "finished" | a run of ≥ 15 s ends unseen (quick replies stay quiet; a window seen for the first time never notifies) | `touch ~/.local/state/kittymux/notify-done-off` or `KITTYMUX_NOTIFY_DONE=0` |
+| window-manager urgency (taskbar flash / urgent border) | an agent starts waiting or hits its limit — kitty's own bell path, so it follows your `window_alert_on_bell` / `enable_audio_bell` | `touch ~/.local/state/kittymux/bell-off` or `KITTYMUX_BELL=0` |
+| `ctrl+alt+y` | jump to the next agent that needs you, longest-waiting first | — |
+
+Notifications carry a **Jump to it** action (`bin/mux-notify`): with a daemon that supports actions
+(dunst: middle-click or `dunstctl action`; mako, swaync: click) it focuses that window — through kitty's
+remote control, then `hyprctl` on Hyprland. A daemon without actions still shows the text. Each
+notification process lives at most 30 s.
+
 *Privacy:* only the matched marker and one short line of context (≤ 100 chars, control characters
 stripped) are kept, in `scan-<pid>.json` (mode 0600, inside the 0700 state dir). Nothing leaves your machine.
 
@@ -199,9 +217,7 @@ redraws on instantly. The message comes from `--msg`, from the hook's JSON on st
 over ssh, no socket needed) and falls back to kitty remote control. It never blocks or
 fails the agent.
 
-When an agent you are not looking at starts needing you (waiting or limited), kittymux sends a
-desktop notification (`notify-send`) — once, not on every redraw. Silence it with
-`touch ~/.local/state/kittymux/notify-off`.
+Notifications and the "elsewhere" cues are covered under [Agent status → When you are elsewhere](#when-you-are-elsewhere).
 
 Claude Code hooks, by hand:
 
