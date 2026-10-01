@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """mux-notify — one desktop notification for an agent window, with a "Jump" action.
 
-usage: mux-notify SOCKET WINDOW_ID KITTY_PID URGENCY CATEGORY TITLE BODY
+usage: mux-notify SOCKET WINDOW_ID KITTY_PID URGENCY CATEGORY ICON TITLE BODY
+
+ICON is a PNG inside this checkout's assets/ directory, or a bare icon-theme name (default: kitty).
+Nothing else is accepted — the icon is never taken from agent output.
 
 Started detached by kittymux_scan when an agent you are not looking at needs you or finishes.
 It lives only as long as the notification (hard cap: 30 s), so it can never pile up. If the
@@ -9,6 +12,8 @@ notification daemon reports the "jump" action being invoked, it focuses that win
 kitty's remote control, then the compositor — so the notification takes you to the agent.
 Daemons without action support still show the notification; they just cannot jump.
 """
+import os
+import re
 import shutil
 import subprocess
 import sys
@@ -18,8 +23,23 @@ TIMEOUT = 30            # seconds; also what bounds the lifetime of this process
 EXPIRE_MS = 20000
 
 
-def notify(urgency: str, category: str, title: str, body: str, with_action: bool) -> str:
-    cmd = ["notify-send", "-a", "kittymux", "-i", "utilities-terminal", "-u", urgency, "-c", category,
+ASSETS = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "assets")
+
+
+def safe_icon(icon: str) -> str:
+    """A file under assets/ (resolved, so no `..` or symlink escapes) or a plain icon-theme name; else the
+    kitty icon. The value comes from the scanner, but this process takes argv from anyone, so it checks."""
+    if icon and re.fullmatch(r"[A-Za-z0-9._-]{1,64}", icon):
+        return icon
+    if icon:
+        real = os.path.realpath(icon)
+        if real.startswith(os.path.realpath(ASSETS) + os.sep) and os.path.isfile(real) and real.endswith(".png"):
+            return real
+    return "kitty"
+
+
+def notify(urgency: str, category: str, icon: str, title: str, body: str, with_action: bool) -> str:
+    cmd = ["notify-send", "-a", "kittymux", "-i", safe_icon(icon), "-u", urgency, "-c", category,
            "-t", str(EXPIRE_MS)]
     if with_action:
         cmd += ["--wait", "--action=jump=Jump to it"]
@@ -41,17 +61,18 @@ def focus(socket: str, window_id: str, kitty_pid: str) -> None:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 8 or not shutil.which("notify-send"):
+    if len(argv) != 9 or not shutil.which("notify-send"):
         return 2
-    socket, window_id, kitty_pid, urgency, category, title, body = argv[1:]
-    if not window_id.isdigit() or not kitty_pid.isdigit() or urgency not in ("low", "normal", "critical"):
+    socket, window_id, kitty_pid, urgency, category, icon, title, body = argv[1:]
+    if not window_id.isdigit() or not kitty_pid.isdigit() or urgency not in ("low", "normal", "critical") \
+            or not re.fullmatch(r"[A-Za-z0-9._-]{1,40}", category) or (socket and not socket.startswith("unix:")):
         return 2
     started = time.monotonic()
     answer = ""
     if socket:
-        answer = notify(urgency, category, title, body, with_action=True)
+        answer = notify(urgency, category, icon, title, body, with_action=True)
     if not socket or (answer == "\0failed" and time.monotonic() - started < 2):
-        notify(urgency, category, title, body, with_action=False)      # libnotify without --action
+        notify(urgency, category, icon, title, body, with_action=False)      # libnotify without --action
         return 0
     if answer == "jump":
         focus(socket, window_id, kitty_pid)

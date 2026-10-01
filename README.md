@@ -201,6 +201,12 @@ kittymux owns notifications: the agents' own desktop notifications (Claude Code'
 Devin's…) are dropped with a `filter_notification` rule in `kittymux.conf`, so each event notifies **once**. Delete that
 line to let them through again; kitty's own "command finished" notice is untouched.
 
+Every notification wears **its agent's own mark** (Claude, Codex, Devin, Droid, Antigravity…; `assets/notify/`), with the
+kitty icon as the fallback. They are rate-limited (one per window per 10 s, five in total per 10 s). Because they show a line
+of your screen ("Approve: rm -rf x?"), `touch ~/.local/state/kittymux/notify-private` reduces them to "<agent> needs you".
+How native, agent and kittymux notifications interact — and the security model and known limits — is in
+[docs/notifications.md](docs/notifications.md).
+
 Notifications carry a **Jump to it** action (`bin/mux-notify`): with a daemon that supports actions
 (dunst: middle-click or `dunstctl action`; mako, swaync: click) it focuses that window — through kitty's
 remote control, then `hyprctl` on Hyprland. A daemon without actions still shows the text. Each

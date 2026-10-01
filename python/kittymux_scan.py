@@ -172,14 +172,14 @@ def scan_window(window, now: float) -> bool:
     if new == "working" and old_state != "working":
         book["work_ts"] = now                      # when this run of work began (completion threshold)
     if changed and new in agents.NEEDS_YOU and old_state not in agents.NEEDS_YOU:
-        _notify(window, new, entry.get("msg") or reason)
+        _notify(window, new, entry.get("msg") or reason, agent)
         _alert(window)
     elif changed and new == "done" and old_state and old_state != "done":
         # first sight of a window (no previous verdict) never notifies: after a scanner restart every
         # old unseen completion would fire at once
         worked = now - book["work_ts"] if book.get("work_ts") else None
         if worked is None or worked >= NOTIFY_DONE_MIN:
-            _notify(window, "done", "")
+            _notify(window, "done", "", agent)
     return changed
 
 
@@ -393,7 +393,36 @@ def _alert(window) -> None:
         pass
 
 
-def _notify(window, state: str, detail: str) -> None:
+NOTIFY_BURST, NOTIFY_WINDOW = 5, 10.0        # at most this many notifications per this many seconds, in total
+
+
+def _icon(agent: str) -> str:
+    """The notification icon: the agent's own mark (assets/notify/<agent>.png, see tools/build-notify-icons.py),
+    else kittymux's, else the kitty icon from the icon theme. Always chosen from OUR table, never from output."""
+    root = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "assets", "notify")
+    for name in (agent, "kittymux"):
+        path = os.path.join(root, f"{name}.png")
+        if name and re.fullmatch(r"[A-Za-z0-9._-]{1,64}", name) and os.path.isfile(path):
+            return path
+    return "kitty"
+
+
+def _private() -> bool:
+    """Notifications hold text from the agent's screen; in private mode they carry only "<agent> needs you"."""
+    return os.environ.get("KITTYMUX_NOTIFY_PRIVATE") == "1" or os.path.exists(os.path.join(state_dir(), "notify-private"))
+
+
+def _within_budget(now: float) -> bool:
+    """A global cap on top of the per-window one: output that flips many windows' states cannot flood the desktop."""
+    log = vars(_RT).setdefault("notify_log", [])
+    log[:] = [t for t in log if now - t < NOTIFY_WINDOW]
+    if len(log) >= NOTIFY_BURST:
+        return False
+    log.append(now)
+    return True
+
+
+def _notify(window, state: str, detail: str, agent: str = "") -> None:
     """Desktop notification when an agent you are not looking at starts needing you or finishes.
     bin/mux-notify shows it and, if you invoke its action, jumps to this window."""
     try:
@@ -404,17 +433,20 @@ def _notify(window, state: str, detail: str) -> None:
         wid = str(window.id)
         if now - _RT.notified.get(wid, -1e9) < NOTIFY_EVERY:
             return
+        if not _within_budget(now):
+            return
         _RT.notified[wid] = now
         suffix, default_body, urgency, category = _TEXT[state]
-        title = _plain(window.title or "agent", 60)
-        body = _plain(detail or default_body, 120)
+        private = _private()
+        title = _plain(agent if private and agent else (window.title or agent or "agent"), 60)
+        body = _plain(default_body if private else (detail or default_body), 120)
         try:
             from kitty.fast_data_types import get_boss
             socket = getattr(get_boss(), "listening_on", "") or ""
         except Exception:
             socket = ""
         subprocess.Popen(
-            [_helper(), socket, wid, str(os.getpid()), urgency, category, f"{title} {suffix}", body],
+            [_helper(), socket, wid, str(os.getpid()), urgency, category, _icon(agent), f"{title} {suffix}", body],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             start_new_session=True)
     except Exception:

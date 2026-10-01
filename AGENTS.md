@@ -29,6 +29,9 @@ remote work.
 - `python/kittymux_theme.py` / `kittymux_agents.py` / `kittymux_deck.py` — pure helper modules
   (no kitty imports; unit-tested in `tests/`). Theme tokens derive from live kitty colours; symlinked
   into the config dir by `install.sh`. Never hardcode a palette in `tab_bar.py`/`sidebar-kit.py`.
+- `assets/notify/` (built by `tools/build-notify-icons.py`) — one PNG per agent for notifications; `docs/brand/` — the mascot
+  brief and image-model prompts (`tools/build-brand.py` derives sizes from `assets/brand/mascot.png`); `docs/notifications.md` — the
+  notification flow, security model and limits. Icons are chosen from OUR table only, never from agent output.
 - `bin/mux-notify` — one desktop notification with a "Jump to it" action (focuses the window via kitty
   remote control, then `hyprctl`); started detached by the scanner, lives ≤ 30 s
 - `python/kittymux_barsize.py` — bar sizing + the `TabBar.tab_id_at` hit-test wrapper (installed by `tab_bar.py`)
