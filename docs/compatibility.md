@@ -5,7 +5,8 @@ author or by a test in this repo; everything else is an educated guess and is la
 
 | Area | Status |
 |---|---|
-| **kitty 0.49.1** | Tested — the only version used day to day. `kittymux doctor` refuses < 0.48 (vertical tabs). |
+| **kitty 0.49.1** | Tested — the version used day to day. `kittymux doctor` refuses < 0.48 (vertical tabs). |
+| **kitty 0.49.2** | Tested (released 2026-10-01): the install test and all three real-kitty smoke tests (states, sidebar buttons/drag/peek/absorb, upgrade-under-a-running-kitty) pass. CI runs both versions. |
 | kitty 0.48.x | Untested. Vertical tab bar exists; native tab/window drag-and-drop (used for splits ↔ tabs) is newer and may be missing. |
 | **Arch Linux, Hyprland (Wayland)** | Tested — daily driver, incl. the docked panel (`kitten panel`, layer-shell). |
 | Other Wayland compositors | Panel needs `wlr-layer-shell`; sway/river/niri are expected to work, **untested**. GNOME/Mutter has no layer-shell → no docked panel (everything else works). |

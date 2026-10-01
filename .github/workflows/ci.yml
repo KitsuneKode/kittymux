@@ -5,10 +5,9 @@ on:
     branches: [main]
   pull_request:
 
-# kittymux wraps a few kitty internals, so CI runs the real-kitty smoke tests against the exact
-# kitty the project is tested with (TESTED_KITTY_MINOR in bin/kittymux) — bump both together.
-env:
-  KITTY_VERSION: "0.49.1"
+# kittymux wraps a few kitty internals, so CI runs the real-kitty smoke tests against every kitty
+# release the project is tested with (TESTED_KITTY_MINOR in bin/kittymux) — add a version here when a
+# new release passes locally, drop the oldest when it stops being supported.
 
 jobs:
   unit:
@@ -28,6 +27,10 @@ jobs:
   smoke:
     runs-on: ubuntu-24.04
     needs: unit
+    strategy:
+      fail-fast: false
+      matrix:
+        kitty: ["0.49.1", "0.49.2"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,9 +39,9 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq xvfb xdotool imagemagick bc jq fzf libgl1-mesa-dri libglx-mesa0 fontconfig
-      - name: kitty ${{ env.KITTY_VERSION }}
+      - name: kitty ${{ matrix.kitty }}
         run: |
-          curl -fsSL https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin launch=n dest="$HOME/.local" installer="version-$KITTY_VERSION"
+          curl -fsSL https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin launch=n dest="$HOME/.local" installer="version-${{ matrix.kitty }}"
           echo "$HOME/.local/kitty.app/bin" >> "$GITHUB_PATH"
       - name: fresh-machine install / uninstall
         run: bash tests/test_install.sh
