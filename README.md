@@ -10,7 +10,7 @@ A vertical tab bar, a sidebar deck and a few keystrokes that turn kitty into an
 agent-aware workspace: named sessions, per-agent git worktrees, live
 `working` / `waiting` / `done` status, and a one-key jump to whichever agent is
 blocked on you. A *config layer*, not a daemon — Linux, Wayland, Hyprland-friendly,
-zero background processes.
+no always-on background daemon.
 
 <p align="center">
   <img src="assets/demo.gif" alt="kittymux: a vertical tab bar with agent states, the deck with a split tab's pane tree and live preview, a right-click peek card, and the collapse button" width="720">
@@ -70,7 +70,7 @@ Like it? Install:
 | What it is | config layer for kitty | its own macOS terminal (Ghostty-based) | multiplexer that runs *inside* a terminal |
 | Platform | Linux (Wayland/X11) | macOS | cross-platform |
 | Your terminal | stays kitty (GPU, ligatures, kittens) | replaces it | any |
-| Processes | none (scripts + kitty's own API) | app | one binary |
+| Always-on daemon | none (scripts + kitty's own API) | app | one binary |
 | Agent state | hooks → window var (+ heuristic fallback) | notifications/hooks | process detection |
 
 Pick the one that fits how you work; kittymux is for people who already live in kitty and don't
@@ -302,7 +302,14 @@ real quotas, cached ≥5min: claude via the OAuth usage endpoint, cursor via
 `DashboardService/GetCurrentPeriodUsage` (monthly auto/api model pools +
 spend), devin via `SeatManagementService/GetUserStatus` (daily/weekly
 quota + overage balance). Network is strictly opt-in — everything works
-offline.
+offline. Failed requests also back off for five minutes; previous quota rows remain visible
+with an unavailable/stale diagnostic. Authentication is sent through curl's stdin, not its
+process arguments.
+
+The local five-hour Claude bar is **elapsed time, not quota consumed**. Daily token charts use
+exact, dated Claude log counters; old rolling-week totals are excluded rather than relabeled
+as daily burn. Devin's local activity shows cumulative totals for sessions modified today,
+not exact daily consumption, so it is not recorded in the daily-burn chart.
 
 ## Tab bar layout & resizing
 
@@ -398,6 +405,13 @@ kittymux/
 State lives in `${XDG_STATE_HOME}/kittymux` (`0700`, files `0600`).
 Override with `KITTYMUX_STATE`. Optional vars: `KITTYMUX_PROJECTS`
 (picker root), `KITTYMUX_USAGE_LIVE=1` (opt-in network quota fetch).
+
+## Testing and known limits
+
+See [the testing guide](docs/testing.md) for regression commands, isolated real-kitty smoke rigs,
+and the edge cases that still require manual checks. [Compatibility](docs/compatibility.md)
+separates live-verified agent markers from expected support. Never run an installer, upgrade,
+or UI smoke test against your everyday config to test a change.
 
 ## Uninstall
 

@@ -104,6 +104,10 @@ def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bo
 
     if agent not in SCREEN_AGENTS:
         # an agent whose TUI we cannot read: hooks if it has them, else recent title activity
+        if explicit == "done":
+            if focused:
+                entry["ack_ts"] = ts_status
+            return "idle" if entry.get("ack_ts") == ts_status else "done"
         if explicit in STATES:
             return explicit
         ts_title = float(entry.get("ts_title") or 0)
@@ -121,12 +125,16 @@ def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bo
         return marker
     if marker == "working":
         entry["seen_working"], entry["unseen"] = True, False
+        if explicit == "waiting":
+            # Resumed work proves this particular permission request was handled.
+            entry["handled_wait_ts"] = ts_status
         return "working"
 
     # nothing recognisable on screen
     if explicit == "working" and now - ts_status < _HOOK_GRACE:
         return "working"                           # the hook just fired; the TUI has not drawn yet
-    if explicit == "waiting" and is_request(entry.get("msg", "")) and now - ts_status < _HOOK_WAIT_FRESH:
+    if (explicit == "waiting" and entry.get("handled_wait_ts") != ts_status
+            and is_request(entry.get("msg", "")) and now - ts_status < _HOOK_WAIT_FRESH):
         return "waiting"                           # a hook asked for you and nothing contradicts it
     if entry.pop("seen_working", False):
         entry["unseen"] = True                     # it was busy and now is not: a completion

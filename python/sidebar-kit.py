@@ -77,9 +77,14 @@ def _rc(*args: str) -> str:
     return p.stdout if p.returncode == 0 else ""
 
 
-def _panes_state() -> dict:
+def _panes_state(data: list) -> dict:
     try:
-        return kittymux_agents.load_panes(str(_STATE_DIR / f"panes-{os.getppid()}.json"))
+        pid = os.getppid()
+        if _TARGET:
+            pid = int(os.environ.get("KITTYMUX_TARGET_PID", "0"))
+            if pid <= 0 or deck.target_pid(data) != pid:
+                return {}
+        return kittymux_agents.load_panes(str(_STATE_DIR / f"panes-{pid}.json"))
     except Exception:
         return {}
 
@@ -191,7 +196,7 @@ class Collector:
             data = json.loads(_rc("ls"))
         except Exception:
             return None
-        panes = _panes_state()
+        panes = _panes_state(data)
         children = deck.children_map(_proc_ppids())
         listeners = _listeners()
         rows, current_session = [], ""
@@ -250,8 +255,15 @@ class Sidebar(Handler):
         self.scroll = 0
         self.preview: list[str] = []
         self.preview_for = 0
+        self._preview_inflight = False
         self._hover_pane = (-1, -1)             # (row, pane) of the child line under the pointer
         self._alive = True
+        self._preview_worker = deck.LatestWorker(
+            self._fetch_preview, lambda generation, lines: self._post(self._apply_preview, generation, lines))
+        self._resize_worker = deck.LatestWorker(
+            self._perform_resize, lambda *args: None,
+            coalesce=lambda old, new: (new[0], old[1] or new[1]),
+            daemon=False)  # a queued release write must survive normal interpreter shutdown
         self._collecting = False
         self._collector = Collector()
         self._first = True
@@ -261,6 +273,10 @@ class Sidebar(Handler):
 
     def finalize(self) -> None:
         self._alive = False
+        if hasattr(self, "_preview_worker"):
+            self._preview_worker.close()
+        if hasattr(self, "_resize_worker"):
+            self._resize_worker.close(drain=True)  # release writes must outlive a closing UI
         if self._can_drag():
             self._pointer("")
 
@@ -295,6 +311,7 @@ class Sidebar(Handler):
         self.snap = snap
         self._hover_pane = (-1, -1)             # row indices changed under it
         if not snap.rows:
+            self._request_preview()
             self.draw_screen()
             return
         if self._first:
@@ -304,7 +321,9 @@ class Sidebar(Handler):
             self.sel = next((i for i, r in enumerate(snap.rows) if r.tab_id == keep),
                             min(self.sel, len(snap.rows) - 1))
         self._clamp()
-        self._request_preview(force=True)
+        # A slow same-pane read must be allowed to finish before periodic refresh
+        # invalidates it; actual selection changes still submit a new generation.
+        self._request_preview(force=not self._preview_inflight)
         self.draw_screen()
         self._schedule_spin()
 
@@ -323,31 +342,38 @@ class Sidebar(Handler):
             self._schedule_spin()
 
     def _request_preview(self, force: bool = False) -> None:
+        if not self._alive:
+            return
         if not self.snap.rows:
+            self._preview_worker.invalidate()
+            self._preview_inflight = False
+            self.preview_for = 0
             self.preview = []
             return
         r = self.snap.rows[self.sel]
         row, pane = self._hover_pane
         wid = r.pane_rows[pane].win_id if row == self.sel and 0 <= pane < len(r.pane_rows) else r.win_id
-        if wid == self.preview_for and self.preview and not force:
+        if wid == self.preview_for and not force:
             return
+        if wid != self.preview_for:
+            self.preview = []
         self.preview_for = wid
-        rows_n = self.screen_size.rows
+        self._preview_inflight = True
+        self._preview_worker.submit((wid, self.screen_size.rows))
 
-        def work() -> None:
-            try:
-                txt = _rc("get-text", "--extent", "screen", "--match", f"id:{wid}")
-            except Exception:
-                txt = ""
-            lines = txt.rstrip().splitlines()
-            self._post(self._apply_preview, wid,
-                       lines[-max(4, rows_n - 4):] if lines else ["(empty pane)"])
+    def _fetch_preview(self, request) -> list:
+        wid, rows_n = request
+        try:
+            txt = _rc("get-text", "--extent", "screen", "--match", f"id:{wid}")
+        except Exception:
+            txt = ""
+        lines = txt.rstrip().splitlines()
+        return lines[-max(4, rows_n - 4):] if lines else ["(empty pane)"]
 
-        threading.Thread(target=work, daemon=True).start()
-
-    def _apply_preview(self, wid: int, lines: list) -> None:
-        if self._alive and wid == self.preview_for:
-            self.preview = lines
+    def _apply_preview(self, generation: int, lines: list) -> None:
+        if self._alive and self._preview_worker.is_current(generation):
+            self._preview_inflight = False
+            self.preview = lines or ["(empty pane)"]
             self.draw_screen()
 
     def _schedule(self) -> None:
@@ -626,33 +652,30 @@ class Sidebar(Handler):
             pass
 
     def _resize_panel(self, cell_x: int, final: bool = False) -> None:
+        if not self._alive:
+            return
         cols = deck.drag_columns(cell_x)
-        if not self._throttle.should_send(time.monotonic(), cols, final):
-            return
-        lock = self.__dict__.setdefault("_rz_lock", threading.Lock())
-        if not lock.acquire(blocking=final):          # a request is in flight: drop non-final ones
-            return
+        if self._throttle.should_send(time.monotonic(), cols, final):
+            self._resize_worker.submit((cols, final))
 
-        def work() -> None:
-            try:
-                r = subprocess.run(["kitten", "@", "--to", f"unix:{_PANEL_SOCK}", "resize-os-window",
-                                    "--action=os-panel", "--incremental", f"columns={cols}"],
-                                   capture_output=True, text=True, timeout=3)
-                if r.returncode != 0 or os.environ.get("KITTYMUX_DEBUG"):
-                    _log_line(f"panel resize to {cols} rc={r.returncode} final={final} "
-                              f"out={r.stdout.strip()[:100]!r} err={r.stderr.strip()[:200]!r}")
-                if final:
-                    try:
-                        _STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-                        (_STATE_DIR / "panel-columns").write_text(str(cols))
-                    except OSError:
-                        pass
-            except Exception:
-                _log_error()
-            finally:
-                lock.release()
-
-        threading.Thread(target=work, daemon=True).start()
+    def _perform_resize(self, request) -> None:
+        cols, final = request
+        try:
+            r = subprocess.run(["kitten", "@", "--to", f"unix:{_PANEL_SOCK}", "resize-os-window",
+                                "--action=os-panel", "--incremental", f"columns={cols}"],
+                               capture_output=True, text=True, timeout=3)
+            if r.returncode != 0 or os.environ.get("KITTYMUX_DEBUG"):
+                _log_line(f"panel resize to {cols} rc={r.returncode} final={final} "
+                          f"out={r.stdout.strip()[:100]!r} err={r.stderr.strip()[:200]!r}")
+        except Exception:
+            _log_error()
+        finally:
+            if final:
+                try:
+                    _STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    (_STATE_DIR / "panel-columns").write_text(str(cols))
+                except OSError:
+                    pass
 
     def _row_at(self, y: int) -> int:
         return deck.row_at(self.snap.items, self.scroll, self._avail(), y - 2)
@@ -747,6 +770,8 @@ def main(args: list[str]) -> str:
     except Exception:
         _log_error()
         raise
+    finally:
+        handler.finalize()
     return ""
 
 

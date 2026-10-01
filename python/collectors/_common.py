@@ -11,12 +11,15 @@ Collector contract — every collectors/*.py module defines:
                 {"label": "5h", "pct": 14.0, "reset": "...", "clock": True},
             ],
             "note": "plus",                  # optional dim suffix on the row
+            "daily": {"day": "2026-03-09", "claude_fresh": 1234},
+            # Optional exact daily counters for history, never formatted text.
         }
 
     # Optional — called only when KITTYMUX_USAGE_LIVE is enabled:
     def live(cached: dict) -> dict:
-        # Return {"ts": epoch, "rows": [...]}, or `cached` when the fetch
-        # is unavailable. Must be cheap, cached by the caller, and opt-in.
+        # Return {"ts": last_success, "attempt_ts": last_attempt, "rows": [...]},
+        # retaining cached rows plus a safe "error" on failure. Both successes
+        # and failures respect LIVE_TTL. The caller persists all attempts.
 
 Row keys:
     label  str   — left column tag ("5h", "week", "plan", ...)
@@ -31,8 +34,11 @@ than a fabricated percentage.
 """
 
 import json
+import math
 import os
 import sqlite3
+import subprocess
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -48,6 +54,73 @@ TTL = 60.0
 LIVE_TTL = 300.0  # live quota fetch is opt-in and polite: 5min minimum cadence
 LIVE = os.environ.get("KITTYMUX_USAGE_LIVE", os.environ.get("KITTY_USAGE_LIVE", "")) \
     not in ("", "0", "no")
+
+
+class LiveError(Exception):
+    """Safe diagnostic: never includes credentials or curl stderr."""
+
+
+def curl_json(url: str, *, headers: list[str], body: str | None = None,
+              max_time: int = 4) -> dict:
+    """Keep secrets off argv/disk while retaining curl's proxy/TLS defaults."""
+    if any("\r" in h or "\n" in h or "\0" in h for h in headers):
+        raise LiveError("invalid credential header")
+
+    def quote(value: str) -> str:
+        # curl config supports these quoted-string escapes, not JSON's \u escapes.
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"').replace(
+            "\t", "\\t").replace("\n", "\\n").replace("\r", "\\r") + '"'
+
+    config = "".join("header = " + quote(h) + "\n" for h in headers)
+    if body is not None:
+        config += "data = " + quote(body) + "\n"
+    args = ["curl", "-fsS", "--max-time", str(max_time), "--config", "-"]
+    if body is not None:
+        args += ["-X", "POST"]
+    args.append(url)
+    try:
+        out = subprocess.run(args, input=config, capture_output=True,
+                             text=True, timeout=max_time + 2)
+    except subprocess.TimeoutExpired:
+        raise LiveError("request timed out") from None
+    except OSError:
+        raise LiveError("curl unavailable") from None
+    if out.returncode:
+        raise LiveError(f"curl failed (exit {out.returncode})")
+    try:
+        data = json.loads(out.stdout)
+    except (ValueError, TypeError):
+        raise LiveError("invalid JSON response") from None
+    if not isinstance(data, dict):
+        raise LiveError("invalid response shape")
+    return data
+
+
+def live_fresh(cached: dict) -> bool:
+    """Legacy ts is last success; attempt_ts also throttles unsuccessful fetches."""
+    if not isinstance(cached, dict) or not cached:
+        return False
+    timestamp = cached.get("attempt_ts", cached.get("ts", 0))
+    if isinstance(timestamp, bool) or not isinstance(timestamp, (int, float)) or not math.isfinite(timestamp):
+        return False
+    return 0 <= time.time() - timestamp < LIVE_TTL
+
+
+def live_failure(cached: dict, error: str) -> dict:
+    return dict(cached, ts=cached.get("ts", 0), rows=cached.get("rows", []),
+                attempt_ts=time.time(), error=error)
+
+
+def live_success(rows: list) -> dict:
+    now = time.time()
+    return {"ts": now, "attempt_ts": now, "rows": rows}
+
+
+def local_day(now: float) -> tuple[str, float]:
+    """Calendar date and local midnight, including DST's 23/25-hour days."""
+    dt = datetime.fromtimestamp(now)
+    return dt.strftime("%Y-%m-%d"), dt.replace(
+        hour=0, minute=0, second=0, microsecond=0).timestamp()
 
 
 def fmt_wait(ts: float) -> str:
@@ -97,9 +170,18 @@ def sqlite_ro(path: Path):
 
 
 def write_private(path: Path, payload: str) -> None:
+    tmp = None
     try:
-        STATE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
-        path.write_text(payload)
-        path.chmod(0o600)
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix="." + path.name + ".", dir=path.parent)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(payload)
+        os.replace(tmp, path)
     except OSError:
         pass
+    finally:
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except FileNotFoundError:
+                pass

@@ -147,7 +147,8 @@ def _mouse_handler(ev) -> None:
         return
     d["last"] = time.monotonic()
     try:
-        _, edge, _inner, cell_w, window_px = _bar_geometry(d["tm"])
+        _, _edge, _inner, cell_w, window_px = _bar_geometry(d["tm"])
+        edge = d["edge"]  # a config reload during capture must not change the drag's coordinate system
         if ev.button == -1:                                        # motion
             now = time.monotonic()
             width = L.width_from_pointer(ev.x, cell_w, window_px, edge)
@@ -156,9 +157,10 @@ def _mouse_handler(ev) -> None:
                 d["width"] = width
                 apply_width(boss, width)
         elif ev.button == GLFW_MOUSE_BUTTON_LEFT and ev.action == GLFW_RELEASE:
-            tm, width = d["tm"], d["width"]
+            tm = d["tm"]
+            width = L.width_from_pointer(ev.x, cell_w, window_px, edge)
             _end_capture(boss)
-            _finish(tm, width)
+            _finish(tm, width, edge)
     except Exception:
         import traceback
         _debug(traceback.format_exc())
@@ -263,16 +265,16 @@ def _handle(tm, x: float, y: float, button: int, action: int) -> bool:
     return True
 
 
-def _finish(tm, width: int) -> None:
+def _finish(tm, width: int, edge: str) -> None:
     """Drag ended: persist as this instance's layout (full sidebar at the chosen width)."""
     try:
         from kitty.fast_data_types import get_boss
         sdir = L.state_dir()
         pid = os.getpid()
-        base = L.base_layout(sdir, pid, os.environ.get("KITTY_CONFIG_DIRECTORY")
-                             or os.path.expanduser("~/.config/kitty"))
+        base = L.load(sdir, pid)
+        saved_edge = base.edge if base is not None and base.edge in ("left", "right") else edge
         if width >= 0:
-            L.save(sdir, pid, L.Layout(base.edge if base.edge in ("left", "right") else "left", "full", width))
+            L.save(sdir, pid, L.Layout(saved_edge, "full", width))
             apply_width(get_boss(), width)
     finally:
         _set_hot(tm, False)

@@ -44,7 +44,7 @@ NOTIFY_EVERY = 10.0
 NOTIFY_DONE_MIN = 15.0        # a completion only notifies after this much work: a quick reply is not news
 DONE_SETTLE = 5.0             # ...and only once it has STAYED finished this long: a screen that blinks (a repaint, a popup,
                               # a status line that changes wording) is not a completion
-_PRIVATE = ("marker", "marker_ts", "seen_working", "unseen", "ack_ts", "work_ts")
+_PRIVATE = ("marker", "marker_ts", "seen_working", "unseen", "ack_ts", "work_ts", "handled_wait_ts")
 
 _helper_dirs_done = False
 
@@ -173,7 +173,7 @@ def scan_window(window, now: float) -> bool:
                          "ts_state": now if changed else prev.get("ts_state", now), "ts_scan": now}
     if new == "working" and old_state != "working":
         book["work_ts"] = now                      # when this run of work began (completion threshold)
-    if changed and new in agents.NEEDS_YOU and old_state not in agents.NEEDS_YOU:
+    if changed and old_state and new in agents.NEEDS_YOU and old_state not in agents.NEEDS_YOU:
         _notify(window, new, entry.get("msg") or reason, agent)
         _alert(window)
     if new == "done":

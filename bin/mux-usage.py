@@ -13,6 +13,7 @@ r force refresh, q/Esc dismiss. Stays open until dismissed.
 
 import importlib.util
 import json
+import math
 import os
 import queue
 import re
@@ -22,6 +23,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from datetime import date, datetime, timedelta
 
 # -- locate the project + collectors ------------------------------------------
 
@@ -54,45 +56,77 @@ def load_collectors() -> list:
     return mods
 
 
-def _record_history(providers: list) -> None:
-    today = time.strftime("%Y-%m-%d")
+_DAILY_KEYS = {"claude": "claude_fresh", "devin": "devin_tok"}
+
+
+def _counter(value) -> bool:
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value) and value >= 0)
+
+
+def _history() -> dict:
     try:
         hist = json.loads(C.HIST.read_text())
     except (OSError, json.JSONDecodeError):
-        hist = {}
-    day = hist.setdefault(today, {})
+        return {}
+    if not isinstance(hist, dict):
+        return {}
+    clean = {}
+    for stamp, entry in hist.items():
+        try:
+            date.fromisoformat(stamp)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(entry, dict):
+            continue
+        entry = dict(entry)
+        # Old Claude counters were rolling weekly totals, and old Devin values
+        # were rounded display text. They cannot be recovered as exact daily burn.
+        for key in (*_DAILY_KEYS.values(), "burn"):
+            if entry.get("_daily_version") != 2 or not _counter(entry.get(key)):
+                entry.pop(key, None)
+        clean[stamp] = entry
+    return clean
+
+
+def _record_history(providers: list) -> None:
+    hist = _history()
     for p in providers:
-        if p["name"] == "claude":
-            for r in p["rows"]:
-                if r["label"] == "week":
-                    m = re.match(r"([\d.]+)([MGk]?) tok", r.get("text", ""))
-                    if m:
-                        day["claude_fresh"] = float(m.group(1)) * (
-                            1e9 if m.group(2) == "G" else 1e6 if m.group(2) == "M"
-                            else 1e3 if m.group(2) == "k" else 1)
-        if p["name"] == "devin":
-            for r in p["rows"]:
-                if r["label"] == "today":
-                    m = re.search(r"([\d.]+)([MGk]?) tok", r.get("text", ""))
-                    if m:
-                        day["devin_tok"] = float(m.group(1)) * (
-                            1e9 if m.group(2) == "G" else 1e6 if m.group(2) == "M"
-                            else 1e3 if m.group(2) == "k" else 1)
-    day["burn"] = sum(day.get(k, 0) for k in ("claude_fresh", "devin_tok"))
+        metric = p.get("daily") or {}
+        key = _DAILY_KEYS.get(p["name"])
+        if not isinstance(metric, dict) or not key or not _counter(metric.get(key)):
+            continue
+        stamp = metric.get("day")
+        try:
+            date.fromisoformat(stamp)
+        except (ValueError, TypeError):
+            continue
+        # Attribute delayed loader results to their collection date, not drain time.
+        day = hist.setdefault(stamp, {})
+        day["_daily_version"] = 2
+        day[key] = metric[key]
+        day["burn"] = sum(day.get(k, 0) for k in _DAILY_KEYS.values())
     C.write_private(C.HIST, json.dumps(hist))
 
 
 def _sparkline(hist_key: str) -> str:
-    try:
-        hist = json.loads(C.HIST.read_text())
-    except (OSError, json.JSONDecodeError):
-        return ""
+    hist = _history()
     days = sorted(hist)[-7:]
     vals = [float(hist[d].get(hist_key) or 0) for d in days]
     if not vals or max(vals) == 0:
         return ""
     blocks = "▁▂▃▄▅▆▇█"
     return "".join(blocks[min(7, round(v / max(vals) * 7))] for v in vals)
+
+
+def _fetch_live(fn, cached: dict) -> dict:
+    if C.live_fresh(cached):
+        return cached
+    try:
+        return fn(cached) or C.live_failure(cached, "usage unavailable")
+    except Exception as e:
+        # Exception messages may contain request bodies/credentials.
+        return C.live_failure(cached, f"collector error ({type(e).__name__})")
 
 
 def collect() -> dict:
@@ -122,14 +156,11 @@ def collect() -> dict:
             if not callable(live_fn):
                 continue
             name = mod.__name__.rsplit(".", 1)[-1]
-            result = live_fn(cached.get(name, {}))
-            if result and result.get("rows"):
-                live[name] = result
-                provider = next((p for p in providers if p["name"] == name), None)
-                if provider:
-                    provider["rows"] = [r for r in provider["rows"]
-                                        if r["label"] != "5h"]
-                    provider["rows"] = result["rows"] + provider["rows"]
+            result = _fetch_live(live_fn, cached.get(name) or {})
+            live[name] = result
+            provider = next((p for p in providers if p["name"] == name), None)
+            if provider is not None:
+                _apply_live(provider, result)
     return {"ts": time.time(), "providers": providers, "live": live}
 
 
@@ -163,9 +194,14 @@ def _skeleton(name: str) -> dict:
 def _apply_live(p: dict, lv: dict) -> None:
     # _live markers make re-merging idempotent: a refresh replaces the old
     # live rows in place instead of stacking duplicates.
-    p["rows"] = [r for r in p["rows"]
-                 if not r.get("_live") and r["label"] != "5h"]
-    p["rows"] = [dict(r, _live=1) for r in lv["rows"]] + p["rows"]
+    if lv.get("error"):
+        p["live_error"] = "live unavailable: " + lv["error"]
+    else:
+        p.pop("live_error", None)
+    if lv.get("rows"):
+        p["rows"] = [r for r in p["rows"]
+                     if not r.get("_live") and r["label"] != "5h"]
+        p["rows"] = [dict(r, _live=1) for r in lv["rows"]] + p["rows"]
 
 
 def _sanitise(d: dict) -> dict:
@@ -225,11 +261,7 @@ class Loader:
         self.q.put(("local", name, res))
 
     def _run_live(self, name: str, fn, cached: dict) -> None:
-        try:
-            res = fn(cached)
-        except Exception:
-            res = cached
-        self.q.put(("live", name, res or {}))
+        self.q.put(("live", name, _fetch_live(fn, cached)))
 
 
 def _provider_order(mods: list) -> list[str]:
@@ -276,14 +308,13 @@ def _drain(loader: Loader, data: dict) -> None:
                 p.clear()
                 p.update(res)
             lv = (data["live"] or {}).get(name)
-            if p is not None and lv and lv.get("rows"):
+            if p is not None and lv:
                 _apply_live(p, lv)
         else:
             loader.live_pending.discard(name)
-            if res.get("rows"):
-                data.setdefault("live", {})[name] = res
-                if p is not None and not p.get("pending"):
-                    _apply_live(p, res)
+            data.setdefault("live", {})[name] = res
+            if p is not None and not p.get("pending"):
+                _apply_live(p, res)
     now = time.time()
     for name in list(loader.pending):
         if now - loader.since.get(name, now) > STUCK_S:
@@ -297,6 +328,12 @@ def _drain(loader: Loader, data: dict) -> None:
     for name in list(loader.live_pending):
         if now - loader.since.get(name, now) > STUCK_S + 2:
             loader.live_pending.discard(name)
+            lv = C.live_failure((data.get("live") or {}).get(name) or {},
+                                "request timed out")
+            data.setdefault("live", {})[name] = lv
+            p = next((x for x in data["providers"] if x["name"] == name), None)
+            if p is not None and not p.get("pending"):
+                _apply_live(p, lv)
             changed = True
     if changed:
         if not loader.pending and not loader.local_done:
@@ -377,7 +414,7 @@ def _trunc(s: str, w: int) -> str:
 def _sev(r: dict) -> str:
     """maxed → at/over the cap; high → ≥80%; warn → ≥60%; ok otherwise."""
     pct = r.get("pct")
-    if not isinstance(pct, (int, float)):
+    if r.get("clock") or not isinstance(pct, (int, float)):
         return "ok"
     return "maxed" if pct >= 95 else "high" if pct >= 80 \
         else "warn" if pct >= 60 else "ok"
@@ -421,13 +458,9 @@ def _week_chart(hist_key: str, brand: str) -> list[tuple[str, str]]:
     """Two-row weekly chart: weekday initials over per-day burn blocks."""
     if not hist_key:
         return []
-    try:
-        hist = json.loads(C.HIST.read_text())
-    except (OSError, json.JSONDecodeError):
-        return []
-    now = time.time()
-    days = [time.strftime("%Y-%m-%d", time.localtime(now - i * 86400))
-            for i in range(6, -1, -1)]
+    hist = _history()
+    today = datetime.fromtimestamp(time.time()).date()
+    days = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
     vals = []
     for d in days:
         try:
@@ -482,23 +515,28 @@ def build_summary(data: dict, sel: int, status: str = "",
         pcts, text = _headline(p)
         if not pcts:
             tail = (text or {}).get("text") or p.get("note") or "—"
+            if p.get("live_error"):
+                tail += " · " + p["live_error"]
             color = C_BAD if sev_worst == "maxed" or "limit hit" in tail else C_DIM
             rows.append((f" {mark} {name} {tail}", color))
             continue
         r0 = pcts[0]
         color = C_BAD if _sev(r0) == "maxed" else \
             C_CLOCK if r0.get("clock") else _bar_color(r0["pct"])
-        tail = r0["label"] + (" exhausted" if _sev(r0) == "maxed" else "")
+        tail = r0["label"] + (" elapsed" if r0.get("clock") else
+                              " exhausted" if _sev(r0) == "maxed" else "")
         if r0.get("reset"):
             tail += f" · {r0['reset']}"
         # Secondary quotas: the most exhausted surfaces first, in its own colour.
         rest = sorted(pcts[1:], key=lambda r: _sev(r) == "maxed", reverse=True)
         for r in rest[:2]:
-            s = f"{r['label']} {r['pct']:.0f}%"
+            s = f"{r['label']} {r['pct']:.0f}%" + (" elapsed" if r.get("clock") else "")
             if _sev(r) == "maxed":
                 tail += f" · {_rgb(C_BAD, 100)}{s} exhausted\033[0m{_rgb(color, 100)}"
             else:
                 tail += f" · {s}"
+        if p.get("live_error"):
+            tail += " · " + p["live_error"]
         fill = C_BAD if _sev(r0) == "maxed" else brand
         rows.append((f" {mark} {name} {_bar(r0['pct'], 8, fill)} "
                      f"{r0['pct']:>3.0f}% {tail}", color))
@@ -527,7 +565,7 @@ def build_detail(p: dict, spin: str = "◐") -> list[tuple[str, str]]:
         if "pct" in r:
             sev = _sev(r)
             reset = f" · {r['reset']}" if r.get("reset") else ""
-            word = " exhausted" if sev == "maxed" else ""
+            word = " elapsed" if r.get("clock") else " exhausted" if sev == "maxed" else ""
             color = C_BAD if sev == "maxed" else \
                 C_CLOCK if r.get("clock") else _bar_color(r["pct"])
             fill = C_BAD if sev == "maxed" else brand
@@ -548,6 +586,8 @@ def build_detail(p: dict, spin: str = "◐") -> list[tuple[str, str]]:
         rows.append((f"   {p.get('note') or '—'}", C_DIM))
     if p.get("note") and p["rows"]:
         rows.append((f"   {p['note']}", C_DIM))
+    if p.get("live_error"):
+        rows.append((f"   {p['live_error']}", C_DIM))
     chart = _week_chart(_SPARK_KEYS.get(p["name"], ""), brand)
     if chart:
         rows += chart
@@ -575,14 +615,16 @@ def build_all(data: dict, status: str = "", spin: str = "◐") -> list[tuple[str
             rows.append((f"   {name} {p.get('err')}", C_BAD))
             continue
         if not p["rows"]:
-            rows.append((f"   {name} {p.get('note') or '—'}", C_DIM))
+            rows.append((f"   {name} {p.get('live_error') or p.get('note') or '—'}", C_DIM))
             continue
         for i, r in enumerate(p["rows"]):
             note = f" · {p['note']}" if i == 0 and p.get("note") else ""
+            if i == 0 and p.get("live_error"):
+                note += " · " + p["live_error"]
             if "pct" in r:
                 sev = _sev(r)
                 reset = f" · {r['reset']}" if r.get("reset") else ""
-                word = " exhausted" if sev == "maxed" else ""
+                word = " elapsed" if r.get("clock") else " exhausted" if sev == "maxed" else ""
                 color = C_BAD if sev == "maxed" else \
                     C_CLOCK if r.get("clock") else _bar_color(r["pct"])
                 fill = C_BAD if sev == "maxed" else brand
@@ -667,8 +709,9 @@ def _respawn(loader: Loader, data: dict) -> Loader:
     for p in data["providers"]:
         if p.get("pending") or p.get("err") \
                 or (not p["rows"] and p.get("note") in (None, "scanning…")):
+            name = p["name"]
             p.clear()
-            p.update(_skeleton(p["name"]))
+            p.update(_skeleton(name))
     loader.start(C.LIVE)
     return loader
 

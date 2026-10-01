@@ -1,6 +1,8 @@
 import os
 import sys
+import threading
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
 
@@ -9,6 +11,132 @@ import kittymux_deck as D  # noqa: E402
 
 def mk(n, session, **kw):
     return [D.RowData(tab_id=i, win_id=i, session=session, title=f"{session}{i}", **kw) for i in range(n)]
+
+
+class LatestWorkerTests(unittest.TestCase):
+    def test_blocked_worker_coalesces_and_generations_reject_aba(self):
+        entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+        calls, results = [], []
+
+        def work(value):
+            calls.append(value)
+            if len(calls) == 1:
+                entered.set()
+                self.assertTrue(release.wait(2))
+            return value
+
+        def complete(generation, value):
+            results.append((generation, value))
+            if len(results) == 2:
+                finished.set()
+
+        worker = D.LatestWorker(work, complete)
+        first = worker.submit("A")
+        self.assertTrue(entered.wait(1))
+        worker.submit("B")
+        last = worker.submit("A")
+        for _ in range(100):
+            last = worker.submit("A")
+        self.assertEqual(calls, ["A"])
+        release.set()
+        self.assertTrue(finished.wait(1))
+        self.assertEqual(calls, ["A", "A"])
+        self.assertFalse(worker.is_current(first))
+        self.assertTrue(worker.is_current(last))
+        worker.close()
+        self.assertFalse(worker.is_current(last))
+
+    def test_close_discards_preview_but_can_drain_final_resize(self):
+        for drain in (False, True):
+            entered, release, ended = threading.Event(), threading.Event(), threading.Event()
+            calls = []
+
+            def work(value):
+                calls.append(value)
+                if value == 1:
+                    entered.set()
+                    release.wait(2)
+                else:
+                    ended.set()
+
+            worker = D.LatestWorker(work, lambda *args: ended.set() if not drain else None)
+            worker.submit(1)
+            self.assertTrue(entered.wait(1))
+            worker.submit(2)
+            worker.close(drain=drain)
+            self.assertIsNone(worker.submit(3))
+            release.set()
+            self.assertTrue(ended.wait(1))
+            self.assertEqual(calls, [1, 2] if drain else [1])
+
+    def test_pending_final_write_obligation_survives_newer_motion(self):
+        entered, release, ended = threading.Event(), threading.Event(), threading.Event()
+        calls = []
+
+        def work(request):
+            calls.append(request)
+            if len(calls) == 1:
+                entered.set()
+                release.wait(2)
+            else:
+                ended.set()
+
+        worker = D.LatestWorker(work, lambda *args: None,
+                                coalesce=lambda old, new: (new[0], old[1] or new[1]), daemon=False)
+        worker.submit((20, False))
+        self.assertTrue(entered.wait(1))
+        worker.submit((30, True))
+        worker.submit((40, False))
+        worker.close(drain=True)
+        release.set()
+        self.assertTrue(ended.wait(1))
+        self.assertEqual(calls, [(20, False), (40, True)])
+
+    def test_exception_does_not_strand_pending_work(self):
+        ended = threading.Event()
+        results = []
+
+        def fail(value):
+            raise RuntimeError("failed request")
+
+        def complete(generation, result):
+            results.append(result)
+            ended.set()
+
+        worker = D.LatestWorker(fail, complete)
+        worker.submit(1)
+        self.assertTrue(ended.wait(1))
+        self.assertEqual(results, [None])
+        worker.close()
+
+
+class TargetOwnerTests(unittest.TestCase):
+    def test_pane_pid_is_a_child_not_the_kitty_owner(self):
+        data = [{"id": 1, "tabs": [{"windows": [{"pid": 501}, {"pid": 502}]}]}]
+        self.assertEqual(D.target_owner(data, {501: 123, 502: 123}, {123}), 123)
+
+    def test_proc_verification_handles_custom_socket_without_guessing_owner_ids(self):
+        data = [{"id": 999, "tabs": [{"windows": [{"id": 1, "pid": 501}]}]}]
+        with patch("pathlib.Path.read_text", return_value="501 (shell with ) spaces) S 123 0 0"), \
+             patch("os.readlink", return_value="/usr/bin/kitty") as readlink:
+            self.assertEqual(D.target_pid(data), 123)
+            readlink.assert_called_with("/proc/123/exe")
+        with patch("pathlib.Path.read_text", side_effect=FileNotFoundError):
+            self.assertEqual(D.target_pid(data), 0)
+        with patch("pathlib.Path.read_text", return_value="501 (shell) S 123 0 0"), \
+             patch("os.readlink", return_value="/usr/bin/not-kitty"):
+            self.assertEqual(D.target_pid(data), 0)
+
+    def test_vanished_child_does_not_hide_verified_live_owner(self):
+        data = [{"tabs": [{"windows": [{"pid": 501}, {"pid": 502}]}]}]
+        self.assertEqual(D.target_owner(data, {501: 123}, {123}), 123)
+        self.assertEqual(D.target_owner(data, {}, {123}), 0)
+
+    def test_ambiguous_or_nonkitty_parents_fail_closed(self):
+        data = [{"tabs": [{"windows": [{"pid": 501}, {"pid": 502}]}]}]
+        self.assertEqual(D.target_owner(data, {501: 123, 502: 456}, {123, 456}), 0)
+        self.assertEqual(D.target_owner(data, {501: 123, 502: 123}, set()), 0)
+        self.assertEqual(D.target_owner([], {}, {123}), 0)
 
 
 class GroupTests(unittest.TestCase):

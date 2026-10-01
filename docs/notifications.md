@@ -40,8 +40,9 @@ Before kittymux filtered anything, each event could notify **twice**: once from 
   user variables outlive the agent that set them, and a leftover one used to make a busy Codex look finished the moment its
   status line blinked.
 - **Rate limits.** One notification per window per 10 s, and a global cap of 5 per 10 s, so output that flips many
-  windows cannot flood the desktop. A first-seen window never notifies (a scanner restart cannot replay history).
-- **Bounded processes.** Each notification helper lives at most 30 s, in its own session; at most ~15 can exist.
+  windows in one kitty instance cannot flood the desktop. The burst budget is shared across that instance's panes,
+  not across independent kitty processes. A first-seen window never notifies or rings the bell (startup cannot replay history).
+- **Bounded processes.** Each notification helper lives at most 30 s, in its own session; at most ~15 per kitty instance can exist.
 - **Private mode.** The body can contain what is on your screen (a command, a path), and some daemons keep a
   history or show notifications on the lock screen. `touch ~/.local/state/kittymux/notify-private` (or
   `KITTYMUX_NOTIFY_PRIVATE=1`) reduces every notification to "<agent> needs you" with a generic line.

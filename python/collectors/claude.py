@@ -8,10 +8,11 @@ via the OAuth usage endpoint — opt-in only (KITTYMUX_USAGE_LIVE=1).
 """
 
 import json
-import subprocess
+
 import time
 
-from _common import HOME, LIVE_TTL, fmt_ago, fmt_tokens, fmt_wait, iso_ts
+from _common import (HOME, LiveError, curl_json, fmt_ago, fmt_tokens, fmt_wait,
+                     iso_ts, live_failure, live_fresh, live_success, local_day)
 
 
 def collect() -> dict:
@@ -19,6 +20,8 @@ def collect() -> dict:
     if not root.is_dir():
         return {"name": "claude", "rows": [], "note": "not installed"}
     now = time.time()
+    day, midnight = local_day(now)
+    daily_fresh = 0
     week_cut, scan_cut = now - 7 * 86400, now - 12 * 3600
 
     files = sorted(root.rglob("*.jsonl"), key=lambda p: p.stat().st_mtime,
@@ -50,11 +53,13 @@ def collect() -> dict:
                     if not u or d.get("type") != "assistant":
                         continue
                     ts = iso_ts(d.get("timestamp", ""))
-                    if not ts:
+                    if not ts or ts > now:
                         continue
                     fresh = (u.get("input_tokens") or 0) + (u.get("output_tokens") or 0) \
                         + (u.get("cache_creation_input_tokens") or 0)
                     cached = u.get("cache_read_input_tokens") or 0
+                    if ts >= midnight:
+                        daily_fresh += fresh
                     if ts >= week_cut:
                         week_fresh += fresh
                         week_cached += cached
@@ -71,7 +76,7 @@ def collect() -> dict:
         events.sort()
         wstart, wfresh, wcached, wturns = events[0][0], 0, 0, 0
         for ts, fresh, cached in events:
-            if ts > wstart + 5 * 3600:
+            if ts >= wstart + 5 * 3600:
                 wstart, wfresh, wcached, wturns = ts, 0, 0, 0
             wfresh += fresh
             wcached += cached
@@ -99,31 +104,30 @@ def collect() -> dict:
                          "reset": f"hit · resets {fmt_wait(resets)}"})
         elif hit_ts:
             rows.append({"label": "cap", "text": f"limit hit {fmt_ago(hit_ts)}"})
-    return {"name": "claude", "rows": rows}
+    return {"name": "claude", "rows": rows,
+            "daily": {"day": day, "claude_fresh": daily_fresh}}
 
 
 def live(cached_live: dict) -> dict:
     """Opt-in real quota via the OAuth usage endpoint (same data as the
     agent SDK's get_usage). Cached 5min so a keypress never hammers it."""
-    if cached_live and time.time() - cached_live.get("ts", 0) < LIVE_TTL:
+    if live_fresh(cached_live):
         return cached_live
     cred = HOME / ".claude" / ".credentials.json"
     try:
-        tok = (json.loads(cred.read_text()).get("claudeAiOauth") or {}).get("accessToken")
+        data = json.loads(cred.read_text())
+        oauth = data.get("claudeAiOauth") if isinstance(data, dict) else None
+        tok = oauth.get("accessToken") if isinstance(oauth, dict) else None
     except (OSError, json.JSONDecodeError):
-        return cached_live
-    if not tok:
-        return cached_live
+        return live_failure(cached_live, "credentials unavailable")
+    if not isinstance(tok, str) or not tok:
+        return live_failure(cached_live, "credentials unavailable")
     try:
-        out = subprocess.run(
-            ["curl", "-fsS", "--max-time", "3",
-             "-H", f"Authorization: Bearer {tok}",
-             "-H", "anthropic-beta: oauth-2025-04-20",
-             "https://api.anthropic.com/api/oauth/usage"],
-            capture_output=True, text=True, timeout=5)
-        data = json.loads(out.stdout) if out.returncode == 0 else {}
-    except (OSError, json.JSONDecodeError, subprocess.TimeoutExpired):
-        return cached_live
+        data = curl_json("https://api.anthropic.com/api/oauth/usage",
+                         headers=[f"Authorization: Bearer {tok}",
+                                  "anthropic-beta: oauth-2025-04-20"], max_time=3)
+    except LiveError as e:
+        return live_failure(cached_live, str(e))
     rows = []
     for key, label in (("five_hour", "5h"), ("seven_day", "wk"),
                        ("seven_day_opus", "wk·opus"),
@@ -134,8 +138,7 @@ def live(cached_live: dict) -> dict:
         if not isinstance(w, dict):
             continue
         u = w.get("utilization")
-        if isinstance(u, (int, float)) and u <= 1.0:
-            u = u * 100  # fraction form
+
         if not isinstance(u, (int, float)):
             continue
         rem_s = (iso_ts(w.get("resets_at") or "") - time.time()
@@ -144,4 +147,4 @@ def live(cached_live: dict) -> dict:
                      "reset": f"resets {fmt_wait(iso_ts(w.get('resets_at') or ''))}"
                               if w.get("resets_at") else "",
                      "rem_s": rem_s})
-    return {"ts": time.time(), "rows": rows} if rows else cached_live
+    return live_success(rows) if rows else live_failure(cached_live, "usage unavailable")

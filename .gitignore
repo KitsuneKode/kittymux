@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
+.validation/
 
 # isolated worktrees for agents/branches (kittymux ctrl+alt+shift+g and `git worktree add .worktrees/<name>`)
 .worktrees/

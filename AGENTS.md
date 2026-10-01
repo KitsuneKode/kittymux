@@ -117,12 +117,14 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
 
 ## Verify
 
-- `python3 -m unittest discover -s tests` and `bash tests/test_mux_status.sh tests/test_socket_lib.sh`.
+- `python3 -m unittest discover -s tests` and `bash tests/test_mux_status.sh && bash tests/test_socket_lib.sh`.
 - Real-kitty smoke tests (Xvfb, private config/socket, SKIP if tools are missing): `bash tests/smoke_state.sh`
   (states from screens, spinner frame rate on an idle window, spacer-row click) and `bash tests/smoke_reload.sh`
   (a running kitty upgraded under itself must draw cleanly after two reloads; `SMOKE_KEEP_STALE=1` must FAIL).
   `bash tests/smoke_sidebar.sh` (collapse/expand button, right-click peek, edge drag with real mouse events),
-  `bash tests/smoke_drag.sh` (tab drag-to-reorder with real pointer events — kitty's DnD works under Xvfb) and
+  `bash tests/smoke_drag.sh` (tab drag-to-reorder with real pointer events — kitty's DnD works under Xvfb),
+  `bash tests/smoke_workflows.sh` (two kitty instances with overlapping IDs: scratch isolation, target PID verification,
+  unnamed-session attention jumps) and
   `bash tests/test_install.sh` (fresh-$HOME install → reinstall → config valid → uninstall; needs only kitty).
   They need modules as real copies in ONE config dir — a rig that mixes repo and config dirs hides real bugs.
 - Kitten UI can be screenshotted offscreen: Xvfb + `env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa
@@ -135,3 +137,5 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   `kitty --class X --listen-on unix:/tmp/X --session file` then
   `kitty @ --to unix:/tmp/X ls` / `get-text` to inspect without screenshots.
 - README's key table must stay in sync with the .tpl.
+- `docs/testing.md` separates automated edge-case coverage from manual compatibility checks; never promote a
+  mocked provider response or an Xvfb run into a claim of live-provider / compositor verification.

@@ -17,7 +17,7 @@ jobs:
       - name: python unit tests
         run: python3 -m unittest discover -s tests
       - name: shell tests
-        run: bash tests/test_mux_status.sh tests/test_socket_lib.sh
+        run: bash tests/test_mux_status.sh && bash tests/test_socket_lib.sh
       - name: shellcheck
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
@@ -51,5 +51,7 @@ jobs:
         run: bash tests/smoke_sidebar.sh
       - name: tab drag-to-reorder (real pointer events)
         run: bash tests/smoke_drag.sh
+      - name: two-instance scratch safety and unnamed-session attention jump
+        run: bash tests/smoke_workflows.sh
       - name: an upgraded, running kitty draws cleanly after two reloads
         run: bash tests/smoke_reload.sh

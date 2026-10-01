@@ -248,6 +248,115 @@ def ports_for(root: int, children: dict, listeners: list) -> tuple:
     return tuple(sorted({port for port, pid in listeners if pid in tree}))
 
 
+class LatestWorker:
+    """One active operation plus one replaceable pending request.
+
+    Submission never waits for work or completion callbacks. Generations identify
+    requests (including A→B→A); consumers must check them on their event thread.
+    Closing discards pending reads, or drains the last write without joining.
+    """
+
+    def __init__(self, work: Callable, complete: Callable, *, coalesce: Callable | None = None, daemon: bool = True):
+        import threading
+        self._lock = threading.Lock()
+        self._work, self._complete = work, complete
+        self._coalesce, self._daemon = coalesce, daemon
+        self._generation = 0
+        self._pending = None
+        self._running = False
+        self._closed = False
+
+    def submit(self, value):
+        import threading
+        with self._lock:
+            if self._closed:
+                return None
+            self._generation += 1
+            generation = self._generation
+            if self._pending is not None and self._coalesce is not None:
+                value = self._coalesce(self._pending[1], value)
+            self._pending = (generation, value)
+            if not self._running:
+                self._running = True
+                try:
+                    threading.Thread(target=self._run, daemon=self._daemon).start()
+                except Exception:
+                    self._running = False
+                    self._pending = None
+                    raise
+            return generation
+
+    def is_current(self, generation: int) -> bool:
+        with self._lock:
+            return not self._closed and generation == self._generation
+
+    def invalidate(self) -> None:
+        with self._lock:
+            self._generation += 1
+            self._pending = None
+
+    def close(self, drain: bool = False) -> None:
+        with self._lock:
+            self._closed = True
+            self._generation += 1
+            if not drain:
+                self._pending = None
+
+    def _run(self) -> None:
+        while True:
+            with self._lock:
+                request, self._pending = self._pending, None
+                if request is None:
+                    self._running = False
+                    return
+            generation, value = request
+            try:
+                result = self._work(value)
+            except Exception:
+                result = None
+            try:
+                self._complete(generation, result)
+            except Exception:
+                pass
+
+
+def target_owner(data: list, parent_of: dict, kitty_pids: set) -> int:
+    """Verify one kitty owner from ls pane child PIDs, never OS-window IDs or socket names."""
+    parents = {parent_of[w["pid"]]
+               for osw in data for tab in osw.get("tabs", [])
+               for w in tab.get("windows", []) if w.get("pid") in parent_of}
+    if len(parents) == 1:
+        pid = next(iter(parents))
+        if pid in kitty_pids:
+            return pid
+    return 0
+
+
+def target_pid(data: list) -> int:
+    """Linux owner verification for a remote ls response; unavailable evidence fails closed."""
+    import os
+    from pathlib import Path
+    parents, kitties = {}, set()
+    try:
+        for osw in data:
+            for tab in osw.get("tabs", []):
+                for w in tab.get("windows", []):
+                    pid = w.get("pid")
+                    if not isinstance(pid, int) or pid <= 0:
+                        continue
+                    try:
+                        stat = Path(f"/proc/{pid}/stat").read_text()
+                        parent = int(stat.rsplit(")", 1)[1].split()[1])
+                        parents[pid] = parent
+                        if Path(os.readlink(f"/proc/{parent}/exe")).name == "kitty":
+                            kitties.add(parent)
+                    except (OSError, ValueError, IndexError):
+                        pass
+        return target_owner(data, parents, kitties)
+    except (TypeError, AttributeError):
+        return 0
+
+
 # ── docked-panel edge drag ───────────────────────────────────────────────────
 PANEL_MIN_COLS, PANEL_MAX_COLS = 16, 80
 

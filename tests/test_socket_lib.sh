@@ -8,7 +8,8 @@ fail=0
 check() { if [[ "$2" == "$3" ]]; then echo "ok   $1"; else echo "FAIL $1: expected [$2] got [$3]"; fail=1; fi; }
 yes_no() { "$@" && echo yes || echo no; }
 
-tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+tmp="$(mktemp -d)"; srv=""; srv2=""
+trap 'kill "$srv" "$srv2" 2>/dev/null || true; rm -rf "$tmp"' EXIT
 python3 - "$tmp/mine.sock" <<'PY' &
 import socket, sys, time
 s = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); time.sleep(30)
@@ -37,8 +38,27 @@ srv2=$!
 for _ in $(seq 1 30); do [[ -S "$tmp/run/mykitty-$PPID" ]] && break; sleep 0.1; done
 got="$(XDG_RUNTIME_DIR="$tmp/run" KITTY_LISTEN_ON="unix:$tmp/plain" mux_resolve_socket)"
 check "stale env socket is ignored, parent's socket used" "unix:$tmp/run/mykitty-$PPID" "$got"
+got="$(XDG_RUNTIME_DIR="$tmp/run" KITTY_LISTEN_ON="unix:$tmp/mine.sock" mux_resolve_socket)"
+check "parent wins over an owned but stale inherited socket" "unix:$tmp/run/mykitty-$PPID" "$got"
+got="$(XDG_RUNTIME_DIR="$tmp/run" mux_resolve_socket "unix:$tmp/mine.sock")"
+check "explicit owned target wins over parent" "unix:$tmp/mine.sock" "$got"
+got="$(mux_resolve_socket "unix:$tmp/plain" || printf rejected)"
+check "explicit regular-file target fails closed" rejected "$got"
 got="$(XDG_RUNTIME_DIR="$tmp/run" KITTY_LISTEN_ON="fd:7" mux_resolve_socket)"
 check "fd: handles (kittens) pass through"  "fd:7" "$got"
+
+# Isolate discovery: never inspect or contact live kitty for absence cases.
+got="$(
+    # Resolver calls these overrides indirectly.
+    # shellcheck disable=SC2329
+    mux_owned_socket() { return 1; }
+    # shellcheck disable=SC2329
+    mux_kitty_sockets() { :; }
+    unset KITTY_LISTEN_ON
+    socket="$(mux_resolve_socket)"; rc=$?
+    printf '%s:%s' "$rc" "$socket"
+)"
+check "no trusted socket returns failure and no fallback address" '1:' "$got"
 
 # private runtime dir
 d="$(XDG_RUNTIME_DIR="$tmp/run" mux_runtime_dir)"
@@ -48,5 +68,4 @@ d="$(XDG_RUNTIME_DIR="" KITTYMUX_STATE="$tmp/state" mux_runtime_dir)"
 check "falls back to the private state dir" "$tmp/state/run" "$d"
 check "fallback dir is 0700"                700 "$(stat -c %a "$d")"
 
-kill "$srv" "$srv2" 2>/dev/null
 exit $fail

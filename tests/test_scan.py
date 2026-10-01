@@ -187,12 +187,43 @@ class NotifyTests(ScanBase):
     def test_notifies_once_when_an_unfocused_agent_starts_needing_you(self):
         w = FakeWindow(1, "claude", PERMISSION)
         self.add(w)
+        w.screen = IDLE
+        KS.scan_all()  # establish a baseline before a new request appears
+        w.screen = PERMISSION
         with mock.patch.object(KS, "_notify") as notify:
             KS.scan_all()
             KS.scan_all()
             KS.scan_all()
         self.assertEqual(notify.call_count, 1)
         self.assertEqual(notify.call_args[0][1], "waiting")
+
+    def test_first_seen_attention_does_not_replay_notifications_or_bells(self):
+        for wid, text in ((1, PERMISSION), (2, "Claude usage limit reached")):
+            w = FakeWindow(wid, "claude", text)
+            self.add(w)
+        with mock.patch.object(KS, "_notify") as notify:
+            KS.scan_all()
+        notify.assert_not_called()
+        self.assertEqual([w.bells for w in self.k.boss.all_windows], [0, 0])
+        self.assertEqual(KS._RT.verdicts["1"]["state"], "waiting")
+        self.assertEqual(KS._RT.verdicts["2"]["state"], "limited")
+
+    def test_approved_hook_stays_cleared_across_scanner_ticks(self):
+        w = FakeWindow(1, "claude", PERMISSION)
+        self.add(w)
+        entry = {"status": "waiting", "ts_status": 90.0, "msg": "Approve this command?"}
+        with mock.patch.object(KS, "_panes", return_value={"1": entry}):
+            KS.scan_window(w, 100.0)
+            w.screen = DEVIN_THINKING
+            KS.scan_window(w, 101.0)
+            w.screen = IDLE
+            KS.scan_window(w, 105.0)
+            self.assertEqual(KS._RT.verdicts["1"]["state"], "done")
+            w.is_focused = True
+            KS.scan_window(w, 106.0)
+            w.is_focused = False
+            KS.scan_window(w, 107.0)
+            self.assertEqual(KS._RT.verdicts["1"]["state"], "idle")
 
     def test_working_does_not_notify(self):
         self.add(FakeWindow(1, "claude", DEVIN_THINKING))
@@ -344,6 +375,9 @@ class CompletionNotifyTests(ScanBase):
     def test_needing_you_rings_the_bell_once_but_finishing_does_not(self):
         w = FakeWindow(1, "claude", PERMISSION)
         self.add(w)
+        w.screen = IDLE
+        KS.scan_all()
+        w.screen = PERMISSION
         with mock.patch.object(KS, "_notify"):
             KS.scan_all()
             KS.scan_all()

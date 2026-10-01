@@ -104,7 +104,7 @@ for ow in data:
             msg = KA.resolve_msg(entry, status_word)
             ts = float(entry.get("ts_status") or entry.get("ts_title") or 0)
             status, rank = SYM.get(status_word, "○"), RANK.get(status_word, 3)
-            if w.get("is_focused"):
+            if ow.get("is_focused") and t.get("is_active") and w.get("is_focused"):
                 status = "▸"
 
             title = clean(w.get("title") or t.get("title") or "")
@@ -123,7 +123,8 @@ for ow in data:
             if msg:
                 label += "  — " + msg[:60]
             key = "%d:%014.3f" % (rank, ts)      # oldest first: longest-waiting on top
-            print("\t".join([label, str(w["id"]), str(oid), str(t["id"]),
+            print("\t".join(re.sub(r"[\t\r\n]", " ", field) for field in
+                            [label, str(w["id"]), str(oid), str(t["id"]),
                              sess, os_sess, key, SOCK, status_word]))
 ' "$STATE_DIR/panes-$pid.json" "$SOURCE_OS_WIN_ID" "$sock" "$SCRIPT_DIR/../python" || true
     done
@@ -139,6 +140,20 @@ if [[ "${1:-}" == "--list" ]]; then
 fi
 
 sorted="$(printf '%s\n' "$list" | sort -t$'\t' -k7,7)"
+
+# Bash treats tab as IFS whitespace and collapses empty columns. Split literally.
+parse_agent_row() {
+    local row="$1"
+    local -a fields=()
+    while [[ "$row" == *$'\t'* ]]; do
+        fields+=("${row%%$'\t'*}")
+        row="${row#*$'\t'}"
+    done
+    fields+=("$row")
+    [[ ${#fields[@]} == 9 ]] || return 1
+    label="${fields[0]}" wid="${fields[1]}" osid="${fields[2]}"
+    sess="${fields[4]}" os_sess="${fields[5]}" sock="${fields[7]}"
+}
 
 jump_to() {  # wid osid sess os_sess sock
     local wid="$1" osid="$2" sess="$3" os_sess="$4" sock="$5"
@@ -178,20 +193,22 @@ if [[ "${1:-}" == "--next-waiting" ]]; then
     last="$(cat "$last_file" 2>/dev/null || true)"
     pick=""; take_next=0
     if [[ -z "$last" ]]; then take_next=1; fi
-    while IFS=$'\t' read -r label wid osid _tab sess os_sess _key sock _st; do
+    while IFS= read -r row; do
+        parse_agent_row "$row" || continue
         id="$sock:$wid"
         [[ "$label" == "▸"* ]] && continue          # you are already here
-        if (( take_next )); then pick="$label"$'\t'"$wid"$'\t'"$osid"$'\t'"$sess"$'\t'"$os_sess"$'\t'"$sock"; break; fi
+        if (( take_next )); then pick="$row"; break; fi
         [[ "$id" == "$last" ]] && take_next=1
     done <<<"$waiting"
     if [[ -z "$pick" ]]; then   # wrapped around: take the first non-focused one
-        while IFS=$'\t' read -r label wid osid _tab sess os_sess _key sock _st; do
+        while IFS= read -r row; do
+            parse_agent_row "$row" || continue
             [[ "$label" == "▸"* ]] && continue
-            pick="$label"$'\t'"$wid"$'\t'"$osid"$'\t'"$sess"$'\t'"$os_sess"$'\t'"$sock"; break
+            pick="$row"; break
         done <<<"$waiting"
     fi
     [[ -n "$pick" ]] || { notify_kitty "The only waiting agent is this one"; exit 0; }
-    IFS=$'\t' read -r _label wid osid sess os_sess sock <<<"$pick"
+    parse_agent_row "$pick" || exit 0
     mkdir -p "$STATE_DIR"; printf '%s' "$sock:$wid" > "$last_file"
     jump_to "$wid" "$osid" "$sess" "$os_sess" "$sock"
     exit 0
@@ -214,5 +231,5 @@ selected="$(
         --no-sort
 )" || exit 0
 
-IFS=$'\t' read -r _label wid osid _tab sess os_sess _key sock _st <<<"$selected"
+parse_agent_row "$selected" || exit 0
 jump_to "$wid" "$osid" "$sess" "$os_sess" "$sock"

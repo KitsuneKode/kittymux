@@ -8,11 +8,12 @@ announcing; items marked ☐ are not done.
 - [x] `kittymux doctor` explains every failure with the fix
 - [x] `kittymux demo` shows everything in an isolated window (your config untouched)
 - [x] `kittymux upgrade` (re-link, reload twice, doctor) and `kittymux hooks --remove` (clean undo)
-- [x] Unit tests (212), shell tests, shellcheck `-S error`, CI workflow
+- [x] Unit and shell regression suites, shellcheck `-S error`, CI workflow
+- [x] Edge-case guide (`testing.md`) and draft demo/social copy (`social-launch.md`)
 - [x] Real-kitty smoke tests: states, spinner frame rate, spacer-row click, upgrade-under-a-running-kitty
 - [x] README: states table, privacy note, keys, drag & drop, layout/resizing, upgrade
-- [ ] A fresh-machine install run (clean user, no existing kitty.conf) recorded end to end
-- [ ] CI runs `smoke_*.sh` (needs Xvfb + kitty + xdotool in the runner image)
+- [x] Isolated fresh-HOME install → reinstall → config validation → uninstall smoke test
+- [ ] First passing GitHub CI run recorded on the release commit (smoke jobs are configured)
 - [ ] Per-theme screenshots/GIF (demo currently ships one theme; `assets/` images predate the status redesign)
 - [ ] A tagged release + changelog; `packaging/PKGBUILD` checked against the tag
 
@@ -25,3 +26,5 @@ announcing; items marked ☐ are not done.
 ## Do not claim
 - "Works everywhere" — see `compatibility.md`.
 - "Zero overhead" — measured ≈0.09 ms per tab draw and a 0.5 s scan tick; low, not zero.
+- "Zero background processes" — there is no always-on daemon, but overlays, collectors and notifications use bounded workers/processes.
+- "All bugs fixed" or "guaranteed viral" — maintain test evidence and honest compatibility limits instead.

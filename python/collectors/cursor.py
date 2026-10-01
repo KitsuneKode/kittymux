@@ -7,10 +7,11 @@ signal. No account-wide request quota is stored locally, so we don't fake one.
 
 import json
 import sqlite3
-import subprocess
+
 import time
 
-from _common import HOME, LIVE_TTL, fmt_wait, sqlite_ro
+from _common import (HOME, LiveError, curl_json, fmt_wait, sqlite_ro,
+                     live_failure, live_fresh, live_success, local_day)
 
 
 def collect() -> dict:
@@ -32,13 +33,15 @@ def collect() -> dict:
     if tracking.is_file():
         try:
             tdb = sqlite_ro(tracking)
-            midnight_ms = int(time.mktime(
-                time.strptime(time.strftime("%Y-%m-%d"), "%Y-%m-%d")) * 1000)
+            now = time.time()
+            _, midnight = local_day(now)
+            midnight_ms = int(midnight * 1000)
             ai, _human, added = tdb.execute(
                 "select coalesce(sum(composerLinesAdded+tabLinesAdded),0),"
                 "       coalesce(sum(humanLinesAdded),0),"
                 "       coalesce(sum(linesAdded),0)"
-                " from scored_commits where scoredAt >= ?", (midnight_ms,)).fetchone()
+                " from scored_commits where scoredAt >= ? and scoredAt <= ?",
+                (midnight_ms, int(now * 1000))).fetchone()
             tdb.close()
             if added:
                 pct = round(ai / added * 100) if added else 0
@@ -52,31 +55,27 @@ def live(cached_live: dict) -> dict:
     """Opt-in real pools via DashboardService/GetCurrentPeriodUsage — the
     same Connect-RPC the Cursor CLI uses. Bearer = CLI auth.json token.
     Returns planUsage percents + spend; cached 5min like claude's live()."""
-    if cached_live and time.time() - cached_live.get("ts", 0) < LIVE_TTL:
+    if live_fresh(cached_live):
         return cached_live
     auth = HOME / ".config" / "cursor" / "auth.json"
     try:
-        tok = json.loads(auth.read_text()).get("accessToken")
+        data = json.loads(auth.read_text())
+        tok = data.get("accessToken") if isinstance(data, dict) else None
     except (OSError, json.JSONDecodeError):
-        return cached_live
-    if not tok:
-        return cached_live
+        return live_failure(cached_live, "credentials unavailable")
+    if not isinstance(tok, str) or not tok:
+        return live_failure(cached_live, "credentials unavailable")
     try:
-        out = subprocess.run(
-            ["curl", "-fsS", "--max-time", "4", "-X", "POST",
-             "-H", f"Authorization: Bearer {tok}",
-             "-H", "Content-Type: application/json",
-             "-H", "connect-protocol-version: 1",
-             "-H", "x-cursor-client-type: cli",
-             "-d", "{}",
-             "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage"],
-            capture_output=True, text=True, timeout=6)
-        data = json.loads(out.stdout) if out.returncode == 0 else {}
-    except (OSError, json.JSONDecodeError, subprocess.TimeoutExpired):
-        return cached_live
+        data = curl_json(
+            "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage",
+            headers=[f"Authorization: Bearer {tok}", "Content-Type: application/json",
+                     "connect-protocol-version: 1", "x-cursor-client-type: cli"],
+            body="{}")
+    except LiveError as e:
+        return live_failure(cached_live, str(e))
     plan = data.get("planUsage") or {}
-    if not plan:
-        return cached_live
+    if not isinstance(plan, dict) or not plan:
+        return live_failure(cached_live, "usage unavailable")
     try:
         end_ts = float(data.get("billingCycleEnd") or 0) / 1000
     except (TypeError, ValueError):
@@ -102,4 +101,4 @@ def live(cached_live: dict) -> dict:
             note += f" (incl ${bonus / 100:.0f} bonus)"
         rows.append({"label": "spend", "text": note,
                      "stack": [v for v in (included, bonus) if isinstance(v, (int, float)) and v > 0]})
-    return {"ts": time.time(), "rows": rows} if rows else cached_live
+    return live_success(rows) if rows else live_failure(cached_live, "usage unavailable")

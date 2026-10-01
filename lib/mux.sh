@@ -71,7 +71,7 @@ session_exists() {
 }
 
 regex_escape() {
-    python3 -c "import re, sys; print(re.escape(sys.argv[1]))" -- "$1"
+    python3 -c "import re, sys; print(re.escape(sys.argv[1]))" "$1"
 }
 
 is_inside_kitty() {
@@ -82,12 +82,13 @@ is_inside_kitty() {
 # (tab/window/overlay). Background keybind launches get neither — resolve
 # context via socket fallback here and state:focused in source_context_json.
 # kitty appends its PID to listen_on path (e.g. /tmp/mykitty -> /tmp/mykitty-<pid>).
-# Fall through: env var → PPID socket → newest socket WE OWN → static fallback (lib/socket.sh).
+# Prefer the parent's socket over inherited env; all path fallbacks must be owned.
 # shellcheck source=socket.sh
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/socket.sh"
-KITTY_SOCKET="$(mux_resolve_socket)"
+KITTY_SOCKET="$(mux_resolve_socket)" || KITTY_SOCKET=""
 
 kitty_remote() {
+    [[ -n "$KITTY_SOCKET" ]] || { printf '%s\n' 'kittymux: no trusted kitty socket' >&2; return 1; }
     kitty @ --to "$KITTY_SOCKET" "$@"
 }
 
@@ -638,33 +639,73 @@ move_tab_for_window() {
 # ── Scratch tab tracking ──────────────────────────────────────────────────────
 
 scratch_tab_file_for_os_window() {
-    printf '%s/scratch-%s\n' "$(mux_runtime_dir)" "$1"
+    local namespace
+    [[ "$1" =~ ^[1-9][0-9]*$ && "$KITTY_SOCKET" == unix:* ]] || return 1
+    mux_owned_socket "${KITTY_SOCKET#unix:}" || return 1
+    # Include the socket inode so a restarted instance cannot inherit old flags.
+    namespace="$(python3 -c '
+import hashlib, os, sys
+s = os.stat(sys.argv[1])
+print(hashlib.sha256(f"{sys.argv[1]}:{s.st_dev}:{s.st_ino}".encode()).hexdigest())
+' "${KITTY_SOCKET#unix:}")" || return 1
+    printf '%s/scratch-%s-%s\n' "$(mux_runtime_dir)" "$namespace" "$1"
+}
+
+# Validate the OS owner, title, window and per-launch identity against live ls.
+# Prints a tab/window/token record. Legacy tab-id-only flags are never accepted.
+scratch_record_for_os_window() {
+    local os_win_id="$1" tab_id="$2" expected="${3:-}"
+    kitty_remote ls 2>/dev/null | python3 -c '
+import json, sys
+osid, tabid = map(int, sys.argv[1:3])
+for ow in json.load(sys.stdin):
+    if ow.get("id") != osid:
+        continue
+    for tab in ow.get("tabs", []):
+        if tab.get("id") != tabid or tab.get("title") != "!scratch":
+            continue
+        for w in tab.get("windows", []):
+            token = (w.get("user_vars") or {}).get("kittymux_scratch", "")
+            if not token or not all(c in "0123456789abcdef" for c in token):
+                continue
+            record = "%s\t%s\t%s" % (tabid, w["id"], token)
+            if not sys.argv[3] or record == sys.argv[3]:
+                print(record); sys.exit(0)
+sys.exit(1)
+' "$os_win_id" "$tab_id" "$expected"
 }
 
 get_scratch_tab_id() {
-    local os_win_id="$1"
-    local f
-    f="$(scratch_tab_file_for_os_window "$os_win_id")"
-    [[ -f "$f" ]] || return 1
-    cat "$f"
+    local f record tab_id
+    f="$(scratch_tab_file_for_os_window "$1")" || return 1
+    [[ -f "$f" && ! -L "$f" && -O "$f" ]] || return 1
+    record="$(cat "$f")"
+    tab_id="${record%%$'\t'*}"
+    [[ "$tab_id" =~ ^[1-9][0-9]*$ && "$record" == *$'\t'* ]] || return 1
+    scratch_record_for_os_window "$1" "$tab_id" "$record" >/dev/null || return 1
+    printf '%s\n' "$tab_id"
 }
 
 set_scratch_tab_id() {
-    local os_win_id="$1"
-    local tab_id="$2"
-    printf '%s\n' "$tab_id" > "$(scratch_tab_file_for_os_window "$os_win_id")"
+    local f record
+    f="$(scratch_tab_file_for_os_window "$1")" || return 1
+    [[ ! -L "$f" ]] || return 1
+    record="$(scratch_record_for_os_window "$1" "$2")" || return 1
+    (umask 077; printf '%s\n' "$record" > "$f")
 }
 
 clear_scratch_tab_id() {
-    rm -f "$(scratch_tab_file_for_os_window "$1")"
+    local f
+    f="$(scratch_tab_file_for_os_window "$1")" || return 1
+    rm -f "$f"
 }
 
-# Returns the window ID of the scratch tab's first window, or exits 1.
+# Returns the validated scratch window ID, not a tab in another OS window.
 scratch_win_id_for_os_window() {
-    local os_win_id="$1"
-    local tab_id
-    tab_id="$(get_scratch_tab_id "$os_win_id")" || return 1
-    win_id_for_tab "$tab_id" 2>/dev/null || { clear_scratch_tab_id "$os_win_id"; return 1; }
+    local tab_id record
+    tab_id="$(get_scratch_tab_id "$1")" || return 1
+    record="$(scratch_record_for_os_window "$1" "$tab_id")" || return 1
+    printf '%s\n' "$record" | cut -f2
 }
 
 # ── Session history ───────────────────────────────────────────────────────────

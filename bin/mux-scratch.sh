@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 
-# scratch-tab.sh — one scratch tab per OS window.
-# Self-contained: no session-lib dependency.
-
-# Socket: KITTY_LISTEN_ON is set by kitty for background keybind launches.
-# shellcheck source=../lib/socket.sh
-source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../lib/socket.sh"
-SOCKET="$(mux_resolve_socket)"
+# scratch-tab.sh — one scratch tab per OS window, scoped to its kitty instance.
+# shellcheck source=../lib/mux.sh
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../lib/mux.sh"
+[[ -n "$KITTY_SOCKET" ]] || { echo 'kittymux: no trusted kitty socket' >&2; exit 1; }
+SOCKET="$KITTY_SOCKET"
 
 CWD="${HOME}"
 CMD_ARGS=()
@@ -26,14 +24,14 @@ if [[ -n "${KITTY_WINDOW_ID:-}" ]]; then
     OS_WIN_ID="$(kitty @ --to "$SOCKET" ls 2>/dev/null | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
-win_id = int('${KITTY_WINDOW_ID}')
+win_id = int(sys.argv[1])
 for ow in data:
     for tab in ow.get('tabs', []):
         for w in tab.get('windows', []):
             if w['id'] == win_id:
                 print(ow['id']); sys.exit(0)
 sys.exit(1)
-" 2>/dev/null || echo "0")"
+" "$KITTY_WINDOW_ID" 2>/dev/null || true)"
 else
     OS_WIN_ID="$(kitty @ --to "$SOCKET" ls 2>/dev/null | python3 -c "
 import json, sys
@@ -42,24 +40,26 @@ for ow in data:
     if ow.get('is_focused'):
         print(ow['id']); sys.exit(0)
 sys.exit(1)
-" 2>/dev/null || echo "0")"
+" 2>/dev/null || true)"
 fi
+[[ "$OS_WIN_ID" =~ ^[1-9][0-9]*$ ]] || { echo 'kittymux: cannot identify source OS window' >&2; exit 1; }
+scratch_tab_file_for_os_window "$OS_WIN_ID" >/dev/null || exit 1
 
-FLAG="$(mux_runtime_dir)/scratch-${OS_WIN_ID}"
-
-# Close existing scratch tab if tracked
-if [[ -f "$FLAG" ]]; then
-    old_tab="$(cat "$FLAG")"
-    kitty @ --to "$SOCKET" close-tab --match "id:${old_tab}" 2>/dev/null || true
-    rm -f "$FLAG"
+# Only close a tracked tab whose owner and per-launch identity still match.
+old_tab="$(get_scratch_tab_id "$OS_WIN_ID" 2>/dev/null || true)"
+if [[ -n "$old_tab" ]]; then
+    kitty @ --to "$SOCKET" close-tab --match "id:${old_tab}" 2>/dev/null || exit 1
 fi
+clear_scratch_tab_id "$OS_WIN_ID"
+SCRATCH_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
 
 # Open new scratch tab in the triggering OS window
-LAUNCH_MATCH="${KITTY_WINDOW_ID:+--match id:${KITTY_WINDOW_ID}}"
+LAUNCH_MATCH=()
+if [[ -n "${KITTY_WINDOW_ID:-}" ]]; then LAUNCH_MATCH=(--match "id:${KITTY_WINDOW_ID}"); fi
 if [[ "${#CMD_ARGS[@]}" -gt 0 ]]; then
-    new_win="$(kitty @ --to "$SOCKET" launch --type=tab $LAUNCH_MATCH --tab-title "!scratch" --cwd "$CWD" -- "${CMD_ARGS[@]}" 2>/dev/null || true)"
+    new_win="$(kitty @ --to "$SOCKET" launch --type=tab "${LAUNCH_MATCH[@]}" --tab-title "!scratch" --var "kittymux_scratch=$SCRATCH_TOKEN" --cwd "$CWD" -- "${CMD_ARGS[@]}" 2>/dev/null || true)"
 else
-    new_win="$(kitty @ --to "$SOCKET" launch --type=tab $LAUNCH_MATCH --tab-title "!scratch" --cwd "$CWD" 2>/dev/null || true)"
+    new_win="$(kitty @ --to "$SOCKET" launch --type=tab "${LAUNCH_MATCH[@]}" --tab-title "!scratch" --var "kittymux_scratch=$SCRATCH_TOKEN" --cwd "$CWD" 2>/dev/null || true)"
 fi
 
 # Track tab ID for next invocation (toggle off)
@@ -67,16 +67,16 @@ if [[ -n "$new_win" ]]; then
     new_tab="$(kitty @ --to "$SOCKET" ls 2>/dev/null | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
-win_id = int('${new_win}')
+win_id = int(sys.argv[1])
 for ow in data:
     for tab in ow.get('tabs', []):
         for w in tab.get('windows', []):
             if w['id'] == win_id:
                 print(tab['id']); sys.exit(0)
 sys.exit(1)
-" 2>/dev/null || true)"
+" "$new_win" 2>/dev/null || true)"
     if [[ -n "$new_tab" ]]; then
-        echo "$new_tab" > "$FLAG"
+        set_scratch_tab_id "$OS_WIN_ID" "$new_tab" || exit 1
         # Move scratch to last position
         kitty @ --to "$SOCKET" ls 2>/dev/null | python3 -c "
 import json, sys

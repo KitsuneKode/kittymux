@@ -31,18 +31,34 @@ mux_kitty_sockets() {
     done < <(ls -t /tmp/mykitty-* "${XDG_RUNTIME_DIR:-/nonexistent}"/mykitty-* 2>/dev/null)
 }
 
-# The kitty that launched us: env → our parent (kitty spawns key-bound scripts) → newest
-# owned socket → a conventional default. Prints a `--to` value.
+# An optional explicit target never falls back. Otherwise prefer the launching
+# kitty's socket over inherited env, then owned discovery. fd:N is a kitten handle.
+# Failure prints nothing: callers must not pass an empty --to to kitty.
 mux_resolve_socket() {
-    local s
-    if [[ "${KITTY_LISTEN_ON:-}" == unix:* ]]; then
-        mux_owned_socket "${KITTY_LISTEN_ON#unix:}" && { printf '%s' "$KITTY_LISTEN_ON"; return; }
-    elif [[ -n "${KITTY_LISTEN_ON:-}" ]]; then          # fd:N handed to kittens — not a path
-        printf '%s' "$KITTY_LISTEN_ON"; return
+    local s target="${1:-}"
+    if (( $# )); then
+        if [[ "$target" == unix:* ]]; then
+            mux_owned_socket "${target#unix:}" || return 1
+        elif [[ ! "$target" =~ ^fd:[0-9]+$ ]]; then
+            return 1
+        fi
+        printf '%s' "$target"; return 0
+    fi
+    if [[ "${KITTY_LISTEN_ON:-}" =~ ^fd:[0-9]+$ ]]; then
+        printf '%s' "$KITTY_LISTEN_ON"; return 0
     fi
     for s in "/tmp/mykitty-${PPID}" "${XDG_RUNTIME_DIR:-/nonexistent}/mykitty-${PPID}" "/tmp/kitty-${PPID}"; do
-        mux_owned_socket "$s" && { printf 'unix:%s' "$s"; return; }
+        mux_owned_socket "$s" && { printf 'unix:%s' "$s"; return 0; }
     done
+    if [[ "${KITTY_LISTEN_ON:-}" == unix:* ]]; then
+        mux_owned_socket "${KITTY_LISTEN_ON#unix:}" && { printf '%s' "$KITTY_LISTEN_ON"; return 0; }
+    fi
     s="$(mux_kitty_sockets | head -n1)"
-    if [[ -n "$s" ]]; then printf 'unix:%s' "$s"; else printf 'unix:/tmp/mykitty'; fi
+    if [[ -n "$s" ]] && mux_owned_socket "$s"; then
+        printf 'unix:%s' "$s"; return 0
+    fi
+    if mux_owned_socket /tmp/mykitty; then
+        printf 'unix:/tmp/mykitty'; return 0
+    fi
+    return 1
 }

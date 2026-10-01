@@ -107,8 +107,7 @@ for path in [line.strip() for line in sys.stdin if line.strip()]:
 
 for _, _, _, path in sorted(rows):
     print(path)
-'
-<<< "$project_roots"
+' <<< "$project_roots"
 )"
 
 dir=$(

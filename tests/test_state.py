@@ -178,6 +178,20 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual(self.r(mk="", focused=True), "idle")
         self.assertEqual(self.r(mk="", focused=False), "idle")  # acknowledged, not resurrected
 
+    def test_hook_only_completion_clears_on_focus_and_stays_cleared(self):
+        self.assertEqual(self.r("aider", status="done", ts_status=95.0), "done")
+        self.assertEqual(self.r("aider", focused=True), "idle")
+        self.assertEqual(self.r("aider", focused=False), "idle")
+        self.assertEqual(self.r("aider", status="done", ts_status=105.0), "done")
+
+    def test_approved_hook_request_does_not_return_after_visible_work_finishes(self):
+        self.assertEqual(self.r(status="waiting", ts_status=95.0, msg="Approve this command?"), "waiting")
+        self.assertEqual(self.r(mk="working", dt=1.0), "working")
+        self.assertEqual(self.r(mk="", dt=3.0), "done")
+        self.assertEqual(self.r(focused=True), "idle")
+        self.assertEqual(self.r(focused=False), "idle")
+        self.assertEqual(self.r(status="waiting", ts_status=110.0, msg="Approve another command?"), "waiting")
+
     def test_unreadable_agents_use_hooks_then_title(self):
         self.assertEqual(self.r("aider", status="waiting"), "waiting")
         self.assertEqual(self.r("aider", status="", ts_title=self.t - 1.0), "working")

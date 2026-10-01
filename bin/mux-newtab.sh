@@ -8,7 +8,8 @@
 
 # shellcheck source=../lib/socket.sh
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../lib/socket.sh"
-SOCKET="$(mux_resolve_socket)"
+SOCKET="$(mux_resolve_socket)" || { echo 'kittymux: no trusted kitty socket' >&2; exit 1; }
+[[ -n "$SOCKET" ]] || { echo 'kittymux: no trusted kitty socket' >&2; exit 1; }
 
 CWD_ARGS=(--cwd current)
 MODE="end"
