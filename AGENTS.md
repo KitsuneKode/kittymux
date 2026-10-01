@@ -36,6 +36,8 @@ remote work.
 - `bin/mux-status` — agent hooks → `kittymux_status` window user var → recorded by `pane-state.py`
 - `python/sidebar-kit.py` — `kitten` overlay: sidebar with real hover/click
   + live pane preview (bound `ctrl+alt+b`)
+- `python/peek-kit.py` — the right-click peek card for one tab (kitten over the active window, opened by
+  `kittymux_barsize._open_peek`; `kitty @ kitten --match id:W peek-kit.py <tab id>`)
 - `python/collectors/` — per-provider usage collectors (claude/codex/cursor/devin)
 - `tools/build-icons.py` — builds the PUA icon font the glyphs live in
 - `install.sh` — symlinks/copies into `~/.config/kitty`, renders the tpl
@@ -105,7 +107,8 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
 - Real-kitty smoke tests (Xvfb, private config/socket, SKIP if tools are missing): `bash tests/smoke_state.sh`
   (states from screens, spinner frame rate on an idle window, spacer-row click) and `bash tests/smoke_reload.sh`
   (a running kitty upgraded under itself must draw cleanly after two reloads; `SMOKE_KEEP_STALE=1` must FAIL).
-  `bash tests/smoke_sidebar.sh` (collapse/expand button + edge drag with real mouse events).
+  `bash tests/smoke_sidebar.sh` (collapse/expand button, right-click peek, edge drag with real mouse events) and
+  `bash tests/test_install.sh` (fresh-$HOME install → reinstall → config valid → uninstall; needs only kitty).
   They need modules as real copies in ONE config dir — a rig that mixes repo and config dirs hides real bugs.
 - Kitten UI can be screenshotted offscreen: Xvfb + `env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa
   LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=:99 kitty -o linux_display_server=x11 …`, then `xdotool windowsize` (forces a

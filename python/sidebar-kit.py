@@ -174,20 +174,8 @@ class Collector:
         gi = kittymux_git.info(cwd)                 # reads .git/HEAD; no subprocess
         return "" if gi is None or gi.branch == "detached" else gi.branch
 
-    @staticmethod
-    def _identify(w: dict) -> tuple:
-        """(agent name | None, tool name | None) for a `kitty @ ls` window."""
-        procs = w.get("foreground_processes") or []
-        name = None
-        for proc in procs:
-            name = kittymux_agents.agent_in(proc.get("cmdline") or [])
-            if name:
-                break
-        tool = None if name else kittymux_agents.tool_in(p.get("cmdline") or [] for p in procs)
-        return name, tool
-
     def _pane(self, w: dict, active_id: int, panes: dict, now: float) -> deck.PaneData:
-        name, tool = self._identify(w)
+        name, tool = kittymux_agents.identify(w)
         agent = kittymux_agents.AGENTS.get(name) if name else None
         if w["id"] == active_id:
             state = kittymux_agents.resolve_status(panes.get(str(w["id"])), agent is not None, now, _STALE_AFTER)
@@ -220,7 +208,7 @@ class Collector:
                 aw = next((w for w in wins if w["id"] == aw_id), wins[0])
                 cwd = aw.get("cwd", "")
                 now = time.monotonic()
-                name, tool_name = self._identify(aw)
+                name, tool_name = kittymux_agents.identify(aw)
                 agent = kittymux_agents.AGENTS.get(name) if name else None
                 # every pane of the tab counts: a question in a split you are not in must show here too
                 st, deciding = kittymux_agents.tab_verdict(

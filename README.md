@@ -308,9 +308,11 @@ saves the width for this kitty. Constraints:
 - never wider than a third of the window — kitty's own cap for vertical bars — or 60 columns;
 - a drag that goes silent for 2.5 s is abandoned, so the mouse can never stay captured.
 
-Tab titles show only what fits; kitty does not deliver hover events to its tab bar, so for
-richer per-tab detail use the deck (`ctrl+alt+b`) or the docked panel (`ctrl+alt+shift+b`,
-also drag-resizable). Set `KITTYMUX_DEBUG=1` to log drag errors to `barsize-debug.log`.
+Tab titles show only what fits. kitty does not deliver hover events to its tab bar (tested), so the
+preview gesture is a **right-click on a tab**: a peek card opens over the active window with the tab's
+state and the question it is asking, branch, folder, its panes, and the tail of its screen. `⏎` jumps there
+(to the pane that is asking, if one is), `esc` or a click closes it. The deck (`ctrl+alt+b`) and the docked
+panel (`ctrl+alt+shift+b`, also drag-resizable) do get real hover: moving over a tab or pane previews its screen. Set `KITTYMUX_DEBUG=1` to log drag errors to `barsize-debug.log`.
 
 ### Reordering tabs, and moving splits ↔ tabs
 

@@ -19,7 +19,7 @@ mkdir -p "$CFG" "$STATE" && chmod 700 "$STATE"
 XPID="" KPID=""
 cleanup() { [ -n "$KPID" ] && kill "$KPID" 2>/dev/null; [ -n "$XPID" ] && kill "$XPID" 2>/dev/null; rm -rf "$T"; }
 trap cleanup EXIT
-fail() { echo "FAIL: $*"; cat "$STATE"/layout-*.json 2>/dev/null; echo; [ -s "$STATE/tab_bar-error.log" ] && sed 's/^/  | /' "$STATE/tab_bar-error.log" | tail -12
+fail() { echo "FAIL: $*"; cat "$STATE/barsize-debug.log" 2>/dev/null | tail -8; cat "$STATE"/layout-*.json 2>/dev/null; echo; [ -s "$STATE/tab_bar-error.log" ] && sed 's/^/  | /' "$STATE/tab_bar-error.log" | tail -12
          [ -s "$STATE/barsize-debug.log" ] && sed 's/^/  | /' "$STATE/barsize-debug.log" | tail -12; exit 1; }
 
 for n in $(seq 161 190); do [ -e "/tmp/.X$n-lock" ] || { DISP=:$n; break; }; done
@@ -54,7 +54,7 @@ sleep 2
 X() { DISPLAY=$DISP xdotool "$@"; }
 W=$(X search --class kmx-side | head -1)
 redraw() { X windowsize "$W" 1590 890; sleep 0.4; X windowsize "$W" 1600 900; sleep 0.8; }
-shot() { [ -n "${SMOKE_SHOT:-}" ] && command -v import >/dev/null 2>&1 && { redraw; DISPLAY=$DISP import -window root -crop 640x260+0+0 "$SMOKE_SHOT.$1.png" 2>/dev/null; }; return 0; }
+shot() { [ -n "${SMOKE_SHOT:-}" ] && command -v import >/dev/null 2>&1 && { redraw; DISPLAY=$DISP import -window root -crop 1000x400+0+0 "$SMOKE_SHOT.$1.png" 2>/dev/null; }; return 0; }
 redraw
 cols()   { kitty @ --to "$SOCK" ls | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d[0]["tabs"][0]["windows"][0]["columns"])'; }
 active() { kitty @ --to "$SOCK" ls | python3 -c '
@@ -90,6 +90,22 @@ X mousemove 40 20 click 1
 wait_cols "expand button did not bring the full sidebar back" '[ "$c" -eq "$C0" ]'
 echo "  ok   expand button → full sidebar again ($C0 columns)"
 [ "$(active)" = "two" ] || fail "the expand click activated a tab ('$(active)')"
+
+# right-click a tab → its peek card opens over the active window; Esc closes it. (kitty gives its
+# tab bar no hover events, so this is the preview gesture.)
+nwin() { kitty @ --to "$SOCK" ls | python3 -c 'import sys,json;print(sum(len(t["windows"]) for o in json.load(sys.stdin) for t in o["tabs"]))'; }
+redraw
+N0=$(nwin)
+X mousemove 100 66 click 3
+for _ in $(seq 15); do [ "$(nwin)" -gt "$N0" ] && break; sleep 0.4; done
+[ "$(nwin)" -gt "$N0" ] || fail "right-click on a tab did not open the peek card"
+shot peek
+echo "  ok   right-click on a tab opens its peek card"
+[ "$(active)" = "two" ] || fail "the right-click activated a tab ('$(active)')"
+X key Escape
+for _ in $(seq 15); do [ "$(nwin)" -le "$N0" ] && break; sleep 0.4; done
+[ "$(nwin)" -le "$N0" ] || fail "Escape did not close the peek card"
+echo "  ok   Escape closes it"
 
 # drag the inner edge 120 px to the right → the sidebar grows, the panes shrink
 redraw

@@ -12,6 +12,7 @@
 
 import copy
 import os
+import subprocess
 import sys
 import time
 import types
@@ -32,6 +33,7 @@ _S = sys.modules.setdefault("_kittymux_barsize_rt", types.SimpleNamespace(
     last_apply=0.0,
     installed=False,
     toggle_down=False,      # a press landed on the collapse/expand button; the release decides
+    peek_down=0,            # tab id under a right-button press; the release opens its peek card
     watchdog=None,          # timer id
 ))
 _APPLY_EVERY = 0.03         # seconds — plenty smooth, keeps re-layout cost bounded
@@ -196,11 +198,41 @@ def _toggle_collapsed(tm) -> None:
         _debug(traceback.format_exc())
 
 
+def _open_peek(tm, tab_id: int) -> None:
+    """Right-click on a tab: show its peek card (python/peek-kit.py) over the active window. kitty gives
+    its tab bar no hover events, so a click is the closest thing to a link-preview hover."""
+    try:
+        from kitty.fast_data_types import get_boss
+        sock = getattr(get_boss(), "listening_on", "") or ""
+        kit = os.path.join(os.path.dirname(os.path.realpath(__file__)), "peek-kit.py")
+        window = tm.active_tab.active_window if tm.active_tab is not None else None
+        if not (sock and window is not None and os.path.isfile(kit)):
+            _debug(f"peek unavailable: socket={sock!r} window={window!r} kitten={kit}")
+            return
+        subprocess.Popen(["kitty", "@", "--to", sock, "kitten", "--match", f"id:{window.id}", kit, str(tab_id)],
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+    except Exception:
+        import traceback
+        _debug(traceback.format_exc())
+
+
 def _handle(tm, x: float, y: float, button: int, action: int) -> bool:
     """True when the event was ours: the collapse/expand button (acts on release, like a button),
     or a left press on the bar's inner edge, which starts a resize drag."""
     from kitty.fast_data_types import get_boss
-    from kitty.fast_data_types import GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, GLFW_RELEASE, redirect_mouse_handling
+    from kitty.fast_data_types import GLFW_MOUSE_BUTTON_LEFT, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, GLFW_RELEASE, redirect_mouse_handling
+    if button == GLFW_MOUSE_BUTTON_RIGHT and tm.tab_bar.is_vertical:
+        if action == GLFW_PRESS:
+            tid = tm.tab_bar.tab_id_at(int(x), int(y))
+            if tid > 0:
+                _S.peek_down = tid
+                return True
+        elif action == GLFW_RELEASE and _S.peek_down:
+            tid, _S.peek_down = _S.peek_down, 0
+            if tm.tab_bar.tab_id_at(int(x), int(y)) == tid:      # released on the same tab
+                _open_peek(tm, tid)
+            return True
     if button == GLFW_MOUSE_BUTTON_LEFT and _S.drag is None and tm.tab_bar.is_vertical:
         if action == GLFW_PRESS and _toggle_zone(tm, x, y):
             _S.toggle_down = True

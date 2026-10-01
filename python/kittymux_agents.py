@@ -99,6 +99,17 @@ def fresh_verdict(entry: dict | None, now: float) -> str:
     return ""
 
 
+def identify(window: dict) -> tuple[str | None, str | None]:
+    """(agent name, tool name) for a `kitty @ ls` window, from its foreground processes. A tool is
+    only reported when no agent runs there."""
+    procs = window.get("foreground_processes") or []
+    for proc in procs:
+        name = agent_in(proc.get("cmdline") or [])
+        if name:
+            return name, None
+    return None, tool_in(p.get("cmdline") or [] for p in procs)
+
+
 def pane_chips(panes: dict, window_ids: Iterable, now: float, limit: int = 4) -> list[tuple[str, str]]:
     """[(agent name, state)] for the agent panes of one tab, in window order — what the bar shows
     for a split tab instead of "N panes". Panes without a fresh scanner verdict (plain shells,

@@ -231,6 +231,15 @@ class TabVerdictTests(unittest.TestCase):
         self.assertEqual(A.tab_verdict({}, [1, 2], 1, False, self.NOW), ("", ""))
 
 
+class IdentifyTests(unittest.TestCase):
+    def test_agent_beats_tool_and_shell_is_neither(self):
+        win = lambda *cmds: {"foreground_processes": [{"cmdline": c} for c in cmds]}
+        self.assertEqual(A.identify(win(["node", "/x/claude"], ["git", "status"])), ("claude", None))
+        self.assertEqual(A.identify(win(["nvim", "a.py"])), (None, "nvim"))
+        self.assertEqual(A.identify(win(["zsh"])), (None, None))
+        self.assertEqual(A.identify({}), (None, None))
+
+
 class PaneChipTests(unittest.TestCase):
     NOW = 500.0
 
