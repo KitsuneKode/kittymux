@@ -35,6 +35,10 @@ Before kittymux filtered anything, each event could notify **twice**: once from 
 - **Icons are never taken from agent output.** The scanner picks the icon from *our* agent table; the helper accepts
   only a `.png` that resolves (symlinks and `..` resolved) inside this checkout's `assets/`, or a bare icon-theme
   name. Anything else becomes the `kitty` icon. Tests cover traversal, symlink escapes and injection strings.
+- **"Finished" must settle.** A completion notifies only after the pane has stayed finished for 5 s (a blink of the status line, a repaint
+  or a popup is not a completion), after ≥ 15 s of work, once. A hook `done`/idle-`waiting` counts only while it is < 30 s old: window
+  user variables outlive the agent that set them, and a leftover one used to make a busy Codex look finished the moment its
+  status line blinked.
 - **Rate limits.** One notification per window per 10 s, and a global cap of 5 per 10 s, so output that flips many
   windows cannot flood the desktop. A first-seen window never notifies (a scanner restart cannot replay history).
 - **Bounded processes.** Each notification helper lives at most 30 s, in its own session; at most ~15 can exist.

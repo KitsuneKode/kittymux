@@ -140,6 +140,23 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual(
             self.r(mk="", status="waiting", ts_status=140.0, msg="Claude is waiting for your input", dt=60.0), "done")
 
+    def test_a_stale_hook_never_creates_a_completion(self):
+        # leftover `waiting`/`done` from an earlier agent in this window, hours old
+        self.assertEqual(S.resolve({"status": "waiting", "ts_status": 1.0, "msg": ""}, "codex", "", 50000.0, False), "idle")
+        self.assertEqual(S.resolve({"status": "done", "ts_status": 1.0}, "codex", "", 50000.0, False), "idle")
+
+    def test_an_old_hook_request_is_not_held_forever(self):
+        e = {"status": "waiting", "msg": "Approve: rm -rf x?", "ts_status": 100.0}
+        self.assertEqual(S.resolve(dict(e), "claude", "", 200.0, False), "waiting")
+        self.assertEqual(S.resolve(dict(e), "claude", "", 100.0 + 400, False), "idle")
+
+    def test_codex_status_lines_without_an_esc_hint_still_count_as_work(self):
+        for text in ("• Reviewing approval request (3s)\n", "• Working (1m 10s • esc to interrupt)\n",
+                     "◦ Searching the web (12s • esc to interrupt)\n", "• Running tests (2m 3s)\n"):
+            self.assertEqual(marker(text), "working", text)
+        for text in ("• Ran cargo test (2s)\n", "Reviewing the diff for you.\n", "• Explored\n", "Done (2s)\n"):
+            self.assertEqual(marker(text), "", text)
+
     def test_waiting_hook_without_a_message_is_not_a_request(self):
         self.assertEqual(self.r(mk="", status="waiting", ts_status=90.0, msg="", focused=True), "idle")
         self.assertEqual(self.r(mk="", status="waiting", ts_status=95.0, msg=""), "done")

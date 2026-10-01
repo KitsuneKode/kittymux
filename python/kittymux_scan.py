@@ -42,6 +42,8 @@ SPIN_INTERVAL = 0.1
 HEARTBEAT = 3.0
 NOTIFY_EVERY = 10.0
 NOTIFY_DONE_MIN = 15.0        # a completion only notifies after this much work: a quick reply is not news
+DONE_SETTLE = 5.0             # ...and only once it has STAYED finished this long: a screen that blinks (a repaint, a popup,
+                              # a status line that changes wording) is not a completion
 _PRIVATE = ("marker", "marker_ts", "seen_working", "unseen", "ack_ts", "work_ts")
 
 _helper_dirs_done = False
@@ -174,12 +176,21 @@ def scan_window(window, now: float) -> bool:
     if changed and new in agents.NEEDS_YOU and old_state not in agents.NEEDS_YOU:
         _notify(window, new, entry.get("msg") or reason, agent)
         _alert(window)
-    elif changed and new == "done" and old_state and old_state != "done":
-        # first sight of a window (no previous verdict) never notifies: after a scanner restart every
-        # old unseen completion would fire at once
-        worked = now - book["work_ts"] if book.get("work_ts") else None
-        if worked is None or worked >= NOTIFY_DONE_MIN:
-            _notify(window, "done", "", agent)
+    if new == "done":
+        if old_state and old_state != "done":
+            # first sight of a window (no previous verdict) never notifies: after a scanner restart every
+            # old unseen completion would fire at once
+            book["done_since"] = now
+            book["done_worked"] = (now - book["work_ts"]) if book.get("work_ts") else None
+        since = book.get("done_since")
+        if since is not None and now - since >= DONE_SETTLE:
+            book.pop("done_since", None)           # settled: decide once
+            worked = book.pop("done_worked", None)
+            if worked is None or worked >= NOTIFY_DONE_MIN:
+                _notify(window, "done", "", agent)
+    else:
+        book.pop("done_since", None)               # it blinked back to work: that was no completion
+        book.pop("done_worked", None)
     return changed
 
 
@@ -438,7 +449,9 @@ def _notify(window, state: str, detail: str, agent: str = "") -> None:
         _RT.notified[wid] = now
         suffix, default_body, urgency, category = _TEXT[state]
         private = _private()
-        title = _plain(agent if private and agent else (window.title or agent or "agent"), 60)
+        agents = _mods()[0]
+        shown = agents.strip_agent_prefix(agents.strip_title_prefix(window.title or ""), agent) or agent or "agent"
+        title = _plain(agent if private and agent else shown, 60)
         body = _plain(default_body if private else (detail or default_body), 120)
         try:
             from kitty.fast_data_types import get_boss

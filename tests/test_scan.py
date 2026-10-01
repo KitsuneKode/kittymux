@@ -3,6 +3,7 @@ import os
 import stat
 import sys
 import tempfile
+import time
 import types
 import unittest
 from unittest import mock
@@ -160,7 +161,7 @@ class VerdictTests(ScanBase):
     def test_hook_state_is_an_input(self):
         os.makedirs(self.state, exist_ok=True)
         with open(KS._panes_path(), "w") as f:
-            json.dump({"8": {"status": "waiting", "msg": "Approve: rm -rf x?", "ts_status": 1.0}}, f)
+            json.dump({"8": {"status": "waiting", "msg": "Approve: rm -rf x?", "ts_status": time.monotonic()}}, f)
         self.add(FakeWindow(8, "claude", IDLE))
         KS.scan_all()
         self.assertEqual(KS._RT.verdicts["8"]["state"], "waiting")
@@ -174,7 +175,7 @@ class VerdictTests(ScanBase):
 
     def test_unfocused_finished_agent_with_idle_notification_is_done_not_waiting(self):
         with open(KS._panes_path(), "w") as f:
-            json.dump({"10": {"status": "waiting", "msg": "", "ts_status": 1.0}}, f)
+            json.dump({"10": {"status": "waiting", "msg": "", "ts_status": time.monotonic()}}, f)
         self.add(FakeWindow(10, "claude", IDLE))
         with mock.patch.object(KS, "_notify") as notify:
             KS.scan_all()
@@ -309,9 +310,10 @@ class CompletionNotifyTests(ScanBase):
         with mock.patch.object(KS.time, "monotonic", return_value=t):
             KS.scan_all()
         w.screen = IDLE
-        with mock.patch.object(KS, "_notify") as notify, \
-                mock.patch.object(KS.time, "monotonic", return_value=t + worked):
-            KS.scan_all()
+        with mock.patch.object(KS, "_notify") as notify:
+            for dt in (worked, worked + KS.DONE_SETTLE + 0.2):          # it turns idle, and STAYS idle
+                with mock.patch.object(KS.time, "monotonic", return_value=t + dt):
+                    KS.scan_all()
         return notify, KS._RT.verdicts["1"]["state"]
 
     def test_a_long_run_that_finishes_unseen_notifies(self):
@@ -328,7 +330,7 @@ class CompletionNotifyTests(ScanBase):
     def test_a_window_seen_for_the_first_time_never_notifies(self):
         self.add(FakeWindow(2, "claude", IDLE))
         with open(KS._panes_path(), "w") as f:
-            json.dump({"2": {"status": "done", "ts_status": 1.0}}, f)
+            json.dump({"2": {"status": "done", "ts_status": time.monotonic()}}, f)
         with mock.patch.object(KS, "_notify") as notify:
             KS.scan_all()
         self.assertEqual(KS._RT.verdicts["2"]["state"], "done")
@@ -377,6 +379,47 @@ class CompletionNotifyTests(ScanBase):
         self.assertEqual(argv[4:6], ["low", "kittymux.done"])
         self.assertNotIn("<", argv[6])
         self.assertTrue(os.access(argv[0], os.X_OK))
+
+
+class FalseCompletionTests(ScanBase):
+    """Codex 'finished' notifications while it was still working."""
+
+    def run_screens(self, steps, hook=None, agent="codex"):
+        """steps: [(seconds_from_start, screen_text)] → how many 'done' notifications fired."""
+        w = FakeWindow(1, agent, steps[0][1])
+        self.add(w)
+        if hook is not None:
+            with open(KS._panes_path(), "w") as f:
+                json.dump({"1": hook}, f)
+        with mock.patch.object(KS, "_notify") as notify:
+            for t, text in steps:
+                w.screen = text
+                with mock.patch.object(KS.time, "monotonic", return_value=1000.0 + t):
+                    KS.scan_all()
+        return [c for c in notify.call_args_list if c[0][1] == "done"]
+
+    WORKING = "• Working (20s • esc to interrupt)\n› \n"
+
+    def test_a_blink_of_the_working_line_is_not_a_completion(self):
+        steps = [(0, self.WORKING), (20, self.WORKING), (20.5, IDLE), (23, IDLE), (24, self.WORKING), (30, self.WORKING)]
+        self.assertEqual(self.run_screens(steps), [])
+
+    def test_staying_idle_is_a_completion_and_notifies_once(self):
+        steps = [(0, self.WORKING), (20, self.WORKING)] + [(22 + i, IDLE) for i in range(0, 14)]
+        self.assertEqual(len(self.run_screens(steps)), 1)
+
+    def test_a_leftover_hook_status_does_not_turn_a_gap_into_a_completion(self):
+        # a window user var from a previous agent: waiting, hours old, no message
+        old_hook = {"status": "waiting", "msg": "", "ts_status": 1.0}
+        self.assertEqual(self.run_screens([(0, IDLE), (3, IDLE), (12, IDLE), (20, IDLE)], hook=old_hook), [])
+        self.assertEqual(KS._RT.verdicts["1"]["state"], "idle")
+
+    def test_the_title_in_a_notification_has_no_spinner_or_agent_prefix(self):
+        w = FakeWindow(4, "codex", "", title="⠸ Codex: Review promotion and reader PRs | kitsu-lab")
+        with mock.patch.dict(os.environ, {"KITTYMUX_NOTIFY": "1"}), mock.patch.object(KS.shutil, "which", return_value="x"), \
+                mock.patch.object(KS.subprocess, "Popen") as popen:
+            KS._notify(w, "done", "", "codex")
+        self.assertEqual(popen.call_args[0][0][7], "Review promotion and reader PRs | kitsu-lab finished")
 
 
 if __name__ == "__main__":

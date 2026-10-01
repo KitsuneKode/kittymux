@@ -31,6 +31,9 @@ _TAIL_LINES = 14            # only the bottom of the screen: footers/prompts liv
 _MARKER_GRACE = 1.5         # a positive marker keeps its state this long after it vanishes (repaint flicker)
 _HOOK_GRACE = 4.0           # a hook said "working" but no marker has appeared yet (TUI still drawing)
 _TITLE_FRESH = 6.0          # agents we cannot read: a title change this recent means "busy"
+_HOOK_DONE_FRESH = 30.0     # a hook "done"/idle-"waiting" only means "just finished" while it is this recent; an old one is
+                            # a leftover (window user vars outlive an agent) and would call a busy agent finished
+_HOOK_WAIT_FRESH = 300.0    # a hook-only "waiting" (no prompt on screen) is not held forever
 
 _I = re.IGNORECASE
 LIMITED_RE = re.compile(
@@ -58,7 +61,9 @@ WORKING_RE = re.compile(
     r"|\besc\s+interrupt\b"
     # Claude Code's spinner line, which newer versions print WITHOUT an "esc to interrupt" hint:
     # "· Undulating… (6m 52s · ↓ 35.8k tokens)"
-    r"|[a-z][\w'’-]*(?:…|\.\.\.)\s*\(\s*(?:\d+\s*[hms]\s*)+(?:[·•]|\))",
+    r"|[a-z][\w'’-]*(?:…|\.\.\.)\s*\(\s*(?:\d+\s*[hms]\s*)+(?:[·•]|\))"
+    # a status line "Verb-ing … (12s •" with no ellipsis and no "esc" hint: Codex's "• Reviewing approval request (3s)"
+    r"|^\W{0,3}[A-Z][a-z]+ing\b[^()\n]{0,50}\(\s*(?:\d+\s*[hms]\s*)+(?:[·•]|\))",
     _I)
 
 
@@ -121,13 +126,14 @@ def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bo
     # nothing recognisable on screen
     if explicit == "working" and now - ts_status < _HOOK_GRACE:
         return "working"                           # the hook just fired; the TUI has not drawn yet
-    if explicit == "waiting" and is_request(entry.get("msg", "")):
+    if explicit == "waiting" and is_request(entry.get("msg", "")) and now - ts_status < _HOOK_WAIT_FRESH:
         return "waiting"                           # a hook asked for you and nothing contradicts it
     if entry.pop("seen_working", False):
         entry["unseen"] = True                     # it was busy and now is not: a completion
-    if explicit == "done" or (explicit == "waiting" and ts_status):
+    if (explicit == "done" or (explicit == "waiting" and ts_status)) and now - ts_status < _HOOK_DONE_FRESH:
         # a Stop hook, or an idle notification after it (not a request): the agent finished and is
-        # waiting for its next prompt — an unseen completion until you look at it
+        # waiting for its next prompt — an unseen completion until you look at it. Only while the hook is
+        # fresh: an old one is a leftover and must not turn a repaint gap into "finished".
         if entry.get("ack_ts") != ts_status:
             entry["unseen"] = True
     if focused:
