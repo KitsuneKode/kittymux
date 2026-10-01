@@ -727,13 +727,17 @@ def _paint_rows(screen: Screen, y0: int, n: int, bg: int) -> None:
 
 
 SEP_COLS = 2        # the divider takes the bar's last two columns: content stays left of them
+SEP_EIGHTS = 2      # each hairline is this many eighths of a cell wide (2 → ~4 px at a 15 px cell; ~8 px for the pair)
+_LEFT_BLOCK = {1: "▏", 2: "▎", 3: "▍"}          # the left n/8 of a cell
+_LEFT_REST = {1: "▉", 2: "▊", 3: "▋"}           # the left (8-n)/8 of a cell: painted in the fill colour it leaves the right n/8 to the background
 
 
 def _sep_column(screen: Screen, y0: int, n: int, bg: int, pal) -> None:
     """The divider between the bar and the panes: two full-height hairlines side by side — tone 700 at the bar's inner edge, tone 950
-    right next to it (see kittymux_theme.shade). Each is a one-eighth block (~2 px) in its own cell: the 700 line is the right edge of the
-    second-to-last column (on the tab's fill), the 950 line the left edge of the last (on the pane background, so it reads as the
-    pane's own edge). Both light up in the accent while the edge is being dragged."""
+    right next to it (see kittymux_theme.shade). Cell N-2 holds the 700 line at its RIGHT edge (a left-(8-n)/8 block in the tab's fill
+    over a 700 background), cell N-1 the 950 line at its LEFT edge (a left n/8 block on the pane background, so it reads as the pane's
+    own edge). Both light up in the accent while the edge is being dragged. The mouse hit area is centred on the seam between them
+    (kittymux_layout.in_grab_zone)."""
     hot = _bar_hot()
     inner = _rgb(pal.accent if hot else pal.sep_700)
     outer = _rgb(kittymux_theme.shade(pal.accent, 950) if hot else pal.sep_950)
@@ -743,10 +747,10 @@ def _sep_column(screen: Screen, y0: int, n: int, bg: int, pal) -> None:
             break
         screen.cursor.y = y
         screen.cursor.x = screen.columns - SEP_COLS
-        screen.cursor.bg, screen.cursor.fg = bg, inner
-        screen.draw("▕")
+        screen.cursor.bg, screen.cursor.fg = inner, bg
+        screen.draw(_LEFT_REST[SEP_EIGHTS])
         screen.cursor.bg, screen.cursor.fg = _rgb(pal.bg), outer
-        screen.draw("▏")
+        screen.draw(_LEFT_BLOCK[SEP_EIGHTS])
 
 
 def _put(screen: Screen, x: int, text: str, fg: int, bold: bool = False) -> int:

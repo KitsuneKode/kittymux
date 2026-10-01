@@ -52,6 +52,26 @@ sizes=$(cols_of_tabs); uniq=$(printf '%s\n' $sizes | sort -u | wc -l)
 [ "$uniq" = 1 ] || fail "tabs have different widths after the drag: $sizes"
 echo "  ok   all 12 tabs have the same width after release ($(printf '%s\n' $sizes | sort -u))"
 
+# the hit area: centred on the visible divider, ±1 cell (the bar's last two columns); a press on the tab content just outside it must NOT resize
+reset() {   # a known starting width, so every trial is comparable
+  python3 -c "import sys;sys.path.insert(0,'$HOME_DIR/python');import kittymux_layout as L;L.save('$STATE',$KPID,L.Layout('left','full',22))"
+  kitty @ --to "$SOCK" load-config; sleep 1; kitty @ --to "$SOCK" load-config; sleep 1.2
+  probe; EDGE=$(python3 -c "print(int($(g right)))")
+}
+trial() {   # trial <px offset from the bar's inner edge> → prints the bar's right edge before/after dragging 45 px left
+  reset; before=$EDGE
+  X mousemove "$((EDGE + $1))" "$Y" mousedown 1; sleep 0.15
+  for x in $(seq $((EDGE + $1 - 5)) -5 $((EDGE + $1 - 45))); do X mousemove "$x" "$Y"; sleep 0.02; done; sleep 0.3; X mouseup 1; sleep 0.7
+  probe; echo "$before $(python3 -c "print(int($(g right)))")"
+}
+INSIDE=$(python3 -c "print(int($CW * 2) - 2)"); OUTSIDE=$(python3 -c "print(int($CW * 2) + 6)")
+for off in -2 -$((CW / 2)) -$CW -$INSIDE; do
+  read -r b a < <(trial "$off"); [ "$a" -lt "$b" ] || fail "a press ${off}px from the edge (on the divider) did not start a resize ($b → $a)"
+done
+echo "  ok   presses on the divider (2, $((CW / 2)), $CW and $INSIDE px from the edge) all start a resize"
+read -r b a < <(trial "-$OUTSIDE"); [ "$a" = "$b" ] || fail "a press on the tab content ${OUTSIDE}px from the edge resized the bar ($b → $a)"
+echo "  ok   a press ${OUTSIDE}px from the edge (tab content) leaves the bar alone"
+
 # and the mouse is ours again
 X mousemove 900 500 click 1; sleep 0.3
 echo "PASS: bar resize keeps up with a fast pointer and re-flows every tab on release"

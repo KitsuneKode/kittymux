@@ -131,6 +131,9 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   kitty itself retains ~100 objects (~14 MB per 1000) per option-change+relayout of 23 tabs (measured identical in a vanilla kitty), so touching one tab is 28× less.
   The pointer over the tab bar is ALWAYS a hand: kitty picks it in C for the whole bar rect, sends our code no hover and ignores OSC 22 there — a resize cursor over the bar
   edge is not possible (only real window dividers and the docked panel get one).
+- The divider is two hairlines in the bar's last two columns (`tab_bar.SEP_COLS`, `SEP_EIGHTS`); content stays left of them. The resize hit area is `kittymux_layout.in_grab_zone`: centred on
+  the seam between them (`DIVIDER_CELLS`), ±`GRAB_CELLS` — exactly those two columns — so it never steals a click meant for a tab; the collapse button stops where it starts.
+  Right-edge bars still draw the divider on the screen-side (outer) edge: a known limitation, not mirrored yet.
 - The header row's `«`/`»` is a button: `kittymux_barsize._handle` consumes its press+release and toggles
   full ↔ rail via a saved layout + `load_config_file`. Build the toggled layout from the LIVE bar when nothing was saved.
 - kitty caps every vertical tab's HEIGHT at `tab_title_max_lines` (kittymux.conf sets 4): a tab that draws more rows spills into

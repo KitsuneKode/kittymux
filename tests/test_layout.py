@@ -198,8 +198,11 @@ class DragMathTests(unittest.TestCase):
         self.assertGreaterEqual(L.max_width_for(10), L.WIDTH_MIN)     # never below the minimum
 
     def test_grab_zone(self):
+        # bar's inner edge at 280, 10 px cells: the divider is the seam at 270, the hit area ±12 px around it
+        self.assertTrue(L.in_grab_zone(270, 280, 10))
         self.assertTrue(L.in_grab_zone(280, 280, 10))
-        self.assertTrue(L.in_grab_zone(285, 280, 10))
+        self.assertTrue(L.in_grab_zone(258, 280, 10))
+        self.assertFalse(L.in_grab_zone(257, 280, 10))
         self.assertFalse(L.in_grab_zone(300, 280, 10))
         self.assertFalse(L.in_grab_zone(200, 280, 10))
 
@@ -328,6 +331,31 @@ class DragTargetTests(unittest.TestCase):
         self.assertEqual(L.drag_target(self.E, 2, 0, 9.0), 0)
         self.assertEqual(L.drag_target(self.E, 2, -1, 9.0), -1)     # the "+" button
         self.assertEqual(L.drag_target(self.E, 99, 3, 10.5), 3)     # dragged tab not in the bar (another window's)
+
+
+class HitAreaTests(unittest.TestCase):
+    def test_hit_area_is_the_two_divider_columns_and_nothing_else(self):
+        edge, cw = 390.0, 15.0
+        self.assertTrue(L.in_grab_zone(edge - 2 * cw, edge, cw))                 # left end: the first divider column
+        self.assertFalse(L.in_grab_zone(edge - 2 * cw - 1, edge, cw))            # the column of tab numbers / state marks is NOT grabbable
+        self.assertTrue(L.in_grab_zone(edge - 1, edge, cw))                      # right end: the bar's last pixel
+
+    def test_hit_area_is_centred_on_the_visible_lines(self):
+        edge, cw = 390.0, 15.0
+        centre = edge - L.DIVIDER_CELLS * cw
+        for dx in (-14, -7, 0, 7, 14):
+            self.assertTrue(L.in_grab_zone(centre + dx, edge, cw), dx)
+        self.assertEqual(sum(L.in_grab_zone(x, edge, cw) for x in range(0, 400)), 2 * int(cw) + 1)   # ~30 px: a comfortable target
+
+    def test_small_cells_still_get_a_usable_target(self):
+        edge, cw = 200.0, 8.0
+        width = sum(L.in_grab_zone(x, edge, cw) for x in range(0, 300))
+        self.assertGreaterEqual(width, 2 * int(L.GRAB_MIN_PX))
+
+    def test_collapse_button_stops_where_the_hit_area_starts(self):
+        edge, cw = 390.0, 15.0
+        for x in range(0, 400):
+            self.assertFalse(L.in_grab_zone(x, edge, cw) and L.in_toggle_zone(x, 30, edge - 200, edge, 0, cw, 20, False, 2, 0.0), x)
 
 
 if __name__ == "__main__":

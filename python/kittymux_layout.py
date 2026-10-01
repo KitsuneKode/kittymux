@@ -236,7 +236,10 @@ COMPACT_MAX_COLS = 12       # a vertical bar at most this wide is the slim rail 
 TOGGLE_CELLS = 5            # the collapse/expand button: its hit area starts this many cells from the bar's inner edge
 HEADER_ROWS = 2             # the header is two rows tall (a ~44 px target, like a touch button) when the bar is tall enough
 HEADER_MIN_LINES = 8
-GRAB_CELLS = 1.5            # resize grab zone: this many cells inside the bar's inner edge (kitty sends the bar nothing outside it)
+DIVIDER_CELLS = 1.0         # the visible divider is the seam between the bar's last two columns: this many cells inside its inner edge
+GRAB_CELLS = 1.0            # resize hit area: this many cells EITHER side of the divider = exactly the two divider columns (~30 px at a 15 px
+                            # cell, like a comfortable touch target), centred on the lines you see, never reaching into the tab content
+GRAB_MIN_PX = 12.0          # …and never thinner than this each side, so a small font still has a usable target
 
 
 def header_rows(bar_lines: int, max_title_lines: int, compact: bool = False) -> int:
@@ -262,12 +265,14 @@ def in_toggle_zone(x_px: float, y_px: float, left: float, right: float, top: flo
     if not (top - slop <= y_px < top + rows * cell_h + slop):
         return False
     start = (left if compact else right - TOGGLE_CELLS * cell_w) - slop
-    return start <= x_px < right - GRAB_CELLS * cell_w
+    return start <= x_px < right - (DIVIDER_CELLS + GRAB_CELLS) * cell_w      # stops where the divider's hit area starts
 
 
 def in_grab_zone(x_px: float, bar_edge_px: float, cell_w: float, zone_cells: float = GRAB_CELLS) -> bool:
-    """Pointer close enough to the bar's inner edge to grab it."""
-    return abs(x_px - bar_edge_px) <= max(1.0, cell_w * zone_cells)
+    """Pointer on the divider (or within the hit slop around it): centred on the visible lines, which sit DIVIDER_CELLS inside the
+    bar's inner edge. (The old zone was centred on the edge itself, so most of it was the part of the divider you do not see.)"""
+    centre = bar_edge_px - DIVIDER_CELLS * cell_w
+    return abs(x_px - centre) <= max(GRAB_MIN_PX, cell_w * zone_cells)
 
 
 # ── vertical-bar hit testing (used by kittymux_barsize) ───────────────────────
