@@ -8,6 +8,8 @@
                          layout mode [full|compact|hidden|cycle]   layout edge [left|right|bottom|top|cycle]
                          layout width [+N|-N|N]   layout preset NAME   layout pick   layout show
                          layout default [clear]   (pin the current layout as the start for new windows; otherwise new kitties start with your last choice)
+  kittymux explain     why each agent pane is in its state, and every recent decision (state changes, notifications sent or held back):
+                         explain [--window ID] [--last N] [--all] [--json]
   kittymux dim         dim the panes that are not focused (kitty ≥ 0.49.2): dim [on|off|toggle|show]
   kittymux screenshot  PNG of this kitty window (kitty's own renderer): screenshot [--tab|--window] [FILE]
   kittymux upgrade     after a git pull: refresh links, reload every running kitty twice, run doctor
@@ -635,6 +637,105 @@ def _layout_pick(sock: str, sdir: str, pid: int, current) -> int:
     return _apply_layout(sock, sdir, pid, kittymux_layout.apply_command(current, "preset", name))
 
 
+# ── explain ──────────────────────────────────────────────────────────────────
+def describe_event(ev: dict) -> str:
+    """One decision-log event as a human sentence (kittymux_scan._record writes them)."""
+    if ev.get("kind") == "state":
+        arrow = f"{ev.get('frm') or '·'} → {ev.get('to') or '·'}"
+        return f"{arrow:<20} {ev.get('why', '')}"
+    if ev.get("kind") == "notify":
+        worked = f" (worked {ev['worked']} s)" if ev.get("worked") is not None else ""
+        return f"{'notify ' + str(ev.get('state', '')):<20} {ev.get('outcome', '')}{worked}"
+    return json.dumps(ev, sort_keys=True)
+
+
+def read_events(path: str, last: int = 25, wid: str | None = None) -> list[dict]:
+    """The newest `last` decisions in a decisions-<pid>.jsonl (optionally one window's). Bad lines are skipped; a missing file is empty."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines[-2000:]:
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(ev, dict) and (wid is None or str(ev.get("w")) == wid):
+            out.append(ev)
+    return out[-max(1, last):]
+
+
+def explain(argv: list[str]) -> int:
+    """`explain [--window ID] [--last N] [--all] [--json]`: the current state of every agent pane with the reason, then the recent decisions."""
+    wid, last, every, as_json = None, 25, False, False
+    it = iter(argv)
+    for a in it:
+        if a == "--window":
+            wid = next(it, "")
+        elif a == "--last":
+            try:
+                last = int(next(it, ""))
+            except ValueError:
+                print("kittymux explain: --last needs a number", file=sys.stderr)
+                return 2
+        elif a == "--all":
+            every = True
+        elif a == "--json":
+            as_json = True
+        else:
+            print("usage: kittymux explain [--window ID] [--last N] [--all] [--json]", file=sys.stderr)
+            return 2
+    if wid is not None and not wid.isdigit():
+        print("kittymux explain: --window needs a window id (kitty @ ls)", file=sys.stderr)
+        return 2
+    socks = _sockets() if every else ([s] if (s := _target_socket()) else [])
+    if not socks:
+        print("kittymux explain: no kitty remote-control socket found (set listen_on unix:/tmp/mykitty in kitty.conf)", file=sys.stderr)
+        return 1
+    state_dir = kittymux_layout.state_dir()
+    report = []
+    for sock in socks:
+        pid = _socket_pid(sock)
+        if pid is None:
+            continue
+        titles = {}
+        rc, out = _run(["kitty", "@", "--to", sock, "ls"], 4)
+        try:
+            for osw in json.loads(out) if rc == 0 else []:
+                for tab in osw.get("tabs", []):
+                    for w in tab.get("windows", []):
+                        titles[str(w["id"])] = tab.get("title", "")
+        except (ValueError, KeyError, TypeError):
+            pass
+        try:
+            with open(os.path.join(state_dir, f"scan-{pid}.json"), encoding="utf-8") as f:
+                verdicts = json.load(f)
+        except (OSError, ValueError):
+            verdicts = {}
+        now = {w: v for w, v in verdicts.items() if isinstance(v, dict) and v.get("state") and (wid is None or w == wid)}
+        report.append({"pid": pid, "now": now, "titles": titles,
+                       "events": read_events(os.path.join(state_dir, f"decisions-{pid}.jsonl"), last, wid)})
+    if as_json:
+        print(json.dumps(report, indent=1, sort_keys=True))
+        return 0
+    for r in report:
+        print(c("1", f"kitty {r['pid']}"))
+        if not r["now"]:
+            print("  no agent panes right now" + (f" in window {wid}" if wid else ""))
+        for w, v in sorted(r["now"].items(), key=lambda kv: int(kv[0])):
+            title = (r["titles"].get(w, "") or "")[:28]
+            state_txt = c("1", "%-8s" % v.get("state", ""))
+            print("  win %-5s %-12s %s %-28s %s" % (w, v.get("agent", ""), state_txt, title, c("2", v.get("why", ""))))
+        print(c("2", "\n  recent decisions (oldest first):") if r["events"] else c("2", "\n  no decisions recorded yet — they appear as agents change state"))
+        for ev in r["events"]:
+            clock = time.strftime("%H:%M:%S", time.localtime(float(ev.get("t", 0))))
+            print("  %s  win %-5s %-10s %s" % (clock, ev.get("w", "?"), ev.get("agent", ""), describe_event(ev)))
+        print()
+    return 0
+
+
 # ── dim inactive panes / screenshots (kitty ≥ 0.49.2 features) ───────────────
 def dim(argv: list[str]) -> int:
     """`dim [on|off|toggle|show]`: kitty's built-in `dim-inactive-windows` shader for panes that are not focused.
@@ -945,6 +1046,8 @@ def main(argv: list[str]) -> int:
         return layout(argv[1:])
     if cmd == "dim":
         return dim(argv[1:])
+    if cmd == "explain":
+        return explain(argv[1:])
     if cmd == "screenshot":
         return screenshot(argv[1:])
     if cmd in ("version", "--version", "-V"):

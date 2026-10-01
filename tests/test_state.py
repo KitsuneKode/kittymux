@@ -252,5 +252,51 @@ class RollupTests(unittest.TestCase):
         self.assertEqual(S.rollup([]), "")
 
 
+class WhyTests(unittest.TestCase):
+    """Every answer carries a stable, human reason (kittymux explain shows it)."""
+
+    def run_(self, entry, marker="", agent="claude", now=100.0, focused=False):
+        state = S.resolve(entry, agent, marker, now, focused)
+        return state, entry.get("why", "")
+
+    def test_each_screen_state_says_what_it_saw(self):
+        self.assertIn("usage-limit", self.run_({}, "limited")[1])
+        self.assertIn("prompt", self.run_({}, "waiting")[1])
+        self.assertIn("busy marker", self.run_({}, "working")[1])
+
+    def test_a_stop_hook_completion_names_the_hook(self):
+        e = {"status": "working", "ts_status": 90.0}
+        S.resolve(e, "claude", "working", 95.0, False)
+        e.update(status="done", ts_status=100.0)
+        state, why = self.run_(e, "", now=102.0)
+        self.assertEqual((state, why), ("done", "its Stop hook fired"))
+
+    def test_a_screen_only_completion_says_no_hook_announced_the_turn(self):
+        e = {}
+        S.resolve(e, "claude", "working", 100.0, False)
+        state, why = self.run_(e, "", now=104.0)
+        self.assertEqual(state, "done")
+        self.assertIn("no hook announced this turn", why)
+
+    def test_a_quiet_hook_turn_says_it_waits_for_stop(self):
+        e = {"status": "working", "ts_status": 90.0}
+        S.resolve(e, "claude", "working", 95.0, False)
+        state, why = self.run_(e, "", now=105.0)
+        self.assertEqual(state, "idle")
+        self.assertIn("only its Stop hook can finish it", why)
+
+    def test_unreadable_agents_and_no_signal(self):
+        self.assertIn("title changed", self.run_({"ts_title": 99.0}, "", agent="aider")[1])
+        self.assertIn("no hook and no title activity", self.run_({}, "", agent="aider")[1])
+        self.assertEqual(S.resolve({}, None, "", 1.0, False), "")
+
+    def test_reasons_are_static_text(self):
+        # the published verdict must not change when nothing else did: no clocks or counters inside a reason
+        a, b = {}, {}
+        S.resolve(a, "claude", "working", 100.0, False)
+        S.resolve(b, "claude", "working", 4000.0, False)
+        self.assertEqual(a["why"], b["why"])
+
+
 if __name__ == "__main__":
     unittest.main()

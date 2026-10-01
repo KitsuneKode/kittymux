@@ -89,7 +89,41 @@ _DOT = "●"
 _PAL_CACHE: dict = {"key": None, "pal": None}
 
 
+# ── per-redraw memo ──────────────────────────────────────────────────────────
+# kitty draws the whole vertical bar tab by tab, ~10×/s while an agent works. Most of what a tab needs (the theme palette, the merged pane
+# state and its file stamps, the keyboard mode, the usage alert, a tab's rolled-up verdict) is the same for every tab in that pass, so it is
+# computed once per pass instead of once per tab (profile with 23 tabs: ~9 os.stat and 3 verdict roll-ups PER tab). A pass starts when tab 1 is
+# drawn; nothing here outlives it, so a state change is picked up by the very next pass.
+_MEMO: dict = {}
+_MISS = object()
+
+
+def _new_pass() -> None:
+    _MEMO.clear()
+
+
+def _per_pass(fn):
+    name = fn.__name__
+
+    def wrapper(*args):
+        key = (name, args)
+        hit = _MEMO.get(key, _MISS)
+        if hit is _MISS:
+            hit = _MEMO[key] = fn(*args)
+        return hit
+    wrapper.__wrapped__ = fn                                  # type: ignore[attr-defined]
+    wrapper.__name__ = name
+    return wrapper
+
+
 def _palette(draw_data: DrawData) -> "kittymux_theme.Palette":
+    hit = _MEMO.get("palette", _MISS)
+    if hit is _MISS:
+        hit = _MEMO["palette"] = _palette_uncached(draw_data)
+    return hit
+
+
+def _palette_uncached(draw_data: DrawData) -> "kittymux_theme.Palette":
     try:
         o = get_options()
         colors = {
@@ -117,6 +151,7 @@ def _rgb(value: int) -> int:
     return as_rgb(value)
 
 
+@_per_pass
 def _bar_hot() -> bool:
     """True while the pointer is over the bar's drag handle or dragging it."""
     try:
@@ -126,6 +161,7 @@ def _bar_hot() -> bool:
         return False
 
 
+@_per_pass
 def _kb_mode() -> str:
     """Name of the active kitty keyboard mode (e.g. 'leader'), or ''."""
     try:
@@ -374,6 +410,7 @@ def _read_json(path: Path) -> dict:
         return {}
 
 
+@_per_pass
 def _panes_state() -> dict:
     """Hook status (panes-<pid>.json) merged with the scanner's verdicts (scan-<pid>.json),
     re-read only when either file changed."""
@@ -384,6 +421,7 @@ def _panes_state() -> dict:
     return _PANES_CACHE["data"]
 
 
+@_per_pass
 def _tab_verdict(tab_id: int) -> tuple[str, dict | None]:
     """(state, entry) for a tab: every pane rolled up (kittymux_agents.tab_verdict), plus the
     entry of the pane that decided it (its message says what the agent wants)."""
@@ -477,6 +515,7 @@ _usage_state: list = [0.0, None]  # [checked_at, (provider, pct) | None]
 _USAGE_SPAWN_AT = 0.0
 
 
+@_per_pass
 def _usage_alert() -> tuple[str, int] | None:
     """(provider, pct) of the worst cached quota window >= 85%, else None.
     Spawns a collector at most once a minute when the cache is stale; never
@@ -888,10 +927,15 @@ def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: in
     _button(screen, y, rows, btn_x, 3, _COLLAPSE, pal)
 
 
+@_per_pass
+def _native_edge(os_window_id: int) -> bool:
+    return kittymux_barsize.native_edge_active(os_window_id)
+
+
 def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     cols = screen.columns
     y0 = screen.cursor.y
-    native = kittymux_barsize.native_edge_active(draw_data.os_window_id)
+    native = _native_edge(draw_data.os_window_id)
     sep_cols = 1 if native else SEP_COLS      # native divider: only a blank spacer column is left; the cell divider takes two
     # A slim rail (kittymux_layout "compact", ≤ 12 columns): one line per tab — logo,
     # a few title characters, status — no session header, no subtitle.
@@ -1107,6 +1151,8 @@ def _draw_tab(
     x0, y0 = screen.cursor.x, screen.cursor.y
     try:
         kittymux_scan.ensure_started()          # idempotent: a no-op once the timer runs
+        if index == 1:
+            _new_pass()                          # a new redraw pass starts at tab 1: nothing memoised before it is reused
         pal = _palette(draw_data)
         if draw_data.tab_bar_edge in ("left", "right"):
             end = _draw_vertical(draw_data, screen, tab, index, extra_data, pal)

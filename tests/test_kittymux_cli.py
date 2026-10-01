@@ -1,3 +1,4 @@
+import json
 import importlib.machinery
 import importlib.util
 import os
@@ -64,6 +65,76 @@ class ConflictTests(unittest.TestCase):
     def test_real_template_parses(self):
         tpl = open(os.path.join(ROOT, "kittymux-keys.conf.tpl"), encoding="utf-8").read()
         self.assertEqual(self.m.conflicts_from_binds([], tpl), [])
+
+
+class ExplainTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = mock.patch.dict(os.environ, {"KITTYMUX_STATE": self.tmp.name})
+        self.env.start()
+        self.patches = [mock.patch.object(self.m, "_target_socket", lambda: "unix:/tmp/mykitty-4321"),
+                        mock.patch.object(self.m, "_run", lambda *a, **k: (1, ""))]
+        for p in self.patches:
+            p.start()
+
+    def tearDown(self):
+        for p in self.patches:
+            p.stop()
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def write(self, name, text):
+        with open(os.path.join(self.tmp.name, name), "w") as f:
+            f.write(text)
+
+    def test_describe_event(self):
+        d = self.m.describe_event
+        self.assertIn("working → done", d({"kind": "state", "frm": "working", "to": "done", "why": "its Stop hook fired"}))
+        self.assertIn("its Stop hook fired", d({"kind": "state", "frm": "working", "to": "done", "why": "its Stop hook fired"}))
+        self.assertIn("suppressed: worked only 8 s", d({"kind": "notify", "state": "done", "worked": 8, "outcome": "suppressed: worked only 8 s"}))
+        self.assertIn("(worked 31 s)", d({"kind": "notify", "state": "done", "worked": 31, "outcome": "sent"}))
+        self.assertTrue(d({"kind": "mystery"}))
+
+    def test_read_events_filters_skips_bad_lines_and_keeps_the_newest(self):
+        lines = [json.dumps({"t": i, "kind": "state", "w": str(i % 2), "to": "idle", "why": "x"}) for i in range(10)]
+        self.write("decisions-1.jsonl", "\n".join(lines[:5] + ["{not json", ""] + lines[5:]) + "\n")
+        path = os.path.join(self.tmp.name, "decisions-1.jsonl")
+        self.assertEqual([e["t"] for e in self.m.read_events(path, 3)], [7, 8, 9])
+        self.assertEqual([e["t"] for e in self.m.read_events(path, 50, "1")], [1, 3, 5, 7, 9])
+        self.assertEqual(self.m.read_events(os.path.join(self.tmp.name, "nope.jsonl")), [])
+
+    def test_explain_prints_current_reasons_and_recent_decisions(self):
+        self.write("scan-4321.json", json.dumps({"7": {"state": "waiting", "agent": "claude", "why": "the screen shows a permission/question prompt"}}))
+        self.write("decisions-4321.jsonl", json.dumps({"t": 1790000000, "kind": "notify", "w": "7", "agent": "claude", "state": "waiting",
+                                                       "outcome": "sent"}) + "\n")
+        import io
+        from contextlib import redirect_stdout
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            self.assertEqual(self.m.explain([]), 0)
+        out = buf.getvalue()
+        self.assertIn("kitty 4321", out)
+        self.assertIn("the screen shows a permission/question prompt", out)
+        self.assertIn("notify waiting", out)
+        self.assertIn("sent", out)
+
+    def test_explain_json_and_argument_errors(self):
+        self.write("scan-4321.json", json.dumps({"7": {"state": "idle", "agent": "codex", "why": "quiet"}}))
+        import io
+        from contextlib import redirect_stdout
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            self.assertEqual(self.m.explain(["--json", "--window", "7"]), 0)
+        self.assertEqual(json.loads(buf.getvalue())[0]["now"]["7"]["why"], "quiet")
+        with mock.patch("sys.stderr"):
+            self.assertEqual(self.m.explain(["--window", "x"]), 2)
+            self.assertEqual(self.m.explain(["--last", "many"]), 2)
+            self.assertEqual(self.m.explain(["--bogus"]), 2)
 
 
 class DimAndScreenshotTests(unittest.TestCase):

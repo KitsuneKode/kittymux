@@ -186,6 +186,29 @@ after=$(active_tab)
 [ "$after" != "$before" ] && [ -n "$after" ] || fail "a click on the spacer row between two tabs hit no tab (active stayed '$before')"
 echo "  ok   click on the spacer row between tabs activates the nearer tab ('$before' → '$after')"
 
+# the decision log: every transition above was recorded WITH its reason, in a private file, and explain can read it back
+DEC="$STATE/decisions-$KPID.jsonl"
+[ -s "$DEC" ] || fail "no decision log was written ($DEC)"
+[ "$(stat -c %a "$DEC")" = 600 ] || fail "the decision log is not private (mode $(stat -c %a "$DEC"))"
+python3 - "$DEC" <<'PY' || fail "the decision log lacks the expected events"
+import json, sys
+ev = [json.loads(l) for l in open(sys.argv[1])]
+states = [(e["frm"], e["to"], e["why"]) for e in ev if e["kind"] == "state"]
+assert any(to == "working" and "busy marker" in why for _, to, why in states), states
+assert any(to == "waiting" and "prompt" in why for _, to, why in states), states
+assert any(to == "done" and why for _, to, why in states), states
+assert all(e["why"] for e in ev if e["kind"] == "state"), "a transition has no reason"
+PY
+echo "  ok   decision log: transitions recorded with their reasons (private file)"
+KITTYMUX_STATE=$STATE python3 - "$HOME_DIR" "$DEC" <<'PY' || fail "explain could not read the log back"
+import importlib.machinery, importlib.util, sys
+loader = importlib.machinery.SourceFileLoader("km", sys.argv[1] + "/bin/kittymux")
+spec = importlib.util.spec_from_loader("km", loader); m = importlib.util.module_from_spec(spec); loader.exec_module(m)
+evs = m.read_events(sys.argv[2], 50)
+assert evs and all(m.describe_event(e) for e in evs)
+PY
+echo "  ok   explain reads the decision log back"
+
 [ -s "$STATE/tab_bar-error.log" ] && fail "tab bar logged an error"
 kill -0 "$KPID" 2>/dev/null || fail "kitty died"
 echo "PASS: states come from the screen — working/waiting/idle/done(unseen→cleared) all correct; no tab bar errors"

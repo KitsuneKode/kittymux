@@ -97,6 +97,7 @@ class ScanBase(unittest.TestCase):
             setattr(KS._RT, attr, val)
         for d in (KS._RT.book, KS._RT.verdicts, KS._RT.notified, vars(KS._RT).setdefault("alerted", {})):
             d.clear()
+        vars(KS._RT).pop("decisions", None)
         self.agent = mock.patch.object(KS, "agent_of", side_effect=lambda w: w.agent)
         self.agent.start()
 
@@ -243,6 +244,65 @@ class NotifyTests(ScanBase):
              mock.patch("kittymux_scan.subprocess.Popen") as popen, mock.patch("kittymux_scan.shutil.which", return_value="x"):
             KS._notify(FakeWindow(1, "claude", ""), "waiting", "hi")
         popen.assert_not_called()
+
+
+class DecisionLogTests(ScanBase):
+    def events(self):
+        return list(vars(KS._RT).get("decisions", []))
+
+    def test_state_changes_are_recorded_with_their_reason(self):
+        w = FakeWindow(1, "claude", DEVIN_THINKING)
+        self.add(w)
+        with mock.patch.object(KS, "_notify", return_value="sent"):
+            KS.scan_window(w, 100.0)
+            w.screen = PERMISSION
+            KS.scan_window(w, 101.0)
+        states = [(e["frm"], e["to"], e["why"]) for e in self.events() if e["kind"] == "state"]
+        self.assertEqual([(a, b) for a, b, _ in states], [("", "working"), ("working", "waiting")])
+        self.assertIn("busy marker", states[0][2])
+        self.assertIn("prompt", states[1][2])
+        self.assertEqual(KS._RT.verdicts["1"]["why"], states[1][2])                  # the published verdict carries it too
+
+    def test_a_short_run_that_finishes_is_logged_as_held_back_with_its_duration(self):
+        w = FakeWindow(1, "claude", DEVIN_THINKING)
+        self.add(w)
+        KS.scan_window(w, 100.0)
+        w.screen = IDLE
+        for t in (102.0, 104.0, 108.0):
+            KS.scan_window(w, t)
+        held = [e for e in self.events() if e["kind"] == "notify" and e["state"] == "done"]
+        self.assertEqual(len(held), 1)
+        self.assertEqual(held[0]["outcome"], "suppressed: worked only 2 s (< 15 s)")
+
+    def test_notify_reports_why_it_did_not_send(self):
+        w = FakeWindow(1, "claude", "")
+        with mock.patch.dict(os.environ, {"KITTYMUX_NOTIFY": "1"}), mock.patch("kittymux_scan.shutil.which", return_value="x"), \
+                mock.patch("kittymux_scan.subprocess.Popen") as popen:
+            w.is_focused = True
+            self.assertEqual(KS._notify(w, "waiting", "q"), "suppressed: you are looking at it")
+            w.is_focused = False
+            self.assertEqual(KS._notify(w, "waiting", "q"), "sent")
+            self.assertTrue(KS._notify(w, "waiting", "q").startswith("suppressed: this window was notified less than"))
+            self.assertEqual(popen.call_count, 1)
+        with mock.patch.dict(os.environ, {"KITTYMUX_NOTIFY": "0"}):
+            self.assertEqual(KS._notify(FakeWindow(2, "claude", ""), "waiting", "q"), "suppressed: notifications are switched off")
+
+    def test_the_log_is_bounded_in_memory_and_on_disk_and_private(self):
+        for i in range(6000):
+            KS._record("state", str(i % 20), "claude", frm="idle", to="working", why="the screen shows a busy marker " + "x" * 40)
+        self.assertEqual(len(self.events()), KS.DECISION_KEEP)
+        path = KS.decisions_path()
+        self.assertLessEqual(os.path.getsize(path), KS.DECISION_FILE_MAX + 400)
+        self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
+        with open(path) as f:
+            lines = f.read().splitlines()
+        self.assertLessEqual(len(lines), KS.DECISION_FILE_MAX // 100 + 1)
+        json.loads(lines[-1])                                                          # still valid JSON lines after rotation
+
+    def test_recording_never_raises(self):
+        with mock.patch.object(KS, "_append_decision", side_effect=OSError("disk full")):
+            KS._record("state", "1", "claude", frm="", to="idle", why="x")           # must not propagate into kitty
+        KS._record("state", "1", "claude", frm="", to=object(), why="x")             # unserialisable: dropped quietly
 
 
 class TimerTests(ScanBase):

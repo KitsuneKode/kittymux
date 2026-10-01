@@ -71,6 +71,10 @@ States, most important first — a state needs positive evidence, and silence is
 - Claude hooks installed by `kittymux hooks --install`: `UserPromptSubmit`/`PostToolUse` → working, `Notification` → waiting, `Stop` → done, `SessionEnd` → idle.
   `kittymux doctor` reports missing events. Change `HOOK_EVENTS`, README's snippet and the tests together.
 
+**Every answer says why.** `kittymux_state.resolve` records a static, human `why` at each return (`_why`); the scanner publishes it in the verdict and writes every state change and every notification
+outcome (`_notify` returns "sent" or why not) to the decision log (`_record`: a 300-event deque in `_RT` + `decisions-<pid>.jsonl`, 0600, rotated; `kittymux explain` reads it). A new state or a new
+suppression rule MUST set a `why`/outcome, and a reason must be static text (no clocks or counters in it, or the published verdict changes every tick). Never log screen text.
+
 A tab shows its panes rolled up (`kittymux_agents.tab_verdict`), not just the active pane. When the user is
 elsewhere (agent not focused): tab glyph, header badges `! N  ✓ N` (all tabs), a desktop notification for needs-you
 and for runs ≥ 15 s that finish, a WM urgency bell for needs-you only, `ctrl+alt+y` to jump. Off switches
@@ -125,6 +129,9 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
 - `kittymux_barsize` keeps its drag/button state in `sys.modules["_kittymux_barsize_rt"]`: changing the width makes kitty
   re-run `tab_bar.py` (→ reloads helper modules) in the middle of a drag, and module globals would be wiped (the first
   motion applied a width, the second found no drag). Same rule as the scanner.
+- Redraw cost: kitty redraws the whole vertical bar tab by tab (~10×/s while an agent works). Shared lookups (palette, merged pane state, verdict roll-ups, keyboard mode, usage alert, native-edge check)
+  are memoised PER PASS (`tab_bar._per_pass`, reset when tab 1 is drawn): 6.0 → 2.1 ms with 23 tabs. Don't add per-tab `os.stat`/file reads/subprocesses to the draw path; add a `@_per_pass` helper. The spinner
+  ticks unfocused OS windows at half rate. `_flush` does not even serialise verdicts on a tick where no verdict changed.
 - Bar drag-resize (`kittymux_barsize`): per mouse event `apply_width(final=False)` re-lays-out the bar and ONLY the visible tab; the release (or the watchdog /
   an error, via `_end_capture(finalize=True)`) applies `final=True` once for every tab. Events inside the pacing window are NOT dropped: `next_apply` arms one
   trailing timer that applies the pointer's latest width (the old code left the bar stuck until release after a fast burst). Why not relayout every tab per event:

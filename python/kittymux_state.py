@@ -109,11 +109,18 @@ def is_request(msg: str) -> bool:
     return bool(msg and _REQUEST_RE.search(msg) and not re.search(r"waiting\s+for\s+your\s+input", msg, _I))
 
 
+def _why(entry: dict, state: str, text: str) -> str:
+    """Record WHY the resolver answered `state` (the private `why` key; `kittymux explain` shows it) and return it. Static strings only, so
+    they never make the published verdict change when nothing else did."""
+    entry["why"] = text
+    return state
+
+
 def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bool) -> str:
     """The pane's state: limited | waiting | working | done | idle | "" (no agent).
 
     `entry` is the watcher's bookkeeping dict for the window. This function keeps a few private
-    keys in it (`marker`, `marker_ts`, `seen_working`, `unseen`, `ack_ts`) — its only mutation —
+    keys in it (`marker`, `marker_ts`, `seen_working`, `unseen`, `ack_ts`, `why`, …) — its only mutation —
     so it can debounce and remember an unseen completion between calls."""
     if not agent:
         return ""
@@ -125,11 +132,13 @@ def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bo
         if explicit == "done":
             if focused:
                 entry["ack_ts"] = ts_status
-            return "idle" if entry.get("ack_ts") == ts_status else "done"
+            seen = entry.get("ack_ts") == ts_status
+            return _why(entry, "idle" if seen else "done", "its done hook fired" + (" and you have seen it" if seen else ", unseen"))
         if explicit in STATES:
-            return explicit
+            return _why(entry, explicit, f"its hook says {explicit} (this agent's screen is not read)")
         ts_title = float(entry.get("ts_title") or 0)
-        return "working" if ts_title and (now - ts_title) < _TITLE_FRESH else "idle"
+        busy = bool(ts_title and (now - ts_title) < _TITLE_FRESH)
+        return _why(entry, "working" if busy else "idle", "its title changed a moment ago" if busy else "no hook and no title activity")
 
     if marker:
         entry["marker"], entry["marker_ts"] = marker, now
@@ -140,7 +149,8 @@ def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bo
 
     if marker in ("limited", "waiting"):
         entry["seen_working"], entry["unseen"] = False, False
-        return marker
+        return _why(entry, marker, "the screen shows a usage-limit message" if marker == "limited"
+                    else "the screen shows a permission/question prompt")
     if explicit == "working" and ts_status > float(entry.get("hook_turn_ts") or 0):
         entry["hook_turn"], entry["hook_turn_ts"] = True, ts_status    # a hook announced this turn: its Stop hook ends it
     if marker == "working":
@@ -148,14 +158,14 @@ def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bo
         if explicit == "waiting":
             # Resumed work proves this particular permission request was handled.
             entry["handled_wait_ts"] = ts_status
-        return "working"
+        return _why(entry, "working", "the screen shows a busy marker")
 
     # nothing recognisable on screen
     if explicit == "working" and now - ts_status < _HOOK_GRACE:
-        return "working"                           # the hook just fired; the TUI has not drawn yet
+        return _why(entry, "working", "its hook said working and the TUI has not drawn yet")
     if (explicit == "waiting" and entry.get("handled_wait_ts") != ts_status
             and is_request(entry.get("msg", "")) and now - ts_status < _HOOK_WAIT_FRESH):
-        return "waiting"                           # a hook asked for you and nothing contradicts it
+        return _why(entry, "waiting", "its hook asked for you and nothing on screen contradicts it")
     if entry.get("hook_turn") and now - float(entry.get("marker_ts") or 0) > _TURN_ABANDONED:
         entry["hook_turn"] = False                 # no Stop hook and quiet for minutes: interrupted, not finished
     if entry.pop("seen_working", False):
@@ -164,6 +174,7 @@ def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bo
         # Agents without hooks are judged by the screen alone.
         if not entry.get("hook_turn"):
             entry["unseen"], entry["completed"] = True, True
+            entry["unseen_cause"] = "the screen was busy and went quiet (no hook announced this turn)"
     stop_hook = explicit == "done"
     idle_hook = explicit == "waiting" and bool(ts_status) and not is_request(entry.get("msg", "")) and not entry.get("completed")
     if (stop_hook or idle_hook) and now - ts_status < _HOOK_DONE_FRESH:
@@ -173,12 +184,17 @@ def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bo
         # request you already answered is NOT this: it is why the agent was waiting, not that it finished.
         if entry.get("ack_ts") != ts_status:
             entry["unseen"], entry["completed"] = True, True
+            entry["unseen_cause"] = "its Stop hook fired" if stop_hook else "its idle notice arrived and no completion was reported yet"
         if stop_hook:
             entry["hook_turn"] = False
     if focused:
         entry["unseen"] = False                    # you are looking at it
         entry["ack_ts"] = ts_status
-    return "done" if entry.get("unseen") else "idle"
+    if entry.get("unseen"):
+        return _why(entry, "done", entry.get("unseen_cause") or "an unseen completion")
+    if entry.get("hook_turn"):
+        return _why(entry, "idle", "quiet, but a hook announced the turn: only its Stop hook can finish it")
+    return _why(entry, "idle", "you are looking at it" if focused else "quiet: nothing on screen and no fresh hook")
 
 
 def rollup(states) -> str:

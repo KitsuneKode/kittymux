@@ -228,6 +228,27 @@ notification process lives at most 30 s.
 *Privacy:* only the matched marker and one short line of context (≤ 100 chars, control characters
 stripped) are kept, in `scan-<pid>.json` (mode 0600, inside the 0700 state dir). Nothing leaves your machine.
 
+### `kittymux explain` — why is it in that state?
+
+A "finished" or "needs you" you did not expect is now diagnosable instead of a guess:
+
+```
+$ kittymux explain
+kitty 4062
+  win 77    claude       working  Kitty lightweight tm         the screen shows a busy marker
+  win 192   codex        limited  Audit codebase securit       the screen shows a usage-limit message
+
+  recent decisions (oldest first):
+  23:58:31  win 77    claude     idle → working       the screen shows a busy marker
+  00:03:02  win 77    claude     working → done       its Stop hook fired
+  00:03:07  win 77    claude     notify done          sent (worked 271 s)
+  00:09:40  win 18    claude     notify done          suppressed: worked only 4 s (< 15 s)
+```
+
+Every state change and every notification decision — sent, or the reason it was held back (you were looking at it, switched off, rate limit, too short, duration unknown) — is recorded. `--window ID` filters,
+`--last N` sets how many, `--all` covers every running kitty, `--json` is for scripts. The log is a bounded in-memory ring (300 events) plus a private (0600) file per kitty that rotates at 192 KB; it holds
+reason codes and window ids, never screen text.
+
 ## Agent status hooks (optional)
 
 Hooks add what the screen cannot say — the exact message an agent is waiting on and instant

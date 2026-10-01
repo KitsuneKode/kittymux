@@ -40,6 +40,7 @@ kittymux screenshot            # → ~/Pictures/kittymux-<time>.png (mode 0600)
 kittymux dim on                # unfocused panes dim; needs the shader-slang package. `dim off` to undo
 kittymux layout pick           # fzf list of bar layouts
 kittymux doctor                # install check, incl. window-manager key conflicts
+kittymux explain               # why each agent pane is in its state, and every recent decision (incl. notifications held back, and why)
 ```
 
 Close the window and the demo is gone.

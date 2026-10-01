@@ -45,7 +45,7 @@ NOTIFY_DONE_MIN = 15.0        # a completion only notifies after this much work:
 DONE_SETTLE = 5.0             # ...and only once it has STAYED finished this long: a screen that blinks (a repaint, a popup,
                               # a status line that changes wording) is not a completion
 _PRIVATE = ("marker", "marker_ts", "seen_working", "unseen", "ack_ts", "work_ts", "handled_wait_ts",
-            "hook_turn", "hook_turn_ts", "completed")
+            "hook_turn", "hook_turn_ts", "completed", "unseen_cause", "why")
 
 _helper_dirs_done = False
 
@@ -116,6 +116,54 @@ def _panes() -> dict:
 _CTRL = {c: " " for c in list(range(0, 32)) + [127] + list(range(0x80, 0xA0))}
 
 
+# ── decision log (kittymux explain) ──────────────────────────────────────────
+# Every state change and every notification decision (sent, or why it was not) is recorded: in memory (a bounded deque that survives config
+# reloads in _RT) and appended to decisions-<pid>.jsonl (0600, rotated at DECISION_FILE_MAX). Events are rare — a state change, a
+# notification — so this is a handful of tiny writes a minute at most, no per-tick work, nothing unbounded. A false "finished" can then be
+# diagnosed after the fact instead of guessed at.
+DECISION_KEEP = 300             # events kept in memory
+DECISION_FILE_MAX = 192 * 1024  # rotate the file past this many bytes…
+DECISION_FILE_KEEP = 400        # …keeping this many of the newest lines
+
+
+def decisions_path() -> str:
+    return os.path.join(state_dir(), f"decisions-{os.getpid()}.jsonl")
+
+
+def _record(kind: str, wid: str, agent: str, **fields) -> None:
+    """Remember one decision. Never raises."""
+    try:
+        import collections
+        ev = {"t": round(time.time(), 1), "kind": kind, "w": wid, "agent": agent or "", **fields}
+        vars(_RT).setdefault("decisions", collections.deque(maxlen=DECISION_KEEP)).append(ev)
+        _append_decision(decisions_path(), json.dumps(ev, separators=(",", ":")) + "\n")
+    except Exception:
+        pass
+
+
+def _append_decision(path: str, line: str) -> None:
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        os.write(fd, line.encode("utf-8"))
+        size = os.fstat(fd).st_size
+    finally:
+        os.close(fd)
+    if size > DECISION_FILE_MAX:
+        _rotate_decisions(path)
+
+
+def _rotate_decisions(path: str) -> None:
+    """Keep the newest DECISION_FILE_KEEP lines (atomic replace; a concurrent append lands in the old file at worst)."""
+    with open(path, "rb") as f:
+        lines = f.read().splitlines(keepends=True)[-DECISION_FILE_KEEP:]
+    tmp = path + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.writelines(lines)
+    os.replace(tmp, path)
+
+
 def _clean(text, limit: int = 100) -> str:
     return " ".join(str(text).translate(_CTRL).split())[:limit]
 
@@ -169,14 +217,19 @@ def scan_window(window, now: float) -> bool:
             book.pop(k, None)
     reason = _clean(line) if marker in ("waiting", "limited") else ""
     old_state = prev.get("state", "")
-    changed = new != old_state or reason != prev.get("reason", "")
-    _RT.verdicts[wid] = {"state": new, "reason": reason, "agent": agent,
+    changed = new != old_state or reason != prev.get("reason", "") or agent != prev.get("agent", agent)
+    why = view.get("why", "")
+    _RT.verdicts[wid] = {"state": new, "reason": reason, "agent": agent, "why": why,
                          "ts_state": now if changed else prev.get("ts_state", now), "ts_scan": now}
+    if new != old_state:
+        _record("state", wid, agent, frm=old_state, to=new, why=why)
     if new == "working" and old_state != "working":
         book["work_ts"] = now                      # when this run of work began (completion threshold)
     if changed and old_state and new in agents.NEEDS_YOU and old_state not in agents.NEEDS_YOU:
-        _notify(window, new, entry.get("msg") or reason, agent)
+        _record("notify", wid, agent, state=new, outcome=_notify(window, new, entry.get("msg") or reason, agent))
         _alert(window)
+    elif changed and not old_state and new in agents.NEEDS_YOU:
+        _record("notify", wid, agent, state=new, outcome="suppressed: first sight of this window (a scanner restart must not replay old events)")
     if new == "done":
         if old_state and old_state != "done":
             # first sight of a window (no previous verdict) never notifies: after a scanner restart every
@@ -188,7 +241,11 @@ def scan_window(window, now: float) -> bool:
             book.pop("done_since", None)           # settled: decide once
             worked = book.pop("done_worked", None)
             if worked is not None and worked >= NOTIFY_DONE_MIN:   # unknown duration = cannot prove it was news
-                _notify(window, "done", "", agent)
+                _record("notify", wid, agent, state="done", worked=round(worked), outcome=_notify(window, "done", "", agent))
+            else:
+                _record("notify", wid, agent, state="done", worked=None if worked is None else round(worked),
+                        outcome="suppressed: duration unknown (not seen working)" if worked is None
+                        else f"suppressed: worked only {round(worked)} s (< {int(NOTIFY_DONE_MIN)} s)")
     else:
         book.pop("done_since", None)               # it blinked back to work: that was no completion
         book.pop("done_worked", None)
@@ -223,11 +280,12 @@ def scan_all(timer_id=None) -> None:
         from kitty.fast_data_types import get_boss
         boss = get_boss()
         now = time.monotonic()
-        live, bars, n_agents = set(), {}, 0
+        live, bars, n_agents, dirty = set(), {}, 0, False
         for w in list(boss.all_windows):
             live.add(str(w.id))
             try:
                 changed = scan_window(w, now)
+                dirty = dirty or changed
                 if (_RT.verdicts.get(str(w.id)) or {}).get("state"):
                     n_agents += 1
                 if changed:
@@ -239,6 +297,7 @@ def scan_all(timer_id=None) -> None:
         for wid in [k for k in _RT.verdicts if k not in live]:      # closed windows
             _RT.verdicts.pop(wid, None)
             _RT.book.pop(wid, None)
+            dirty = True
         for table in (_RT.notified, vars(_RT).get("alerted", {})):
             for wid in [k for k in table if k not in live]:
                 table.pop(wid, None)
@@ -247,7 +306,7 @@ def scan_all(timer_id=None) -> None:
                 refresh_bar(tm)
             except Exception:
                 pass
-        _flush(now, force=bool(bars))
+        _flush(now, force=bool(bars), dirty=dirty)
         _sync_spinner()
         _retime(SCAN_FAST if n_agents else SCAN_IDLE)
     except Exception:
@@ -270,9 +329,12 @@ def poke(window) -> None:
 
 
 # ── persistence ──────────────────────────────────────────────────────────────
-def _flush(now: float, force: bool = False) -> None:
+def _flush(now: float, force: bool = False, dirty: bool = True) -> None:
     """Write scan-<pid>.json when the verdicts changed (or every HEARTBEAT seconds, so readers
-    can see the scanner is alive). The heartbeat field itself is not part of the change test."""
+    can see the scanner is alive). The heartbeat field itself is not part of the change test. `dirty=False` (no window's verdict
+    changed this tick) skips even serialising the verdicts to compare them — that was the bulk of an idle tick."""
+    if not force and not dirty and now - _RT.last_write < HEARTBEAT:
+        return
     sig = json.dumps({w: {k: v for k, v in e.items() if k != "ts_scan"} for w, e in _RT.verdicts.items()},
                      sort_keys=True)
     if not force and sig == _RT.last_sig and now - _RT.last_write < HEARTBEAT:
@@ -327,7 +389,18 @@ def _spin_tick(timer_id) -> None:
         if not tms:
             _stop_spinner()
             return
+        n = vars(_RT).get("spin_n", 0) + 1                  # (an _RT made by an older version lacks it)
+        _RT.spin_n = n
+        try:
+            from kitty.fast_data_types import current_focused_os_window_id
+            focused = current_focused_os_window_id()
+        except Exception:
+            focused = 0
         for tm in tms:
+            # a window nobody is typing in animates at half rate: same information, half the redraws (a full bar redraw is the
+            # costliest thing this module does, and a kitty parked on another workspace used to pay it 10×/s for nothing)
+            if focused and tm.os_window_id != focused and n & 1:         # focus unknown (0) = full rate
+                continue
             refresh_bar(tm)
     except Exception:
         _debug()
@@ -434,19 +507,23 @@ def _within_budget(now: float) -> bool:
     return True
 
 
-def _notify(window, state: str, detail: str, agent: str = "") -> None:
+def _notify(window, state: str, detail: str, agent: str = "") -> str:
     """Desktop notification when an agent you are not looking at starts needing you or finishes.
-    bin/mux-notify shows it and, if you invoke its action, jumps to this window."""
+    bin/mux-notify shows it and, if you invoke its action, jumps to this window. Returns "sent" or why not (for the decision log)."""
     try:
         kind = "done" if state == "done" else "needs"
-        if getattr(window, "is_focused", False) or not _notify_enabled(kind) or not shutil.which("notify-send"):
-            return
+        if getattr(window, "is_focused", False):
+            return "suppressed: you are looking at it"
+        if not _notify_enabled(kind):
+            return "suppressed: notifications are switched off"
+        if not shutil.which("notify-send"):
+            return "suppressed: notify-send is not installed"
         now = time.monotonic()
         wid = str(window.id)
         if now - _RT.notified.get(wid, -1e9) < NOTIFY_EVERY:
-            return
+            return f"suppressed: this window was notified less than {int(NOTIFY_EVERY)} s ago"
         if not _within_budget(now):
-            return
+            return "suppressed: global notification rate limit"
         _RT.notified[wid] = now
         suffix, default_body, urgency, category = _TEXT[state]
         private = _private()
@@ -463,8 +540,9 @@ def _notify(window, state: str, detail: str, agent: str = "") -> None:
             [_helper(), socket, wid, str(os.getpid()), urgency, category, _icon(agent), f"{title} {suffix}", body],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             start_new_session=True)
+        return "sent"
     except Exception:
-        pass
+        return "error: could not start the notifier"
 
 
 # ── lifecycle ────────────────────────────────────────────────────────────────

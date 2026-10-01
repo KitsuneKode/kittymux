@@ -39,7 +39,7 @@ A notification that says "finished" while the agent is still working is worse th
    dialog (it has `esc to cancel` / `(esc)` chrome) still wins even with a spinner drawn nearby.
 4. **Unknown duration, no notification.** A completion is announced only when we saw it work ≥ 15 s.
 
-Run `kittymux hooks --install` once (it backs up `~/.claude/settings.json`) and `kittymux doctor` tells you if an event is missing.
+`kittymux explain` shows, per pane, the reason for its current state and the recent decisions — including every notification that was held back and why. Run `kittymux hooks --install` once (it backs up `~/.claude/settings.json`) and `kittymux doctor` tells you if an event is missing.
 What this cannot know: whether an agent's *own* terminal notification (OSC 9/99) slips past the title/app filter — those are dropped by
 `filter_notification` only when they name a known agent.
 
