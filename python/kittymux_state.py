@@ -33,6 +33,7 @@ _HOOK_GRACE = 4.0           # a hook said "working" but no marker has appeared y
 _TITLE_FRESH = 6.0          # agents we cannot read: a title change this recent means "busy"
 _HOOK_DONE_FRESH = 30.0     # a hook "done"/idle-"waiting" only means "just finished" while it is this recent; an old one is
                             # a leftover (window user vars outlive an agent) and would call a busy agent finished
+_TURN_ABANDONED = 180.0     # a hook-announced turn with no Stop hook and no activity marker this long is dropped (Esc interrupts fire no Stop)
 _HOOK_WAIT_FRESH = 300.0    # a hook-only "waiting" (no prompt on screen) is not held forever
 
 _I = re.IGNORECASE
@@ -70,17 +71,31 @@ WORKING_RE = re.compile(
     _I)
 
 
+# chrome only a real dialog draws: if one of these sits at or below a question, it IS the dialog even with a spinner nearby
+_DIALOG_CHROME_RE = re.compile(
+    r"\(esc\)|esc\s+to\s+cancel|enter\s+to\s+(?:confirm|select)|tab\s+to\s+amend|don(?:'|’)t\s+ask\s+again", _I)
+
+
 def classify_screen(text: str) -> tuple[str, str]:
     """(marker, line) for the bottom of a pane's screen: marker is one of
     "limited" | "waiting" | "working" | "" (nothing recognisable); line is the matching
-    line (stripped, bounded) so it can be shown as the reason."""
+    line (stripped, bounded) so it can be shown as the reason.
+
+    A question/limit match only counts when no activity hint is drawn BELOW it (unless dialog chrome such
+    as "esc to cancel" is there too): a real prompt or limit notice is the last thing on screen (the agent
+    stops animating), while the same words inside the agent's own reply scroll above a live spinner.
+    Without this, an agent explaining "(y/n)" or "usage limit reached" while it works looked like a
+    request for you."""
     lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()][-_TAIL_LINES:]
+    working_at = next((i for i in range(len(lines) - 1, -1, -1) if WORKING_RE.search(lines[i])), -1)
     for marker, rx in (("limited", LIMITED_RE), ("waiting", WAITING_RE), ("working", WORKING_RE)):
         # a prompt's question sits above its options, so the first match is the reason to show;
         # for activity hints the nearest-the-bottom one is the live one
-        for ln in (lines if marker == "waiting" else reversed(lines)):
-            if rx.search(ln):
-                return marker, ln[:160]
+        for i in (range(len(lines)) if marker == "waiting" else range(len(lines) - 1, -1, -1)):
+            if rx.search(lines[i]):
+                if marker != "working" and working_at > i and not any(_DIALOG_CHROME_RE.search(x) for x in lines[i:]):
+                    break                          # activity below it: that text is stale output, not a prompt
+                return marker, lines[i][:160]
     return "", ""
 
 
@@ -126,8 +141,10 @@ def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bo
     if marker in ("limited", "waiting"):
         entry["seen_working"], entry["unseen"] = False, False
         return marker
+    if explicit == "working" and ts_status > float(entry.get("hook_turn_ts") or 0):
+        entry["hook_turn"], entry["hook_turn_ts"] = True, ts_status    # a hook announced this turn: its Stop hook ends it
     if marker == "working":
-        entry["seen_working"], entry["unseen"] = True, False
+        entry["seen_working"], entry["unseen"], entry["completed"] = True, False, False
         if explicit == "waiting":
             # Resumed work proves this particular permission request was handled.
             entry["handled_wait_ts"] = ts_status
@@ -139,14 +156,25 @@ def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bo
     if (explicit == "waiting" and entry.get("handled_wait_ts") != ts_status
             and is_request(entry.get("msg", "")) and now - ts_status < _HOOK_WAIT_FRESH):
         return "waiting"                           # a hook asked for you and nothing contradicts it
+    if entry.get("hook_turn") and now - float(entry.get("marker_ts") or 0) > _TURN_ABANDONED:
+        entry["hook_turn"] = False                 # no Stop hook and quiet for minutes: interrupted, not finished
     if entry.pop("seen_working", False):
-        entry["unseen"] = True                     # it was busy and now is not: a completion
-    if (explicit == "done" or (explicit == "waiting" and ts_status)) and now - ts_status < _HOOK_DONE_FRESH:
-        # a Stop hook, or an idle notification after it (not a request): the agent finished and is
-        # waiting for its next prompt — an unseen completion until you look at it. Only while the hook is
-        # fresh: an old one is a leftover and must not turn a repaint gap into "finished".
+        # it was busy and now is not. When a hook announced the turn (UserPromptSubmit), the agent itself says when it
+        # ends (Stop hook) — a quiet screen between tool calls, a repaint or an interrupt is not a completion.
+        # Agents without hooks are judged by the screen alone.
+        if not entry.get("hook_turn"):
+            entry["unseen"], entry["completed"] = True, True
+    stop_hook = explicit == "done"
+    idle_hook = explicit == "waiting" and bool(ts_status) and not is_request(entry.get("msg", "")) and not entry.get("completed")
+    if (stop_hook or idle_hook) and now - ts_status < _HOOK_DONE_FRESH:
+        # a Stop hook, or an idle notification (not a request) when no completion was reported yet: the agent
+        # finished and is waiting for its next prompt — an unseen completion until you look at it. Only while the
+        # hook is fresh: an old one is a leftover and must not turn a repaint gap into "finished". A permission
+        # request you already answered is NOT this: it is why the agent was waiting, not that it finished.
         if entry.get("ack_ts") != ts_status:
-            entry["unseen"] = True
+            entry["unseen"], entry["completed"] = True, True
+        if stop_hook:
+            entry["hook_turn"] = False
     if focused:
         entry["unseen"] = False                    # you are looking at it
         entry["ack_ts"] = ts_status

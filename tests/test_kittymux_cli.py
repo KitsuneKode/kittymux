@@ -51,9 +51,73 @@ class ConflictTests(unittest.TestCase):
     def test_named_keys(self):
         self.assertEqual(self.m.conflicts_from_binds([{"modmask": 12, "key": ","}], TPL), ["ctrl+alt+comma"])
 
+    def test_template_avoids_the_keys_hyprland_takes_with_ctrl_alt(self):
+        # What this user's Hyprland (HyDE, scrolling layout) binds on exactly ctrl+alt. The WM sees a global chord first, so a
+        # kittymux map on one of these never fires (or fires twice). `kittymux doctor` checks the live binds; this pins the
+        # template so a new key cannot be added on top of a known one (ctrl+alt+p once was: it is `layoutmsg promote`).
+        reserved = "a s f c x p w m left right up down equal minus".split()
+        tpl = open(os.path.join(ROOT, "kittymux-keys.conf.tpl"), encoding="utf-8").read()
+        tpl = "\n".join(l for l in tpl.splitlines() if not l.startswith("map --when-focus-on"))   # tmux passthroughs
+        binds = [{"modmask": 12, "key": k} for k in reserved]
+        self.assertEqual(self.m.conflicts_from_binds(binds, tpl), [])
+
     def test_real_template_parses(self):
         tpl = open(os.path.join(ROOT, "kittymux-keys.conf.tpl"), encoding="utf-8").read()
         self.assertEqual(self.m.conflicts_from_binds([], tpl), [])
+
+
+class DimAndScreenshotTests(unittest.TestCase):
+    """Never touch a real kitty from tests: no socket, no kitty subprocess."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = mock.patch.dict(os.environ, {"KITTYMUX_STATE": self.tmp.name})
+        self.env.start()
+        self.patches = [mock.patch.object(self.m, "_target_socket", lambda: None),
+                        mock.patch.object(self.m, "_kitty_version", lambda: (0, 49, 2)),
+                        mock.patch.object(self.m, "_run", lambda *a, **k: (1, ""))]
+        for p in self.patches:
+            p.start()
+        self.flag = os.path.join(self.tmp.name, "dim-inactive")
+
+    def tearDown(self):
+        for p in self.patches:
+            p.stop()
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def test_dim_toggles_a_flag_file(self):
+        with mock.patch("sys.stdout"), mock.patch.object(self.m.kittymux_layout, "have_slangc", lambda: True):
+            self.assertEqual(self.m.dim(["show"]), 0)
+            self.assertFalse(os.path.exists(self.flag))
+            self.m.dim(["on"])
+            self.assertTrue(os.path.exists(self.flag))
+            self.m.dim(["toggle"])
+            self.assertFalse(os.path.exists(self.flag))
+            self.m.dim(["toggle"])
+            self.assertTrue(os.path.exists(self.flag))
+            self.m.dim(["off"])
+            self.assertFalse(os.path.exists(self.flag))
+            self.m.dim(["off"])                                       # idempotent
+
+    def test_dim_refuses_without_the_shader_compiler(self):
+        with mock.patch("sys.stderr"), mock.patch.object(self.m.kittymux_layout, "have_slangc", lambda: False):
+            self.assertEqual(self.m.dim(["on"]), 1)
+        self.assertFalse(os.path.exists(self.flag))                  # no flag, so no failing shader on every reload
+
+    def test_dim_rejects_nonsense(self):
+        with mock.patch("sys.stderr"):
+            self.assertEqual(self.m.dim(["sideways"]), 2)
+
+    def test_screenshot_needs_a_kitty_and_valid_options(self):
+        with mock.patch("sys.stderr"):
+            self.assertEqual(self.m.screenshot(["--bogus"]), 2)
+            self.assertEqual(self.m.screenshot([]), 1)               # no socket
 
 
 class HooksTests(unittest.TestCase):
@@ -61,9 +125,11 @@ class HooksTests(unittest.TestCase):
     def setUpClass(cls):
         cls.m = load()
 
-    def test_adds_three_events_to_empty(self):
+    def test_adds_every_event_to_empty(self):
         merged, added = self.m.merge_hooks({})
-        self.assertEqual(sorted(added), ["Notification", "Stop", "UserPromptSubmit"])
+        self.assertEqual(sorted(added), ["Notification", "PostToolUse", "SessionEnd", "Stop", "UserPromptSubmit"])
+        self.assertTrue(merged["hooks"]["PostToolUse"][0]["hooks"][0]["command"].endswith("bin/mux-status working"))
+        self.assertTrue(merged["hooks"]["SessionEnd"][0]["hooks"][0]["command"].endswith("bin/mux-status idle"))
         cmd = merged["hooks"]["Notification"][0]["hooks"][0]["command"]
         self.assertTrue(cmd.endswith("bin/mux-status waiting"))
 
@@ -121,7 +187,7 @@ class HooksTests(unittest.TestCase):
         cur = {"model": "opus", "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "echo mine"}]}]}}
         merged, _ = self.m.merge_hooks(cur)
         pruned, gone = self.m.remove_hooks(merged)
-        self.assertEqual(sorted(gone), ["Notification", "Stop", "UserPromptSubmit"])
+        self.assertEqual(sorted(gone), ["Notification", "PostToolUse", "SessionEnd", "Stop", "UserPromptSubmit"])
         self.assertEqual(pruned, cur)
 
     def test_remove_from_empty_or_foreign_is_noop(self):

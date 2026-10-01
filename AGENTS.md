@@ -9,7 +9,7 @@ remote work.
 - `kittymux.conf` — main config (included from the user's kitty.conf)
 - `kittymux-keys.conf.tpl` — keybind template; `install.sh` renders
   `@KITTYMUX_HOME@` into a generated conf. **Edit the .tpl, never the output.**
-- `bin/kittymux` — the CLI: `doctor`, `demo`, `hooks [--install|--remove]`, `upgrade`
+- `bin/kittymux` — the CLI: `doctor`, `demo`, `hooks [--install|--remove]`, `dim`, `screenshot`, `upgrade`
   (re-link + reload every kitty twice + doctor), `layout`
   (per-instance bar layout: `mode full|compact|hidden|cycle`, `edge`,
   `width`, `pick`, `default`). State: `$KITTYMUX_STATE/layout-<pid>.json`
@@ -32,6 +32,10 @@ remote work.
 - `assets/notify/` (built by `tools/build-notify-icons.py`) — one PNG per agent for notifications; `docs/brand/` — the mascot
   brief and image-model prompts (`tools/build-brand.py` derives sizes from `assets/brand/mascot.png`); `docs/notifications.md` — the
   notification flow, security model and limits. Icons are chosen from OUR table only, never from agent output.
+- `python/kittymux_openref.py` (pure) + `bin/mux-open-ref` + `open-actions.conf.tpl` — clickable `path/file.py:42[:7]`: kitty ≥ 0.49.2
+  `detect_url_regex` finds it, open-actions runs `mux-open-ref` (validated, never a shell, must be an existing regular file) → `$VISUAL`/`$EDITOR` at the line
+- `bin/mux-keys.py` — the `ctrl+alt+/` keymap overlay: parsed live from the rendered conf + extras for the deck/mouse/CLI; scrollable, searchable,
+  1–3 columns by width; pure helpers (`filter_sections`, `build_body`, `parse_input`, `step`) are unit-tested
 - `bin/mux-notify` — one desktop notification with a "Jump to it" action (focuses the window via kitty
   remote control, then `hyprctl`); started detached by the scanner, lives ≤ 30 s
 - `python/kittymux_barsize.py` — bar sizing + the `TabBar.tab_id_at` hit-test wrapper (installed by `tab_bar.py`)
@@ -57,6 +61,16 @@ States, most important first — a state needs positive evidence, and silence is
 | `done` | it was busy and is not, or a Stop hook — *unseen*; focusing the pane clears it | dim `✓` |
 | `idle` | an agent runs and nothing above applies | nothing |
 
+**Who decides "done"** (false completions were the worst bug class — keep these invariants):
+- A turn announced by a hook (`UserPromptSubmit`) ends only with the agent's own `Stop` hook. A quiet screen between tool calls, a repaint, or an
+  Esc interrupt (no Stop fires) is never "finished"; `hook_turn` is dropped after `_TURN_ABANDONED` of silence. Agents without hooks are judged by the screen alone.
+- A hook-`waiting` that is a real request (`is_request`) is never a completion, answered or not; only the idle notification ("waiting for your input") counts, and only
+  if no completion was reported yet this turn (`completed`).
+- Question/limit text on screen only counts when no activity hint is drawn BELOW it (stale prose above a live spinner), unless dialog chrome (`esc to cancel`, `(esc)`) is present.
+- A completion notifies only with a KNOWN duration ≥ 15 s (`worked is not None`) and after the 5 s settle.
+- Claude hooks installed by `kittymux hooks --install`: `UserPromptSubmit`/`PostToolUse` → working, `Notification` → waiting, `Stop` → done, `SessionEnd` → idle.
+  `kittymux doctor` reports missing events. Change `HOOK_EVENTS`, README's snippet and the tests together.
+
 A tab shows its panes rolled up (`kittymux_agents.tab_verdict`), not just the active pane. When the user is
 elsewhere (agent not focused): tab glyph, header badges `! N  ✓ N` (all tabs), a desktop notification for needs-you
 and for runs ≥ 15 s that finish, a WM urgency bell for needs-you only, `ctrl+alt+y` to jump. Off switches
@@ -77,6 +91,15 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
 - A glyph added to the icon font reaches a RUNNING kitty only after a restart (it loads fonts once): draw a new glyph only when
   `kittymux_agents.glyph_font_loaded()` says that kitty started after the installed font (see the mascot in the bar header).
   The mascot glyph (E0F9) is traced from `assets/brand/mascot.png` by `tools/trace-mascot.py` → `assets/icons/kittymux.svg`.
+- Options that only exist in newer kitty (`detect_url_regex`, `custom_shaders`) NEVER go in `kittymux.conf`: an older or still-running kitty reports a
+  config error at every reload. They are emitted by `kittymux_layout.gated_conf(version, …)` (the geninclude), keyed on the version of the kitty process asking
+  (`kitty.constants.version` — a kitty updated under a running session still reports its old version, which is exactly what we want). Opt-in looks
+  (`kittymux dim`) are flag files in `$KITTYMUX_STATE`, never default-on. Custom shaders also need `slangc` installed (`have_slangc`).
+- Keys: every new chord is checked against the window manager (`hyprctl binds -j`; `kittymux doctor` does all chords, `test_template_avoids_the_keys_hyprland_takes_with_ctrl_alt`
+  pins the known-taken `ctrl+alt` letters: a s f c x p w m + arrows/minus/equal). Hyprland sees a global chord first; `ctrl+alt+p` once shipped and was dead on arrival.
+- Overlay UIs (`launch --type=overlay`): one keypress must close them. Never `sys.stdin.read(n)` for a fixed n (a lone Esc blocks until n bytes arrive — it took 3 presses to
+  quit); read what is there with `select`/`os.read`, parse sequences, treat a lone ESC as Escape. The key that opens an overlay is still bound while it has focus, so give the
+  overlay a title and add `map --when-focus-on title:<t> <same chord> close_window`, or the chord stacks another overlay.
 - Anything that changes a key updates `kittymux-keys.conf.tpl` AND the README key table in one commit.
 
 ## Conventions
@@ -126,6 +149,10 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   (a running kitty upgraded under itself must draw cleanly after two reloads; `SMOKE_KEEP_STALE=1` must FAIL).
   `bash tests/smoke_sidebar.sh` (collapse/expand button, right-click peek, edge drag with real mouse events),
   `bash tests/smoke_drag.sh` (tab drag-to-reorder with real pointer events — kitty's DnD works under Xvfb),
+  `bash tests/smoke_panes.sh` (`ctrl+alt+shift+1..9` and the `ctrl+alt+e` overview agree on pane numbers; `ctrl+alt+PgUp/Home/End` scroll — real key events),
+  `bash tests/smoke_keys.sh` (the keymap overlay: one Esc/q/the chord closes it, no stacking, typing filters),
+  `bash tests/smoke_openref.sh` (ctrl+shift+click on `src/app.py:42:7` opens `$EDITOR +42`; kitty ≥ 0.49.2),
+  `bash tests/smoke_extras.sh` (`kittymux screenshot`; `kittymux dim` when `slangc` exists),
   `bash tests/smoke_workflows.sh` (two kitty instances with overlapping IDs: scratch isolation, target PID verification,
   unnamed-session attention jumps) and
   `bash tests/test_install.sh` (fresh-$HOME install → reinstall → config valid → uninstall; needs only kitty).

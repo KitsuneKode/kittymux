@@ -44,7 +44,8 @@ NOTIFY_EVERY = 10.0
 NOTIFY_DONE_MIN = 15.0        # a completion only notifies after this much work: a quick reply is not news
 DONE_SETTLE = 5.0             # ...and only once it has STAYED finished this long: a screen that blinks (a repaint, a popup,
                               # a status line that changes wording) is not a completion
-_PRIVATE = ("marker", "marker_ts", "seen_working", "unseen", "ack_ts", "work_ts", "handled_wait_ts")
+_PRIVATE = ("marker", "marker_ts", "seen_working", "unseen", "ack_ts", "work_ts", "handled_wait_ts",
+            "hook_turn", "hook_turn_ts", "completed")
 
 _helper_dirs_done = False
 
@@ -186,7 +187,7 @@ def scan_window(window, now: float) -> bool:
         if since is not None and now - since >= DONE_SETTLE:
             book.pop("done_since", None)           # settled: decide once
             worked = book.pop("done_worked", None)
-            if worked is None or worked >= NOTIFY_DONE_MIN:
+            if worked is not None and worked >= NOTIFY_DONE_MIN:   # unknown duration = cannot prove it was news
                 _notify(window, "done", "", agent)
     else:
         book.pop("done_since", None)               # it blinked back to work: that was no completion

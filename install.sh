@@ -76,6 +76,15 @@ if (( LEADER )); then
     ok "rendered leader mode (leader: $LEADER_KEY) → $LEADER_OUT"
 fi
 
+# ── open-actions: click `file.py:42` → editor at that line (needs kitty ≥ 0.49.2 for detect_url_regex) ──
+OPEN_OUT="$KITTY_CONF_DIR/open-actions.conf"
+if [[ ! -e "$OPEN_OUT" ]] || grep -q '^# kittymux — click a file reference' "$OPEN_OUT" 2>/dev/null; then
+    sed "s|@KITTYMUX_HOME@|$(sed_esc "$KITTYMUX_HOME")|g" "$KITTYMUX_HOME/open-actions.conf.tpl" > "$OPEN_OUT"
+    ok "rendered open-actions → $OPEN_OUT (click src/app.py:42 to open it in \$EDITOR)"
+else
+    warn "you already have $OPEN_OUT — add kittymux's two lines from open-actions.conf.tpl to use file:line clicks"
+fi
+
 # ── python symlinks (kitty auto-loads tab_bar.py from the config dir; the
 #    kittymux_*.py helpers are imported by tab_bar.py and the sidebar kitten) ──
 link_py() {

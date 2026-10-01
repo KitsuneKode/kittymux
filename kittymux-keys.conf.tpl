@@ -78,8 +78,18 @@ map shift+alt+right      neighboring_window right
 map ctrl+alt+o           nth_window -1
 map ctrl+alt+d           detach_window new-tab-right
 map ctrl+alt+shift+d     detach_window ask
-# ctrl+alt+p — number every pane on screen, then press its digit to focus it (tmux's display-panes; two panes: jumps straight over)
-map ctrl+alt+p           focus_visible_window
+# ctrl+alt+e — number every pane on screen, then press its digit to focus it (tmux's display-panes; two panes: jumps straight over)
+map ctrl+alt+e           focus_visible_window
+# ctrl+alt+shift+1..9 — focus pane N of this tab directly (the number ctrl+alt+e shows on each pane; ctrl+alt+1..9 are tabs)
+map ctrl+alt+shift+1   nth_window 0
+map ctrl+alt+shift+2   nth_window 1
+map ctrl+alt+shift+3   nth_window 2
+map ctrl+alt+shift+4   nth_window 3
+map ctrl+alt+shift+5   nth_window 4
+map ctrl+alt+shift+6   nth_window 5
+map ctrl+alt+shift+7   nth_window 6
+map ctrl+alt+shift+8   nth_window 7
+map ctrl+alt+shift+9   nth_window 8
 # ctrl+alt+shift+x — number every pane, press a digit to swap the current pane with that one
 map ctrl+alt+shift+x     swap_with_window
 # ctrl+alt+shift+h — show/hide pane title bars: drag handles for moving a split to a tab, another tab, or elsewhere
@@ -119,15 +129,22 @@ map ctrl+alt+shift+l     launch --type=overlay @KITTYMUX_HOME@/bin/kittymux layo
 
 # ============================================
 # RESIZE, SCROLLBACK & HELP
-# ctrl+alt+/         — keymap overlay (this list, parsed live)
+# ctrl+alt+/         — keymap overlay: searchable, scrollable, every key / gesture / command (press again or q/esc to close)
 # ctrl+alt+shift+/   — last command's output in pager
 # ctrl+alt+q         — close current pane (confirms if a process runs)
 # ctrl+alt+[ / ]     — jump between shell prompts in scrollback
 # alt+shift+h/l/j/k  — resize pane narrower/wider/taller/shorter
 # ============================================
-map ctrl+alt+slash        launch --type=overlay /usr/bin/python3 @KITTYMUX_HOME@/bin/mux-keys.py
+map ctrl+alt+slash        launch --type=overlay --title kittymux-keys /usr/bin/python3 @KITTYMUX_HOME@/bin/mux-keys.py
+# pressing it again while the overlay is open closes it (otherwise the key would stack a second overlay on top)
+map --when-focus-on title:kittymux-keys ctrl+alt+slash close_window
 map ctrl+alt+shift+slash  show_last_command_output
 map ctrl+alt+q            close_window_with_confirmation
+# ctrl+alt+PgUp / PgDn — scroll the scrollback a page; ctrl+alt+Home / End — oldest output / back to the live screen
+map ctrl+alt+page_up      scroll_page_up
+map ctrl+alt+page_down    scroll_page_down
+map ctrl+alt+home         scroll_home
+map ctrl+alt+end          scroll_end
 map ctrl+alt+bracketleft  scroll_to_prompt -1
 map ctrl+alt+bracketright scroll_to_prompt 1
 map alt+shift+h           resize_window narrower 1

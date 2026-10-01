@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""mux-open-ref — open `path/to/file.py:42[:7]` in your editor at that line.
+
+Started by kitty's open-actions (see open-actions.conf) when you click a file reference that
+kitty detected via `detect_url_regex`. The text came from program output, so it is validated
+(kittymux_openref.parse_ref) and must name an existing regular file; it is never run by a shell.
+Relative paths resolve against the clicked window's directory, then its git root.
+"""
+import os
+import subprocess
+import sys
+import time
+
+HOME = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+sys.path.insert(0, os.path.join(HOME, "python"))
+import kittymux_openref as ref  # noqa: E402
+
+
+def fail(msg: str) -> int:
+    print(f"kittymux: {msg}", file=sys.stderr)
+    time.sleep(2.5)                      # the window this runs in closes right after; leave time to read
+    return 1
+
+
+def git_root(cwd: str) -> str | None:
+    try:
+        out = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=2)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() or None if out.returncode == 0 else None
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 1:
+        return fail("usage: mux-open-ref path:line[:col]")
+    parsed = ref.parse_ref(argv[0])
+    if parsed is None:
+        return fail(f"not a file reference: {argv[0][:80]!r}")
+    path, line, col = parsed
+    cwd = os.getcwd()
+    file = ref.resolve(path, cwd, git_root(cwd))
+    if file is None:
+        return fail(f"no such file: {path} (looked in {cwd})")
+    editor = ref.default_editor(os.environ)
+    cmd = ref.editor_argv(editor, file, line, col)
+    if not cmd:
+        return fail("no editor found — set $EDITOR")
+    if ref.is_gui(editor):
+        subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        return 0
+    try:
+        os.execvp(cmd[0], cmd)
+    except OSError as e:
+        return fail(f"cannot run {cmd[0]}: {e}")
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

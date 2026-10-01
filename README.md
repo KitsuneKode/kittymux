@@ -125,7 +125,8 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+1..9` · `alt+1..9` | jump to tab N (session-scoped) |
 | `ctrl+alt+\`` | flip to previously active tab (MRU) |
 | `ctrl+alt+h j k l` | pane nav (`shift+alt+arrows`) · `ctrl+alt+o` last pane |
-| `ctrl+alt+p` · `ctrl+alt+shift+x` | number every pane on screen, press its digit to **focus** it · to **swap** with it (tmux's display-panes) |
+| `ctrl+alt+shift+1..9` | focus pane **N** of this tab straight away (the digit `ctrl+alt+e` draws on each pane) |
+| `ctrl+alt+e` · `ctrl+alt+shift+x` | number every pane on screen, press its digit to **focus** it · to **swap** with it (tmux's display-panes) |
 | `ctrl+alt+enter` | split horizontal · `+shift` vertical |
 | `ctrl+alt+d` / `+shift` | pane → new tab / chooser · `ctrl+alt+shift+h` shows/hides pane title bars (the drag handles) |
 | `ctrl+alt+z` / `0` | zoom pane / equalize |
@@ -145,6 +146,8 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+/` | keymap overlay — this table, parsed live from your conf |
 | `ctrl+alt+shift+/` | last command output in pager |
 | `ctrl+alt+[` / `]` | jump between shell prompts in scrollback |
+| `ctrl+alt+PgUp` / `PgDn` · `ctrl+alt+Home` / `End` | scroll the scrollback a page · to the oldest output / back to the live screen |
+| *kitty's own, still on* | `ctrl+shift+↑↓` or `j k` a line · `ctrl+shift+z` / `x` prompts · `ctrl+shift+h` scrollback in a pager (`/` searches) · `ctrl+shift+g` last command's output · `ctrl+shift+e` open a URL by letter · `ctrl+shift+p` then `n` pick a `file:line` · `ctrl+shift+f3` command palette (search every action) |
 | `alt+shift+hjkl` | resize pane |
 | `ctrl+alt+q` | close pane (confirms if a process runs) |
 | `ctrl+alt+shift+s` | save session now |
@@ -246,8 +249,10 @@ Claude Code hooks, by hand:
 {
   "hooks": {
     "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "~/kittymux/bin/mux-status working" }] }],
+    "PostToolUse":      [{ "hooks": [{ "type": "command", "command": "~/kittymux/bin/mux-status working" }] }],
     "Notification":     [{ "hooks": [{ "type": "command", "command": "~/kittymux/bin/mux-status waiting" }] }],
-    "Stop":             [{ "hooks": [{ "type": "command", "command": "~/kittymux/bin/mux-status done" }] }]
+    "Stop":             [{ "hooks": [{ "type": "command", "command": "~/kittymux/bin/mux-status done" }] }],
+    "SessionEnd":       [{ "hooks": [{ "type": "command", "command": "~/kittymux/bin/mux-status idle" }] }]
   }
 }
 ```
@@ -365,6 +370,28 @@ Kitty has native drag and drop; kittymux makes it work in the vertical bar:
 - **Tab → split (pull it in)** — open the deck (`ctrl+alt+b`, or the docked panel), select a tab and press
   **`a`**: all of its panes become splits of the tab you are in, and the emptied tab closes. Undo with
   `ctrl+alt+shift+d` on a pane. (kitty has no gesture for dropping a whole *tab* onto a pane.)
+
+### Click a `file:line`, dim the inactive pane, take a screenshot (kitty ≥ 0.49.2)
+
+- **`src/app.py:42` is a link.** `ctrl+shift+click` it (in an agent's output, a compiler error, a stack trace) and it opens in `$VISUAL`/`$EDITOR`
+  at that line (`nvim`/`vim`/`nano`: `+42`; `hx`/`micro`/`zed`: `file:42:7`; `code`/`cursor`: `--goto`). Relative paths resolve against the pane's folder,
+  then its git root. The text is validated and never run by a shell; a missing file opens nothing. `install.sh` links `open-actions.conf` for you only
+  if you have none (yours is never touched; otherwise it prints the two lines to add).
+- **`kittymux dim on|off|toggle`** dims the panes that are not focused, kitty's own `dim-inactive-windows` shader (0.49.2 stopped it dimming the tab bar). Off by default;
+  needs the `shader-slang` package (kitty compiles shaders with `slangc`) — without it the command says so instead of failing on every reload.
+- **`kittymux screenshot [--tab|--window] [file]`** — a PNG rendered by kitty itself (default `~/Pictures/kittymux-<time>.png`, mode 0600: it can show anything that was on screen).
+
+On kitty 0.49.1 none of these options are written to your config at all (they would be config errors there); `kittymux doctor` suggests updating — 0.49.2 also fixes a
+file-transfer confirmation bypass.
+
+## The keymap overlay (`ctrl+alt+/`)
+
+Every key, mouse gesture and `kittymux` command in one place, read live from your generated conf so it cannot drift. **Just type to search** (all words must match, any of
+section / key / description), `↑↓ j k` or the wheel scroll, `PgUp/PgDn`/space/`b` page, `g`/`G` ends, **`esc` clears the search first and then closes**, as do `q` and pressing
+`ctrl+alt+/` again. 1, 2 or 3 columns by width. kitty can only bind a *chord*, never a held modifier, so there is no "hold ctrl+alt to show it" — the overlay is one chord away.
+
+**Panes by number:** `ctrl+alt+e` draws a digit on every pane of the tab (tmux's display-panes) and the digit focuses it; `ctrl+alt+shift+1..9` jumps straight to pane N without the
+overlay (same numbers). Want letters instead? `visual_window_select_characters asdfghjkl` in your kitty.conf; the direct keys stay numeric.
 
 ## Upgrading
 

@@ -73,6 +73,58 @@ def render_conf(layout: Layout) -> str:
     return "\n".join(lines) + "\n"
 
 
+# ── options that only exist in newer kitty ───────────────────────────────────
+# A kitty that does not know an option reports a config error on every reload, and the kitty RUNNING
+# on this machine may be older than the files on disk (a package update under a live session). So
+# these lines are emitted only when the version of the kitty process asking says it understands them.
+DETECT_URL_MIN = (0, 49, 2)          # detect_url_regex
+DIM_SHADER_MIN = (0, 49, 2)          # dim-inactive-windows stopped dimming the tab bar here (custom_shaders itself is 0.49.0)
+DIM_FLAG = "dim-inactive"            # $KITTYMUX_STATE/dim-inactive present → dim the windows that are not focused
+
+
+# POSIX-ERE for `path/to/file.py:42[:7]`; kittymux_openref.DETECT_REGEX must stay identical (a unit test pins it —
+# this file runs as a geninclude script and cannot import its neighbours)
+DETECT_URL_REGEX = r"[[:alnum:]_./~-]+\.[[:alnum:]]+:[0-9]+(:[0-9]+)?"
+
+
+def have_slangc(env=None) -> bool:
+    """kitty compiles custom shaders with the slang compiler (`slangc`, or $SLANGC): without it every reload logs a failure."""
+    import shlex
+    import shutil
+    env = os.environ if env is None else env
+    try:
+        argv = shlex.split(env.get("SLANGC") or "slangc")
+    except ValueError:
+        return False
+    return bool(argv) and shutil.which(argv[0]) is not None
+
+
+def gated_conf(version: tuple, sdir: str, slangc: bool = False) -> str:
+    """Config lines for features the asking kitty supports. `version` is that kitty's (major, minor, patch);
+    `slangc` says the shader compiler is installed (custom shaders cannot build without it)."""
+    lines = []
+    if version >= DETECT_URL_MIN:
+        lines.append(f"detect_url_regex {DETECT_URL_REGEX}")
+    if version >= DIM_SHADER_MIN and slangc and os.path.exists(os.path.join(sdir, DIM_FLAG)):
+        lines.append("custom_shaders dim-inactive-windows")
+    return "".join(line + "\n" for line in lines)
+
+
+def kitty_version() -> tuple:
+    """(major, minor, patch) of the kitty asking for config; (0, 0, 0) when it cannot be told (nothing gated is emitted)."""
+    forced = os.environ.get("KITTYMUX_KITTY_VERSION")
+    if forced:
+        try:
+            return tuple(int(x) for x in forced.split(".")[:3])
+        except ValueError:
+            return (0, 0, 0)
+    try:
+        from kitty.constants import version        # only importable inside kitty's own interpreter
+        return tuple(version)
+    except Exception:
+        return (0, 0, 0)
+
+
 # ── transitions ──────────────────────────────────────────────────────────────
 def cycle(value: str, options: tuple, step: int = 1) -> str:
     i = options.index(value) if value in options else 0
@@ -388,6 +440,7 @@ def main() -> int:
     layout = load(sdir, kitty_pid())
     if layout is not None:                     # nothing saved → print nothing, change nothing
         sys.stdout.write(render_conf(layout))
+    sys.stdout.write(gated_conf(kitty_version(), sdir, have_slangc()))
     return 0
 
 

@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""key-hud.py — which-key overlay: parse the keybinds conf and render a
-grouped cheat-sheet card. Stays open until q/esc. Always accurate because
-it reads the same file kitty does.
+"""mux-keys.py — the keymap overlay (ctrl+alt+/): every kittymux key, mouse gesture and command, parsed
+live from the keybinds conf so it never drifts. Scrollable, searchable (just type, or /), responsive
+(1–3 columns by width). q / esc closes, and so does ctrl+alt+/ again.
 
-Usage: key-hud.py [conf-path]
+Usage: mux-keys.py [conf-path] [--leader]
 """
 
 import os
 import re
+import select
+import signal
 import sys
 import termios
 import tty
@@ -167,11 +169,26 @@ def _humanize_launch(rest: str) -> str:
     return ""
 
 _SECTION_ORDER = {
-    "SESSION MANAGEMENT": 0, "TABS & OS WINDOWS": 1, "TAB NAVIGATION": 2,
-    "PANE NAVIGATION": 3, "SPLITS": 4, "LAYOUTS": 5, "HUDS": 6,
-    "AGENTS": 6, "PROJECT PICKER": 7, "QUICK CONFIG EDITS": 8,
-    "FONT TOGGLE": 9, "TMUX PASSTHROUGH": 10, "OTHER": 11,
+    "SESSIONS": 0, "TABS": 1, "PANES": 2, "LAYOUTS": 3, "RESIZE, SCROLLBACK & HELP": 4, "HUDS": 5,
+    "PROJECT PICKER + SCRATCH CONFIG TAB": 6, "OTHER": 9,
 }
+
+_KEY_WORDS = {"slash": "/", "comma": ",", "period": ".", "semicolon": ";", "backslash": "\\", "bracketleft": "[",
+              "bracketright": "]", "grave_accent": "`", "minus": "-", "equal": "=", "page_up": "PgUp", "page_down": "PgDn",
+              "left": "←", "right": "→", "up": "↑", "down": "↓", "enter": "enter", "home": "Home", "end": "End"}
+
+
+def display_key(key: str) -> str:
+    """`ctrl+alt+shift+bracketleft` → `ctrl+alt+shift+[`: kitty's spelling is for the config, not for reading."""
+    head, sep, tail = key.rpartition("+")
+    return head + sep + _KEY_WORDS.get(tail, tail) if sep else _KEY_WORDS.get(key, key)
+
+
+def _comment_key(key: str) -> str:
+    """The conf spells a key `ctrl+alt+slash`; its comment may say `ctrl+alt+/`. Compare them in one spelling."""
+    head, sep, tail = key.rpartition("+")
+    back = {v: k for k, v in _KEY_WORDS.items() if len(v) == 1}
+    return (head + sep + back.get(tail, tail)).lower() if sep else key.lower()
 
 
 def _collapse_digit_runs(rows: list[tuple[str, str]]) -> list[tuple[str, str]]:
@@ -226,118 +243,19 @@ def parse_conf(path: str) -> list[tuple[str, list[tuple[str, str]]]]:
                 continue
             m = _KEY_IN_COMMENT.match(line)
             if m:
-                key_comments[m.group(1).strip()] = m.group(2).strip()
+                key_comments[_comment_key(m.group(1).strip())] = m.group(2).strip()
                 continue
             m = _MAP_LINE.match(line)
             if m and not line.startswith("map --when-focus-on"):
                 key, rest = m.group(1), m.group(2)
-                desc = key_comments.pop(key, None) or _humanize(rest)
+                desc = key_comments.pop(_comment_key(key), None) or _humanize(rest)
                 for s, rows in sections:
                     if s == current:
                         rows.append((key, desc))
                         break
                 else:
                     sections.append((current, [(key, desc)]))
-    return [(_clean_section(s), _collapse_digit_runs(r)) for s, r in sections if r]
-
-
-def _extra_groups() -> list[tuple[str, list[tuple[str, str]]]]:
-    return [
-        ("KITTY BUILT-INS", [
-            ("ctrl+shift+c / v", "copy / paste"),
-            ("ctrl+shift+h", "scrollback in pager"),
-            ("ctrl+shift+u", "unicode input"),
-            ("ctrl+shift+alt+r", "reload config"),
-        ]),
-        ("MOUSE", [
-            ("drag tab", "reorder"),
-            ("drag split border", "resize panes"),
-            ("hover edge", "scrollbar appears"),
-        ]),
-    ]
-
-
-# ── render ──────────────────────────────────────────────────────────────────
-
-def _truncate(s: str, limit: int) -> str:
-    return s if len(s) <= limit else s[:max(0, limit - 1)] + "…"
-
-
-def _render(sections, term_cols: int = 190) -> list[str]:
-    cols = 3
-    col_w = max(34, min(58, (term_cols - 8) // cols))
-    key_w = 22
-    desc_w = col_w - key_w - 3
-    # stable, meaningful column order
-    ordered = sorted(
-        sections,
-        key=lambda sr: _SECTION_ORDER.get(sr[0].upper(), 99))
-    ordered += _extra_groups()
-
-    # split into column buckets round-robin by height
-    heights = [0] * cols
-    buckets: list[list] = [[] for _ in range(cols)]
-    for name, rows in ordered:
-        block_h = len(rows) + 2
-        c = heights.index(min(heights))
-        buckets[c].append((name, rows))
-        heights[c] += block_h
-
-    # render each column as lines
-    col_lines: list[list[str]] = []
-    for bucket in buckets:
-        lines: list[str] = []
-        for name, rows in bucket:
-            lines.append(f"{C['head']}{name}{C['reset']}")
-            for key, desc in rows:
-                desc = _truncate(desc, desc_w)
-                lines.append(
-                    f"  {C['key']}{_truncate(key, key_w):<{key_w}}{C['reset']}{C['desc']}{desc}{C['reset']}")
-            lines.append("")
-        col_lines.append(lines)
-
-    height = max((len(c) for c in col_lines), default=0)
-    body: list[str] = []
-    for i in range(height):
-        row = ""
-        for c in range(cols):
-            cell = col_lines[c][i] if i < len(col_lines[c]) else ""
-            pad = col_w - _vlen(cell)
-            row += cell + " " * max(0, pad)
-        body.append(row.rstrip())
-
-    inner_w = max((_vlen(l) for l in body), default=40)
-    inner_w = max(inner_w, 40)
-    top = (f"{C['border']}╭{C['reset']}"
-           f"{C['title']} keymap{C['reset']}{C['dim']} · parsed from your conf{C['reset']}"
-           f"{' ' * max(0, inner_w - _vlen(' keymap · parsed from your conf'))}"
-           f"{C['border']}╮{C['reset']}")
-    bot = (f"{C['border']}╰{C['reset']}"
-           f"{C['dim']}any key closes{C['reset']}"
-           f"{' ' * max(0, inner_w - _vlen('any key closes'))}"
-           f"{C['border']}╯{C['reset']}")
-    out = [top]
-    for l in body:
-        pad = inner_w - _vlen(l)
-        out.append(f"{C['border']}│{C['reset']}{l}{' ' * pad}{C['border']}│{C['reset']}")
-    out.append(bot)
-    return out
-
-
-def _draw(lines, rows, cols):
-    w = _vlen(lines[0]) + 2
-    h = len(lines)
-    left = max(0, (cols - w) // 2)
-    top = max(0, (rows - h) // 2)
-    sys.stdout.write("\033[H")
-    for i, line in enumerate(lines):
-        sys.stdout.write(f"\033[{top + i};{left}f" + line)
-    sys.stdout.flush()
-
-
-def _last_box(lines):
-    w = _vlen(lines[0]) + 2
-    return len(lines), w
+    return [(_clean_section(s), [(display_key(k), d) for k, d in _collapse_digit_runs(r)]) for s, r in sections if r]
 
 
 # ── leader-mode card ────────────────────────────────────────────────────────
@@ -400,69 +318,343 @@ def parse_leader(conf: str) -> tuple[str, list[list[tuple[str, str]]]]:
     return leader, out
 
 
-def leader_card(conf: str, term_cols: int) -> list[str]:
-    leader, groups = parse_leader(conf)
-    if not groups:
-        groups = [[("—", "leader mode is not installed — run install.sh --leader")]]
-    blocks = []
-    for g in groups:
-        kw = max(len(k) for k, _ in g)
-        blocks.append([f"  {C['key']}{k:<{kw}}{C['reset']}  {C['desc']}{d}{C['reset']}" for k, d in g])
-    ncols = 3 if term_cols >= 120 else 2 if term_cols >= 80 else 1
-    cols: list[list[str]] = [[] for _ in range(ncols)]
-    for b in blocks:                       # fill the shortest column first
-        target = min(cols, key=len)
-        target.extend(b + [""])
-    height = max(len(c) for c in cols)
-    col_w = max((_vlen(l) for c in cols for l in c), default=30) + 3
-    body = []
-    for i in range(height):
-        body.append("".join((c[i] if i < len(c) else "") + " " * (col_w - _vlen(c[i] if i < len(c) else ""))
-                            for c in cols).rstrip())
-    inner_w = max(max((_vlen(l) for l in body), default=40), 44)
-    head = f" leader · {leader} then a key"
-    top = (f"{C['border']}╭{C['reset']}{C['title']}{head}{C['reset']}"
-           f"{' ' * max(0, inner_w - len(head))}{C['border']}╮{C['reset']}")
-    foot = " any key closes · unmapped key or 2s cancels leader"
-    bot = (f"{C['border']}╰{C['reset']}{C['dim']}{foot}{C['reset']}"
-           f"{' ' * max(0, inner_w - len(foot))}{C['border']}╯{C['reset']}")
-    out = [top]
-    for l in body:
-        out.append(f"{C['border']}│{C['reset']}{l}{' ' * (inner_w - _vlen(l))}{C['border']}│{C['reset']}")
-    out.append(bot)
+def extra_groups() -> list[tuple[str, list[tuple[str, str]]]]:
+    """Everything kittymux does that is not a key in the conf: the deck, the mouse, the CLI, switches."""
+    return [
+        ("DECK  (ctrl+alt+b)", [
+            ("j / k", "move down / up"),
+            ("J / K", "previous / next session"),
+            ("enter", "go to the tab or pane"),
+            ("/  or just type", "find by title, branch, folder, agent, state"),
+            ("a", "absorb the pane into the tab you came from"),
+            ("t", "promote the pane to its own tab"),
+            ("hover · click", "preview a tab or pane · focus it"),
+            ("q / esc", "close (esc clears a search first)"),
+        ]),
+        ("TAB BAR  (mouse)", [
+            ("click a tab", "switch to it"),
+            ("right-click a tab", "peek card: its panes and live screen"),
+            ("drag a tab", "reorder"),
+            ("drag a pane title onto a tab", "move that split into the tab (ctrl+alt+shift+h shows the titles)"),
+            ("drag a pane title onto the bar", "turn the split into its own tab"),
+            ("drag the bar's edge", "resize the sidebar"),
+            ("click « / »", "collapse to the rail / expand"),
+        ]),
+        ("FILE REFERENCES", [
+            ("ctrl+shift+click", "src/app.py:42 → open in $EDITOR at that line (kitty ≥ 0.49.2)"),
+        ]),
+        ("COMMANDS  (kittymux …)", [
+            ("doctor", "check the install and your window manager's key conflicts"),
+            ("upgrade", "after a git pull: reload every kitty and re-check"),
+            ("layout mode|edge|width|pick", "tab bar: full / rail / hidden, side, width, presets"),
+            ("dim on|off|toggle", "dim the panes that are not focused (kitty ≥ 0.49.2)"),
+            ("screenshot [--tab|--window] [file]", "PNG of this kitty window, rendered by kitty"),
+            ("hooks --install", "Claude Code status hooks (backs up settings first)"),
+            ("demo · uninstall", "try it in a scratch window · take it back out"),
+        ]),
+        ("NOTIFICATIONS  (~/.local/state/kittymux)", [
+            ("touch notify-off", "no desktop notifications at all"),
+            ("touch notify-done-off", "only needs-you ones, not completions"),
+            ("touch notify-private", "show \"<agent> needs you\" instead of the question"),
+            ("touch bell-off", "no window-manager urgency flash"),
+        ]),
+        ("SCROLLBACK & HINTS  (kitty built-ins)", [
+            ("ctrl+shift+↑ ↓  or  j k", "scroll a line"),
+            ("ctrl+shift+PgUp / PgDn", "scroll a page"),
+            ("ctrl+shift+Home / End", "oldest output / live screen"),
+            ("ctrl+shift+z / x", "previous / next shell prompt"),
+            ("ctrl+shift+h", "scrollback in a pager (/ searches)"),
+            ("ctrl+shift+g", "last command's output"),
+            ("ctrl+shift+e", "open a URL by typing its letter"),
+            ("ctrl+shift+p, n", "pick a file:line on screen, open it in the editor"),
+            ("ctrl+shift+p, f / w / h", "insert a path / word / hash from the screen"),
+            ("ctrl+shift+f3", "command palette: search every kitty action"),
+        ]),
+        ("KITTY BUILT-INS", [
+            ("ctrl+shift+c / v", "copy / paste"),
+            ("ctrl+shift+u", "unicode input"),
+            ("ctrl+shift+alt+r", "reload config"),
+            ("drag a split border", "resize panes"),
+        ]),
+    ]
+
+
+# ── search / layout (pure) ──────────────────────────────────────────────────
+
+def words_of(query: str) -> list[str]:
+    return [w for w in query.lower().split() if w]
+
+
+def filter_sections(sections, query: str):
+    """Rows whose section, key or description contain every word of `query` (case-insensitive); empty sections drop out."""
+    words = words_of(query)
+    if not words:
+        return sections
+    out = []
+    for name, rows in sections:
+        keep = [(k, d) for k, d in rows if all(w in f"{name} {k} {d}".lower() for w in words)]
+        if keep:
+            out.append((name, keep))
     return out
+
+
+def column_count(width: int) -> int:
+    return 3 if width >= 150 else 2 if width >= 96 else 1
+
+
+def _highlight(text: str, words: list[str]) -> str:
+    """Reverse-video every occurrence of a search word in `text` (plain text in, SGR out)."""
+    if not words:
+        return text
+    low, marks = text.lower(), [False] * len(text)
+    for w in words:
+        i = low.find(w)
+        while i != -1:
+            for j in range(i, i + len(w)):
+                marks[j] = True
+            i = low.find(w, i + len(w))
+    out, on = "", False
+    for ch, m in zip(text, marks):
+        if m != on:
+            out += "\033[7m" if m else "\033[27m"
+            on = m
+        out += ch
+    return out + ("\033[27m" if on else "")
+
+
+def build_body(sections, width: int, query: str = "") -> list[str]:
+    """The scrollable text for a terminal `width` cells wide: sections packed into 1–3 columns."""
+    words = words_of(query)
+    inner = max(20, width - 3)                       # one cell of margin each side + the scrollbar
+    ncols = column_count(inner)
+    col_w = (inner - 2 * (ncols - 1)) // ncols
+    key_w = max(10, min(26 if ncols > 1 else 30, col_w * 2 // 5 if ncols > 1 else col_w // 2))
+    desc_w = max(8, col_w - key_w - 3)
+    heights, buckets = [0] * ncols, [[] for _ in range(ncols)]
+    for name, rows in sections:
+        c = heights.index(min(heights))
+        buckets[c].append((name, rows))
+        heights[c] += len(rows) + (2 if name else 1)
+    cols: list[list[str]] = []
+    for bucket in buckets:
+        lines: list[str] = []
+        for name, rows in bucket:
+            if name:
+                lines.append(f"{C['head']}{_highlight(_truncate(name, col_w), words)}{C['reset']}")
+            for key, desc in rows:
+                k, d = _truncate(key, key_w), _truncate(desc, desc_w)
+                gap = " " * (key_w - len(k))
+                lines.append(f"  {C['key']}{_highlight(k, words)}{C['reset']}{gap} {C['desc']}{_highlight(d, words)}{C['reset']}")
+            lines.append("")
+        cols.append(lines)
+    body = []
+    for i in range(max((len(c) for c in cols), default=0)):
+        row = ""
+        for n, c in enumerate(cols):
+            cell = c[i] if i < len(c) else ""
+            row += cell + " " * max(0, col_w - _vlen(cell)) + ("  " if n < ncols - 1 else "")
+        body.append(" " + row.rstrip())
+    while body and not body[-1].strip():
+        body.pop()
+    return body
+
+
+def _truncate(s: str, limit: int) -> str:
+    return s if len(s) <= limit else s[:max(0, limit - 1)] + "…"
+
+
+# ── input (pure) ────────────────────────────────────────────────────────────
+
+_MOUSE = re.compile(r"\x1b\[<(\d+);\d+;\d+[Mm]")
+_CSI = re.compile(r"\x1b\[[0-9;?<]*[ -/]*[@-~]")
+_KEYS = {"\x1b[A": "up", "\x1b[B": "down", "\x1bOA": "up", "\x1bOB": "down", "\x1b[5~": "pgup", "\x1b[6~": "pgdn",
+         "\x1b[H": "home", "\x1b[F": "end", "\x1b[1~": "home", "\x1b[4~": "end", "\x1bOH": "home", "\x1bOF": "end"}
+_CTRL = {"\x03": "ctrl-c", "\x04": "ctrl-d", "\x07": "esc", "\x0e": "down", "\x10": "up", "\x15": "ctrl-u",
+         "\r": "enter", "\n": "enter", "\x7f": "backspace", "\x08": "backspace"}
+
+
+def parse_input(data: str) -> list[str]:
+    """Raw terminal input → key tokens ('up', 'pgdn', 'wheel_down', 'esc', 'a', …). A lone ESC byte is Escape
+    (it arrives alone; arrow keys and mouse reports arrive as one chunk)."""
+    toks, i = [], 0
+    while i < len(data):
+        rest = data[i:]
+        m = _MOUSE.match(rest)
+        if m:
+            btn = int(m.group(1))
+            if btn in (64, 65):
+                toks.append("wheel_up" if btn == 64 else "wheel_down")
+            i += m.end()
+            continue
+        if rest[0] == "\x1b":
+            if len(rest) == 1:
+                toks.append("esc")
+                i += 1
+                continue
+            hit = next((k for k in _KEYS if rest.startswith(k)), None)
+            if hit:
+                toks.append(_KEYS[hit])
+                i += len(hit)
+                continue
+            m = _CSI.match(rest)
+            i += m.end() if m else 1                  # an unknown escape sequence: swallow it whole
+            continue
+        ch = rest[0]
+        i += 1
+        if ch in _CTRL:
+            toks.append(_CTRL[ch])
+        elif ch >= " " and ch != "\x7f":
+            toks.append(ch)
+    return toks
+
+
+class State:
+    def __init__(self):
+        self.query, self.searching, self.top = "", False, 0
+
+
+def step(st: State, tok: str, body_len: int, view_h: int) -> str | None:
+    """Apply one key to the state; returns "quit" to close. Pure: no terminal access."""
+    page = max(1, view_h - 1)
+    scroll = {"up": -1, "down": 1, "wheel_up": -3, "wheel_down": 3, "pgup": -page, "pgdn": page}
+    if tok in scroll:
+        st.top += scroll[tok]
+    elif tok == "home":
+        st.top = 0
+    elif tok == "end":
+        st.top = body_len
+    elif tok == "ctrl-c":
+        return "quit"
+    elif tok == "esc":
+        if st.query or st.searching:
+            st.query, st.searching, st.top = "", False, 0       # esc backs out of a search first…
+        else:
+            return "quit"                                        # …then closes
+    elif st.searching:
+        if tok == "enter":
+            st.searching = False
+        elif tok == "backspace":
+            st.query = st.query[:-1]
+            st.searching, st.top = bool(st.query), 0
+        elif tok == "ctrl-u":
+            st.query, st.top = "", 0
+        elif len(tok) == 1:
+            st.query, st.top = st.query + tok, 0
+    elif tok == "/":
+        st.searching = True
+    elif tok in ("q",):
+        return "quit"
+    elif tok in ("j",):
+        st.top += 1
+    elif tok in ("k",):
+        st.top -= 1
+    elif tok in (" ", "f", "ctrl-d"):
+        st.top += page if tok != "ctrl-d" else page // 2
+    elif tok in ("b", "ctrl-u"):
+        st.top -= page if tok != "ctrl-u" else page // 2
+    elif tok == "g":
+        st.top = 0
+    elif tok == "G":
+        st.top = body_len
+    elif tok == "backspace" and st.query:
+        st.query = st.query[:-1]
+    elif len(tok) == 1:                                           # any other character starts a search
+        st.query, st.searching, st.top = tok, True, 0
+    st.top = max(0, min(st.top, max(0, body_len - view_h)))
+    return None
+
+
+# ── screen ──────────────────────────────────────────────────────────────────
+
+def frame(st: State, sections, rows: int, cols: int) -> list[str]:
+    """The whole screen as exactly `rows` lines (each at most `cols` wide). Clamps st.top."""
+    cols, rows = max(30, cols), max(6, rows)
+    shown = filter_sections(sections, st.query)
+    body = build_body(shown, cols, st.query)
+    view_h = rows - 4
+    st.top = max(0, min(st.top, max(0, len(body) - view_h)))
+    n = sum(len(r) for _, r in shown)
+    total = sum(len(r) for _, r in sections)
+    title = f" {C['title']}keymap{C['reset']}{C['dim']} · {n if st.query else total} bindings · parsed from your conf{C['reset']}"
+    if st.searching:
+        search = f" {C['key']}/{C['reset']} {C['desc']}{st.query}{C['reset']}{C['key']}▏{C['reset']}"
+    elif st.query:
+        search = f" {C['key']}/{C['reset']} {C['desc']}{st.query}{C['reset']}{C['dim']}  · esc clears{C['reset']}"
+    else:
+        search = f" {C['dim']}type to search · / also works{C['reset']}"
+    out = [title, search, f"{C['border']}{'─' * cols}{C['reset']}"]
+    window = body[st.top:st.top + view_h]
+    if not body:
+        window = [f" {C['dim']}no bindings match “{st.query}”{C['reset']}"]
+    thumb = (0, 0)
+    if len(body) > view_h:
+        size = max(1, view_h * view_h // len(body))
+        start = (view_h - size) * st.top // max(1, len(body) - view_h)
+        thumb = (start, start + size)
+    for i in range(view_h):
+        line = window[i] if i < len(window) else ""
+        bar = f"{C['border']}┃{C['reset']}" if thumb[0] <= i < thumb[1] else (f"{C['dim']}│{C['reset']}" if thumb[1] else " ")
+        out.append(line + " " * max(0, cols - 1 - _vlen(line)) + bar)
+    pos = "" if len(body) <= view_h else (" top" if st.top == 0 else " end" if st.top >= len(body) - view_h
+                                          else f" {100 * (st.top + view_h) // len(body)}%")
+    help_text = "↑↓ j/k scroll · space/b page · g/G ends · / search · q or esc close"
+    help_text = help_text if len(help_text) + len(pos) + 2 <= cols else "↑↓ scroll · / search · q close"
+    out.append(f" {C['dim']}{help_text}{' ' * max(0, cols - len(help_text) - len(pos) - 2)}{pos}{C['reset']}")
+    return out
+
+
+def sections_for(conf: str, leader: bool) -> list:
+    if leader:
+        key, groups = parse_leader(conf)
+        if not groups:
+            groups = [[("—", "leader mode is not installed — run install.sh --leader")]]
+        return [((f"LEADER · {key} then a key" if i == 0 else ""), g) for i, g in enumerate(groups)]
+    ordered = sorted(parse_conf(conf), key=lambda sr: _SECTION_ORDER.get(sr[0].upper(), 99))
+    return ordered + extra_groups()
 
 
 def main() -> int:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    leader = "--leader" in sys.argv
     cfg_dir = os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.join(
         os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "kitty")
-    try:
-        term_cols = os.get_terminal_size().columns
-    except OSError:
-        term_cols = 190
-    if "--leader" in sys.argv:
-        conf = args[0] if args else os.path.join(cfg_dir, "kittymux-leader.conf")
-        lines = leader_card(conf, term_cols)
-    else:
-        conf = args[0] if args else os.path.join(cfg_dir, "kittymux-keys.conf")
-        lines = _render(parse_conf(conf), term_cols)
-
+    conf = args[0] if args else os.path.join(cfg_dir, "kittymux-leader.conf" if leader else "kittymux-keys.conf")
+    sections = sections_for(conf, leader)
+    st = State()
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
+    resized = [True]
+    signal.signal(signal.SIGWINCH, lambda *_: resized.__setitem__(0, True))
     try:
         tty.setcbreak(fd)
-        sys.stdout.write("\033[2J\033[?25l")
+        sys.stdout.write("\033[?1049h\033[?25l\033[?1000h\033[?1006h")
         while True:
+            if resized[0]:
+                resized[0] = False
+                size = os.get_terminal_size()
+                lines = frame(st, sections, size.lines, size.columns)
+                sys.stdout.write("\033[H" + "\033[K\n".join(lines) + "\033[K")
+                sys.stdout.flush()
+            try:
+                ready, _, _ = select.select([fd], [], [], 0.5)
+            except InterruptedError:
+                continue
+            if not ready:
+                continue
+            data = os.read(fd, 4096).decode("utf-8", "ignore")
+            if data == "\x1b":                       # a lone ESC may be the start of a sequence split by the tty: peek briefly
+                if select.select([fd], [], [], 0.02)[0]:
+                    data += os.read(fd, 4096).decode("utf-8", "ignore")
             size = os.get_terminal_size()
-            _draw(lines, size.lines, size.columns)
-            ch = sys.stdin.read(1)
-            if ch == "\x1b":
-                sys.stdin.read(2)  # arrow keys etc.
-            break  # any key dismisses
+            body_len = len(build_body(filter_sections(sections, st.query), size.columns, st.query))
+            for tok in parse_input(data):
+                if step(st, tok, body_len, size.lines - 4) == "quit":
+                    return 0
+                body_len = len(build_body(filter_sections(sections, st.query), size.columns, st.query))
+            resized[0] = True
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
-        sys.stdout.write("\033[?25h\033[2J\033[H")
+        sys.stdout.write("\033[?1006l\033[?1000l\033[?25h\033[?1049l")
         sys.stdout.flush()
     return 0
 

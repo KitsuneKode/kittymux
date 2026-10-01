@@ -50,7 +50,7 @@ class ClassifyTests(unittest.TestCase):
             self.assertEqual(marker(text), "working", text)
 
     def test_limit_outranks_everything(self):
-        self.assertEqual(marker(LIMIT + CLAUDE_WORKING), "limited")
+        self.assertEqual(marker(CLAUDE_WORKING + LIMIT), "limited")
         self.assertEqual(marker("You've hit your usage limit."), "limited")
         self.assertEqual(marker("Resource has been exhausted (e.g. check quota)."), "limited")
 
@@ -59,6 +59,15 @@ class ClassifyTests(unittest.TestCase):
 
     def test_waiting_outranks_working(self):
         self.assertEqual(marker(CLAUDE_PERMISSION + CLAUDE_WORKING), "waiting")
+
+    def test_prose_above_a_live_spinner_is_not_a_prompt_or_a_limit(self):
+        # the agent's own reply mentions a prompt / a limit while it keeps working: nothing for you to do
+        self.assertEqual(marker("Do you want to proceed? (y/n) is what the script asks.\n" + CLAUDE_WORKING), "working")
+        self.assertEqual(marker(LIMIT + CLAUDE_WORKING), "working")
+
+    def test_a_real_dialog_wins_even_with_a_spinner_drawn_below(self):
+        self.assertEqual(marker(CLAUDE_PERMISSION + CLAUDE_WORKING), "waiting")
+        self.assertEqual(marker(CODEX_APPROVAL + CODEX_WORKING), "waiting")
 
     def test_idle_prompt_and_empty(self):
         self.assertEqual(marker(IDLE_PROMPT), "")
@@ -165,7 +174,37 @@ class ResolveTests(unittest.TestCase):
 
     def test_waiting_hook_without_a_message_is_not_a_request(self):
         self.assertEqual(self.r(mk="", status="waiting", ts_status=90.0, msg="", focused=True), "idle")
-        self.assertEqual(self.r(mk="", status="waiting", ts_status=95.0, msg=""), "done")
+        self.assertEqual(self.r(mk="", status="waiting", ts_status=95.0, msg=""), "idle")   # already looked at: no second "done"
+
+    def test_hook_announced_turn_ends_only_with_the_stop_hook(self):
+        # UserPromptSubmit fired: a quiet screen between tool calls (or an Esc interrupt) is not "finished"
+        self.assertEqual(self.r(mk="working", status="working", ts_status=100.0), "working")
+        self.assertEqual(self.r(mk="", dt=5.0), "idle")                         # gap longer than the debounce
+        self.assertEqual(self.r(mk="working", dt=1.0), "working")               # tool done, it carries on
+        self.assertEqual(self.r(mk="", dt=5.0), "idle")
+        self.assertEqual(self.r(mk="", dt=2.0, status="done", ts_status=113.0), "done")   # the Stop hook says so
+
+    def test_interrupted_hook_turn_never_becomes_done(self):
+        self.assertEqual(self.r(mk="working", status="working", ts_status=100.0), "working")
+        for _ in range(4):
+            self.assertEqual(self.r(mk="", dt=60.0), "idle")                    # no Stop hook ever arrives
+        # and the next turn without a hook is judged by the screen again
+        self.r(mk="working", dt=1.0)
+        self.assertEqual(self.r(mk="", dt=3.0), "done")
+
+    def test_answered_permission_request_is_not_a_completion(self):
+        self.r(mk="working", status="working", ts_status=90.0)                  # UserPromptSubmit
+        self.assertEqual(self.r(mk="waiting", dt=10.0, status="waiting", ts_status=100.0,
+                                msg="Claude needs your permission to use Bash"), "waiting")
+        self.assertEqual(self.r(mk="working", dt=2.0), "working")               # you approved; it runs
+        self.assertEqual(self.r(mk="", dt=3.0), "idle")    # a quiet moment, the request hook is still fresh
+
+    def test_idle_notification_after_an_acknowledged_stop_is_not_a_second_completion(self):
+        self.r(mk="working", status="working", ts_status=100.0)
+        self.assertEqual(self.r(mk="", dt=2.0, status="done", ts_status=102.0), "done")
+        self.assertEqual(self.r(mk="", dt=1.0, focused=True), "idle")           # you looked
+        self.assertEqual(self.r(mk="", dt=60.0, status="waiting", ts_status=161.0,
+                                msg="Claude is waiting for your input"), "idle")
 
     def test_request_wording(self):
         for msg in ("Claude needs your permission to use Bash", "Approve: rm -rf node_modules?",

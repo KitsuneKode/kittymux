@@ -55,6 +55,14 @@ jobs:
         run: bash tests/smoke_sidebar.sh
       - name: tab drag-to-reorder (real pointer events)
         run: bash tests/smoke_drag.sh
+      - name: pane jump keys agree with the pane overview (real key events)
+        run: bash tests/smoke_panes.sh
+      - name: keymap overlay closes in one keypress, searches, scrolls
+        run: bash tests/smoke_keys.sh
+      - name: clickable file:line (kitty >= 0.49.2) and screenshots
+        run: |
+          bash tests/smoke_openref.sh
+          bash tests/smoke_extras.sh
       - name: two-instance scratch safety and unnamed-session attention jump
         run: bash tests/smoke_workflows.sh
       - name: an upgraded, running kitty draws cleanly after two reloads

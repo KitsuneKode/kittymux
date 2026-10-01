@@ -28,6 +28,10 @@ mkdir -p "$CONF" && printf 'font_size 12\n' > "$CONF/kitty.conf"       # a user 
 grep -q '^font_size 12$' "$CONF/kitty.conf" || fail "the user's own kitty.conf line was lost"
 ok "fresh install: links, keys, font, 0700 state dir; the existing kitty.conf line is kept"
 
+[ -f "$CONF/open-actions.conf" ] && ! grep -q '@KITTYMUX_HOME@' "$CONF/open-actions.conf" \
+  && grep -q "$HOME_DIR/bin/mux-open-ref" "$CONF/open-actions.conf" || fail "open-actions.conf was not rendered"
+ok "open-actions.conf rendered with this checkout's mux-open-ref"
+
 before=$(cat "$CONF/kitty.conf")
 "$HOME_DIR/install.sh" --leader >/dev/null 2>&1 || fail "second install failed"
 [ "$before" = "$(cat "$CONF/kitty.conf")" ] || fail "a second install changed kitty.conf (it must be idempotent)"
@@ -69,4 +73,12 @@ out=$(check_config)
 printf '%s' "$out" | grep -q "BAD LINES: 0" && ! printf '%s' "$out" | grep -qE "Could not find included|unknown config key" \
   || { printf '%s\n' "$out" | head; fail "kitty complains after uninstall (a dangling include?)"; }
 ok "kitty is happy after uninstall too"
+# a user's OWN open-actions.conf is never overwritten and never removed
+printf 'protocol file\nmime text/*\naction launch --type=overlay less ${FILE_PATH}\n' > "$CONF/open-actions.conf"
+"$HOME_DIR/install.sh" >"$T/install2.out" 2>&1 || fail "install over a user's open-actions failed"
+grep -q 'mime text/\*' "$CONF/open-actions.conf" && ! grep -q mux-open-ref "$CONF/open-actions.conf" || fail "install overwrote the user's open-actions.conf"
+grep -q "open-actions" "$T/install2.out" || fail "install did not tell the user how to add the file:line lines"
+"$HOME_DIR/bin/kittymux" uninstall --yes >/dev/null 2>&1
+grep -q 'mime text/\*' "$CONF/open-actions.conf" || fail "uninstall deleted the user's open-actions.conf"
+ok "a user's own open-actions.conf is kept by install and uninstall"
 echo "PASS: install → reinstall → config valid → doctor → uninstall, in a fresh \$HOME"

@@ -24,6 +24,25 @@ Before kittymux filtered anything, each event could notify **twice**: once from 
    action (`bin/mux-notify` → `kitty @ focus-window` → `hyprctl`), which lands on the pane that is asking.
    With dunst the action is middle-click (or `dunstctl action`); other daemons differ.
 
+## When is something "finished"? (false completions)
+
+A notification that says "finished" while the agent is still working is worse than none. The rules (all unit-tested in
+`tests/test_state.py`, resolver in `python/kittymux_state.py`):
+
+1. **The agent's own word wins.** When a hook announced the turn (Claude's `UserPromptSubmit`), only its `Stop` hook ends it.
+   A quiet screen between tool calls, a repaint, a status line that reworded itself, or an Esc interrupt is not a completion.
+   (`PostToolUse` tells us a tool call ended and work continues; `SessionEnd` clears leftovers.) Agents without hooks
+   (Devin, Gemini, …) are judged by the screen alone: busy marker gone for 5 s after ≥ 15 s of work.
+2. **A permission request you answered is not "done".** It is why the agent paused. Claude's idle notice ("waiting for your input")
+   counts as a completion only if none was reported yet this turn, so it can never produce a second one.
+3. **Prose is not a prompt.** `(y/n)` or "usage limit reached" inside the agent's own reply, above a live spinner, is ignored; a real
+   dialog (it has `esc to cancel` / `(esc)` chrome) still wins even with a spinner drawn nearby.
+4. **Unknown duration, no notification.** A completion is announced only when we saw it work ≥ 15 s.
+
+Run `kittymux hooks --install` once (it backs up `~/.claude/settings.json`) and `kittymux doctor` tells you if an event is missing.
+What this cannot know: whether an agent's *own* terminal notification (OSC 9/99) slips past the title/app filter — those are dropped by
+`filter_notification` only when they name a known agent.
+
 ## Security and privacy measures
 
 - **Untrusted text.** The notification body can come from the agent's screen (a permission prompt, a command).
