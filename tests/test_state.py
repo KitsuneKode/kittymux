@@ -114,12 +114,33 @@ class ResolveTests(unittest.TestCase):
         # user approved in the TUI; Claude fires no hook until the turn ends
         self.assertEqual(self.r(mk="working", status="waiting", ts_status=90.0), "working")
 
-    def test_hook_waiting_stands_when_nothing_contradicts_it(self):
+    def test_hook_waiting_stands_when_it_is_a_request_and_nothing_contradicts_it(self):
         self.assertEqual(self.r(mk="", status="waiting", ts_status=90.0, msg="Approve: rm -rf x?"), "waiting")
+        self.assertEqual(self.r(mk="", status="waiting", ts_status=90.0,
+                                msg="Claude needs your permission to use Bash"), "waiting")
 
     def test_idle_notification_is_not_a_request(self):
+        # focused: you are looking at it, so nothing to flag
         self.assertEqual(
-            self.r(mk="", status="waiting", ts_status=90.0, msg="Claude is waiting for your input"), "idle")
+            self.r(mk="", status="waiting", ts_status=90.0, msg="Claude is waiting for your input", focused=True),
+            "idle")
+
+    def test_idle_notification_after_finishing_is_an_unseen_completion_not_a_bang(self):
+        # Stop hook → done; ~60 s later Claude's idle Notification flips the hook to "waiting"
+        self.assertEqual(self.r(mk="", status="done", ts_status=80.0), "done")
+        self.assertEqual(
+            self.r(mk="", status="waiting", ts_status=140.0, msg="Claude is waiting for your input", dt=60.0), "done")
+
+    def test_waiting_hook_without_a_message_is_not_a_request(self):
+        self.assertEqual(self.r(mk="", status="waiting", ts_status=90.0, msg="", focused=True), "idle")
+        self.assertEqual(self.r(mk="", status="waiting", ts_status=95.0, msg=""), "done")
+
+    def test_request_wording(self):
+        for msg in ("Claude needs your permission to use Bash", "Approve: rm -rf node_modules?",
+                    "Do you want to proceed", "Allow this command?"):
+            self.assertTrue(S.is_request(msg), msg)
+        for msg in ("Claude is waiting for your input", "", None, "Task finished"):
+            self.assertFalse(S.is_request(msg), msg)
 
     def test_interrupted_agent_does_not_spin_forever(self):
         # hook said working; user pressed Esc; no Stop hook ever fires

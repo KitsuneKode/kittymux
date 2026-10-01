@@ -158,6 +158,15 @@ class VerdictTests(ScanBase):
         KS.scan_all()
         self.assertEqual(KS._RT.verdicts["9"]["state"], "idle")
 
+    def test_unfocused_finished_agent_with_idle_notification_is_done_not_waiting(self):
+        with open(KS._panes_path(), "w") as f:
+            json.dump({"10": {"status": "waiting", "msg": "", "ts_status": 1.0}}, f)
+        self.add(FakeWindow(10, "claude", IDLE))
+        with mock.patch.object(KS, "_notify") as notify:
+            KS.scan_all()
+        self.assertEqual(KS._RT.verdicts["10"]["state"], "done")
+        notify.assert_not_called()                              # nothing here asks for you
+
 
 class NotifyTests(ScanBase):
     def test_notifies_once_when_an_unfocused_agent_starts_needing_you(self):

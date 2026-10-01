@@ -72,13 +72,14 @@ def classify_screen(text: str) -> tuple[str, str]:
     return "", ""
 
 
-# Notification texts agents send when they are merely idle ("Claude is waiting for your
-# input"), which is NOT a request for approval.
-_IDLE_NOTICE_RE = re.compile(r"waiting\s+for\s+your\s+input|\bis\s+idle\b|\bfinished\b|\bdone\b", _I)
+# A hook "waiting" is a real request when its message reads like one. Claude also fires a
+# Notification ~60 s after it finishes ("Claude is waiting for your input") — that is idleness, not a
+# request, and must not turn a finished agent into a permanent "!".
+_REQUEST_RE = re.compile(r"permission|approv|confirm|needs\s+your|\ballow\b|proceed|authori[sz]|\?\s*$", _I)
 
 
-def is_idle_notice(msg: str) -> bool:
-    return bool(msg and _IDLE_NOTICE_RE.search(msg))
+def is_request(msg: str) -> bool:
+    return bool(msg and _REQUEST_RE.search(msg) and not re.search(r"waiting\s+for\s+your\s+input", msg, _I))
 
 
 def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bool) -> str:
@@ -116,12 +117,15 @@ def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bo
     # nothing recognisable on screen
     if explicit == "working" and now - ts_status < _HOOK_GRACE:
         return "working"                           # the hook just fired; the TUI has not drawn yet
-    if explicit == "waiting" and not is_idle_notice(entry.get("msg", "")):
+    if explicit == "waiting" and is_request(entry.get("msg", "")):
         return "waiting"                           # a hook asked for you and nothing contradicts it
     if entry.pop("seen_working", False):
         entry["unseen"] = True                     # it was busy and now is not: a completion
-    if explicit == "done" and entry.get("ack_ts") != ts_status:
-        entry["unseen"] = True
+    if explicit == "done" or (explicit == "waiting" and ts_status):
+        # a Stop hook, or an idle notification after it (not a request): the agent finished and is
+        # waiting for its next prompt — an unseen completion until you look at it
+        if entry.get("ack_ts") != ts_status:
+            entry["unseen"] = True
     if focused:
         entry["unseen"] = False                    # you are looking at it
         entry["ack_ts"] = ts_status
