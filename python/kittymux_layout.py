@@ -88,15 +88,30 @@ DETECT_URL_REGEX = r"[[:alnum:]_./~-]+\.[[:alnum:]]+:[0-9]+(:[0-9]+)?"
 
 
 def have_slangc(env=None) -> bool:
-    """kitty compiles custom shaders with the slang compiler (`slangc`, or $SLANGC): without it every reload logs a failure."""
+    """kitty compiles custom shaders with the slang compiler: $SLANGC if set, else the one kitty itself resolves (official
+    bundles ship their own next to the executable; distro builds use `slangc` on PATH). Without it every reload logs a failure."""
     import shlex
     import shutil
+    import subprocess
     env = os.environ if env is None else env
+    argv: list = []
     try:
-        argv = shlex.split(env.get("SLANGC") or "slangc")
-    except ValueError:
+        if env.get("SLANGC"):
+            argv = shlex.split(env["SLANGC"])
+        else:
+            try:
+                from kitty.constants import slangc          # inside kitty's own interpreter
+                argv = list(slangc())
+            except Exception:                               # the CLI: ask kitty which one it would use
+                out = subprocess.run(["kitty", "+runpy", "from kitty.constants import slangc; print(chr(10).join(slangc()))"],
+                                     capture_output=True, text=True, timeout=8).stdout
+                argv = out.split("\n")[:1] if out.strip() else []
+    except (ValueError, OSError, subprocess.SubprocessError):
         return False
-    return bool(argv) and shutil.which(argv[0]) is not None
+    if not argv:
+        return False
+    exe = argv[0]
+    return (os.path.isfile(exe) and os.access(exe, os.X_OK)) if "/" in exe else shutil.which(exe) is not None
 
 
 def gated_conf(version: tuple, sdir: str, slangc: bool = False) -> str:

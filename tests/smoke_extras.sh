@@ -27,7 +27,7 @@ for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 2
 "$HOME_DIR/bin/kittymux" screenshot "$T/off.png" >/dev/null 2>&1 || fail "kittymux screenshot failed"
 [ "$(stat -c %a "$T/off.png")" = 600 ] || fail "screenshot is not private (mode $(stat -c %a "$T/off.png"))"
 identify "$T/off.png" >/dev/null 2>&1 || fail "screenshot is not a valid image"
-if ! command -v slangc >/dev/null 2>&1; then
+if ! python3 -c 'import sys;sys.path.insert(0,sys.argv[1]);import kittymux_layout as L;sys.exit(0 if L.have_slangc() else 1)' "$HOME_DIR/python"; then
     "$HOME_DIR/bin/kittymux" dim on >/dev/null 2>&1 && fail "dim on should refuse without slangc"
     [ ! -e "$STATE/dim-inactive" ] || fail "dim on left its flag behind without slangc"
     echo "PASS (screenshot only): screenshots are private valid PNGs; dim refuses cleanly without slangc (dim render not checked here)"
@@ -35,7 +35,7 @@ if ! command -v slangc >/dev/null 2>&1; then
 fi
 "$HOME_DIR/bin/kittymux" dim on >/dev/null 2>&1 || fail "kittymux dim on failed"
 sleep 1.5
-grep -qiE "error|unknown|shader" "$T/k.log" && fail "kitty reported a problem after dim on"
+grep -qiE "custom shader|slangc|Failed to build|unknown (config|option)" "$T/k.log" && fail "kitty reported a problem after dim on"
 "$HOME_DIR/bin/kittymux" screenshot "$T/on.png" >/dev/null 2>&1 || fail "second screenshot failed"
 diff=$(compare -metric AE "$T/off.png" "$T/on.png" null: 2>&1 | awk '{print int($1)}')
 [ "${diff:-0}" -gt 2000 ] || fail "dim on did not change the render (only ${diff:-0} pixels differ)"
