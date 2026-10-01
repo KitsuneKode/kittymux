@@ -68,8 +68,10 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
 ## Rules
 
 - No hardcoded palettes (theme tokens come from kitty's live colours); no module-level timer state; never read silence as waiting.
-- Never restart the user's live kitties. Work in the `feature/roadmap` worktree, test with the smoke rigs, apply to live by
-  reload only (`kittymux upgrade`); record `kitty @ ls` window counts before/after. `main` is what live kitties load.
+- Never restart the user's live kitties. Work in an isolated worktree INSIDE the repo — `git worktree add .worktrees/<name> -b <name> main`
+  (`.worktrees/` is git-ignored, and editors/agents scoped to this folder can see it) — test with the smoke rigs, merge to `main`, then apply
+  to live by reload only (`kittymux upgrade`); record `kitty @ ls` window counts before/after. `main` is what live kitties load, so never
+  leave it half-edited.
 - Icons come from real brand marks: `assets/icons/*.svg` → `tools/build-icons.py` (append-only codepoints; fits non-square
   viewBoxes by their longest side). Devin's mark is Cognition's own; Antigravity's is the Google mark.
 - Anything that changes a key updates `kittymux-keys.conf.tpl` AND the README key table in one commit.
