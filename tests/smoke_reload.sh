@@ -56,7 +56,7 @@ cat > "$T/session.kitty" <<SESS
 new_tab api
 launch
 new_tab claude
-launch sh -c 'exec -a claude sleep 300'
+launch bash -c 'exec -a claude sleep 300'
 new_tab notes
 launch
 focus_tab 1

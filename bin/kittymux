@@ -354,21 +354,21 @@ cd {home}
 launch
 new_tab claude
 cd {home}
-launch sh -c 'printf " Bash command\\n   rm -rf node_modules\\n Do you want to proceed?\\n ❯ 1. Yes\\n   2. No\\n"; exec -a claude sleep 86400'
+launch bash -c 'printf " Bash command\\n   rm -rf node_modules\\n Do you want to proceed?\\n ❯ 1. Yes\\n   2. No\\n"; exec -a claude sleep 86400'
 new_tab codex
 cd {home}
-launch sh -c 'printf "• Working (12s • esc to interrupt)\\n"; exec -a codex sleep 86400'
+launch bash -c 'printf "• Working (12s • esc to interrupt)\\n"; exec -a codex sleep 86400'
 new_tab antigravity
 cd {home}
-launch sh -c 'printf "  Thinking · 2m 4s (esc to interrupt)\\n"; exec -a agy sleep 86400'
+launch bash -c 'printf "  Thinking · 2m 4s (esc to interrupt)\\n"; exec -a agy sleep 86400'
 new_tab droid
 cd {home}
-launch sh -c 'printf "No active subscription found.\\nSubscribe to start using Droid.\\n"; exec -a droid sleep 86400'
+launch bash -c 'printf "No active subscription found.\\nSubscribe to start using Droid.\\n"; exec -a droid sleep 86400'
 new_tab review
 cd {home}
 launch
-launch --location=vsplit sh -c 'printf " Allow this command?\\n ❯ 1. Yes\\n   2. No\\n"; exec -a claude sleep 86400'
-launch --location=hsplit sh -c 'printf "• Working (3m 2s • esc to interrupt)\\n"; exec -a codex sleep 86400'
+launch --location=vsplit bash -c 'printf " Allow this command?\\n ❯ 1. Yes\\n   2. No\\n"; exec -a claude sleep 86400'
+launch --location=hsplit bash -c 'printf "• Working (3m 2s • esc to interrupt)\\n"; exec -a codex sleep 86400'
 new_tab notes
 cd {home}
 launch
