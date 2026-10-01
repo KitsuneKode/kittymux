@@ -144,6 +144,20 @@ chmod +x "$KITTYMUX_HOME/python/kittymux_layout.py" 2>/dev/null || true
 add_include "geninclude $KITTYMUX_HOME/python/kittymux_layout.py"
 ok "kitty.conf includes added (backup: kitty.conf.bak.*)"
 
+# ── the `kittymux` command on your PATH ─────────────────────────────────────
+BIN_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
+mkdir -p "$BIN_DIR"
+if [[ -e "$BIN_DIR/kittymux" && ! -L "$BIN_DIR/kittymux" ]]; then
+    warn "$BIN_DIR/kittymux exists and is not a link — left alone (use $KITTYMUX_HOME/bin/kittymux)"
+else
+    ln -sfn "$KITTYMUX_HOME/bin/kittymux" "$BIN_DIR/kittymux"
+    ok "kittymux command → $BIN_DIR/kittymux"
+fi
+case ":$PATH:" in
+    *":$BIN_DIR:"*) ;;
+    *) warn "$BIN_DIR is not on your PATH — add  export PATH=\"$BIN_DIR:\$PATH\"  to your shell profile (then: kittymux doctor)" ;;
+esac
+
 # ── state dir + exec bits ───────────────────────────────────────────────────
 mkdir -p "$STATE_DIR/sessions" && chmod 700 "$STATE_DIR" "$STATE_DIR/sessions"
 chmod +x "$KITTYMUX_HOME"/bin/* 2>/dev/null || true
@@ -159,5 +173,5 @@ say "    listen_on unix:\${XDG_RUNTIME_DIR}/mykitty"
 say "  to kitty.conf if you don't already have one."
 say "• live Claude quota is opt-in: export KITTYMUX_USAGE_LIVE=1"
 say "• project picker root: export KITTYMUX_PROJECTS=~/code"
-say "• uninstall: remove the three include lines, the tab_bar.py symlink,"
-say "  and $STATE_DIR"
+say "• try it:  kittymux doctor   ·   kittymux screenshot   ·   kittymux dim on   ·   kittymux demo"
+say "• uninstall: kittymux uninstall --yes   (removes the include lines, symlinks and the command; --purge also $STATE_DIR)"

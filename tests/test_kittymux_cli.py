@@ -110,6 +110,21 @@ class DimAndScreenshotTests(unittest.TestCase):
             self.assertEqual(self.m.dim(["on"]), 1)
         self.assertFalse(os.path.exists(self.flag))                  # no flag, so no failing shader on every reload
 
+    def test_uninstall_plan_removes_only_our_path_link(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            home, cfg, fonts, binp = (os.path.join(d, n) for n in ("home", "cfg", "fonts", "bin"))
+            os.makedirs(os.path.join(home, "bin")), os.makedirs(cfg), os.makedirs(fonts), os.makedirs(binp)
+            open(os.path.join(home, "bin", "kittymux"), "w").close()
+            os.symlink(os.path.join(home, "bin", "kittymux"), os.path.join(binp, "kittymux"))
+            self.assertIn(os.path.join(binp, "kittymux"), self.m.plan_uninstall(cfg, home, fonts, binp)["links"])
+            os.unlink(os.path.join(binp, "kittymux"))
+            open(os.path.join(binp, "kittymux"), "w").close()               # a file of the user's with that name
+            self.assertNotIn(os.path.join(binp, "kittymux"), self.m.plan_uninstall(cfg, home, fonts, binp)["links"])
+            os.unlink(os.path.join(binp, "kittymux"))
+            os.symlink("/usr/bin/true", os.path.join(binp, "kittymux"))     # a link to something else
+            self.assertNotIn(os.path.join(binp, "kittymux"), self.m.plan_uninstall(cfg, home, fonts, binp)["links"])
+
     def test_dim_rejects_nonsense(self):
         with mock.patch("sys.stderr"):
             self.assertEqual(self.m.dim(["sideways"]), 2)

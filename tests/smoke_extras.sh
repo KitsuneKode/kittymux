@@ -17,7 +17,7 @@ for n in $(seq 161 199); do [ -e "/tmp/.X$n-lock" ] || { DISP=:$n; break; }; don
 Xvfb "$DISP" -screen 0 1200x800x24 >/dev/null 2>&1 & XPID=$!
 sleep 1; kill -0 "$XPID" 2>/dev/null || { echo "SKIP: Xvfb would not start"; XPID=""; exit 0; }
 cp "$HOME_DIR/python/kittymux_layout.py" "$CFG/"
-printf 'allow_remote_control yes\nenabled_layouts splits\ngeninclude %s/kittymux_layout.py\n' "$CFG" > "$CFG/kitty.conf"
+printf 'allow_remote_control yes\nenabled_layouts splits\nbackground #f0f0f0\nforeground #202020\ngeninclude %s/kittymux_layout.py\n' "$CFG" > "$CFG/kitty.conf"
 printf 'layout splits\nlaunch sh\nlaunch --location=vsplit sh\n' > "$T/session"
 export KITTYMUX_STATE=$STATE KITTYMUX_TARGET=$SOCK KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_NOTIFY=0
 env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP \

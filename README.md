@@ -31,10 +31,14 @@ different states. Press `ctrl+alt+b` for the deck, `ctrl+alt+y` to jump to the w
 Like it? Install:
 
 ```sh
-~/kittymux/install.sh            # add --leader for tmux-style leader mode
-~/kittymux/bin/kittymux doctor   # tells you exactly what (if anything) is off
-~/kittymux/bin/kittymux hooks --install   # Claude Code status hooks (backup first)
+~/kittymux/install.sh            # add --leader for tmux-style leader mode; also links `kittymux` into ~/.local/bin
+kittymux doctor                  # tells you exactly what (if anything) is off
+kittymux hooks --install         # Claude Code status hooks (backup first)
+kittymux screenshot              # …and the rest: dim, layout, upgrade (see `kittymux help`)
 ```
+
+If `kittymux` is "not found", `~/.local/bin` is not on your `PATH`: add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile (the installer says so).
+`kittymux uninstall --yes` removes the command along with everything else it added.
 
 ## What you get
 

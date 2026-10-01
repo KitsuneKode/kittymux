@@ -28,6 +28,8 @@ mkdir -p "$CONF" && printf 'font_size 12\n' > "$CONF/kitty.conf"       # a user 
 grep -q '^font_size 12$' "$CONF/kitty.conf" || fail "the user's own kitty.conf line was lost"
 ok "fresh install: links, keys, font, 0700 state dir; the existing kitty.conf line is kept"
 
+[ -L "$HOME/.local/bin/kittymux" ] && [ "$("$HOME/.local/bin/kittymux" version)" = "kittymux $(sed -n 's/^VERSION = "\(.*\)"/\1/p' "$HOME_DIR/bin/kittymux")" ] || fail "the kittymux command was not put on PATH"
+ok "kittymux command linked into ~/.local/bin and runs"
 [ -f "$CONF/open-actions.conf" ] && ! grep -q '@KITTYMUX_HOME@' "$CONF/open-actions.conf" \
   && grep -q "$HOME_DIR/bin/mux-open-ref" "$CONF/open-actions.conf" || fail "open-actions.conf was not rendered"
 ok "open-actions.conf rendered with this checkout's mux-open-ref"
@@ -64,6 +66,7 @@ ok "doctor runs without crashing"
 "$HOME_DIR/bin/kittymux" uninstall --yes --purge >"$T/un.out" 2>&1 || { cat "$T/un.out"; fail "uninstall failed"; }
 left=$(grep -c kittymux "$CONF/kitty.conf" || true)
 [ "$left" = 0 ] || fail "uninstall left $left kittymux lines in kitty.conf"
+[ ! -e "$HOME/.local/bin/kittymux" ] || fail "uninstall left the kittymux command behind"
 [ ! -e "$CONF/tab_bar.py" ] && [ ! -e "$CONF/kittymux_state.py" ] && [ ! -e "$CONF/kittymux-keys.conf" ] \
   && [ ! -e "$XDG_DATA_HOME/fonts/kittymux-icons.ttf" ] && [ ! -e "$XDG_STATE_HOME/kittymux" ] || fail "uninstall left files behind"
 grep -q '^font_size 12$' "$CONF/kitty.conf" || fail "uninstall damaged the user's own config"

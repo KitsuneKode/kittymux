@@ -235,6 +235,13 @@ def doctor() -> int:
         r.ok(f"{dep} (optional)") if shutil.which(dep) else r.warning(f"{dep} not found — {why} disabled")
 
     print("\ninstall")
+    on_path = shutil.which("kittymux")
+    if on_path and os.path.realpath(on_path) == os.path.realpath(os.path.join(HOME_DIR, "bin", "kittymux")):
+        r.ok(f"`kittymux` command on PATH ({on_path})")
+    elif on_path:
+        r.warning(f"`kittymux` on PATH is a different copy: {os.path.realpath(on_path)}", "run ./install.sh to point it at this checkout")
+    else:
+        r.warning("`kittymux` is not on your PATH", "run ./install.sh (it links ~/.local/bin/kittymux) and make sure ~/.local/bin is on PATH")
     conf = os.path.join(CFG, "kitty.conf")
     text = _conf_text(conf)
     if not text:
@@ -815,7 +822,7 @@ def _is_ours(path: str) -> bool:
         return False
 
 
-def plan_uninstall(cfg_dir: str, home_dir: str, font_dir: str) -> dict:
+def plan_uninstall(cfg_dir: str, home_dir: str, font_dir: str, bin_dir: str | None = None) -> dict:
     """What install.sh put in place, found by looking — nothing is removed here.
     {"conf_lines": [...], "links": [...], "files": [...], "font": path|None}"""
     conf = os.path.join(cfg_dir, "kitty.conf")
@@ -838,6 +845,9 @@ def plan_uninstall(cfg_dir: str, home_dir: str, font_dir: str) -> dict:
                 links.append(path)
     except OSError:
         pass
+    cmd = os.path.join(bin_dir, "kittymux") if bin_dir else ""
+    if cmd and os.path.islink(cmd) and os.path.realpath(cmd) == os.path.realpath(os.path.join(home_dir, "bin", "kittymux")):
+        links.append(cmd)                          # the PATH command install.sh made (a file of yours by that name is not touched)
     files = [os.path.join(cfg_dir, n) for n in _MANAGED_FILES if os.path.isfile(os.path.join(cfg_dir, n))
              and (n != "open-actions.conf" or _is_ours(os.path.join(cfg_dir, n)))]
     font = os.path.join(font_dir, "kittymux-icons.ttf")
@@ -867,7 +877,8 @@ def uninstall(argv: list[str]) -> int:
     Claude hooks. Dry run unless --yes; the state dir (layouts, caches) only goes with --purge."""
     yes, purge = "--yes" in argv, "--purge" in argv
     font_dir = os.path.join(os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share")), "fonts")
-    plan = plan_uninstall(CFG, HOME_DIR, font_dir)
+    bin_dir = os.environ.get("XDG_BIN_HOME") or os.path.expanduser("~/.local/bin")
+    plan = plan_uninstall(CFG, HOME_DIR, font_dir, bin_dir)
     print(c("1", "kittymux uninstall") + ("" if yes else c("2", "  (dry run — nothing is changed)")))
     for ln in plan["conf_lines"]:
         print(f"  kitty.conf  - {ln}")
