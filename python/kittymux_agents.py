@@ -20,8 +20,8 @@ AGENTS: dict[str, Agent] = {
     "opencode":     Agent("", 0xfab283),
     "amp":          Agent("", 0xf5c2e7),
     "devin":        Agent("", 0x8b5cf6),
-    "agy":          Agent("\ue0e1", 0x3186ff),
-    "antigravity":  Agent("\ue0e1", 0x3186ff),
+    "agy":          Agent("\ue0ef", 0x3186ff),
+    "antigravity":  Agent("\ue0ef", 0x3186ff),
     "aider":        Agent("✎", 0xa6e3a1),
     "crush":        Agent("♥", 0xf38ba8),
     "grok":         Agent("✗", 0xf9e2af),
@@ -139,23 +139,30 @@ def resolve_msg(entry: dict | None, status: str) -> str:
 
 
 # ── quiet glyphs for non-agent tools ─────────────────────────────────────────
-# Agents get their brand logo; a few well-known tools get a small muted Nerd Font
-# glyph; a plain shell gets nothing (a calm, empty icon column). Order = priority:
+# Agents get their brand logo; well-known tools get their real logo rendered
+# quiet (kittymux icons font, BMP mirrors U+E0E1+). Tools without a logo keep a
+# small muted Nerd Font glyph; a plain shell gets nothing. Order = priority:
 # an editor beats the node process it spawned.
 TOOLS: dict[str, str] = {}
 for _glyph, _names in (
-    ("", ("nvim", "vim", "vi", "hx", "helix", "micro", "nano", "emacs")),
-    ("", ("git", "lazygit", "tig", "gitui")),
-    ("", ("docker", "podman", "lazydocker")),
-    ("\U000f10fe", ("kubectl", "k9s", "helm")),
-    ("", ("ssh", "mosh", "mosh-client")),
-    ("", ("psql", "pgcli", "mysql", "mycli", "sqlite3", "redis-cli")),
-    ("", ("htop", "btop", "top", "glances", "nvtop")),
-    ("", ("man", "less", "bat")),
-    ("", ("cargo", "rustc")),
-    ("", ("go",)),
-    ("", ("python", "python3", "ipython", "uv")),
-    ("", ("node", "bun", "deno", "npm", "pnpm", "yarn", "npx")),
+    ("\ue0e9", ("nvim", "vim", "vi", "hx", "helix", "micro", "nano", "emacs")),
+    ("\ue0e8", ("git", "lazygit", "tig", "gitui")),
+    ("\ue0e2", ("docker", "podman", "lazydocker")),
+    ("\ue0e3", ("kubectl", "k9s", "helm")),
+    ("\uf233", ("ssh", "mosh", "mosh-client")),
+    ("\ue0ea", ("psql", "pgcli")),
+    ("\ue76e", ("mysql", "mycli", "sqlite3", "redis-cli")),
+    ("\uf080", ("htop", "btop", "top", "glances", "nvtop")),
+    ("\uf02d", ("man", "less", "bat")),
+    ("\ue0e4", ("cargo", "rustc")),
+    ("\ue0e5", ("go",)),
+    ("\ue0e6", ("python", "python3", "ipython", "uv")),
+    ("\ue0e7", ("node", "npx")),
+    ("\ue0e1", ("bun",)),
+    ("\ue0eb", ("deno",)),
+    ("\ue0ee", ("npm",)),
+    ("\ue0ec", ("pnpm",)),
+    ("\ue0ed", ("yarn",)),
 ):
     for _n in _names:
         TOOLS[_n] = _glyph

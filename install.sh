@@ -98,6 +98,11 @@ ok "tab_bar.py + helper modules → symlinks"
 [[ -f "$EDGE_FILE" ]] || printf '# managed by kittymux mux-edge.sh — do not edit\ntab_bar_edge bottom\n' > "$EDGE_FILE"
 ok "tab-edge include ready"
 
+# ── managed tab-bar-style file (mux-bar.sh rewrites it; hidden ⇄ custom) ────
+BAR_FILE="$KITTY_CONF_DIR/include-tab-bar.conf"
+[[ -f "$BAR_FILE" ]] || printf '# managed by kittymux mux-bar.sh — do not edit\ntab_bar_style custom\n' > "$BAR_FILE"
+ok "tab-bar include ready"
+
 # ── brand icon font (real provider logos via symbol_map) ─────────────────────
 FONT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/fonts"
 mkdir -p "$FONT_DIR"

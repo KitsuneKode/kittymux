@@ -38,7 +38,7 @@ Like it? Install:
   agent logo, title, git branch, pane count, and one status glyph — **◐ working**,
   **◆ waiting on you**, **✓ done** (shape *and* colour, so it is readable without colour vision).
   Every colour is derived from *your* kitty theme, so it follows theme switches.
-- **Quiet tool glyphs.** Agents get their brand logo; recognised tools (editor, git, ssh, docker, node, python…) get a small muted glyph; a plain shell stays blank — so the icon column tells you what is running without adding noise.
+- **Quiet tool glyphs.** Agents get their brand logo; recognised tools get their *real* logo rendered muted — bun, docker, kubernetes, rust, go, python, node, git, neovim, postgres, deno, pnpm, yarn, npm (all built into the bundled icon font); a plain shell stays blank — so the icon column tells you what is running without adding noise.
 - **The sidebar deck** (`ctrl+alt+b`). Every tab across every session, grouped, with live
   pane preview, hover/click, the agent's own message ("Approve: rm -rf node_modules?"), the
   PR number and listening ports (`:3000`).
@@ -56,6 +56,8 @@ Like it? Install:
 - **Leader mode** (opt-in). Tap `ctrl+space`, then one key — no modifier chords fighting your
   window manager. The bar shows a LEADER badge while armed; `?` shows the card.
 - **Honest usage HUDs.** Real local numbers or "unavailable" — never fabricated. Network is opt-in.
+  The overlay paints instantly — skeletons first, then each provider fills in as its collector
+  lands; slow live quota fetches merge last. Errors and timeouts surface per-row, not as a hang.
 
 ### How is this different?
 
@@ -116,7 +118,8 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+t` / `+shift` | new tab beside / at end |
 | `shift+←` / `shift+→` | prev / next tab (session-scoped) |
 | `ctrl+alt+shift+←/→` · `↑/↓` | move the tab — arrows follow the bar: ←/→ on a horizontal bar, ↑/↓ on a vertical one (both always work) |
-| `ctrl+alt+1..9` | jump to tab N |
+| `ctrl+alt+1..9` · `alt+1..9` | jump to tab N (session-scoped) |
+| `ctrl+alt+\`` | flip to previously active tab (MRU) |
 | `ctrl+alt+h j k l` | pane nav (`shift+alt+arrows`) · `ctrl+alt+o` last pane |
 | `ctrl+alt+enter` | split horizontal · `+shift` vertical |
 | `ctrl+alt+d` / `+shift` | pane → new tab / chooser |

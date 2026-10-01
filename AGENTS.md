@@ -9,8 +9,16 @@ remote work.
 - `kittymux.conf` — main config (included from the user's kitty.conf)
 - `kittymux-keys.conf.tpl` — keybind template; `install.sh` renders
   `@KITTYMUX_HOME@` into a generated conf. **Edit the .tpl, never the output.**
-- `bin/` — shell scripts (mux-*); shared helpers in `lib/mux.sh`
-- `python/tab_bar.py` — custom tab bar (two-line vertical rows, brand icons)
+- `bin/kittymux` — the CLI: `doctor`, `demo`, `hooks`, `layout`
+  (per-instance bar layout: `mode full|compact|hidden|cycle`, `edge`,
+  `width`, `pick`, `default`). State: `$KITTYMUX_STATE/layout-<pid>.json`
+- `bin/mux-panel` — docks `sidebar-kit.py` as a Wayland layer-shell panel
+  (`ctrl+alt+shift+b`): always-visible clickable sidebar, survives a hidden bar
+- `bin/` — shell scripts (mux-*); shared helpers in `lib/mux.sh`, `lib/socket.sh`
+- `python/kittymux_layout.py` — layout engine; loaded via `geninclude` so its
+  output must come LAST in kitty.conf (it wins over earlier tab_bar_* lines)
+- `python/tab_bar.py` — custom tab bar (two-line vertical rows, brand icons,
+  compact rail rendering; helper modules `kittymux_*.py` reload every config load)
 - `python/pane-state.py` — kitty `watcher`: per-window activity →
   `$KITTYMUX_STATE/panes-<kittypid>.json` (drives waiting/busy marks)
 - `python/kittymux_theme.py` / `kittymux_agents.py` / `kittymux_deck.py` — pure helper modules

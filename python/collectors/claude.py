@@ -125,8 +125,14 @@ def live(cached_live: dict) -> dict:
     except (OSError, json.JSONDecodeError, subprocess.TimeoutExpired):
         return cached_live
     rows = []
-    for key, label in (("five_hour", "5h"), ("seven_day", "wk")):
+    for key, label in (("five_hour", "5h"), ("seven_day", "wk"),
+                       ("seven_day_opus", "wk·opus"),
+                       ("seven_day_sonnet", "wk·sonnet"),
+                       ("seven_day_cowork", "wk·cowork"),
+                       ("seven_day_oauth_apps", "wk·apps")):
         w = data.get(key) or {}
+        if not isinstance(w, dict):
+            continue
         u = w.get("utilization")
         if isinstance(u, (int, float)) and u <= 1.0:
             u = u * 100  # fraction form

@@ -48,7 +48,7 @@ RANK = {"limited": 0, "waiting": 0, "done": 1, "working": 2, "idle": 3}
 GLYPH = {
     "claude": "", "codex": "", "cursor-agent": "", "cursor": "",
     "gemini": "", "opencode": "", "amp": "", "devin": "",
-    "agy": "\ue0e1", "antigravity": "\ue0e1",
+    "agy": "\ue0ef", "antigravity": "\ue0ef",
     "aider": "✎", "crush": "♥", "grok": "✗",
 }
 
