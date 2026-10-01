@@ -48,6 +48,17 @@ STATE = os.environ.get("KITTYMUX_STATE") or os.path.join(
     os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state")), "kittymux")
 
 
+def banner() -> None:
+    """The mascot, 64 px wide, via kitty's graphics protocol — only in a kitty window on a real terminal."""
+    icon = os.path.join(HOME_DIR, "assets", "brand", "mascot-64.png")
+    if sys.stdout.isatty() and os.environ.get("KITTY_WINDOW_ID") and shutil.which("kitten") and os.path.isfile(icon):
+        try:
+            subprocess.run(["kitten", "icat", "--align=left", "--transfer-mode=file", icon], timeout=3,
+                           stdin=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+
 # ── doctor ───────────────────────────────────────────────────────────────────
 class Report:
     def __init__(self) -> None:
@@ -172,6 +183,7 @@ def _hypr_conflicts() -> list[str]:
 
 def doctor() -> int:
     r = Report()
+    banner()
     print(c("1", "kittymux doctor") + c("2", f"  {HOME_DIR}"))
 
     print("\nrequirements")
@@ -398,6 +410,7 @@ def demo(argv: list[str]) -> int:
     session = os.path.join(tmp, "demo.kitty")
     open(session, "w").write(DEMO_SESSION.format(home=os.path.expanduser("~")))
 
+    banner()
     print(c("1", "kittymux demo") + " — an isolated window; your config is untouched.\n")
     proc = subprocess.Popen(["kitty", "--class", "kittymux-demo", "--session", session], env=env,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/brand/mascot-256.png" alt="the kittymux mascot: a kitten whose face is split into two colours, like two panes" width="160">
+</p>
+
 # kittymux
 
 **Run a herd of AI coding agents in [kitty](https://sw.kovidgoyal.net/kitty/) — and always know which one needs you.**
@@ -406,3 +410,11 @@ kittymux uninstall --yes --purge   # …and the state dir (saved layouts, caches
 
 Only the exact lines and links `install.sh` created are touched. Running kitties keep working until
 you reload or restart them.
+
+## Brand
+
+The mascot is a kitten whose face is split in two colours — two panes. It is original artwork, MIT-licensed with the
+rest of the repo (`assets/brand/`; sizes and the 1280×640 social card are built by `tools/build-brand.py`, the notification
+badge by `tools/build-notify-icons.py`; how it was made is in [docs/brand/](docs/brand/mascot-prompts.md)).
+The logos of Claude, Codex, Devin, Droid, Antigravity, Gemini and the other agents are **trademarks of their owners**, shown only
+to identify those tools.

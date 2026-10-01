@@ -102,6 +102,9 @@ Constraints: Use no text or watermark. Add no borders, frames, cards, or present
 
 Record with each result: model, label, prompt used, output size (keep native size; do not resample).
 
+## Chosen: A1 (kitten, split cream | raspberry face)
+Picked from the six candidates (kept locally in `assets/brand/candidates/`, git-ignored). Why: the split face — two panes — is the product idea, and it is the one candidate whose idea survives at 32 × 32 (cream | raspberry still reads); the owls lose their silhouette small and the octopuses are cute but generic. The master is `assets/brand/mascot.png` (native 1254×1254, never resampled up).
+
 ## After you pick one
 1. Save it as `assets/brand/mascot.png` (square; keep the native size).
 2. `python3 tools/build-brand.py` — writes the 512/256/128/64/32 px versions, a 32 px readability check and a black-silhouette check.

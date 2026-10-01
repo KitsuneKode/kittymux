@@ -96,6 +96,10 @@ class ScannerSideTests(unittest.TestCase):
         self.assertIn(KS._icon("nonesuch"), ("kitty",) + (KS._icon("kittymux"),))
         self.assertEqual(KS._icon("../../etc/passwd"), KS._icon(""))              # never a path from outside
 
+    def test_unknown_agents_wear_the_mascot(self):
+        self.assertTrue(KS._icon("nonesuch").endswith("assets/notify/kittymux.png"))
+        self.assertTrue(os.path.isfile(os.path.join(ROOT, "assets", "brand", "mascot-64.png")))     # the CLI banner
+
     def test_every_logo_agent_has_an_icon_file(self):
         import kittymux_agents as A
         missing = [n for n, a in A.AGENTS.items() if ord(a.glyph[0]) >= 0xE000

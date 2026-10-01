@@ -3,3 +3,5 @@ __pycache__/
 
 # isolated worktrees for agents/branches (kittymux ctrl+alt+shift+g and `git worktree add .worktrees/<name>`)
 .worktrees/
+assets/brand/candidates/
+assets/brand/check-*.png
