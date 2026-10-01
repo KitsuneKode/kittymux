@@ -252,5 +252,74 @@ class TargetSocketTests(unittest.TestCase):
         self.assertIsNone(self.m._socket_pid("unix:/tmp/kitty-abc"))
 
 
+class UninstallTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def fresh(self):
+        import tempfile
+        t = tempfile.mkdtemp()
+        cfg, home, fonts = (os.path.join(t, n) for n in ("cfg", "kittymux", "fonts"))
+        os.makedirs(os.path.join(home, "python"))
+        os.makedirs(cfg)
+        os.makedirs(fonts)
+        for n in ("tab_bar.py", "kittymux_agents.py"):
+            open(os.path.join(home, "python", n), "w").write("# x\n")
+            os.symlink(os.path.join(home, "python", n), os.path.join(cfg, n))
+        open(os.path.join(cfg, "kittymux_mine.py"), "w").write("# not ours: a real file\n")
+        os.symlink("/etc/hostname", os.path.join(cfg, "kittymux_foreign.py"))      # a link, but not into kittymux
+        for n in ("kittymux-keys.conf", "include-tab-edge.conf"):
+            open(os.path.join(cfg, n), "w").write("# generated\n")
+        open(os.path.join(fonts, "kittymux-icons.ttf"), "w").write("x")
+        open(os.path.join(cfg, "kitty.conf"), "w").write(
+            "font_size 12\n\n"
+            f"include {cfg}/kittymux-keys.conf\n\n"
+            f"include {home}/kittymux.conf\n\n"
+            f"include {cfg}/include-tab-edge.conf\n\n"
+            f"geninclude {home}/python/kittymux_layout.py\n"
+            "include my-other.conf\n")
+        return cfg, home, fonts
+
+    def test_plan_finds_only_what_install_added(self):
+        cfg, home, fonts = self.fresh()
+        plan = self.m.plan_uninstall(cfg, home, fonts)
+        self.assertEqual(len(plan["conf_lines"]), 4)
+        self.assertEqual(sorted(os.path.basename(p) for p in plan["links"]), ["kittymux_agents.py", "tab_bar.py"])
+        self.assertEqual(sorted(os.path.basename(p) for p in plan["files"]), ["include-tab-edge.conf", "kittymux-keys.conf"])
+        self.assertTrue(plan["font"])
+
+    def test_apply_removes_them_keeps_everything_else_and_backs_up(self):
+        cfg, home, fonts = self.fresh()
+        self.m.apply_uninstall(self.m.plan_uninstall(cfg, home, fonts), cfg, "T")
+        text = open(os.path.join(cfg, "kitty.conf")).read()
+        self.assertEqual(text, "font_size 12\n\ninclude my-other.conf\n")
+        self.assertTrue(os.path.exists(os.path.join(cfg, "kitty.conf.bak.kittymux-uninstall-T")))
+        self.assertFalse(os.path.lexists(os.path.join(cfg, "tab_bar.py")))
+        self.assertTrue(os.path.exists(os.path.join(cfg, "kittymux_mine.py")))               # a real file stays
+        self.assertTrue(os.path.lexists(os.path.join(cfg, "kittymux_foreign.py")))           # a foreign link stays
+        self.assertFalse(os.path.exists(os.path.join(fonts, "kittymux-icons.ttf")))
+
+    def test_a_second_pass_finds_nothing(self):
+        cfg, home, fonts = self.fresh()
+        self.m.apply_uninstall(self.m.plan_uninstall(cfg, home, fonts), cfg, "T")
+        plan = self.m.plan_uninstall(cfg, home, fonts)
+        self.assertEqual((plan["conf_lines"], plan["links"], plan["files"], plan["font"]), ([], [], [], None))
+
+    def test_dry_run_changes_nothing(self):
+        import io, contextlib
+        cfg, home, fonts = self.fresh()
+        before = open(os.path.join(cfg, "kitty.conf")).read()
+        old = (self.m.CFG, self.m.HOME_DIR)
+        self.m.CFG, self.m.HOME_DIR = cfg, home
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(self.m.uninstall([]), 0)
+        finally:
+            self.m.CFG, self.m.HOME_DIR = old
+        self.assertEqual(open(os.path.join(cfg, "kitty.conf")).read(), before)
+        self.assertIn("dry run", out.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

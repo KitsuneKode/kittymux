@@ -370,5 +370,12 @@ Override with `KITTYMUX_STATE`. Optional vars: `KITTYMUX_PROJECTS`
 
 ## Uninstall
 
-Remove the three `include` lines from `kitty.conf`, the
-`~/.config/kitty/tab_bar.py` symlink, and `~/.local/state/kittymux`.
+```sh
+kittymux uninstall            # dry run: lists exactly what install.sh added
+kittymux uninstall --yes      # removes the include lines (kitty.conf is backed up first), symlinks,
+                              # generated files, icon font and the Claude Code hooks
+kittymux uninstall --yes --purge   # …and the state dir (saved layouts, caches)
+```
+
+Only the exact lines and links `install.sh` created are touched. Running kitties keep working until
+you reload or restart them.

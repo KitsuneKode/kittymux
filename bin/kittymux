@@ -9,6 +9,7 @@
                          layout width [+N|-N|N]   layout preset NAME   layout pick   layout show
                          layout default [clear]   (make the current layout the start for new windows)
   kittymux upgrade     after a git pull: refresh links, reload every running kitty twice, run doctor
+  kittymux uninstall   show what install.sh added (dry run); --yes removes it, --purge also deletes the state dir
   kittymux version
 
 `demo` is the 30-second tour: a scratch kitty with a sample session, fake agents in
@@ -32,6 +33,7 @@ import kittymux_layout  # noqa: E402
 import kittymux_theme  # noqa: E402
 
 VERSION = "0.2.0"
+TESTED_KITTY_MINOR = 49          # the kitty 0.<minor>.x the smoke tests run against
 USE_COLOR = sys.stdout.isatty()
 
 
@@ -178,6 +180,10 @@ def doctor() -> int:
         r.fail("kitty not found", "install kitty ≥ 0.48 (0.49+ recommended)")
     elif ver < (0, 48, 0):
         r.fail(f"kitty {'.'.join(map(str, ver))} is too old", "vertical tabs need ≥ 0.48; 0.49+ recommended")
+    elif ver >= (0, TESTED_KITTY_MINOR + 1, 0):
+        r.warning(f"kitty {'.'.join(map(str, ver))} is newer than the tested 0.{TESTED_KITTY_MINOR}.x",
+                  "kittymux wraps a few kitty internals (tab-bar mouse handling, tab hit-testing); if the bar "
+                  "misbehaves after a kitty update, run `kittymux upgrade` and report it")
     else:
         r.ok(f"kitty {'.'.join(map(str, ver))}")
     for dep, why in (("jq", "session/JSON plumbing"), ("fzf", "pickers"), ("git", "branch & worktrees"),
@@ -665,8 +671,90 @@ def upgrade(argv: list[str]) -> int:
     return doctor()
 
 
+# ── uninstall ────────────────────────────────────────────────────────────────
+_MANAGED_FILES = ("kittymux-keys.conf", "kittymux-leader.conf", "include-tab-edge.conf", "include-tab-bar.conf")
+
+
+def plan_uninstall(cfg_dir: str, home_dir: str, font_dir: str) -> dict:
+    """What install.sh put in place, found by looking — nothing is removed here.
+    {"conf_lines": [...], "links": [...], "files": [...], "font": path|None}"""
+    conf = os.path.join(cfg_dir, "kitty.conf")
+    ours = {f"include {os.path.join(cfg_dir, n)}" for n in ("kittymux-keys.conf", "kittymux-leader.conf",
+                                                            "include-tab-edge.conf")}
+    ours |= {f"include {os.path.join(home_dir, 'kittymux.conf')}",
+             f"geninclude {os.path.join(home_dir, 'python', 'kittymux_layout.py')}"}
+    try:
+        with open(conf, encoding="utf-8") as f:
+            lines = [ln.rstrip("\n") for ln in f]
+    except OSError:
+        lines = []
+    py_dir = os.path.join(home_dir, "python")
+    links = []
+    try:
+        for name in sorted(os.listdir(cfg_dir)):
+            path = os.path.join(cfg_dir, name)
+            if (name == "tab_bar.py" or name.startswith("kittymux_")) and os.path.islink(path) \
+                    and os.path.realpath(path).startswith(os.path.realpath(py_dir) + os.sep):
+                links.append(path)
+    except OSError:
+        pass
+    files = [os.path.join(cfg_dir, n) for n in _MANAGED_FILES if os.path.isfile(os.path.join(cfg_dir, n))]
+    font = os.path.join(font_dir, "kittymux-icons.ttf")
+    return {"conf_lines": [ln for ln in lines if ln.strip() in ours], "links": links, "files": files,
+            "font": font if os.path.isfile(font) else None}
+
+
+def apply_uninstall(plan: dict, cfg_dir: str, stamp: str) -> None:
+    """Carry the plan out. kitty.conf is backed up first; only the exact lines install.sh added go."""
+    conf = os.path.join(cfg_dir, "kitty.conf")
+    if plan["conf_lines"] and os.path.isfile(conf):
+        shutil.copy2(conf, f"{conf}.bak.kittymux-uninstall-{stamp}")
+        with open(conf, encoding="utf-8") as f:
+            kept = [ln for ln in f.read().split("\n") if ln.strip() not in set(plan["conf_lines"])]
+        text = re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).rstrip("\n") + "\n"
+        with open(conf, "w", encoding="utf-8") as f:
+            f.write(text)
+    for path in plan["links"] + plan["files"] + ([plan["font"]] if plan["font"] else []):
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def uninstall(argv: list[str]) -> int:
+    """Take kittymux back out of kitty: the include lines, symlinks, generated files, icon font and
+    Claude hooks. Dry run unless --yes; the state dir (layouts, caches) only goes with --purge."""
+    yes, purge = "--yes" in argv, "--purge" in argv
+    font_dir = os.path.join(os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share")), "fonts")
+    plan = plan_uninstall(CFG, HOME_DIR, font_dir)
+    print(c("1", "kittymux uninstall") + ("" if yes else c("2", "  (dry run — nothing is changed)")))
+    for ln in plan["conf_lines"]:
+        print(f"  kitty.conf  - {ln}")
+    for path in plan["links"] + plan["files"] + ([plan["font"]] if plan["font"] else []):
+        print(f"  remove      {path}")
+    print(f"  Claude Code hooks: `kittymux hooks --remove`" + ("" if yes else " (would run)"))
+    if purge:
+        print(f"  state dir   {STATE}")
+    if not (plan["conf_lines"] or plan["links"] or plan["files"] or plan["font"]):
+        print(f"  {OK} nothing of kittymux is installed in {CFG}")
+    if not yes:
+        print("\nrerun with --yes to do it" + (" (and --purge also deletes the state dir)" if not purge else ""))
+        return 0
+    apply_uninstall(plan, CFG, time.strftime("%Y%m%d-%H%M%S"))
+    hooks(["--remove"])
+    if purge:
+        shutil.rmtree(STATE, ignore_errors=True)
+    if shutil.which("fc-cache"):
+        subprocess.run(["fc-cache", "-f", font_dir], capture_output=True)
+    print(f"\n{OK} removed. Running kitties keep their loaded config until reloaded (ctrl+shift+alt+r) or restarted;")
+    print("  until then their tab bar keeps working. Your kitty.conf backup: kitty.conf.bak.kittymux-uninstall-*")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     cmd = argv[0] if argv else "help"
+    if cmd == "uninstall":
+        return uninstall(argv[1:])
     if cmd == "doctor":
         return doctor()
     if cmd == "upgrade":

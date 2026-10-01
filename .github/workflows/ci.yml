@@ -1,20 +1,50 @@
 name: ci
-on: [push, pull_request]
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# kittymux wraps a few kitty internals, so CI runs the real-kitty smoke tests against the exact
+# kitty the project is tested with (TESTED_KITTY_MINOR in bin/kittymux) — bump both together.
+env:
+  KITTY_VERSION: "0.49.1"
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  unit:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: install tools
-        run: sudo apt-get update && sudo apt-get install -y shellcheck jq
-      - name: python compiles
-        run: python3 -m py_compile python/*.py python/collectors/*.py bin/*.py bin/kittymux
-      - name: unit tests
-        run: python3 -m unittest discover -s tests -v
-      - name: mux-status tests
-        run: bash tests/test_mux_status.sh
-      - name: shell syntax
-        run: for f in bin/*.sh bin/mux-status bin/mux-agent-new bin/mux-sessionizer lib/mux.sh install.sh; do bash -n "$f"; done
-      - name: shellcheck (errors)
-        run: shellcheck -S error bin/*.sh bin/mux-status bin/mux-agent-new lib/mux.sh install.sh
+      - name: python unit tests
+        run: python3 -m unittest discover -s tests
+      - name: shell tests
+        run: bash tests/test_mux_status.sh tests/test_socket_lib.sh
+      - name: shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          files=$(for f in bin/* lib/*.sh install.sh tests/*.sh; do [ -f "$f" ] && head -1 "$f" | grep -qE 'bash|/sh' && echo "$f"; done)
+          shellcheck -S error $files
+
+  smoke:
+    runs-on: ubuntu-24.04
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # smoke_reload.sh upgrades a kitty running an OLD release of the modules
+      - name: system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb xdotool imagemagick bc jq fzf libgl1-mesa-dri libglx-mesa0 fontconfig
+      - name: kitty ${{ env.KITTY_VERSION }}
+        run: |
+          curl -fsSL https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin launch=n dest="$HOME/.local" installer="version-$KITTY_VERSION"
+          echo "$HOME/.local/kitty.app/bin" >> "$GITHUB_PATH"
+      - name: fresh-machine install / uninstall
+        run: bash tests/test_install.sh
+      - name: agent states, spinner, tab hit-testing (real kitty)
+        run: bash tests/smoke_state.sh
+      - name: sidebar collapse button + drag (real mouse events)
+        run: bash tests/smoke_sidebar.sh
+      - name: an upgraded, running kitty draws cleanly after two reloads
+        run: bash tests/smoke_reload.sh
