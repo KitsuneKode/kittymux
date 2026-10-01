@@ -40,6 +40,8 @@ _DEFAULTS = dict(
     edge_installed=False,   # the native divider hooks (kitty.borders.set_borders_rects, Boss.drag_resize_*) are in place
     pal_key=None,           # cache of the theme palette the native divider is coloured from
     pal=None,
+    tap=None,               # the left press on a tab awaiting its release: (tab id, x, y, monotonic time) — see _tap_before
+    tap_drag=False,         # a tab drag had already started when the release arrived
 )
 _S = sys.modules.setdefault("_kittymux_barsize_rt", types.SimpleNamespace(**_DEFAULTS))
 for _k, _v in _DEFAULTS.items():        # a namespace made by an OLDER version of this file lacks the newer fields
@@ -490,6 +492,63 @@ def _install_tab_hit_testing() -> None:
         pass
 
 
+# ── forgiving tab clicks ──────────────────────────────────────────────────────
+# kitty activates a tab on the left RELEASE, and only if it counts the press+release as a click: within click_interval (0.5 s), less than
+# 5 px apart, on the same tab. Beyond 5 px kitty still waits for drag_threshold (kittymux sets 14 so a wobbly click is not a drag) before it
+# starts a drag — so a click that drifts 5–14 px is NEITHER: nothing happens. Real mice and touchpads wobble that much (physical px: more on
+# a scaled display); a scripted click never does, which is how this survived the smoke tests. We record the press and, when kitty did not
+# act on the release, activate the tab ourselves under a click rule that matches the drag threshold instead of the 5 px.
+TAP_MAX_S = 1.5             # a slow click still counts
+TAP_MIN_PX = 5.0            # …and at least kitty's own click tolerance
+
+
+def _tab_has_agent(tm, tab_id: int) -> bool:
+    try:
+        tab = tm.tab_for_id(tab_id)
+        verdicts = getattr(sys.modules.get("_kittymux_scan_rt"), "verdicts", {}) or {}
+        return tab is not None and any((verdicts.get(str(w.id)) or {}).get("state") for w in tab)
+    except Exception:
+        return False
+
+
+def _tap_before(tm, x: float, y: float, button: int, action: int) -> bool:
+    """Called before kitty's own tab-bar mouse handler. Records the left press / whether a drag already started. Returns True when the event
+    must be swallowed: a middle-click on a tab running an agent (kitty closes the tab on a middle-click, with no confirmation, and a touchpad
+    two-finger tap or a stray wheel-click is enough to lose a running agent; `ctrl+alt+q` closes a pane with confirmation)."""
+    from kitty.fast_data_types import GLFW_MOUSE_BUTTON_LEFT, GLFW_MOUSE_BUTTON_MIDDLE, GLFW_PRESS, GLFW_RELEASE, get_tab_being_dragged
+    if button == GLFW_MOUSE_BUTTON_LEFT and action == GLFW_PRESS:
+        tid = tm.tab_bar.tab_id_at(int(x), int(y))
+        _S.tap = (tid, x, y, time.monotonic()) if tid > 0 else None
+        _S.tap_drag = False
+    elif button == GLFW_MOUSE_BUTTON_LEFT and action == GLFW_RELEASE:
+        _S.tap_drag = bool(get_tab_being_dragged()[1])
+    elif button == GLFW_MOUSE_BUTTON_MIDDLE:
+        tid = tm.tab_bar.tab_id_at(int(x), int(y))
+        if tid > 0 and _tab_has_agent(tm, tid):
+            return True
+    return False
+
+
+def _tap_after(tm, x: float, y: float, button: int, action: int) -> None:
+    """Called after kitty's handler for a left release: if kitty did not activate the tab we pressed on (a wobbly click), do it."""
+    from kitty.fast_data_types import GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, get_options
+    if button != GLFW_MOUSE_BUTTON_LEFT or action != GLFW_RELEASE:
+        return
+    tap, dragged = _S.tap, _S.tap_drag
+    _S.tap, _S.tap_drag = None, False
+    if tap is None or dragged:
+        return
+    tid, px, py, t0 = tap
+    slop = max(TAP_MIN_PX, float(get_options().drag_threshold or 0))
+    if time.monotonic() - t0 > TAP_MAX_S or (x - px) ** 2 + (y - py) ** 2 > slop * slop:
+        return                                                  # held too long or moved far: that was a drag attempt, not a click
+    if tm.tab_bar.tab_id_at(int(x), int(y)) != tid:
+        return                                                  # released on another tab
+    tab = tm.tab_for_id(tid)
+    if tab is not None and tm.active_tab is not tab:
+        tm.set_active_tab(tab)
+
+
 # ── the native divider ────────────────────────────────────────────────────────
 # kitty draws and hit-tests window borders itself: every tab's border rectangles (kitty.borders.set_borders_rects) are drawn by its GPU border
 # renderer, and a rectangle with a non-zero border_type is a hit target — hovering it shows the resize cursor IN C, and pressing it calls
@@ -693,10 +752,17 @@ def install() -> bool:
             try:
                 if _handle(self, x, y, button, action):
                     return None
+                if _tap_before(self, x, y, button, action):
+                    return None
             except Exception:
                 import traceback
                 _debug(traceback.format_exc())                  # never break kitty's own handling
-            return original(self, x, y, button, modifiers, action)
+            result = original(self, x, y, button, modifiers, action)
+            try:
+                _tap_after(self, x, y, button, action)
+            except Exception:
+                _debug_exc()
+            return result
 
         wrapped._kittymux_wrapped = True                        # type: ignore[attr-defined]
         TabManager.handle_tab_bar_mouse = wrapped               # type: ignore[method-assign]

@@ -132,6 +132,11 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
 - Redraw cost: kitty redraws the whole vertical bar tab by tab (~10×/s while an agent works). Shared lookups (palette, merged pane state, verdict roll-ups, keyboard mode, usage alert, native-edge check)
   are memoised PER PASS (`tab_bar._per_pass`, reset when tab 1 is drawn): 6.0 → 2.1 ms with 23 tabs. Don't add per-tab `os.stat`/file reads/subprocesses to the draw path; add a `@_per_pass` helper. The spinner
   ticks unfocused OS windows at half rate. `_flush` does not even serialise verdicts on a tick where no verdict changed.
+- Tab clicks (kitty 0.49.2 `TabManager.handle_tab_bar_mouse`): a left PRESS only arms a drag; the tab is activated on the left RELEASE and only if `MouseEvents.is_click` holds — press+release within
+  `click_interval`, **< 5 px apart**, same tab — while a drag needs `drag_threshold` (we set 14 so a wobbly click is not a drag). Movement of 5–14 px was therefore neither: the click silently did nothing
+  (real mice/touchpads wobble this much, more on a scaled display; scripted clicks never do). `kittymux_barsize._tap_before/_tap_after` record the press and, when kitty did not act, activate the tab under a rule
+  that matches the drag threshold (≤ max(5, drag_threshold) px, ≤ 1.5 s, same tab, no drag started). A middle-click on a tab running an agent is swallowed (kitty closes tabs on middle-click, and only asks if
+  `confirm_os_window_close` says so). Smoke tests MUST click with wobble (`tests/smoke_click.sh`): a perfect click hides this whole class of bug.
 - Bar drag-resize (`kittymux_barsize`): per mouse event `apply_width(final=False)` re-lays-out the bar and ONLY the visible tab; the release (or the watchdog /
   an error, via `_end_capture(finalize=True)`) applies `final=True` once for every tab. Events inside the pacing window are NOT dropped: `next_apply` arms one
   trailing timer that applies the pointer's latest width (the old code left the bar stuck until release after a fast burst). Why not relayout every tab per event:
@@ -171,6 +176,7 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   (a running kitty upgraded under itself must draw cleanly after two reloads; `SMOKE_KEEP_STALE=1` must FAIL).
   `bash tests/smoke_sidebar.sh` (collapse/expand button, right-click peek, edge drag with real mouse events),
   `bash tests/smoke_drag.sh` (tab drag-to-reorder with real pointer events — kitty's DnD works under Xvfb),
+  `bash tests/smoke_click.sh` (tab clicks with wobble and slowness; a middle-click spares an agent tab),
   `bash tests/smoke_native.sh` (kitty ≥ 0.49.2: the native divider's pixels, the real X cursor name over it, a native drag, the single-pane fallback),
   `bash tests/smoke_resize.sh` (a fast pointer burst: the bar edge reaches the pointer, every tab re-flows on release),
   `bash tests/smoke_panes.sh` (`ctrl+alt+shift+1..9` and the `ctrl+alt+e` overview agree on pane numbers; `ctrl+alt+PgUp/Home/End` scroll — real key events),

@@ -24,7 +24,7 @@ printf 'background #282828\nforeground #ebdbb2\nwindow_padding_width 25\nallow_r
 printf 'new_tab split\nlaunch sh\nlaunch --location=vsplit sh\nnew_tab single\nlaunch sh\nfocus_tab 0\n' > "$T/session"
 env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP \
   KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 KITTYMUX_DEBUG=1 \
-  kitty -o linux_display_server=x11 --class kmx-native --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
+  kitty ${SMOKE_KITTY_ARGS:-} -o linux_display_server=x11 --class kmx-native --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
 for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 3
 X() { DISPLAY=$DISP xdotool "$@"; }
 W=$(X search --class kmx-native | head -1)
@@ -44,10 +44,15 @@ p = T.from_colors({'background': 0x282828, 'foreground': 0xEBDBB2}); print('#%06
 
 # 1. drawn by kitty's border renderer: exact colours, in the pane padding right next to the bar
 X mousemove 900 500; sleep 0.5; X windowsize "$W" 1590 890; sleep 0.4; X windowsize "$W" 1600 900; sleep 1
-got700=$(pixel $((EDGE + 1)) 500); got950=$(pixel $((EDGE + 6)) 500)
-[ "$got700" = "$EXP700" ] || fail "700 hairline: expected $EXP700 at x=$((EDGE+1)), got '$got700'"
-[ "$got950" = "$EXP950" ] || fail "950 hairline: expected $EXP950 at x=$((EDGE+6)), got '$got950'"
-echo "  ok   the divider is drawn natively: $got700 then $got950, just right of the bar edge ($EDGE)"
+# the hairline widths follow the font (cell/4, at least 3 px): take the middle pixel of each line from the same geometry the product uses
+read -r X700 X950 < <(python3 -c "
+import sys; sys.path.insert(0, '$HOME_DIR/python'); import kittymux_layout as L
+g = L.edge_geometry('left', $EDGE, 99999, $CW, 25 * 96 / 72)
+(a0, a1, _), (b0, b1, _) = g['lines']; print((a0 + a1) // 2, (b0 + b1) // 2)")
+got700=$(pixel "$X700" 500); got950=$(pixel "$X950" 500)
+[ "$got700" = "$EXP700" ] || fail "700 hairline: expected $EXP700 at x=$X700, got '$got700'"
+[ "$got950" = "$EXP950" ] || fail "950 hairline: expected $EXP950 at x=$X950, got '$got950'"
+echo "  ok   the divider is drawn natively: $got700 then $got950, just right of the bar edge ($EDGE; lines at x=$X700 and x=$X950)"
 
 # 2. the native resize arrow over the divider in a split tab; the hand over the bar; the text cursor in the pane
 X mousemove "$((EDGE + 3))" 500; c=$(cursor); [ "$c" = sb_h_double_arrow ] || fail "over the divider the cursor is '$c', not the native resize arrow"

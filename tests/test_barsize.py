@@ -16,12 +16,14 @@ class BarsizeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.opts = types.SimpleNamespace(tab_bar_edge=2, tab_title_max_length=12)
+        self.opts = types.SimpleNamespace(tab_bar_edge=2, tab_title_max_length=12, drag_threshold=14)
+        self.dragged = (0, False, 0, 0)
         self.boss = types.SimpleNamespace(mouse_handler=None)
         self.fdt = types.ModuleType("kitty.fast_data_types")
         self.fdt.__dict__.update(
             LEFT_EDGE=1, RIGHT_EDGE=2, TOP_EDGE=3,
-            GLFW_MOUSE_BUTTON_LEFT=0, GLFW_MOUSE_BUTTON_RIGHT=1, GLFW_PRESS=1, GLFW_RELEASE=0,
+            GLFW_MOUSE_BUTTON_LEFT=0, GLFW_MOUSE_BUTTON_RIGHT=1, GLFW_MOUSE_BUTTON_MIDDLE=2, GLFW_PRESS=1, GLFW_RELEASE=0,
+            get_tab_being_dragged=lambda: self.dragged,
             get_options=lambda: self.opts, get_boss=lambda: self.boss,
             get_os_window_size=lambda wid: {"width": 1000},
             redirect_mouse_handling=Mock(), add_timer=Mock(return_value=99), remove_timer=Mock(),
@@ -36,8 +38,18 @@ class BarsizeTests(unittest.TestCase):
         self.addCleanup(p.stop)
         bar = types.SimpleNamespace(is_vertical=True, cell_width=10, cell_height=20, max_tab_title_lines=4,
                                     window_geometry=types.SimpleNamespace(left=800, right=1000, top=0, bottom=600))
-        self.tm = types.SimpleNamespace(tab_bar=bar, os_window_id=1,
-                                        update_tab_bar_data=Mock(), mark_tab_bar_dirty=Mock())
+        class FakeTab:                                    # kitty's Tab iterates over its windows
+            def __init__(self, tid, wid):
+                self.id, self.windows = tid, [types.SimpleNamespace(id=wid)]
+
+            def __iter__(self):
+                return iter(self.windows)
+
+        self.tabs = {1: FakeTab(1, 11), 2: FakeTab(2, 22)}
+        bar.tab_id_at = lambda x, y: 1 if y < 100 else 2 if y < 200 else 0
+        self.tm = types.SimpleNamespace(tab_bar=bar, os_window_id=1, active_tab=self.tabs[1],
+                                        update_tab_bar_data=Mock(), mark_tab_bar_dirty=Mock(),
+                                        tab_for_id=lambda i: self.tabs.get(i), set_active_tab=Mock())
         self.m = self.load()
 
     def load(self):
@@ -136,6 +148,50 @@ class BarsizeTests(unittest.TestCase):
         self.event(780)
         self.event(700, button=0, action=0)
         self.m.apply_width.assert_called_with(self.boss, 22)             # default final=True: all tabs re-flow once
+
+
+    # ── forgiving clicks ────────────────────────────────────────────────────────────────────────────
+    def tap(self, press, release, held=0.1, dragged=False):
+        """Feed kitty's tab-bar events for one left click the way the wrapper does: before-hook, (kitty does nothing), after-hook."""
+        m, tm = self.m, self.tm
+        with patch.object(m.time, "monotonic", return_value=50.0):
+            m._tap_before(tm, press[0], press[1], 0, 1)
+        self.dragged = (1, dragged, 0, 0)
+        with patch.object(m.time, "monotonic", return_value=50.0 + held):
+            m._tap_before(tm, release[0], release[1], 0, 0)
+            m._tap_after(tm, release[0], release[1], 0, 0)
+
+    def test_a_click_that_drifts_between_5_and_14_px_still_activates_the_tab(self):
+        for dx in (6, 9, 12):
+            self.tm.set_active_tab.reset_mock()
+            self.tap((10, 150), (10 + dx, 150))
+            self.tm.set_active_tab.assert_called_once_with(self.tabs[2])
+
+    def test_a_slow_click_activates_but_a_held_press_does_not(self):
+        self.tap((10, 150), (10, 150), held=1.2)
+        self.tm.set_active_tab.assert_called_once_with(self.tabs[2])
+        self.tm.set_active_tab.reset_mock()
+        self.tap((10, 150), (10, 150), held=2.0)                     # long enough to be a drag attempt, not a click
+        self.tm.set_active_tab.assert_not_called()
+
+    def test_a_real_drag_or_a_release_elsewhere_is_not_a_click(self):
+        self.tap((10, 150), (10 + 40, 150))                          # moved past the drag threshold
+        self.tap((10, 150), (10, 50))                                # released over another tab
+        self.tap((10, 150), (12, 150), dragged=True)                 # kitty already started a drag
+        self.tm.set_active_tab.assert_not_called()
+
+    def test_the_already_active_tab_is_left_alone_and_state_is_cleared(self):
+        self.tap((10, 50), (13, 50))                                 # tab 1 is active
+        self.tm.set_active_tab.assert_not_called()
+        self.assertIsNone(self.rt.tap)
+
+    def test_a_middle_click_on_an_agent_tab_is_swallowed_but_a_plain_tab_is_not(self):
+        self.rt.__dict__.setdefault("tap", None)
+        scan = types.SimpleNamespace(verdicts={"22": {"state": "working"}})
+        with patch.dict(sys.modules, {"_kittymux_scan_rt": scan}):
+            self.assertTrue(self.m._tap_before(self.tm, 10, 150, 2, 1))      # tab 2 runs an agent
+            self.assertFalse(self.m._tap_before(self.tm, 10, 50, 2, 1))      # tab 1 does not
+            self.assertFalse(self.m._tap_before(self.tm, 10, 150, 0, 1))     # a left press is never swallowed
 
 
 if __name__ == "__main__":
