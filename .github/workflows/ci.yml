@@ -59,6 +59,8 @@ jobs:
         run: bash tests/smoke_resize.sh
       - name: pane jump keys agree with the pane overview (real key events)
         run: bash tests/smoke_panes.sh
+      - name: kittymux demo opens every showcase tab
+        run: bash tests/smoke_demo.sh
       - name: keymap overlay closes in one keypress, searches, scrolls
         run: bash tests/smoke_keys.sh
       - name: clickable file:line (kitty >= 0.49.2) and screenshots

@@ -406,6 +406,18 @@ cd {home}
 launch
 launch --location=vsplit bash -c 'printf " Allow this command?\\n ❯ 1. Yes\\n   2. No\\n"; exec -a claude sleep 86400'
 launch --location=hsplit bash -c 'printf "• Working (3m 2s • esc to interrupt)\\n"; exec -a codex sleep 86400'
+new_tab panes
+cd {home}
+launch bash -c 'printf "\\n   PANE ONE\\n"; exec sleep 86400'
+launch --location=vsplit bash -c 'printf "\\n   PANE TWO\\n"; exec sleep 86400'
+launch --location=hsplit bash -c 'printf "\\n   PANE THREE\\n"; exec sleep 86400'
+launch --location=vsplit bash -c 'printf "\\n   PANE FOUR\\n"; exec sleep 86400'
+new_tab file-refs
+cd {project}
+launch bash -c 'printf "\\n  error[E0308]: mismatched types\\n    --> src/app.py:42:7\\n  see also README.md:3 and src/util.py:12\\n\\n  ctrl+shift+click a file:line to open it in your editor\\n"; exec bash'
+new_tab scrollback
+cd {home}
+launch bash -c 'seq 1 500; exec bash'
 new_tab notes
 cd {home}
 launch
@@ -463,8 +475,15 @@ def demo(argv: list[str]) -> int:
         f"include {cfg}/kittymux-keys.conf\ninclude {cfg}/kittymux-leader.conf\n"
         f"include {HOME_DIR}/kittymux.conf\ntab_bar_edge {edge}\nwindow_padding_width 10\n"
         f"geninclude {HOME_DIR}/python/kittymux_layout.py\n")      # last: the collapse button / layout keys need it
+    project = os.path.join(tmp, "project")                     # a tiny project for the clickable file:line demo
+    os.makedirs(os.path.join(project, "src"))
+    for rel, n in (("src/app.py", 60), ("src/util.py", 30), ("README.md", 10)):
+        with open(os.path.join(project, rel), "w") as f:
+            f.write("".join(f"line {i} of {rel}\n" for i in range(1, n + 1)))
+    otpl = open(os.path.join(HOME_DIR, "open-actions.conf.tpl"), encoding="utf-8").read()
+    open(os.path.join(cfg, "open-actions.conf"), "w").write(otpl.replace("@KITTYMUX_HOME@", HOME_DIR))
     session = os.path.join(tmp, "demo.kitty")
-    open(session, "w").write(DEMO_SESSION.format(home=os.path.expanduser("~")))
+    open(session, "w").write(DEMO_SESSION.format(home=os.path.expanduser("~"), project=project))
 
     banner()
     print(c("1", "kittymux demo") + " — an isolated window; your config is untouched.\n")
@@ -478,10 +497,17 @@ def demo(argv: list[str]) -> int:
     time.sleep(1.5)
 
     print("  try:")
-    print(f"    {c('1', 'ctrl+alt+b')}       sidebar deck — hover, click, live preview")
+    print(f"    {c('1', 'ctrl+alt+b')}       sidebar deck — hover, click, live preview; / to search, t to promote a pane")
     print(f"    {c('1', 'ctrl+alt+y')}       jump to the agent that is waiting on you")
+    print(f"    {c('1', 'ctrl+alt+/')}       every key, gesture and command — just type to search, esc closes")
     print(f"    {c('1', 'ctrl+space')} then {c('1', '?')}   leader mode card")
-    print(f"    {c('1', 'ctrl+alt+/')}       every key binding")
+    print(f"  in the {c('1', 'panes')} tab:")
+    print(f"    {c('1', 'ctrl+alt+e')}       number every pane, press a digit    {c('1', 'ctrl+alt+shift+1..4')}  jump straight to pane N")
+    print(f"    {c('1', 'ctrl+alt+d')}       turn the focused pane into its own tab    {c('1', 'ctrl+alt+shift+h')}  show pane title bars (drag them)")
+    print(f"  in the {c('1', 'file-refs')} tab: {c('1', 'ctrl+shift+click')} src/app.py:42:7 — opens your editor at that line")
+    print(f"  in the {c('1', 'scrollback')} tab: {c('1', 'ctrl+alt+PgUp / PgDn')} page · {c('1', 'ctrl+alt+Home / End')} oldest / live · {c('1', 'ctrl+alt+[')} {c('1', ']')} prompts")
+    print(f"  the bar: drag its right edge to resize (try a fast flick) · click « to collapse · right-click a tab to peek")
+    print(f"  from a pane here:  {c('1', 'kittymux dim on')} (needs shader-slang) · {c('1', 'kittymux screenshot')} · {c('1', 'kittymux layout pick')}")
     print(f"\n  status is read from each agent's screen — ! waiting on you, a spinner while it works — and from `mux-status` hooks if you add them.")
     print("  close the kitty window to end the demo.\n")
     try:

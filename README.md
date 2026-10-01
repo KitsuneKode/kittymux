@@ -28,6 +28,8 @@ config is never touched) with a sample session and a couple of fake agents in
 different states. Press `ctrl+alt+b` for the deck, `ctrl+alt+y` to jump to the waiting agent,
 `ctrl+space` then `?` for leader mode. Close the window and it is gone.
 
+More to try (panes by number, clickable `file:line`, scrollback keys, the keymap overlay, resize) and what needs a restart: [docs/try-it.md](docs/try-it.md).
+
 Like it? Install:
 
 ```sh
