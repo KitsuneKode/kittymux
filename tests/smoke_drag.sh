@@ -26,29 +26,36 @@ CONF
 printf 'new_tab one\nlaunch sh\nlaunch --location=vsplit sh\nnew_tab two\nlaunch sh\nnew_tab three\nlaunch sh\nnew_tab four\nlaunch sh\nnew_tab five\nlaunch sh\nfocus_tab 0\n' > "$T/session"
 env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP \
   KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 KITTYMUX_DEBUG=1 \
-  kitty -o linux_display_server=x11 --class kmx-drag --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
+  kitty ${SMOKE_KITTY_ARGS:-} -o linux_display_server=x11 --class kmx-drag --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
 for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 3
 X() { DISPLAY=$DISP xdotool "$@"; }
 W=$(X search --onlyvisible --class kmx-drag | head -1)
 X windowsize "$W" 1190 790; sleep 0.4; X windowsize "$W" 1200 800; sleep 1.5
+probe() { kitty @ --to "$SOCK" kitten "$HOME_DIR/tests/probe_bar.py" "$T/geom.json" >/dev/null 2>&1; }
+g() { python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$T/geom.json" "$1"; }
+probe; CW=$(g cw); CH=$(g ch); TOP=$(g top); RIGHT=$(g right)
+[ -n "$CH" ] || fail "could not probe the bar geometry"
+Y() { python3 -c "print(int($TOP + ($1) * $CH))"; }            # pixel y of a (fractional) row of the bar
+BX=$(python3 -c "print(int($RIGHT / 3))")                      # an x inside the bar
 order() { kitty @ --to "$SOCK" ls | python3 -c 'import sys,json;print(" ".join(t["title"] for t in json.load(sys.stdin)[0]["tabs"]))'; }
 
-# Bar geometry at the default font: a two-row header (y 10-54), then every tab is 2 rows (44 px) + a spacer
-# row, so tab N's rows start at 54 + 66*(N-1) for N≥1 ... tab 1 is at 54-98, tab 2 at 120-164, tab 3 at 186-230, ...
-drag() {   # drag <from_y> <to_y> — a slow press-move-release at x=120, like a hand
-  local from=$1 to=$2 y step=$(( $2 > $1 ? 12 : -12 ))
-  X mousemove 120 "$from" mousedown 1; sleep 0.3
-  for ((y = from + step; step > 0 ? y < to : y > to; y += step)); do X mousemove 120 "$y"; sleep 0.1; done
-  X mousemove 120 "$to"; sleep 0.5; X mouseup 1; sleep 1
+# Layout of the bar (rows): a two-row header (0-1), then tab 1 = rows 0-3 (it owns the header), a spacer row, and every
+# further tab is 2 rows + a spacer: tab 2 = rows 5-6, tab 3 = 8-9, tab 4 = 11-12, tab 5 = 14-15 (spacers 4, 7, 10, 13).
+drag() {   # drag <from_row> <to_row> — a slow press-move-release inside the bar, like a hand
+  local from to i
+  from=$(Y "$1"); to=$(Y "$2")
+  X mousemove "$BX" "$from" mousedown 1; sleep 0.3
+  for i in 1 2 3 4 5 6 7 8; do X mousemove "$BX" $(( from + (to - from) * i / 8 )); sleep 0.12; done
+  sleep 0.5; X mouseup 1; sleep 1
 }
 expect() { local got; got=$(order); [ "$got" = "$2" ] || fail "$1: expected '$2', got '$got'"; echo "  ok   $1 → $got"; }
 
 expect "start" "one two three four five"
-drag 140 300;  expect "tab 2 dragged down past two tabs lands after the second" "one three four two five"
-drag 270 135;  expect "…and dragged back up two places" "one two three four five"
-drag 75 300;   expect "the tall first tab (it carries the header) dragged down" "two three four one five"
-drag 140 150;  expect "a small wiggle changes nothing" "two three four one five"
-drag 340 60;   expect "the last tab dragged all the way to the top" "five two three four one"
+drag 5.5 13.5;  expect "tab 2 dragged down past two tabs lands after the second" "one three four two five"
+drag 11.5 5.3;   expect "…and dragged back up two places" "one two three four five"
+drag 2.5 13.5;   expect "the tall first tab (it carries the header) dragged down" "two three four one five"
+drag 5.5 6.1;    expect "a small wiggle changes nothing" "two three four one five"
+drag 14.5 0.8;   expect "the last tab dragged all the way to the top" "five two three four one"
 
 # a split pane promoted to a tab by dragging its title bar (shown with the toggle) onto the bar: empty space → its own tab,
 # a tab row → joins that tab
@@ -56,8 +63,10 @@ tabs() { kitty @ --to "$SOCK" ls | python3 -c 'import sys,json;print(" ".join("%
 kitty @ --to "$SOCK" focus-tab --match "title:one" >/dev/null 2>&1; sleep 0.5
 kitty @ --to "$SOCK" action toggle_window_title_bars >/dev/null 2>&1; sleep 1
 before=$(tabs)
-X mousemove 1000 20 mousedown 1; sleep 0.4
-for i in 1 2 3 4 5 6 7 8; do X mousemove $((1000 - 110 * i)) $((20 + 85 * i)); sleep 0.12; done; sleep 0.5; X mouseup 1; sleep 1.2
+PX=$(python3 -c "print(int($RIGHT + (1200 - $RIGHT) * 0.75))")        # inside the right-hand pane
+PY=$(python3 -c "print(int($TOP + $CH / 2))")                          # its title bar
+X mousemove "$PX" "$PY" mousedown 1; sleep 0.4
+for i in 1 2 3 4 5 6 7 8; do X mousemove $(( PX + (BX - PX) * i / 8 )) $(( PY + ($(Y 20) - PY) * i / 8 )); sleep 0.12; done; sleep 0.5; X mouseup 1; sleep 1.2
 after=$(tabs)
 [ "$(printf '%s' "$after" | wc -w)" -eq "$(( $(printf '%s' "$before" | wc -w) + 1 ))" ] || fail "dragging a pane title onto empty bar space did not make a new tab ('$before' → '$after')"
 echo "  ok   a split pane dragged (by its title bar) onto the bar's empty space became its own tab ('$before' → '$after')"

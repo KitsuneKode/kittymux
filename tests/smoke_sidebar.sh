@@ -44,7 +44,7 @@ printf 'new_tab one\nlaunch sh\nnew_tab two\nlaunch sh\nnew_tab three\nlaunch sh
 
 env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP \
   KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 KITTYMUX_DEBUG=1 \
-  kitty -o linux_display_server=x11 --class kmx-side --listen-on "$SOCK" --session "$T/session" \
+  kitty ${SMOKE_KITTY_ARGS:-} -o linux_display_server=x11 --class kmx-side --listen-on "$SOCK" --session "$T/session" \
   >"$T/kitty.log" 2>&1 &
 KPID=$!
 for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done
@@ -70,14 +70,20 @@ wait_cols() {   # wait_cols <name> <test using $c>
 
 C0=$(cols)
 [ -n "$C0" ] || fail "could not read the window columns"
-CW=$(python3 -c "print(1600 / ($C0 + 28))")                 # cell width: the full sidebar is 28 columns
-EDGE=$(python3 -c "print(int(28 * $CW))")
-BTN=$(python3 -c "print(int(28 * $CW - 2 * $CW))")            # inside the header's last 3 cells
+# ask kitty where the bar really is (cell size, edge, top) — never assume one machine's font metrics
+probe() { kitty @ --to "$SOCK" kitten "$HOME_DIR/tests/probe_bar.py" "$T/geom.json" >/dev/null 2>&1; }
+g() { python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$T/geom.json" "$1"; }
+probe; CW=$(g cw); CH=$(g ch); TOP=$(g top); RIGHT=$(g right)
+[ -n "$CW" ] && [ -n "$CH" ] || fail "could not probe the bar geometry"
+Y() { python3 -c "print(int($TOP + ($1) * $CH))"; }            # pixel y of a (fractional) row of the bar
+XC() { python3 -c "print(int($1 * $CW))"; }                    # pixel x of a (fractional) column
+EDGE=$(python3 -c "print(int($RIGHT))")
+BTN=$(python3 -c "print(int($RIGHT - 2 * $CW))")              # inside the header's last cells
 X mousemove 900 500; shot full
 echo "  full sidebar: $C0 columns, ${EDGE}px wide, collapse button near x=$BTN"
 [ "$(active)" = "two" ] || fail "setup: expected tab 'two' active, got '$(active)'"
 
-X mousemove "$((BTN - 25))" 46 click 1             # the second header row, a button-and-a-half left of the glyph: still the button
+X mousemove "$((BTN - ${CW%.*}))" "$(Y 1.5)" click 1       # the second header row, a cell left of the glyph: still the button
 wait_cols "collapse button did not turn the sidebar into the rail" '[ "$c" -gt "$C0" ]'
 C1=$(cols)
 shot rail
@@ -86,7 +92,7 @@ echo "  ok   collapse button → slim rail ($C0 → $C1 columns)"
 echo "  ok   …and did not activate a tab"
 
 redraw
-X mousemove 70 46 click 1                          # rail: the whole 2-row header is the button
+X mousemove "$(XC 4)" "$(Y 1.5)" click 1                    # rail: the whole 2-row header is the button
 wait_cols "expand button did not bring the full sidebar back" '[ "$c" -eq "$C0" ]'
 echo "  ok   expand button → full sidebar again ($C0 columns)"
 [ "$(active)" = "two" ] || fail "the expand click activated a tab ('$(active)')"
@@ -96,7 +102,7 @@ echo "  ok   expand button → full sidebar again ($C0 columns)"
 nwin() { kitty @ --to "$SOCK" ls | python3 -c 'import sys,json;print(sum(len(t["windows"]) for o in json.load(sys.stdin) for t in o["tabs"]))'; }
 redraw
 N0=$(nwin)
-X mousemove 100 66 click 3
+X mousemove "$(XC 6)" "$(Y 2.5)" click 3                   # right-click the first tab's title row
 for _ in $(seq 15); do [ "$(nwin)" -gt "$N0" ] && break; sleep 0.4; done
 [ "$(nwin)" -gt "$N0" ] || fail "right-click on a tab did not open the peek card"
 shot peek
@@ -134,8 +140,8 @@ sleep 1
 
 # drag the inner edge 120 px to the right → the sidebar grows, the panes shrink
 redraw
-X mousemove "$((EDGE - 3))" 400 mousedown 1
-for x in $(seq $((EDGE + 3)) 6 $((EDGE + 120))); do X mousemove "$x" 400; sleep 0.02; done
+X mousemove "$((EDGE - 3))" "$(Y 14)" mousedown 1
+for x in $(seq $((EDGE + 3)) 6 $((EDGE + 120))); do X mousemove "$x" "$(Y 14)"; sleep 0.02; done
 sleep 0.3
 X mouseup 1
 wait_cols "dragging the edge did not resize" '[ "$c" -lt "$C0" ]'

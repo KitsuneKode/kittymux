@@ -170,7 +170,7 @@ expect "devin seen → idle"     "$ID_D" idle
 # vertical-bar hit testing: the blank spacer line between two tabs used to belong to no tab (so a tab
 # dragged over it was thrown to the end of the list, and a click there did nothing). It must resolve
 # to the nearer tab (a tie goes to the lower one). Rows are 22 px below a 10 px top margin; the first tab owns the
-# 2-row header (rows 0-3), claude = rows 5-6, the spacer after it = row 7 (y≈175), codex = rows 8-9 (so the click lands on codex).
+# 2-row header (rows 0-3), claude = rows 5-6, the spacer after it = row 7 (its middle, measured from kitty), codex = rows 8-9 (so the click lands on codex).
 active_tab() { kitty @ --to "$SOCK" ls | python3 -c '
 import sys, json
 for o in json.load(sys.stdin):
@@ -178,7 +178,10 @@ for o in json.load(sys.stdin):
         if t["is_active"]: print(t["title"]); raise SystemExit'; }
 W=$(DISPLAY=$DISP xdotool search --class kmx-state 2>/dev/null | head -1)
 before=$(active_tab)
-DISPLAY=$DISP xdotool mousemove 120 175 click 1; sleep 0.6
+kitty @ --to "$SOCK" kitten "$HOME_DIR/tests/probe_bar.py" "$T/geom.json" >/dev/null 2>&1
+SPACER_Y=$(python3 -c 'import json,sys;g=json.load(open(sys.argv[1]));print(int(g["top"] + 7.5 * g["ch"]))' "$T/geom.json")
+[ -n "$SPACER_Y" ] || fail "could not probe the bar geometry"
+DISPLAY=$DISP xdotool mousemove 120 "$SPACER_Y" click 1; sleep 0.6
 after=$(active_tab)
 [ "$after" != "$before" ] && [ -n "$after" ] || fail "a click on the spacer row between two tabs hit no tab (active stayed '$before')"
 echo "  ok   click on the spacer row between tabs activates the nearer tab ('$before' → '$after')"
