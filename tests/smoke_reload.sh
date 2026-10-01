@@ -80,6 +80,7 @@ redraw() {   # kitty only lays the bar out after a resize — force one
 }
 
 sleep 2; redraw
+for _ in $(seq 40); do [ "$(tabs)" = "3" ] && break; sleep 0.5; done      # a slow machine (CI) builds the session more slowly
 [ "$(tabs)" = "3" ] || fail "expected 3 tabs at start, got $(tabs)"
 # precondition: the old module really does break the current tab bar (otherwise this test proves nothing)
 if [ ! -s "$STATE/tab_bar-error.log" ]; then
