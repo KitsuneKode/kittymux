@@ -72,7 +72,7 @@ env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DI
   >"$T/kitty.log" 2>&1 &
 KPID=$!
 for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done
-[ -S "$T/sock" ] || fail "kitty never opened its control socket"
+[ -S "$T/sock" ] || { for lg in "$T/kitty.log" "$T/k.log"; do [ -s "$lg" ] && { echo "--- kitty output:"; tail -20 "$lg"; }; done; fail "kitty never opened its control socket"; }
 
 redraw() {
   W=$(DISPLAY=$DISP xdotool search --class kmx-state 2>/dev/null | head -1)
