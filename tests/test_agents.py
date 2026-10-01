@@ -231,6 +231,30 @@ class TabVerdictTests(unittest.TestCase):
         self.assertEqual(A.tab_verdict({}, [1, 2], 1, False, self.NOW), ("", ""))
 
 
+class PaneChipTests(unittest.TestCase):
+    NOW = 500.0
+
+    def entry(self, agent, state, age=1.0):
+        return {"agent": agent, "state": state, "ts_scan": self.NOW - age}
+
+    def test_agent_panes_in_window_order_with_their_state(self):
+        panes = {"1": self.entry("claude", "working"), "2": self.entry("codex", "waiting"), "3": {}}
+        self.assertEqual(A.pane_chips(panes, [1, 2, 3], self.NOW), [("claude", "working"), ("codex", "waiting")])
+
+    def test_shells_stale_and_unknown_agents_are_left_out(self):
+        panes = {"1": {"state": "", "agent": None, "ts_scan": self.NOW - 1}, "2": self.entry("codex", "idle", age=60),
+                 "3": self.entry("nonesuch", "working")}
+        self.assertEqual(A.pane_chips(panes, [1, 2, 3], self.NOW), [])
+
+    def test_limit(self):
+        panes = {str(i): self.entry("claude", "idle") for i in range(9)}
+        self.assertEqual(len(A.pane_chips(panes, range(9), self.NOW, limit=3)), 3)
+
+    def test_merge_scan_carries_the_agent(self):
+        merged = A.merge_scan({"1": {"msg": "x"}}, {"1": {"state": "idle", "agent": "claude", "ts_scan": 1.0}})
+        self.assertEqual(merged["1"]["agent"], "claude")
+
+
 class TitlePrefixTests(unittest.TestCase):
     def test_status_icons_in_front_of_a_title_are_dropped(self):
         for raw, want in (("⛬ New Session", "New Session"), ("⠋ Thinking", "Thinking"), ("✳ Claude Code", "Claude Code"),

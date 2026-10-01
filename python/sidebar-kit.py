@@ -174,6 +174,30 @@ class Collector:
         gi = kittymux_git.info(cwd)                 # reads .git/HEAD; no subprocess
         return "" if gi is None or gi.branch == "detached" else gi.branch
 
+    @staticmethod
+    def _identify(w: dict) -> tuple:
+        """(agent name | None, tool name | None) for a `kitty @ ls` window."""
+        procs = w.get("foreground_processes") or []
+        name = None
+        for proc in procs:
+            name = kittymux_agents.agent_in(proc.get("cmdline") or [])
+            if name:
+                break
+        tool = None if name else kittymux_agents.tool_in(p.get("cmdline") or [] for p in procs)
+        return name, tool
+
+    def _pane(self, w: dict, active_id: int, panes: dict, now: float) -> deck.PaneData:
+        name, tool = self._identify(w)
+        agent = kittymux_agents.AGENTS.get(name) if name else None
+        if w["id"] == active_id:
+            state = kittymux_agents.resolve_status(panes.get(str(w["id"])), agent is not None, now, _STALE_AFTER)
+        else:
+            state = kittymux_agents.fresh_verdict(panes.get(str(w["id"])), now)
+        title = (w.get("title") or "").strip() or _short_home(w.get("cwd", ""))
+        return deck.PaneData(win_id=w["id"], glyph=agent.glyph if agent else kittymux_agents.TOOLS.get(tool, ""),
+                             agent=name or "", tool=bool(tool and not agent), state=state,
+                             title=kittymux_agents.strip_title_prefix(title), active=w["id"] == active_id)
+
     def collect(self) -> Snapshot | None:
         try:
             data = json.loads(_rc("ls"))
@@ -195,19 +219,17 @@ class Collector:
                 aw_id = hist[0] if hist else wins[0]["id"]
                 aw = next((w for w in wins if w["id"] == aw_id), wins[0])
                 cwd = aw.get("cwd", "")
-                name = None
-                for proc in aw.get("foreground_processes") or []:
-                    name = kittymux_agents.agent_in(proc.get("cmdline") or [])
-                    if name:
-                        break
+                now = time.monotonic()
+                name, tool_name = self._identify(aw)
                 agent = kittymux_agents.AGENTS.get(name) if name else None
-                tool_name = None if agent else kittymux_agents.tool_in(
-                    p.get("cmdline") or [] for p in aw.get("foreground_processes") or [])
-                st = kittymux_agents.resolve_status(
-                    panes.get(str(aw["id"])), agent is not None, time.monotonic(), _STALE_AFTER)
+                # every pane of the tab counts: a question in a split you are not in must show here too
+                st, deciding = kittymux_agents.tab_verdict(
+                    panes, [w["id"] for w in wins], aw["id"], agent is not None, now, _STALE_AFTER)
                 unread = bool(tab.get("needs_attention") or aw.get("needs_attention")
                               or aw.get("has_activity_since_last_focus"))
-                status = ("" if st == "idle" else st) if agent else ("unread" if unread else "")
+                status = ("" if st == "idle" else st) if st else ("unread" if unread else "")
+                jump_to = int(deciding) if deciding and st in kittymux_agents.NEEDS_YOU else aw["id"]
+                pane_rows = tuple(self._pane(w, aw["id"], panes, now) for w in wins) if len(wins) >= 2 else ()
                 current = bool((osw.get("is_focused") or (_PANEL and osw.get("last_focused"))) and tab.get("is_active"))
                 session = aw.get("session_name", "") or ""
                 if current:
@@ -217,14 +239,14 @@ class Collector:
                 ports = tuple(sorted({p for pid in pids
                                       for p in deck.ports_for(int(pid), children, listeners)}))
                 rows.append(deck.RowData(
-                    tab_id=tab["id"], win_id=aw["id"], session=session,
+                    tab_id=tab["id"], win_id=jump_to, session=session,
                     title=tab.get("title") or "",
                     glyph=agent.glyph if agent else kittymux_agents.TOOLS.get(tool_name, ""),
                     tool=bool(tool_name and not agent),
                     agent=name or "", branch=branch, cwd=cwd,
                     panes=len(wins), status=status, unread=unread, current=current,
-                    msg=kittymux_agents.resolve_msg(panes.get(str(aw["id"])), status) if agent else "",
-                    pr=self._pr.get(cwd, branch), ports=ports))
+                    msg=kittymux_agents.resolve_msg(panes.get(str(deciding or aw["id"])), st) if st else "",
+                    pr=self._pr.get(cwd, branch), ports=ports, pane_rows=pane_rows))
         return Snapshot(rows, current_session)
 
 
@@ -239,6 +261,7 @@ class Sidebar(Handler):
         self.scroll = 0
         self.preview: list[str] = []
         self.preview_for = 0
+        self._hover_pane = (-1, -1)             # (row, pane) of the child line under the pointer
         self._alive = True
         self._collecting = False
         self._collector = Collector()
@@ -279,6 +302,7 @@ class Sidebar(Handler):
             return
         keep = self.snap.rows[self.sel].tab_id if self.snap.rows else None
         self.snap = snap
+        self._hover_pane = (-1, -1)             # row indices changed under it
         if not snap.rows:
             self.draw_screen()
             return
@@ -311,7 +335,9 @@ class Sidebar(Handler):
         if not self.snap.rows:
             self.preview = []
             return
-        wid = self.snap.rows[self.sel].win_id
+        r = self.snap.rows[self.sel]
+        row, pane = self._hover_pane
+        wid = r.pane_rows[pane].win_id if row == self.sel and 0 <= pane < len(r.pane_rows) else r.win_id
         if wid == self.preview_for and self.preview and not force:
             return
         self.preview_for = wid
@@ -436,6 +462,24 @@ class Sidebar(Handler):
         line2 = body + self._seg(idx, fg=p.faint, bg=bg) + self._seg(" ", bg=bg)
         return line1, line2
 
+    def _pane_line(self, r, j: int, bar_w: int, hovered: bool) -> str:
+        """`   ├ ◆ title ........ ⠋` — one child line of a split tab (└ on the last)."""
+        p = self.pal
+        pd = r.pane_rows[j]
+        last = j == min(len(r.pane_rows), deck.MAX_PANE_ROWS) - 1
+        bg = p.surface if hovered else p.bar
+        brand = kittymux_agents.AGENTS[pd.agent].brand if pd.agent in kittymux_agents.AGENTS else p.muted
+        lit = pd.active or hovered
+        icon_fg = (brand if lit else kittymux_theme.blend(brand, p.bg, 0.6)) if pd.agent else (p.muted if lit else p.faint)
+        state_fg = {"waiting": p.waiting, "working": p.working, "limited": p.alert,
+                    "done": kittymux_theme.blend(p.done, p.bg, 0.65)}.get(pd.state)
+        mark = (kittymux_agents.state_glyph(pd.state), state_fg, pd.state in kittymux_agents.NEEDS_YOU) \
+            if state_fg is not None else (" ", p.text, False)
+        title = deck.pad(pd.title or pd.agent or "shell", bar_w - 7 - 3, _cells)
+        return self._line([("   ", p.text, False), ("└" if last else "├", p.line, False), (" ", p.text, False),
+                           (pd.glyph or "·", icon_fg, False), (" ", p.text, False),
+                           (title, p.text if lit else p.muted, pd.active), mark, (" ", p.text, False)], bar_w, bg)
+
     @Handler.atomic_update
     def draw_screen(self) -> None:
         cols, rows_n, bar_w = self._geom()
@@ -461,6 +505,10 @@ class Sidebar(Handler):
                 w(set_cursor_position(0, y + off) + self._line(
                     [(" " + it.label.upper(), col, True)], bar_w - len(cnt), p.bar)
                     + self._seg(cnt, fg=p.faint, bg=p.bar))
+                drawn = off + 1
+            elif it.kind == "pane":
+                w(set_cursor_position(0, y + off) + self._pane_line(
+                    snap.rows[it.row], it.pane, bar_w, (it.row, it.pane) == self._hover_pane))
                 drawn = off + 1
             else:
                 l1, l2 = self._row_lines(snap.rows[it.row], it.row == self.sel, bar_w)
@@ -523,6 +571,7 @@ class Sidebar(Handler):
             return
         else:
             return
+        self._hover_pane = (-1, -1)
         self._clamp()
         self._request_preview()
         self.draw_screen()
@@ -585,15 +634,28 @@ class Sidebar(Handler):
     def _row_at(self, y: int) -> int:
         return deck.row_at(self.snap.items, self.scroll, self._avail(), y - 2)
 
+    def _pane_at(self, y: int) -> tuple:
+        return deck.pane_at(self.snap.items, self.scroll, self._avail(), y - 2)
+
     def on_mouse_move(self, mouse_event) -> None:
+        if mouse_event.cell_x >= self._geom()[2]:
+            return
         idx = self._row_at(mouse_event.cell_y)
-        if idx >= 0 and idx != self.sel and mouse_event.cell_x < self._geom()[2]:
-            self.sel = idx
+        hover = self._pane_at(mouse_event.cell_y) if idx < 0 else (-1, -1)
+        if hover[0] >= 0:                                    # a child line: select its tab, preview THAT pane
+            idx = hover[0]
+        if idx >= 0 and (idx != self.sel or hover != self._hover_pane):
+            self.sel, self._hover_pane = idx, hover
             self._request_preview()
             self.draw_screen()
 
     def on_click(self, mouse_event) -> None:
-        if mouse_event.cell_x < self._geom()[2] and self._row_at(mouse_event.cell_y) == self.sel:
+        if mouse_event.cell_x >= self._geom()[2]:
+            return
+        row, pane = self._pane_at(mouse_event.cell_y)
+        if row >= 0:
+            self._jump(row, pane)
+        elif self._row_at(mouse_event.cell_y) == self.sel:
             self._jump()
 
     def on_resize(self, new_size) -> None:
@@ -601,13 +663,14 @@ class Sidebar(Handler):
         self._clamp()
         self.draw_screen()
 
-    def _jump(self) -> None:
+    def _jump(self, row: int = -1, pane: int = -1) -> None:
         if not self.snap.rows:
             return
-        r = self.snap.rows[self.sel]
+        r = self.snap.rows[self.sel if row < 0 else row]
+        win = r.pane_rows[pane].win_id if 0 <= pane < len(r.pane_rows) else r.win_id
         _rc("focus-tab", "--match", f"id:{r.tab_id}")
-        if r.win_id:
-            _rc("focus-window", "--match", f"id:{r.win_id}")
+        if win:
+            _rc("focus-window", "--match", f"id:{win}")
         if not _PANEL:
             self.quit_loop()
         else:

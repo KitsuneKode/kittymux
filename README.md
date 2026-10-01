@@ -178,6 +178,11 @@ use hooks or title activity. Logos are the real brand marks, compiled into the b
 The design follows how t3code's sidebar resolves thread status: one ordered
 resolver (limited › waiting › working › done › idle), "done" only while unseen.
 
+**Splits.** A split tab lists each agent pane on its own: in the deck/panel as indented child lines
+(`├ ◆ claude !`, `└ ⠋ codex`) you can hover (live preview of *that* pane) and click (focus it); in the bar as
+`logo + state` chips under the tab. The tab itself shows the most important state of all its panes, and
+jumping to a tab that needs you lands on the pane that is asking. kitty rings a waiting split with its bell border.
+
 ### When you are elsewhere
 
 Everything below only fires for an agent **you are not looking at**; focusing it clears it.

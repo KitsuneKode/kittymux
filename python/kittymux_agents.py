@@ -99,6 +99,19 @@ def fresh_verdict(entry: dict | None, now: float) -> str:
     return ""
 
 
+def pane_chips(panes: dict, window_ids: Iterable, now: float, limit: int = 4) -> list[tuple[str, str]]:
+    """[(agent name, state)] for the agent panes of one tab, in window order — what the bar shows
+    for a split tab instead of "N panes". Panes without a fresh scanner verdict (plain shells,
+    unscanned) are left out."""
+    out = []
+    for wid in window_ids:
+        entry = panes.get(str(wid)) or {}
+        state = fresh_verdict(entry, now)
+        if state and entry.get("agent") in AGENTS:
+            out.append((entry["agent"], state))
+    return out[:limit]
+
+
 def tab_verdict(panes: dict, window_ids: Iterable, active_id, active_has_agent: bool, now: float,
                 stale_after: float = 15.0) -> tuple[str, str]:
     """(state, window id) for a whole tab: its panes rolled up, most important state first
@@ -126,7 +139,7 @@ def merge_scan(panes: dict | None, scan: dict | None) -> dict:
         if not isinstance(v, dict):
             continue
         e = out.setdefault(str(wid), {})
-        for k in ("state", "reason", "ts_scan", "ts_state"):
+        for k in ("state", "reason", "agent", "ts_scan", "ts_state"):
             if k in v:
                 e[k] = v[k]
     return out

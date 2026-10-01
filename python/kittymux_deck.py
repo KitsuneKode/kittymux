@@ -7,6 +7,21 @@ from typing import Callable
 NO_SESSION = "(no session)"
 
 
+MAX_PANE_ROWS = 8       # a split tab lists at most this many of its panes under the tab
+
+
+@dataclass
+class PaneData:
+    """One pane of a split tab, shown as an indented child row."""
+    win_id: int
+    glyph: str = ""
+    agent: str = ""
+    tool: bool = False
+    state: str = ""         # working | waiting | limited | done | idle | "" (not an agent)
+    title: str = ""
+    active: bool = False    # the tab's focused pane
+
+
 @dataclass
 class RowData:
     tab_id: int
@@ -26,15 +41,17 @@ class RowData:
     unread: bool = False
     current: bool = False   # the tab you are looking at right now
     index: int = 0          # 1-based position within its session (matches the tab bar)
+    pane_rows: tuple = ()   # PaneData for every pane, when the tab is split (2+ panes)
 
 
 @dataclass
 class Item:
-    kind: str               # "header" | "row"
+    kind: str               # "header" | "row" | "pane" (a child line under its row)
     height: int
     label: str = ""         # header text
     count: int = 0          # header: rows in the group
-    row: int = -1           # row: index into the flat row list
+    row: int = -1           # row/pane: index into the flat row list (a pane's parent)
+    pane: int = -1          # pane: index into the parent's pane_rows
     current: bool = False   # header: this is the current session
 
 
@@ -64,6 +81,9 @@ def flatten(groups: list[tuple[str, list[RowData]]], current_session: str) -> tu
         for r in members:
             items.append(Item("row", 2, row=len(flat)))
             flat.append(r)
+            if len(r.pane_rows) >= 2:
+                for j in range(min(len(r.pane_rows), MAX_PANE_ROWS)):
+                    items.append(Item("pane", 1, row=len(flat) - 1, pane=j))
     return items, flat
 
 
@@ -80,8 +100,11 @@ def ensure_visible(items: list[Item], scroll: int, sel_row: int, avail: int) -> 
     if not items:
         return 0
     idx = item_of_row(items, sel_row)
+    end = idx                                   # the selected row's pane lines belong to it
+    while end + 1 < len(items) and items[end + 1].kind == "pane":
+        end += 1
     scroll = max(0, min(scroll, idx))
-    while sum(it.height for it in items[scroll:idx + 1]) > avail and scroll < idx:
+    while sum(it.height for it in items[scroll:end + 1]) > avail and scroll < idx:
         scroll += 1
     if scroll == idx and idx > 0 and items[idx - 1].kind == "header" \
             and items[idx - 1].height + items[idx].height <= avail:
@@ -106,6 +129,14 @@ def row_at(items: list[Item], scroll: int, avail: int, y: int) -> int:
         if it.kind == "row" and off <= y < off + it.height:
             return it.row
     return -1
+
+
+def pane_at(items: list[Item], scroll: int, avail: int, y: int) -> tuple[int, int]:
+    """(flat row index, pane index) of the child line under `y`, else (-1, -1)."""
+    for off, it in visible(items, scroll, avail):
+        if it.kind == "pane" and off <= y < off + it.height:
+            return it.row, it.pane
+    return -1, -1
 
 
 def step_row(cur: int, delta: int, n: int) -> int:

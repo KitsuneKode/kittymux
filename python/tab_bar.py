@@ -397,6 +397,26 @@ def _tab_verdict(tab_id: int) -> tuple[str, dict | None]:
         return "", None
 
 
+def _pane_chips(tab_id: int, pal, active: bool) -> list[tuple[str, int]]:
+    """Runs [(text, rgb)] for a split tab: each agent pane as its logo plus its state mark, e.g.
+    `⠋  !` — so a question in a split you are not in is visible. [] when it has no agent panes."""
+    try:
+        tab = get_boss().tab_for_id(tab_id)
+        chips = kittymux_agents.pane_chips(_panes_state(), [w.id for w in tab.windows], time.monotonic())
+    except Exception:
+        return []
+    runs: list[tuple[str, int]] = []
+    for name, state in chips:
+        agent = kittymux_agents.AGENTS.get(name, _AGENT_FALLBACK)
+        if runs:
+            runs.append((" ", pal.faint))
+        runs.append((agent.glyph, agent.brand if active else _mute(agent.brand, pal)))
+        mark = "" if state == "idle" else kittymux_agents.state_glyph(state)
+        if mark:
+            runs.append((mark, _state_color(state, pal)))
+    return runs
+
+
 def _agent_status(tab_id: int) -> str:
     """working | waiting | limited | done | idle | "" for the tab (all its panes). A scanner
     verdict (screen + hooks) wins; see kittymux_agents.resolve_status for the fallbacks."""
@@ -760,7 +780,8 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     elif cwd:
         subtitle.append((f"{_ICON_FOLDER} {_short_cwd(cwd, 24)}", pal.muted if active else pal.faint))
     if tab.num_windows > 1:
-        subtitle.append((f"{tab.num_windows} panes", pal.faint))
+        chips = _pane_chips(tab.tab_id, pal, active)
+        subtitle.append((chips, pal.faint) if chips else (f"{tab.num_windows} panes", pal.faint))
     msg = kittymux_agents.resolve_msg(_tab_verdict(tab.tab_id)[1], state)
     if msg:
         subtitle = [(msg, state_fg)]          # what it is waiting for beats the branch
@@ -856,7 +877,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         room = cols - 3 - 1 - len(idx) - 1
         # The state word (waiting/working) outranks the branch/path: reserve
         # its room first and give the rest to the leading pieces.
-        tail = [p for p in subtitle if p[0] in ("working", "waiting")]
+        tail = [p for p in subtitle if isinstance(p[0], str) and p[0] in ("working", "waiting")]
         lead = [p for p in subtitle if p not in tail]
         reserve = sum(_cells(t) + 2 for t, _c in tail)
         x = 3
@@ -865,6 +886,12 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
             avail = room - (x - 3) - reserve - _cells(sep)
             if avail <= 1:
                 break
+            if isinstance(text, list):                       # pane chips: coloured runs, drawn whole or not at all
+                if sum(_cells(t) for t, _c in text) <= avail:
+                    x = _put(screen, x, sep, _rgb(color))
+                    for run, run_color in text:
+                        x = _put(screen, x, run, _rgb(run_color))
+                continue
             x = _put(screen, x, sep + _fit(text, avail), _rgb(color))
         for text, color in tail:
             sep = "  " if x > 3 else ""

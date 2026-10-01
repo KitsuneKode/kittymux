@@ -167,7 +167,7 @@ def scan_window(window, now: float) -> bool:
     reason = _clean(line) if marker in ("waiting", "limited") else ""
     old_state = prev.get("state", "")
     changed = new != old_state or reason != prev.get("reason", "")
-    _RT.verdicts[wid] = {"state": new, "reason": reason,
+    _RT.verdicts[wid] = {"state": new, "reason": reason, "agent": agent,
                          "ts_state": now if changed else prev.get("ts_state", now), "ts_scan": now}
     if new == "working" and old_state != "working":
         book["work_ts"] = now                      # when this run of work began (completion threshold)

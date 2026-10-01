@@ -152,5 +152,45 @@ class PanelDragTests(unittest.TestCase):
         self.assertTrue(t.should_send(0.21, 42, final=True))  # release always lands
 
 
+class PaneRowsTests(unittest.TestCase):
+    def split_rows(self):
+        rows = [D.RowData(tab_id=1, win_id=1, session="a", title="one"),
+                D.RowData(tab_id=2, win_id=2, session="a", title="two",
+                          pane_rows=tuple(D.PaneData(win_id=10 + i) for i in range(3))),
+                D.RowData(tab_id=3, win_id=3, session="a", title="three")]
+        return D.flatten(D.group_rows(rows, "a"), "a")
+
+    def test_a_split_tab_gets_one_child_line_per_pane(self):
+        items, flat = self.split_rows()
+        kinds = [(it.kind, it.row, it.pane) for it in items]
+        self.assertEqual(kinds, [("header", -1, -1), ("row", 0, -1), ("row", 1, -1), ("pane", 1, 0),
+                                 ("pane", 1, 1), ("pane", 1, 2), ("row", 2, -1)])
+
+    def test_a_single_pane_tab_has_no_children(self):
+        rows = [D.RowData(tab_id=1, win_id=1, session="a", pane_rows=(D.PaneData(win_id=1),))]
+        items, _ = D.flatten(D.group_rows(rows, "a"), "a")
+        self.assertEqual([it.kind for it in items], ["header", "row"])
+
+    def test_children_are_capped(self):
+        rows = [D.RowData(tab_id=1, win_id=1, session="a", pane_rows=tuple(D.PaneData(win_id=i) for i in range(20)))]
+        items, _ = D.flatten(D.group_rows(rows, "a"), "a")
+        self.assertEqual(sum(1 for it in items if it.kind == "pane"), D.MAX_PANE_ROWS)
+
+    def test_pane_at_and_row_at_do_not_mix(self):
+        items, _ = self.split_rows()
+        # y: header 0, row0 1-2, row1 3-4, panes 5,6,7, row2 8-9
+        self.assertEqual(D.pane_at(items, 0, 30, 6), (1, 1))
+        self.assertEqual(D.pane_at(items, 0, 30, 3), (-1, -1))
+        self.assertEqual(D.row_at(items, 0, 30, 6), -1)
+        self.assertEqual(D.row_at(items, 0, 30, 8), 2)
+
+    def test_selecting_a_split_row_keeps_its_children_in_view(self):
+        items, _ = self.split_rows()
+        scroll = D.ensure_visible(items, 0, 1, 6)           # row1 (2) + its 3 panes = 5 lines fit in 6
+        shown = [it for _o, it in D.visible(items, scroll, 6)]
+        self.assertEqual(sum(1 for it in shown if it.kind == "pane"), 3)
+        self.assertTrue(any(it.kind == "row" and it.row == 1 for it in shown))
+
+
 if __name__ == "__main__":
     unittest.main()
