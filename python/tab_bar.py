@@ -98,6 +98,9 @@ def _palette(draw_data: DrawData) -> "kittymux_theme.Palette":
         abc = o.active_border_color
         if abc is not None:
             colors["active_border_color"] = color_as_int(abc)
+        ibc = o.inactive_border_color
+        if ibc is not None:
+            colors["inactive_border_color"] = color_as_int(ibc)
         for n in range(1, 16):
             colors[f"color{n}"] = int(o.color_table[n]) & 0xFFFFFF
     except Exception:
@@ -805,7 +808,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         _paint_rows(screen, y0, n_rows, row_bg)
     if index == 1 and not extra_data.for_layout:
         # one full-height separator line, drawn once; each tab re-asserts its rows
-        _sep_column(screen, 0, screen.lines, bar, _rgb(pal.accent if _bar_hot() else pal.line))
+        _sep_column(screen, 0, screen.lines, bar, _rgb(pal.accent if _bar_hot() else pal.border))
 
     y = y0
     if header and mode:
@@ -906,11 +909,19 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
             if avail >= _cells(text):
                 x = _put(screen, x, sep + text, _rgb(color))
 
-    _sep_column(screen, y0, n_rows, row_bg, _rgb(pal.accent if _bar_hot() else pal.line))
+    _sep_column(screen, y0, n_rows, row_bg, _rgb(pal.accent if _bar_hot() else pal.border))
+
+    last_row = y if want_sub else title_y
+    # a hairline in the blank row between this tab and the next (not after the last, not while kitty only measures)
+    if extra_data.next_tab is not None and not extra_data.for_layout and last_row + 1 < screen.lines:
+        screen.cursor.bg = bar
+        screen.cursor.y = last_row + 1
+        _put(screen, 1, "─" * max(0, cols - 3), _rgb(kittymux_theme.blend(pal.line, pal.bar, 0.5)))
+        _sep_column(screen, last_row + 1, 1, bar, _rgb(pal.accent if _bar_hot() else pal.border))
 
     # Leave the cursor on the last used row (kitty measures height from it),
     # and never leak our colours into kitty's later erase/draw calls.
-    screen.cursor.y = y if want_sub else title_y
+    screen.cursor.y = last_row
     screen.cursor.bg = bar
     screen.cursor.fg = 0
     screen.cursor.bold = False

@@ -70,6 +70,7 @@ class Palette:
     done: int         # finished / unread output
     alert: int
     info: int
+    border: int = 0   # the divider between sidebar and panes: kitty's own pane-border colour, so it reads as a split
 
 
 def _parse_hex(value: str) -> int | None:
@@ -92,7 +93,7 @@ def parse_kitty_colors(text: str) -> dict[str, int]:
 
 def from_colors(c: dict[str, int]) -> Palette:
     """Build the palette from kitty colours: keys `background`, `foreground`,
-    optional `active_border_color`, `color1`..`color15`. Never raises."""
+    optional `active_border_color`, `inactive_border_color`, `color1`..`color15`. Never raises."""
     fg = c.get("foreground", 0xDDDDDD)
     bg = c.get("background", 0x000000)
 
@@ -116,6 +117,7 @@ def from_colors(c: dict[str, int]) -> Palette:
         done=ansi(10, fg),
         alert=ansi(9, fg),
         info=ansi(12, fg),
+        border=ensure_contrast(c.get("inactive_border_color", blend(fg, bg, 0.24)), bg, 1.5),
     )
 
 
