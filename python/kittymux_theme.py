@@ -4,6 +4,9 @@
 # bar (inside kitty), the sidebar kitten (separate process) and unit tests.
 # Tag colours with kitty's as_rgb() ONLY at the draw call site.
 
+import colorsys
+import functools
+import hashlib
 import os
 import re
 from dataclasses import dataclass
@@ -63,6 +66,30 @@ def ensure_contrast(fg: int, bg: int, minimum: float = 3.0) -> int:
         if contrast(cand, bg) >= minimum:
             return cand
     return target
+
+
+HUE_SLOTS = 12
+
+
+def hue_slot(name: str) -> int:
+    """Which of HUE_SLOTS hues a project name gets. SHA-1, not hash(): Python salts str hashes per process,
+    and a project must keep its colour across restarts and between the bar and the sheet."""
+    return int.from_bytes(hashlib.sha1(name.encode("utf-8", "replace")).digest()[:4], "big") % HUE_SLOTS
+
+
+@functools.lru_cache(maxsize=512)
+def project_hue(name: str, accent: int, bg: int, minimum: float = 4.5) -> int:
+    """A colour for a project: the theme's own accent with its hue turned by the project's slot, so every theme
+    gets a matching family (never a fixed palette). Saturation and lightness follow the accent (a grey accent
+    still gets colour), then it is nudged until it reads on `bg` at the given WCAG ratio — a hue is a second
+    cue next to the project's name, never the only one. On a theme with no lightness room it degrades toward
+    the text colour rather than failing."""
+    r, g, b = (accent >> 16) & 0xFF, (accent >> 8) & 0xFF, accent & 0xFF
+    h, light, sat = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
+    h = (h + hue_slot(name) / HUE_SLOTS) % 1.0
+    r2, g2, b2 = colorsys.hls_to_rgb(h, light, max(sat, 0.45))
+    candidate = (round(r2 * 255) << 16) | (round(g2 * 255) << 8) | round(b2 * 255)
+    return ensure_contrast(candidate, bg, minimum)
 
 
 @dataclass(frozen=True)
