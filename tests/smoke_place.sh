@@ -40,6 +40,9 @@ new_tab
 cd $T/work/alpha/pane
 launch sh
 launch --location=vsplit sh
+new_tab
+cd $T/work/bravo
+launch bash -c 'printf "· Pondering… (12s · ↓ 1.2k tokens)\n"; exec -a claude sleep 86400'
 focus_tab 0
 S
 others() { for s in /tmp/mykitty-* "${REAL_RUNTIME:-/nonexistent}"/mykitty-*; do [ -S "$s" ] && [ "$s" != "${SOCK#unix:}" ] && kitty @ --to "unix:$s" ls 2>/dev/null | python3 -c 'import sys,json;print(sum(len(t["windows"]) for o in json.load(sys.stdin) for t in o["tabs"]))'; done | tr '\n' ' '; }
@@ -68,8 +71,8 @@ for k in sorted(d, key=int):
           r.get("emphasised"), "none" if r.get("hue") is None else "hue", r["legacy"], r.get("hidden")))
 PY
 }
-for _ in $(seq 80); do [ -s "$STATE/bar-dump.json" ] && [ "$(rows 2>/dev/null | wc -l)" -ge 5 ] && break; sleep 0.25; done
-[ "$(rows | wc -l)" -ge 5 ] || fail "the bar drew fewer than 5 folder lines"
+for _ in $(seq 80); do [ -s "$STATE/bar-dump.json" ] && [ "$(rows 2>/dev/null | wc -l)" -ge 6 ] && break; sleep 0.25; done
+[ "$(rows | wc -l)" -ge 6 ] || fail "the bar drew fewer than 6 folder lines"
 
 # 1. defaults: project highlighted, the twins ("app" in alpha and bravo) emphasised, hue on
 R=$(rows)
@@ -84,6 +87,10 @@ $R"
 echo "$R" | grep -q "|where|False|hue|False|True$" || fail "the plain-folder tab should hide the project and show where it lives:
 $R"
 echo "  ok   a title that already says the project is not repeated (branch / location shown instead)"
+# an agent tab is titled "Claude:bravo" but DRAWN "bravo" (the agent prefix is stripped): its line must not repeat the project either
+[ "$(echo "$R" | grep -c '^[^|]*|branch|False|hue|False|True$')" -ge 2 ] || fail "the agent tab at a repo root repeats the project its title already shows (expected two hidden-project branch rows):
+$R"
+echo "  ok   an agent tab's title (agent prefix stripped) counts as saying the project too"
 
 # 1b. renaming a tab changes what it shows (kitty draws `tab.name or tab.title`): rename one twin and the other stops being a twin; clear the name and both are twins again
 BRAVO=$(kitty @ --to "$SOCK" ls | python3 -c 'import sys,json

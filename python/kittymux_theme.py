@@ -68,7 +68,12 @@ def ensure_contrast(fg: int, bg: int, minimum: float = 3.0) -> int:
     return target
 
 
-HUE_SLOTS = 12
+HUE_SLOTS = 24                 # 15° apart before the state hues are kept clear
+
+# A project colour is a TINT, not a second accent: the state colours (needs-you, running, done) stay the loudest thing in the bar.
+_TINT_SAT = (0.30, 0.45)       # HLS saturation band (the accent's own, scaled down, clamped into it)
+_TINT_LIGHT_ON_DARK = (0.58, 0.70)    # on a dark bar: between the muted and the bright text
+_TINT_LIGHT_ON_LIGHT = (0.30, 0.42)   # on a light bar: mid-dark; the contrast nudge settles the rest
 
 
 def hue_slot(name: str) -> int:
@@ -78,7 +83,7 @@ def hue_slot(name: str) -> int:
 
 
 AVOID_GAP = 24 / 360           # a project hue stays this far (as a fraction of the colour wheel) from every colour in `avoid`
-_MIN_FREE_SLOTS = 5            # …unless that would leave fewer than this many hues: then only the first two `avoid` colours count
+_MIN_FREE_SLOTS = 8            # …unless that would leave fewer than this many hues: then only the first two `avoid` colours count
 
 
 def _hls(rgb: int) -> tuple[float, float, float]:
@@ -93,8 +98,8 @@ def _hue_gap(a: float, b: float) -> float:
 @functools.lru_cache(maxsize=512)
 def project_hue(name: str, accent: int, bg: int, minimum: float = 4.5, avoid: tuple = ()) -> int:
     """A colour for a project: the theme's own accent with its hue turned by the project's slot, so every theme
-    gets a matching family (never a fixed palette). Saturation and lightness follow the accent (a grey accent
-    still gets colour), then it is nudged until it reads on `bg` at the given WCAG ratio — a hue is a second
+    gets a matching family (never a fixed palette). Saturation and lightness follow the accent but are held to a
+    calm tint band (_TINT_*), then it is nudged until it reads on `bg` at the given WCAG ratio — a hue is a second
     cue next to the project's name, never the only one. On a theme with no lightness room it degrades toward
     the text colour rather than failing.
 
@@ -112,7 +117,8 @@ def project_hue(name: str, accent: int, bg: int, minimum: float = 4.5, avoid: tu
     else:
         free = free or list(range(HUE_SLOTS))
     h = (h0 + free[hue_slot(name) % len(free)] / HUE_SLOTS) % 1.0
-    r2, g2, b2 = colorsys.hls_to_rgb(h, light, max(sat, 0.45))
+    lo, hi = _TINT_LIGHT_ON_DARK if luminance(bg) < 0.4 else _TINT_LIGHT_ON_LIGHT
+    r2, g2, b2 = colorsys.hls_to_rgb(h, min(hi, max(lo, light)), min(_TINT_SAT[1], max(_TINT_SAT[0], sat * 0.55)))
     candidate = (round(r2 * 255) << 16) | (round(g2 * 255) << 8) | round(b2 * 255)
     return ensure_contrast(candidate, bg, minimum)
 

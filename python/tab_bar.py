@@ -207,7 +207,9 @@ def _title_keys(os_window_id: int) -> dict:
         tm = get_boss().os_window_map.get(os_window_id)
         for t in (tm.tabs if tm else []):
             # what kitty hands the bar as the tab's title (Tab.data_for_tab_bar): the name you gave it, else the window's title
-            out[t.id] = _compact_title(types.SimpleNamespace(title=t.name or t.title or "", tab_id=t.id), 40)
+            title = _compact_title(types.SimpleNamespace(title=t.name or t.title or "", tab_id=t.id), 40)
+            info = _agent_info(t.id)                       # the row draws "web", not "Claude:web": compare what is DRAWN
+            out[t.id] = kittymux_agents.strip_agent_prefix(title, info[2] if info else None)
     except Exception:
         pass
     return out

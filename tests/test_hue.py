@@ -75,7 +75,21 @@ class HueTests(unittest.TestCase):
                 self.assertGreaterEqual(T.contrast(rgb, row), 4.5, (theme, i, hex(rgb)))
                 for colour in status:
                     self.assertGreaterEqual(gap(hue_of(rgb), hue_of(colour)), 18, (theme, i, hex(rgb), hex(colour)))
-            self.assertGreaterEqual(len(seen), 5, theme)      # still a family of distinguishable colours
+            self.assertGreaterEqual(len(seen), 9, theme)      # still a family of distinguishable colours, even with the state hues kept clear
+
+    def test_a_project_colour_is_a_calm_tint_not_a_second_accent(self):
+        """Taste: the colour sits between the muted and the bright text — on a dark theme never lighter than L 0.75
+        (the old pastel at L 0.79 outshone the text beside it; 4.5:1 on the highlighted row needs ~0.73 for some hues, so
+        0.75 is as calm as readability allows), and never as saturated as the state colours."""
+        import colorsys
+        for theme, (accent, bg, row) in THEMES.items():
+            dark = T.luminance(bg) < 0.4
+            for i in range(200):
+                rgb = T.project_hue(f"p{i}", accent, row, avoid=STATUS[theme])
+                _h, light, sat = colorsys.rgb_to_hls(((rgb >> 16) & 255) / 255, ((rgb >> 8) & 255) / 255, (rgb & 255) / 255)
+                self.assertLessEqual(sat, 0.5, (theme, i, hex(rgb)))       # the state colours are 0.5-0.9
+                if dark:
+                    self.assertLessEqual(light, 0.75, (theme, i, hex(rgb)))
 
     def test_a_grey_status_colour_has_no_hue_to_avoid(self):
         accent, _bg, row = THEMES["dark"]
