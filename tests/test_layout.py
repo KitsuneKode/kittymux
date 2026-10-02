@@ -2,7 +2,9 @@ import os
 import stat
 import sys
 import tempfile
+import types
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
 
@@ -107,6 +109,9 @@ class StorageTests(unittest.TestCase):
         self.assertIn("layout-default.json", names)
 
     def test_main_prints_nothing_when_user_never_chose(self):
+        patcher = mock.patch.object(L, "hypr_focus_on_activate", return_value=None)           # independent of the compositor running the tests
+        patcher.start()
+        self.addCleanup(patcher.stop)
         os.environ["KITTYMUX_STATE"] = self.dir
         os.environ["KITTYMUX_LAYOUT_PID"] = str(os.getpid())
         try:
@@ -385,6 +390,31 @@ class EdgeGeometryTests(unittest.TestCase):
         self.assertTrue(L.in_grab_zone(385, 390, 15, native=True))
         self.assertFalse(L.in_grab_zone(360, 390, 15, native=True))               # tab content stays clickable
         self.assertTrue(L.in_grab_zone(375, 390, 15))                             # cell divider: centred one cell in
+
+
+class AttentionConfTests(unittest.TestCase):
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+
+    def test_hyprland_option_is_read_and_anything_else_means_unknown(self):
+        ok = lambda text: (lambda *a, **k: types.SimpleNamespace(stdout=text))             # noqa: E731
+        env = {"HYPRLAND_INSTANCE_SIGNATURE": "x"}
+        self.assertTrue(L.hypr_focus_on_activate(ok('{"option":"misc:focus_on_activate","int":1}'), env))
+        self.assertFalse(L.hypr_focus_on_activate(ok('{"option":"misc:focus_on_activate","int":0}'), env))
+        self.assertIsNone(L.hypr_focus_on_activate(ok("not json"), env))
+        self.assertIsNone(L.hypr_focus_on_activate(ok('{"int":1}'), {}))                    # not Hyprland: no assumption
+        self.assertIsNone(L.hypr_focus_on_activate(mock.Mock(side_effect=OSError), env))    # hyprctl missing
+
+    def test_the_alert_request_is_switched_off_only_when_it_would_steal_focus(self):
+        self.assertIn("window_alert_on_bell no", L.attention_conf(self.d, True))
+        self.assertEqual(L.attention_conf(self.d, False), "")
+        self.assertEqual(L.attention_conf(self.d, None), "")
+
+    def test_the_user_can_insist(self):
+        open(os.path.join(self.d, "attention-on"), "w").close()
+        self.assertEqual(L.attention_conf(self.d, True), "")
+        self.assertTrue(L.attention_allowed(self.d, True))
+        self.assertTrue(L.attention_allowed(tempfile.mkdtemp(), True, {"KITTYMUX_ATTENTION": "1"}))
 
 
 if __name__ == "__main__":

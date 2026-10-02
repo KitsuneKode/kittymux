@@ -8,6 +8,8 @@
                          layout mode [full|compact|hidden|cycle]   layout edge [left|right|bottom|top|cycle]
                          layout width [+N|-N|N]   layout preset NAME   layout pick   layout show
                          layout default [clear]   (pin the current layout as the start for new windows; otherwise new kitties start with your last choice)
+  kittymux inbox       everything that wants your attention (questions, permissions, usage limits, finished runs), newest first:
+                         inbox [--all] [--json] [--limit N]   inbox ack [ID… | --all]   inbox clear   inbox jump [ID]   inbox watch
   kittymux explain     why each agent pane is in its state, and every recent decision (state changes, notifications sent or held back):
                          explain [--window ID] [--last N] [--all] [--json]
   kittymux dim         dim the panes that are not focused (kitty ≥ 0.49.2): dim [on|off|toggle|show]
@@ -33,6 +35,7 @@ import time
 HOME_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(HOME_DIR, "python"))
 import kittymux_agents  # noqa: E402
+import kittymux_inbox  # noqa: E402
 import kittymux_layout  # noqa: E402
 import kittymux_theme  # noqa: E402
 
@@ -342,6 +345,13 @@ def doctor() -> int:
         r.ok("no hook-capable agents detected (heuristic status still works)")
 
     print("\nwindow manager")
+    steals = kittymux_layout.hypr_focus_on_activate()
+    if steals:
+        if kittymux_layout.attention_allowed(kittymux_layout.state_dir(), steals):
+            r.warning("Hyprland `misc:focus_on_activate` is on and kittymux attention requests are forced on",
+                      "any bell then pulls focus to that window; remove `attention-on` from the state dir to let kittymux switch them off")
+        else:
+            r.ok("attention bells are off: Hyprland `misc:focus_on_activate` would turn a bell into a focus steal")
     conflicts = _hypr_conflicts()
     if shutil.which("hyprctl"):
         if conflicts:
@@ -637,12 +647,134 @@ def _layout_pick(sock: str, sdir: str, pid: int, current) -> int:
     return _apply_layout(sock, sdir, pid, kittymux_layout.apply_command(current, "preset", name))
 
 
+# ── inbox ────────────────────────────────────────────────────────────────────
+_GLYPH = {"needs-you": "!", "warn": "⊘", "info": "·"}
+
+
+def format_event(ev: dict, now: float, width: int = 110) -> str:
+    """One inbox line: `! 12:03  claude  permission   <tab>  <what it said>  [agent+screen]`."""
+    clock = time.strftime("%H:%M", time.localtime(float(ev.get("t", 0))))
+    mark = _GLYPH.get(ev.get("severity", "info"), "·") if ev.get("status") == "unread" else " "
+    extra = ""
+    if ev.get("kind") == "limit" and ev.get("reset_at"):
+        left = max(0, int(ev["reset_at"] - now))
+        extra = f" (resets in {left // 3600}h {left % 3600 // 60:02d}m)" if left else " (reset time passed)"
+    if ev.get("kind") == "done" and ev.get("confidence") == "low":
+        extra += " (judged from the screen)"
+    said = ev.get("body") or ev.get("title") or ""
+    srcs = "+".join(ev.get("sources", []))
+    count = f" ×{ev['count']}" if ev.get("count", 1) > 1 else ""
+    line = "%s %s  %-9s %-11s %-22s %s%s%s  [%s]" % (mark, clock, ev.get("agent", "")[:9], ev.get("kind", ""), (ev.get("tab") or "")[:22], said, extra, count, srcs)
+    return line[:width]
+
+
+def _inbox_socket(pid) -> str | None:
+    for d in _socket_dirs():
+        path = os.path.join(d, f"mykitty-{pid}")
+        if _owned_socket(path):
+            return f"unix:{path}"
+    return None
+
+
+def inbox_jump(ev: dict) -> int:
+    """Focus the window an event is about (kitty remote control, then the window manager), and mark that window's events read."""
+    sock = _inbox_socket(ev.get("pid"))
+    if sock is None or not str(ev.get("w", "")).isdigit():
+        print("kittymux inbox: that kitty is no longer running (or has no control socket)", file=sys.stderr)
+        return 1
+    rc, _ = _run(["kitty", "@", "--to", sock, "focus-window", "--match", f"id:{ev['w']}"], 4)
+    if rc != 0:
+        print("kittymux inbox: that window is gone", file=sys.stderr)
+        return 1
+    if shutil.which("hyprctl"):
+        _run(["hyprctl", "dispatch", "focuswindow", f"pid:{ev.get('pid')}"], 3)
+    kittymux_inbox.ack(kittymux_layout.state_dir(), time.time(), window=ev["w"], pid=ev.get("pid"))
+    return 0
+
+
+def inbox(argv: list[str]) -> int:
+    sdir = kittymux_layout.state_dir()
+    now = time.time()
+    cmd = argv[0] if argv and not argv[0].startswith("-") else "list"
+    rest = argv[1:] if argv and not argv[0].startswith("-") else argv
+    if cmd in ("ack", "read"):
+        ids = [a for a in rest if not a.startswith("-")]
+        if "--all" in rest:
+            ids = [e["id"] for e in kittymux_inbox.load(sdir) if e.get("status") == "unread"]
+        if not ids:
+            print("usage: kittymux inbox ack ID… | --all", file=sys.stderr)
+            return 2
+        kittymux_inbox.ack(sdir, now, ids=ids)
+        print(f"{OK} marked {len(ids)} read")
+        return 0
+    if cmd == "clear":
+        kittymux_inbox.clear(sdir, now, everything="--all" in rest)
+        print(f"{OK} cleared")
+        return 0
+    if cmd == "jump":
+        events = [e for e in kittymux_inbox.load(sdir) if e.get("status") == "unread"]
+        ids = [a for a in rest if not a.startswith("-")]
+        target = next((e for e in reversed(kittymux_inbox.load(sdir)) if ids and e["id"] == ids[0]), None) if ids else None
+        if target is None and not ids:                  # the most pressing unread one: needs-you first, newest first
+            ranked = sorted(events, key=lambda e: (e.get("severity") != "needs-you", -float(e.get("t", 0))))
+            target = ranked[0] if ranked else None
+        if target is None:
+            print("kittymux inbox: nothing to jump to", file=sys.stderr)
+            return 1
+        return inbox_jump(target)
+    if cmd == "watch":
+        seen, last = set(e["id"] for e in kittymux_inbox.load(sdir)), 0.0
+        try:
+            while True:
+                try:
+                    mtime = os.stat(kittymux_inbox.store_path(sdir)).st_mtime
+                except OSError:
+                    mtime = 0.0
+                if mtime != last:
+                    last = mtime
+                    for e in kittymux_inbox.load(sdir):
+                        if e["id"] not in seen:
+                            seen.add(e["id"])
+                            print(json.dumps(e, sort_keys=True), flush=True)
+                time.sleep(0.5)
+        except KeyboardInterrupt:
+            return 0
+    if cmd != "list":
+        print("usage: kittymux inbox [--all] [--json] [--limit N] | ack | clear | jump | watch", file=sys.stderr)
+        return 2
+    show_all, as_json, limit = "--all" in rest, "--json" in rest, 30
+    if "--limit" in rest:
+        try:
+            limit = int(rest[rest.index("--limit") + 1])
+        except (ValueError, IndexError):
+            print("kittymux inbox: --limit needs a number", file=sys.stderr)
+            return 2
+    events = kittymux_inbox.load(sdir)
+    if not show_all:
+        events = [e for e in events if e.get("status") == "unread"]
+    events = list(reversed(events))[:max(1, limit)]
+    if as_json:
+        print(json.dumps(kittymux_inbox.snapshot(kittymux_inbox.load(sdir), now), indent=1, sort_keys=True))
+        return 0
+    if not events:
+        print("inbox is empty" + ("" if show_all else " (nothing unread; --all shows what you have already seen)"))
+        return 0
+    for e in events:
+        line = format_event(e, now)
+        print(c("1", line) if e.get("status") == "unread" and e.get("severity") == "needs-you" else line)
+    return 0
+
+
 # ── explain ──────────────────────────────────────────────────────────────────
 def describe_event(ev: dict) -> str:
     """One decision-log event as a human sentence (kittymux_scan._record writes them)."""
     if ev.get("kind") == "state":
         arrow = f"{ev.get('frm') or '·'} → {ev.get('to') or '·'}"
         return f"{arrow:<20} {ev.get('why', '')}"
+    if ev.get("kind") == "attention":
+        return f"{'window-manager bell':<20} {ev.get('outcome', '')}"
+    if ev.get("kind") == "agent-notification":
+        return f"{'it announced ' + str(ev.get('what', '')):<20} {ev.get('outcome', '')}"
     if ev.get("kind") == "notify":
         worked = f" (worked {ev['worked']} s)" if ev.get("worked") is not None else ""
         return f"{'notify ' + str(ev.get('state', '')):<20} {ev.get('outcome', '')}{worked}"
@@ -1048,6 +1180,8 @@ def main(argv: list[str]) -> int:
         return dim(argv[1:])
     if cmd == "explain":
         return explain(argv[1:])
+    if cmd == "inbox":
+        return inbox(argv[1:])
     if cmd == "screenshot":
         return screenshot(argv[1:])
     if cmd in ("version", "--version", "-V"):

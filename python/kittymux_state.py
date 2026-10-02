@@ -175,6 +175,7 @@ def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bo
         if not entry.get("hook_turn"):
             entry["unseen"], entry["completed"] = True, True
             entry["unseen_cause"] = "the screen was busy and went quiet (no hook announced this turn)"
+            entry["done_source"] = "screen"                # an inference: low confidence
     stop_hook = explicit == "done"
     idle_hook = explicit == "waiting" and bool(ts_status) and not is_request(entry.get("msg", "")) and not entry.get("completed")
     if (stop_hook or idle_hook) and now - ts_status < _HOOK_DONE_FRESH:
@@ -185,6 +186,7 @@ def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bo
         if entry.get("ack_ts") != ts_status:
             entry["unseen"], entry["completed"] = True, True
             entry["unseen_cause"] = "its Stop hook fired" if stop_hook else "its idle notice arrived and no completion was reported yet"
+            entry["done_source"] = "agent"                 # the agent said so itself (hook or its own notification): high confidence
         if stop_hook:
             entry["hook_turn"] = False
     if focused:

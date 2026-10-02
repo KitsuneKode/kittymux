@@ -125,6 +125,41 @@ def gated_conf(version: tuple, sdir: str, slangc: bool = False) -> str:
     return "".join(line + "\n" for line in lines)
 
 
+# ── attention requests that would steal focus ────────────────────────────────
+# A bell in an unfocused window makes kitty ask the window manager for attention (window_alert_on_bell, on Wayland an xdg-activation
+# request). Compositors configured to honour such requests by FOCUSING the window — Hyprland's `misc:focus_on_activate` — turn every bell
+# (an agent's own terminal bell, kittymux's "needs you" hint) into a forced focus change, switching workspace if need be. That is the
+# worst possible notification UX, so when we can see the compositor would do it we switch the request off instead of triggering it.
+def hypr_focus_on_activate(run=None, env=None) -> bool | None:
+    """True/False for Hyprland's `misc:focus_on_activate`; None when this is not Hyprland or it cannot be read (then nothing is assumed)."""
+    import subprocess
+    env = os.environ if env is None else env
+    if not env.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        return None
+    try:
+        out = (run or subprocess.run)(["hyprctl", "getoption", "misc:focus_on_activate", "-j"], capture_output=True, text=True, timeout=1.0)
+        return bool(json.loads(out.stdout).get("int", 0))
+    except Exception:
+        return None
+
+
+def attention_allowed(sdir: str, steals: bool | None, env=None) -> bool:
+    """May kittymux ask the window manager for attention? Not when that would steal focus — unless the user insists
+    (KITTYMUX_ATTENTION=1 or the file `attention-on` in the state dir)."""
+    env = os.environ if env is None else env
+    if env.get("KITTYMUX_ATTENTION") == "1" or os.path.exists(os.path.join(sdir, "attention-on")):
+        return True
+    return not steals
+
+
+def attention_conf(sdir: str, steals: bool | None) -> str:
+    """kitty config that stops kitty's own bell→attention request when the compositor would answer it by taking focus."""
+    if attention_allowed(sdir, steals):
+        return ""
+    return ("# kittymux: your compositor focuses windows that ask for attention (Hyprland misc:focus_on_activate), so a bell would steal focus\n"
+            "window_alert_on_bell no\n")
+
+
 def kitty_version() -> tuple:
     """(major, minor, patch) of the kitty asking for config; (0, 0, 0) when it cannot be told (nothing gated is emitted)."""
     forced = os.environ.get("KITTYMUX_KITTY_VERSION")
@@ -482,6 +517,7 @@ def main() -> int:
     if layout is not None:                     # nothing saved → print nothing, change nothing
         sys.stdout.write(render_conf(layout))
     sys.stdout.write(gated_conf(kitty_version(), sdir, have_slangc()))
+    sys.stdout.write(attention_conf(sdir, hypr_focus_on_activate()))
     return 0
 
 

@@ -137,6 +137,98 @@ class ExplainTests(unittest.TestCase):
             self.assertEqual(self.m.explain(["--bogus"]), 2)
 
 
+class InboxCliTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+        cls.I = cls.m.kittymux_inbox
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = mock.patch.dict(os.environ, {"KITTYMUX_STATE": self.tmp.name})
+        self.env.start()
+        self.now = 10_000.0
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def add(self, kind, w=1, t=None, **kw):
+        ev = self.I.make_event(kind, kw.pop("agent", "claude"), w, kw.pop("source", "agent"), t if t is not None else self.now, pid=4321, tab="my tab", **kw)
+        self.I.add(self.tmp.name, ev)
+        return ev
+
+    def out(self, argv):
+        import io
+        from contextlib import redirect_stdout
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = self.m.inbox(argv)
+        return rc, buf.getvalue()
+
+    def test_list_shows_unread_newest_first_and_all_shows_everything(self):
+        a = self.add("permission", w=1, t=100.0, body="Claude needs your permission to use Bash")
+        self.add("done", w=2, t=200.0)
+        self.I.ack(self.tmp.name, 300.0, ids=[a["id"]])
+        rc, text = self.out([])
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(text.strip().splitlines()), 1)
+        self.assertIn("done", text)
+        rc, text = self.out(["--all"])
+        lines = text.strip().splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertIn("done", lines[0])                                     # newest first
+        self.assertIn("needs your permission", lines[1])
+
+    def test_empty_inbox_says_so(self):
+        self.assertIn("inbox is empty", self.out([])[1])
+
+    def test_limit_line_shows_the_countdown_and_a_screen_only_finish_says_so(self):
+        reset = self.now + 2 * 3600 + 30 * 60
+        line = self.m.format_event(self.add("limit", reset_at=reset, body="usage limit reached"), self.now)
+        self.assertIn("resets in 2h 30m", line)
+        line = self.m.format_event(self.add("done", w=3, source="screen", confidence="low"), self.now)
+        self.assertIn("judged from the screen", line)
+        self.assertTrue(self.m.format_event({"kind": "info"}, 0.0))          # a bare event still formats
+
+    def test_ack_clear_and_usage_errors(self):
+        e = self.add("question", w=5)
+        self.assertEqual(self.out(["ack", e["id"]])[0], 0)
+        self.assertEqual(self.I.load(self.tmp.name)[0]["status"], "read")
+        self.add("permission", w=6, t=self.now + 500)
+        self.assertEqual(self.out(["clear"])[0], 0)
+        self.assertEqual({x["status"] for x in self.I.load(self.tmp.name)}, {"read", "dismissed"})
+        with mock.patch("sys.stderr"):
+            self.assertEqual(self.m.inbox(["ack"]), 2)
+            self.assertEqual(self.m.inbox(["bogus"]), 2)
+            self.assertEqual(self.m.inbox(["--limit", "x"]), 2)
+
+    def test_json_is_the_documented_snapshot(self):
+        self.add("limit", reset_at=self.now + 60)
+        rc, text = self.out(["--json"])
+        snap = json.loads(text)
+        self.assertEqual((snap["version"], snap["unread"], snap["events"][0]["kind"]), (1, 1, "limit"))
+
+    def test_jump_focuses_the_window_acks_it_and_prefers_needs_you(self):
+        self.add("done", w=2, t=self.now + 50)
+        self.add("permission", w=1, t=self.now)                              # older, but it needs you
+        calls = []
+        with mock.patch.object(self.m, "_inbox_socket", lambda pid: "unix:/tmp/mykitty-4321"), \
+                mock.patch.object(self.m, "_run", lambda cmd, t=3.0: (calls.append(cmd) or (0, ""))), mock.patch.object(self.m.shutil, "which", lambda n: None):
+            self.assertEqual(self.m.inbox(["jump"]), 0)
+        self.assertEqual(calls[0][-2:], ["--match", "id:1"])                  # window 1: the one that needs you
+        self.assertEqual([e["status"] for e in self.I.load(self.tmp.name)], ["unread", "read"])
+
+    def test_jump_fails_cleanly_when_the_kitty_or_window_is_gone(self):
+        self.add("permission", w=1)
+        with mock.patch("sys.stderr"), mock.patch.object(self.m, "_inbox_socket", lambda pid: None):
+            self.assertEqual(self.m.inbox(["jump"]), 1)
+        with mock.patch("sys.stderr"), mock.patch.object(self.m, "_inbox_socket", lambda pid: "unix:/x"), mock.patch.object(self.m, "_run", lambda *a, **k: (1, "")):
+            self.assertEqual(self.m.inbox(["jump"]), 1)
+        self.assertEqual(self.I.load(self.tmp.name)[0]["status"], "unread")   # a failed jump acknowledges nothing
+
+
 class DimAndScreenshotTests(unittest.TestCase):
     """Never touch a real kitty from tests: no socket, no kitty subprocess."""
 

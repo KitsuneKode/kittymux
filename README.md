@@ -228,6 +228,17 @@ notification process lives at most 30 s.
 *Privacy:* only the matched marker and one short line of context (≤ 100 chars, control characters
 stripped) are kept, in `scan-<pid>.json` (mode 0600, inside the 0700 state dir). Nothing leaves your machine.
 
+> **A notification never takes your focus.** If your compositor focuses windows that request attention (Hyprland `misc:focus_on_activate`), a bell would jump you to that window and workspace;
+> kittymux detects this and turns the bell request off (see [docs/notifications.md](docs/notifications.md)). Override with `touch ~/.local/state/kittymux/attention-on`.
+
+### The inbox — questions, permissions, usage limits, finished runs
+
+Everything that wants your attention is a typed event in one private store — what the agent announced **itself** (its own OSC 9/99 notification, captured natively from kitty's notification
+pipeline), its hooks, and what the screen shows — de-duplicated into one event and one popup per occurrence. `kittymux inbox` lists them (`!` needs you, `⊘` a limit with its reset countdown),
+`kittymux inbox jump` focuses the one that needs you, `ack`/`clear` tidy up, focusing a window acknowledges it. A completion is a popup only if the agent said it finished itself (or the run was
+long); a finish inferred from a quiet screen is in the inbox and the bar but does not interrupt you. `~/.local/state/kittymux/inbox-snapshot.json` is the stable file a shell panel watches:
+see [docs/inbox.md](docs/inbox.md) and the Quickshell sample in [`addons/quickshell/`](addons/quickshell/README.md) (a sample against the documented contract; untested here).
+
 ### `kittymux explain` — why is it in that state?
 
 A "finished" or "needs you" you did not expect is now diagnosable instead of a guess:

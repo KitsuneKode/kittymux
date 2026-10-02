@@ -41,11 +41,12 @@ SCAN_FAST, SCAN_IDLE = 0.5, 2.0
 SPIN_INTERVAL = 0.1
 HEARTBEAT = 3.0
 NOTIFY_EVERY = 10.0
-NOTIFY_DONE_MIN = 15.0        # a completion only notifies after this much work: a quick reply is not news
+NOTIFY_DONE_MIN = 15.0        # a completion the AGENT announced (hook / its own notification) pops up after this much work: a quick reply is not news
+NOTIFY_DONE_LOW_MIN = 60.0    # …one inferred from the screen alone only after this much (it is shown in the inbox and the bar either way)
 DONE_SETTLE = 5.0             # ...and only once it has STAYED finished this long: a screen that blinks (a repaint, a popup,
                               # a status line that changes wording) is not a completion
 _PRIVATE = ("marker", "marker_ts", "seen_working", "unseen", "ack_ts", "work_ts", "handled_wait_ts",
-            "hook_turn", "hook_turn_ts", "completed", "unseen_cause", "why")
+            "hook_turn", "hook_turn_ts", "completed", "unseen_cause", "why", "done_source", "agent_done_ts")
 
 _helper_dirs_done = False
 
@@ -209,6 +210,9 @@ def scan_window(window, now: float) -> bool:
     book = _RT.book.setdefault(wid, {})
     view = {**entry, **book}
     focused = bool(getattr(window, "is_focused", False))
+    adt = view.get("agent_done_ts")
+    if adt and adt > float(view.get("ts_status") or 0):
+        view["status"], view["ts_status"] = "done", adt        # the agent's own "finished" notification counts like its Stop hook
     new = st.resolve(view, agent, marker, now, focused)
     for k in _PRIVATE:
         if k in view:
@@ -226,8 +230,17 @@ def scan_window(window, now: float) -> bool:
     if new == "working" and old_state != "working":
         book["work_ts"] = now                      # when this run of work began (completion threshold)
     if changed and old_state and new in agents.NEEDS_YOU and old_state not in agents.NEEDS_YOU:
-        _record("notify", wid, agent, state=new, outcome=_notify(window, new, entry.get("msg") or reason, agent))
-        _alert(window)
+        text = entry.get("msg") or reason
+        if new == "limited":
+            kind = "limit"
+        else:
+            kind = _inbox().classify_text("", text)[0]
+            kind = kind if kind in ("permission", "question") else "permission"
+        reset = _inbox().parse_reset(text, time.time(), float(time.localtime().tm_gmtoff or 0)) if kind == "limit" else None
+        source = "hook" if "hook" in why else "screen"
+        _record("notify", wid, agent, state=new, source=source,
+                outcome=_announce(window, kind, agent, source, text, confidence="high" if source == "hook" else "low", reset_at=reset))
+        _record("attention", wid, agent, outcome=_alert(window))
     elif changed and not old_state and new in agents.NEEDS_YOU:
         _record("notify", wid, agent, state=new, outcome="suppressed: first sight of this window (a scanner restart must not replay old events)")
     if new == "done":
@@ -236,19 +249,22 @@ def scan_window(window, now: float) -> bool:
             # old unseen completion would fire at once
             book["done_since"] = now
             book["done_worked"] = (now - book["work_ts"]) if book.get("work_ts") else None
+            book["done_conf"] = "high" if view.get("done_source") == "agent" else "low"
         since = book.get("done_since")
         if since is not None and now - since >= DONE_SETTLE:
             book.pop("done_since", None)           # settled: decide once
             worked = book.pop("done_worked", None)
-            if worked is not None and worked >= NOTIFY_DONE_MIN:   # unknown duration = cannot prove it was news
-                _record("notify", wid, agent, state="done", worked=round(worked), outcome=_notify(window, "done", "", agent))
-            else:
-                _record("notify", wid, agent, state="done", worked=None if worked is None else round(worked),
-                        outcome="suppressed: duration unknown (not seen working)" if worked is None
-                        else f"suppressed: worked only {round(worked)} s (< {int(NOTIFY_DONE_MIN)} s)")
+            conf = book.pop("done_conf", "low")
+            outcome = _announce(window, "done", agent, "agent" if conf == "high" else "screen", "", confidence=conf, worked=worked)
+            _record("notify", wid, agent, state="done", worked=None if worked is None else round(worked), confidence=conf, outcome=outcome)
     else:
         book.pop("done_since", None)               # it blinked back to work: that was no completion
         book.pop("done_worked", None)
+        book.pop("done_conf", None)
+    unread = vars(_RT).get("unread")
+    if focused and unread and wid in unread:       # you are looking at it: whatever it reported is seen
+        unread.discard(wid)
+        _inbox().ack(state_dir(), time.time(), window=wid, pid=os.getpid())
     return changed
 
 
@@ -430,6 +446,104 @@ def _sync_spinner() -> None:
         _debug()
 
 
+# ── typed events: the inbox ──────────────────────────────────────────────────
+# Every needs-you, limit and completion is a typed event in the shared inbox (kittymux_inbox: docs/inbox.md). `_announce` is the ONE place that
+# decides whether it also pops up: the inbox says whether this occurrence was already reported (by the agent's own notification, a hook or the
+# screen scan — a popup per occurrence, not per source), and the confidence of a completion decides whether a screen-only guess may interrupt you.
+def _inbox():
+    _ensure_path()
+    import kittymux_inbox
+    return kittymux_inbox
+
+
+def _announce(window, kind: str, agent: str, source: str, detail: str, *, confidence: str = "high", worked=None, reset_at=None) -> str:
+    """Record the event and, if it is new and the policy allows, show the popup. Returns the outcome for the decision log. Never raises."""
+    try:
+        agents = _mods()[0]
+        inbox = _inbox()
+        wid = str(window.id)
+        tab = agents.strip_agent_prefix(agents.strip_title_prefix(window.title or ""), agent) or agent
+        ev = inbox.make_event(kind, agent, wid, source, time.time(), pid=os.getpid(), tab=tab, title=f"{agent or 'agent'} {_TEXT_BY_KIND.get(kind, kind)}",
+                              body=detail, confidence=confidence, reset_at=reset_at, private=_private())
+        is_new, _ = inbox.add(state_dir(), ev)
+        if is_new:
+            vars(_RT).setdefault("unread", set()).add(wid)
+        if not is_new:
+            return "merged into an earlier report of the same thing: no second popup"
+        if kind in ("permission", "question"):
+            return _notify(window, "waiting", detail, agent)
+        if kind == "limit":
+            return _notify(window, "limited", detail, agent)
+        if kind == "done":
+            if confidence == "high":
+                if worked is not None and worked < NOTIFY_DONE_MIN:
+                    return f"inbox only: the agent said it finished, but it worked only {round(worked)} s (< {int(NOTIFY_DONE_MIN)} s)"
+                return _notify(window, "done", "", agent)
+            if worked is not None and worked >= NOTIFY_DONE_LOW_MIN:
+                return _notify(window, "done", "", agent)
+            return ("inbox only: finish judged from the screen alone and the run was short (< %d s)" % int(NOTIFY_DONE_LOW_MIN)
+                    if worked is not None else "inbox only: finish judged from the screen alone and the duration is unknown")
+        return "inbox only"
+    except Exception:
+        return "error: could not record the event"
+
+
+_TEXT_BY_KIND = {"permission": "needs permission", "question": "asks a question", "limit": "hit a usage limit", "done": "finished",
+                 "error": "reported an error", "info": "says"}
+
+
+def _on_agent_notification(cmd) -> None:
+    """The agent announced something itself (an OSC 9/99/777 notification — kitty hands it to NotificationManager). This is the most authoritative
+    thing we ever learn about an agent's state: classify what it SAID, record it, and (for a completion) let the resolver treat it like a Stop hook.
+    Notifications from windows that are not agent windows are left alone."""
+    wid = str(getattr(cmd, "channel_id", 0))
+    agent = (_RT.verdicts.get(wid) or {}).get("agent") or ""
+    if not agent:
+        return
+    from kitty.fast_data_types import get_boss
+    window = get_boss().window_id_map.get(int(wid))
+    if window is None:
+        return
+    inbox = _inbox()
+    title, body = inbox.clean(cmd.title, 200), inbox.clean(cmd.body, 400)
+    kind, tag = inbox.classify_text(title, body)
+    detail = body or title
+    now = time.time()
+    if tag == "idle-notice":                      # the agent has been idle since it finished: not a new event, but worth keeping in the inbox
+        inbox.add(state_dir(), inbox.make_event("info", agent, wid, "agent", now, pid=os.getpid(), tab=window.title or "", title=title, body=detail,
+                                                private=_private(), tag=tag))
+        _record("agent-notification", wid, agent, what="info", tag=tag, outcome="inbox only: its idle notice (it finished earlier)")
+        return
+    reset = inbox.parse_reset(f"{title} {body}", now, float(time.localtime().tm_gmtoff or 0)) if kind == "limit" else None
+    if kind == "done":
+        _RT.book.setdefault(wid, {})["agent_done_ts"] = time.monotonic()    # the resolver treats this like its Stop hook (scan_window)
+    outcome = _announce(window, kind, agent, "agent", detail, confidence="high", reset_at=reset)
+    _record("agent-notification", wid, agent, what=kind, outcome=outcome)
+
+
+def _install_notification_tap() -> None:
+    """Observe every notification kitty is about to filter/show, once per process: wrap NotificationManager.is_notification_filtered (it receives
+    the finalised notification, with the window it came from, before our filter_notification rule drops the agents' own popups — we show our own).
+    The wrapper only delegates to this module's function by name, so a reload's new code applies without re-wrapping, and it never raises."""
+    try:
+        from kitty.notifications import NotificationManager
+        if getattr(NotificationManager.is_notification_filtered, "_kittymux_wrapped", False):
+            return
+        original = NotificationManager.is_notification_filtered
+
+        def is_notification_filtered(self, cmd):
+            try:
+                _on_agent_notification(cmd)
+            except Exception:
+                _debug()
+            return original(self, cmd)
+
+        is_notification_filtered._kittymux_wrapped = True                      # type: ignore[attr-defined]
+        NotificationManager.is_notification_filtered = is_notification_filtered  # type: ignore[method-assign]
+    except Exception:
+        _debug()
+
+
 # ── notifications ────────────────────────────────────────────────────────────
 def _notify_enabled(kind: str = "needs") -> bool:
     """Off switches: KITTYMUX_NOTIFY=0 or the file `notify-off` silence everything;
@@ -458,24 +572,42 @@ _TEXT = {   # state -> (title suffix, default body, urgency, category)
 }
 
 
-def _alert(window) -> None:
-    """Ask the window manager for attention (taskbar flash / urgent border) when an agent you are not
-    looking at needs you. This is kitty's own bell path (`screen.bell()`), so it obeys the user's
-    `window_alert_on_bell` / `enable_audio_bell`. Only for needs-you: a bell per completion would
-    flash constantly. Off with KITTYMUX_BELL=0 or the file `bell-off`."""
+def _attention_allowed() -> tuple[bool, str]:
+    """(allowed, why not): may we ask the window manager for attention? Checked at most once a minute. Not when the compositor would answer
+    the request by FOCUSING the window (Hyprland `misc:focus_on_activate`) — see kittymux_layout.attention_allowed."""
+    now = time.monotonic()
+    cached = vars(_RT).get("attention")
+    if cached is None or now - cached[0] > 60.0:
+        _ensure_path()
+        import kittymux_layout
+        steals = kittymux_layout.hypr_focus_on_activate()
+        ok = kittymux_layout.attention_allowed(state_dir(), steals)
+        cached = _RT.attention = (now, ok, "" if ok else "your compositor focuses windows that request attention (Hyprland misc:focus_on_activate): it would steal focus")
+    return cached[1], cached[2]
+
+
+def _alert(window) -> str:
+    """Ask the window manager for attention (taskbar flash / urgent border) when an agent you are not looking at needs you. This is kitty's own
+    bell path (`screen.bell()`), so it obeys the user's `window_alert_on_bell` / `enable_audio_bell`. Only for needs-you. Off with KITTYMUX_BELL=0
+    or the file `bell-off`; skipped when it would steal focus. Returns what it did, for the decision log."""
     try:
-        if getattr(window, "is_focused", False) or os.environ.get("KITTYMUX_BELL") == "0" \
-                or os.path.exists(os.path.join(state_dir(), "bell-off")):
-            return
+        if getattr(window, "is_focused", False):
+            return "skipped: you are looking at it"
+        if os.environ.get("KITTYMUX_BELL") == "0" or os.path.exists(os.path.join(state_dir(), "bell-off")):
+            return "skipped: switched off (bell-off)"
+        allowed, why = _attention_allowed()
+        if not allowed:
+            return "skipped: " + why
         now = time.monotonic()
         alerted = vars(_RT).setdefault("alerted", {})      # (an _RT made by an older version lacks it)
         wid = str(window.id)
         if now - alerted.get(wid, -1e9) < NOTIFY_EVERY:
-            return
+            return "skipped: this window rang less than %d s ago" % int(NOTIFY_EVERY)
         alerted[wid] = now
         window.screen.bell()
+        return "rang"
     except Exception:
-        pass
+        return "error"
 
 
 NOTIFY_BURST, NOTIFY_WINDOW = 5, 10.0        # at most this many notifications per this many seconds, in total
@@ -570,6 +702,7 @@ def ensure_started() -> bool:
             return False
     except Exception:
         return False
+    _install_notification_tap()
     _retime(SCAN_FAST)
     return _RT.scan_timer is not None
 

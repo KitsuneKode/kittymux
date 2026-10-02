@@ -71,6 +71,14 @@ States, most important first — a state needs positive evidence, and silence is
 - Claude hooks installed by `kittymux hooks --install`: `UserPromptSubmit`/`PostToolUse` → working, `Notification` → waiting, `Stop` → done, `SessionEnd` → idle.
   `kittymux doctor` reports missing events. Change `HOOK_EVENTS`, README's snippet and the tests together.
 
+**One event model** (`python/kittymux_inbox.py`, pure; docs/inbox.md): every needs-you / limit / completion is a typed event (`permission|question|limit|done|error|info`, severity, sources, confidence) in `inbox.jsonl`
+(append-only ops, 0600, compacted at 256 KB) + `inbox-snapshot.json` (schema v1: what a widget watches). Sources by authority: `agent` (its own OSC 9/99/777 notification — captured by wrapping
+`NotificationManager.is_notification_filtered`, which sees the finalised command + `channel_id` = window id before our `filter_notification` rule drops the agent's popup; or its hook), `hook`, `screen`.
+`kittymux_scan._announce` is the ONE place that decides popup vs inbox-only: the inbox says whether the occurrence was already reported (45 s merge window → one popup per occurrence), and a `done` with
+`confidence: low` (inferred from a quiet screen) pops up only after ≥ 60 s of work. Classification of agent text is conservative: unrecognised → `info`, "waiting for your input" → `idle-notice` (not a completion).
+An agent-announced completion feeds the resolver like a Stop hook (`agent_done_ts`). Never log/store screen text beyond the bounded event body (empty in private mode). Adding a source or kind = update the
+inbox schema doc, the tests, and keep `version` stable (consumers ignore unknown fields).
+
 **Every answer says why.** `kittymux_state.resolve` records a static, human `why` at each return (`_why`); the scanner publishes it in the verdict and writes every state change and every notification
 outcome (`_notify` returns "sent" or why not) to the decision log (`_record`: a 300-event deque in `_RT` + `decisions-<pid>.jsonl`, 0600, rotated; `kittymux explain` reads it). A new state or a new
 suppression rule MUST set a `why`/outcome, and a reason must be static text (no clocks or counters in it, or the published verdict changes every tick). Never log screen text.
@@ -95,6 +103,9 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
 - A glyph added to the icon font reaches a RUNNING kitty only after a restart (it loads fonts once): draw a new glyph only when
   `kittymux_agents.glyph_font_loaded()` says that kitty started after the installed font (see the mascot in the bar header).
   The mascot glyph (E0F9) is traced from `assets/brand/mascot.png` by `tools/trace-mascot.py` → `assets/icons/kittymux.svg`.
+- Never move the user's focus unasked. A bell → `window_alert_on_bell` → xdg-activation request is turned into a focus change (and a workspace switch) by compositors with Hyprland's `misc:focus_on_activate`;
+  `kittymux_layout.attention_conf` (geninclude) switches kitty's alert off and `kittymux_scan._alert` skips the bell when `hypr_focus_on_activate()` is true (override: `attention-on`). Focus moves only on a user
+  action (click, `inbox jump`, `ctrl+alt+y`, a notification action). Tests that touch this must not depend on the compositor running them (patch `hypr_focus_on_activate`).
 - Options that only exist in newer kitty (`detect_url_regex`, `custom_shaders`) NEVER go in `kittymux.conf`: an older or still-running kitty reports a
   config error at every reload. They are emitted by `kittymux_layout.gated_conf(version, …)` (the geninclude), keyed on the version of the kitty process asking
   (`kitty.constants.version` — a kitty updated under a running session still reports its old version, which is exactly what we want). Opt-in looks
@@ -176,6 +187,7 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   (a running kitty upgraded under itself must draw cleanly after two reloads; `SMOKE_KEEP_STALE=1` must FAIL).
   `bash tests/smoke_sidebar.sh` (collapse/expand button, right-click peek, edge drag with real mouse events),
   `bash tests/smoke_drag.sh` (tab drag-to-reorder with real pointer events — kitty's DnD works under Xvfb),
+  `bash tests/smoke_inbox.sh` (real OSC 99 notifications from an agent pane → typed inbox events, the pane follows a completion, focus acknowledges),
   `bash tests/smoke_click.sh` (tab clicks with wobble and slowness; a middle-click spares an agent tab),
   `bash tests/smoke_native.sh` (kitty ≥ 0.49.2: the native divider's pixels, the real X cursor name over it, a native drag, the single-pane fallback),
   `bash tests/smoke_resize.sh` (a fast pointer burst: the bar edge reaches the pointer, every tab re-flows on release),

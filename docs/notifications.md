@@ -43,6 +43,24 @@ A notification that says "finished" while the agent is still working is worse th
 What this cannot know: whether an agent's *own* terminal notification (OSC 9/99) slips past the title/app filter — those are dropped by
 `filter_notification` only when they name a known agent.
 
+## A notification must never move your focus
+
+A bell in an unfocused window makes kitty ask the window manager for attention (`window_alert_on_bell`; on Wayland an xdg-activation request). Some compositors answer that by **focusing the window and
+switching workspace** — Hyprland with `misc:focus_on_activate = true`. Then every bell becomes a forced focus change: kittymux's own "needs you" hint, but also an agent's terminal bell or a failed tab-complete.
+That was the "it suddenly jumps to that window" bug. Now:
+
+- when the compositor would do that (kittymux reads Hyprland's option when kitty loads its config), kittymux emits `window_alert_on_bell no` and does not ring its own bell;
+- `kittymux doctor` says so; `kittymux explain` records each skipped bell and why;
+- the only things that move focus are things you do: a click, `kittymux inbox jump`, `ctrl+alt+y`, or invoking a notification's "Jump to it" action.
+
+Override: `touch ~/.local/state/kittymux/attention-on` (or `KITTYMUX_ATTENTION=1`) to keep attention requests on anyway; `bell-off` / `KITTYMUX_BELL=0` switches kittymux's own bell off everywhere.
+Other compositors (sway's `focus_on_window_activation`, KDE/GNOME focus-stealing prevention) are not inspected: if a bell steals focus there, set `window_alert_on_bell no` in your kitty.conf.
+
+## The inbox (everything, typed, de-duplicated)
+
+Popups are one delivery channel of a larger system: every important event is recorded as a typed event in the inbox (`kittymux inbox`, [inbox.md](inbox.md)) from the most authoritative source
+available — the agent's own notification first. The rules above (who may pop up, when a "finished" counts) are applied by `kittymux_scan._announce`; `kittymux explain` shows the outcome of each.
+
 ## Security and privacy measures
 
 - **Untrusted text.** The notification body can come from the agent's screen (a permission prompt, a command).

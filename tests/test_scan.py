@@ -98,10 +98,14 @@ class ScanBase(unittest.TestCase):
         for d in (KS._RT.book, KS._RT.verdicts, KS._RT.notified, vars(KS._RT).setdefault("alerted", {})):
             d.clear()
         vars(KS._RT).pop("decisions", None)
+        vars(KS._RT).pop("attention", None)
+        self._hypr = mock.patch("kittymux_layout.hypr_focus_on_activate", return_value=None)   # never depend on the compositor running the tests
+        self._hypr.start()
         self.agent = mock.patch.object(KS, "agent_of", side_effect=lambda w: w.agent)
         self.agent.start()
 
     def tearDown(self):
+        self._hypr.stop()
         self.agent.stop()
         self.k.uninstall()
         self._env.stop()
@@ -272,7 +276,7 @@ class DecisionLogTests(ScanBase):
             KS.scan_window(w, t)
         held = [e for e in self.events() if e["kind"] == "notify" and e["state"] == "done"]
         self.assertEqual(len(held), 1)
-        self.assertEqual(held[0]["outcome"], "suppressed: worked only 2 s (< 15 s)")
+        self.assertEqual(held[0]["outcome"], "inbox only: finish judged from the screen alone and the run was short (< 60 s)")
 
     def test_notify_reports_why_it_did_not_send(self):
         w = FakeWindow(1, "claude", "")
@@ -407,11 +411,20 @@ class CompletionNotifyTests(ScanBase):
                     KS.scan_all()
         return notify, KS._RT.verdicts["1"]["state"]
 
-    def test_a_long_run_that_finishes_unseen_notifies(self):
-        notify, state = self.finish(worked=40)
+    def test_a_long_run_judged_from_the_screen_alone_notifies_after_a_minute(self):
+        notify, state = self.finish(worked=90)
         self.assertEqual(state, "done")
         notify.assert_called_once()
         self.assertEqual(notify.call_args[0][1], "done")
+
+    def test_a_screen_only_finish_under_a_minute_is_inbox_only_not_a_popup(self):
+        # inferring "finished" from a quiet screen is the one thing that can be wrong: it never interrupts you for a short run
+        notify, state = self.finish(worked=40)
+        self.assertEqual(state, "done")                                  # still shown in the bar…
+        notify.assert_not_called()                                       # …but no popup
+        done = [e for e in KS._inbox().load(self.state) if e["kind"] == "done"]
+        self.assertEqual(len(done), 1)                                   # …and it is in the inbox, marked low confidence
+        self.assertEqual((done[0]["confidence"], done[0]["sources"]), ("low", ["screen"]))
 
     def test_a_quick_reply_does_not(self):
         notify, state = self.finish(worked=5)
@@ -475,6 +488,155 @@ class CompletionNotifyTests(ScanBase):
         self.assertTrue(os.access(argv[0], os.X_OK))
 
 
+class InboxIntegrationTests(ScanBase):
+    def inbox(self):
+        return KS._inbox().load(self.state)
+
+    def test_a_needs_you_prompt_becomes_one_typed_event_and_one_popup(self):
+        w = FakeWindow(1, "claude", IDLE)
+        self.add(w)
+        KS.scan_all()
+        w.screen = PERMISSION
+        with mock.patch.object(KS, "_notify", return_value="sent") as notify:
+            KS.scan_all()
+            KS.scan_all()
+        ev = self.inbox()
+        self.assertEqual([(e["kind"], e["severity"], e["agent"]) for e in ev], [("permission", "needs-you", "claude")])
+        self.assertEqual(notify.call_count, 1)
+
+    def test_the_agents_own_notification_and_the_screen_scan_are_one_occurrence(self):
+        w = FakeWindow(1, "claude", IDLE)
+        self.add(w)
+        KS.scan_all()
+        cmd = types.SimpleNamespace(channel_id=1, title="Claude Code", body="Claude needs your permission to use Bash", urgency=None)
+        with mock.patch.object(KS, "_notify", return_value="sent") as notify, mock.patch.dict(sys.modules, {}):
+            self.k.boss.window_id_map[1] = w
+            KS._on_agent_notification(cmd)                       # the agent said it first…
+            w.screen = PERMISSION
+            KS.scan_all()                                        # …then the scan saw the same prompt
+        ev = self.inbox()
+        self.assertEqual(len(ev), 1)
+        self.assertEqual(sorted(ev[0]["sources"]), ["agent", "screen"])
+        self.assertEqual(notify.call_count, 1)                   # one popup for one occurrence, not one per source
+
+    def test_a_usage_limit_carries_its_reset_time_and_a_repeat_in_another_window_is_merged(self):
+        a, b = FakeWindow(1, "codex", IDLE), FakeWindow(2, "codex", IDLE)
+        self.add(a, b)
+        KS.scan_all()
+        with mock.patch.object(KS, "_notify", return_value="sent") as notify:
+            for w in (a, b):
+                self.k.boss.window_id_map[w.id] = w
+                KS._on_agent_notification(types.SimpleNamespace(channel_id=w.id, title="Codex", urgency=None,
+                                                                body="You've hit your usage limit. Resets in 2h 30m"))
+        ev = self.inbox()
+        self.assertEqual(len(ev), 1)
+        self.assertEqual(ev[0]["kind"], "limit")
+        self.assertAlmostEqual(ev[0]["reset_at"] - ev[0]["t"], 2.5 * 3600, delta=5)
+        self.assertEqual(notify.call_count, 1)
+
+    def test_the_idle_notice_is_kept_in_the_inbox_but_is_not_an_event_to_act_on(self):
+        w = FakeWindow(1, "claude", IDLE)
+        self.add(w)
+        KS.scan_all()
+        self.k.boss.window_id_map[1] = w
+        with mock.patch.object(KS, "_notify") as notify:
+            KS._on_agent_notification(types.SimpleNamespace(channel_id=1, title="Claude Code", body="Claude is waiting for your input", urgency=None))
+        notify.assert_not_called()
+        self.assertEqual([(e["kind"], e.get("tag")) for e in self.inbox()], [("info", "idle-notice")])
+
+    def test_an_agent_announced_completion_acts_like_a_stop_hook(self):
+        w = FakeWindow(1, "codex", IDLE)
+        self.add(w)
+        KS.scan_all()
+        self.k.boss.window_id_map[1] = w
+        with mock.patch.object(KS, "_notify", return_value="sent"):
+            KS._on_agent_notification(types.SimpleNamespace(channel_id=1, title="Codex", body="Agent turn complete", urgency=None))
+            KS.scan_all()
+        self.assertEqual(KS._RT.verdicts["1"]["state"], "done")
+        self.assertIn("Stop hook", KS._RT.verdicts["1"]["why"])
+
+    def test_notifications_from_non_agent_windows_are_ignored(self):
+        w = FakeWindow(1, None, "$ ")
+        self.add(w)
+        KS.scan_all()
+        self.k.boss.window_id_map[1] = w
+        KS._on_agent_notification(types.SimpleNamespace(channel_id=1, title="Build", body="Task finished", urgency=None))
+        self.assertEqual(self.inbox(), [])
+
+    def test_focusing_the_window_acknowledges_what_it_reported(self):
+        w = FakeWindow(1, "claude", IDLE)
+        self.add(w)
+        KS.scan_all()
+        w.screen = PERMISSION
+        with mock.patch.object(KS, "_notify", return_value="sent"):
+            KS.scan_all()
+        self.assertEqual([e["status"] for e in self.inbox()], ["unread"])
+        w.is_focused = True
+        KS.scan_all()
+        self.assertEqual([e["status"] for e in self.inbox()], ["read"])
+
+    def test_private_mode_keeps_the_agents_words_out_of_the_inbox(self):
+        w = FakeWindow(1, "claude", IDLE)
+        self.add(w)
+        KS.scan_all()
+        self.k.boss.window_id_map[1] = w
+        with mock.patch.object(KS, "_notify", return_value="sent"), mock.patch.dict(os.environ, {"KITTYMUX_NOTIFY_PRIVATE": "1"}):
+            KS._on_agent_notification(types.SimpleNamespace(channel_id=1, title="Claude Code", body="Allow `rm -rf ~/secret`?", urgency=None))
+        self.assertEqual(self.inbox()[0]["body"], "")
+
+    def test_the_tap_wrapper_never_raises_and_always_delegates(self):
+        calls = []
+
+        class NM:
+            def is_notification_filtered(self, cmd):
+                calls.append(cmd)
+                return True
+
+        mod = types.ModuleType("kitty.notifications")
+        mod.NotificationManager = NM
+        with mock.patch.dict(sys.modules, {"kitty.notifications": mod}), mock.patch.object(KS, "_on_agent_notification", side_effect=RuntimeError("boom")):
+            KS._install_notification_tap()
+            KS._install_notification_tap()                       # idempotent
+            self.assertTrue(NM().is_notification_filtered("cmd"))
+        self.assertEqual(calls, ["cmd"])
+
+
+class AttentionTests(ScanBase):
+    """A bell asks the window manager for attention; where the compositor answers that by FOCUSING the window it is a focus steal."""
+
+    def test_no_bell_when_the_compositor_would_turn_it_into_a_focus_steal(self):
+        w = FakeWindow(1, "claude", IDLE)
+        with mock.patch("kittymux_layout.hypr_focus_on_activate", return_value=True):
+            self.assertIn("steal focus", KS._alert(w))
+        self.assertEqual(w.bells, 0)
+
+    def test_the_bell_rings_when_it_is_safe_and_is_rate_limited(self):
+        w = FakeWindow(1, "claude", IDLE)
+        self.assertEqual(KS._alert(w), "rang")
+        self.assertTrue(KS._alert(w).startswith("skipped: this window rang less than"))
+        self.assertEqual(w.bells, 1)
+
+    def test_the_user_can_force_it_and_a_focused_window_never_rings(self):
+        w = FakeWindow(1, "claude", IDLE)
+        open(os.path.join(self.state, "attention-on"), "w").close()
+        with mock.patch("kittymux_layout.hypr_focus_on_activate", return_value=True):
+            self.assertEqual(KS._alert(w), "rang")
+        f = FakeWindow(2, "claude", IDLE, focused=True)
+        self.assertEqual(KS._alert(f), "skipped: you are looking at it")
+
+    def test_the_decision_is_recorded_with_its_reason(self):
+        w = FakeWindow(1, "claude", IDLE)
+        self.add(w)
+        KS.scan_all()
+        w.screen = PERMISSION
+        with mock.patch("kittymux_layout.hypr_focus_on_activate", return_value=True), mock.patch.object(KS, "_notify", return_value="sent"):
+            KS.scan_all()
+        att = [e for e in vars(KS._RT)["decisions"] if e["kind"] == "attention"]
+        self.assertEqual(len(att), 1)
+        self.assertIn("focus_on_activate", att[0]["outcome"])
+        self.assertEqual(w.bells, 0)
+
+
 class FalseCompletionTests(ScanBase):
     """Codex 'finished' notifications while it was still working."""
 
@@ -499,8 +661,27 @@ class FalseCompletionTests(ScanBase):
         self.assertEqual(self.run_screens(steps), [])
 
     def test_staying_idle_is_a_completion_and_notifies_once(self):
-        steps = [(0, self.WORKING), (20, self.WORKING)] + [(22 + i, IDLE) for i in range(0, 14)]
+        steps = [(0, self.WORKING), (80, self.WORKING)] + [(82 + i, IDLE) for i in range(0, 14)]      # a long run, then it stays quiet
         self.assertEqual(len(self.run_screens(steps)), 1)
+
+    def test_a_stop_hook_makes_a_finish_authoritative_so_20_seconds_is_enough(self):
+        w = FakeWindow(1, "claude", self.WORKING)
+        self.add(w)
+        panes = {"1": {"status": "working", "ts_status": 1000.0}}
+        with mock.patch.object(KS, "_notify") as notify, mock.patch.object(KS, "_panes", return_value=panes):
+            for t, text in ((0, self.WORKING), (20, self.WORKING)):
+                w.screen = text
+                with mock.patch.object(KS.time, "monotonic", return_value=1000.0 + t):
+                    KS.scan_all()
+            w.screen = IDLE
+            panes["1"] = {"status": "done", "ts_status": 1021.0}                 # the agent's Stop hook
+            for t in (21, 23, 29):
+                with mock.patch.object(KS.time, "monotonic", return_value=1000.0 + t):
+                    KS.scan_all()
+        done = [c for c in notify.call_args_list if c[0][1] == "done"]
+        self.assertEqual(len(done), 1)
+        ev = [e for e in KS._inbox().load(self.state) if e["kind"] == "done"][0]
+        self.assertEqual((ev["confidence"], ev["sources"]), ("high", ["agent"]))
 
     def test_a_leftover_hook_status_does_not_turn_a_gap_into_a_completion(self):
         # a window user var from a previous agent: waiting, hours old, no message
