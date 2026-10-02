@@ -18,6 +18,8 @@ import time
 RECORD_MAX = 300
 MAX_AGE_S = 90 * 86400
 HEARTBEAT_S = 60.0
+SETTLE_AFTER_S = 3 * 86400          # a closed conversation untouched this long drops out of the default picker ("settled"); pinned ones never do
+FLAG_FIELDS = ("pinned", "settled", "flags_ts")          # set by the user (pin / settle), not by the scanner: merged by their OWN timestamp
 
 
 def key_for(agent: str, sid: str | None, kitty_pid: int, window: int | str) -> str:
@@ -78,10 +80,12 @@ def close_missing(records: dict, kitty_pid: int, running_keys: set, now: float) 
 
 
 def prune(records: dict, now: float) -> None:
-    for key in [k for k, r in records.items() if now - r.get("last", 0) > MAX_AGE_S]:
+    """Age and size limits. A PINNED record is exempt from both: pinning means "keep this"."""
+    for key in [k for k, r in records.items() if now - r.get("last", 0) > MAX_AGE_S and not r.get("pinned")]:
         del records[key]
-    if len(records) > RECORD_MAX:
-        for key, _ in sorted(records.items(), key=lambda kv: kv[1].get("last", 0))[: len(records) - RECORD_MAX]:
+    unpinned = [(k, r) for k, r in records.items() if not r.get("pinned")]
+    if len(unpinned) > RECORD_MAX:
+        for key, _ in sorted(unpinned, key=lambda kv: kv[1].get("last", 0))[: len(unpinned) - RECORD_MAX]:
             del records[key]
 
 
@@ -100,38 +104,109 @@ def load(state_dir: str) -> dict:
         return {}
 
 
-def flush(state_dir: str, mine: dict, now: float, wait: float = 0.25) -> bool:
-    """Merge `mine` into the shared file (a record from another process wins when it is newer), prune, write atomically 0600. Never raises, never waits longer than `wait`."""
-    try:
-        import fcntl
-        os.makedirs(state_dir, mode=0o700, exist_ok=True)
-        lock = os.open(os.path.join(state_dir, "agent-sessions.lock"), os.O_WRONLY | os.O_CREAT, 0o600)
+def _lock(state_dir: str, wait: float):
+    """An exclusive lock on the journal (a file descriptor to pass to os.close), or None if it stayed busy for `wait` seconds. Never blocks longer: the scanner calls this from kitty's
+    main thread."""
+    import fcntl
+    os.makedirs(state_dir, mode=0o700, exist_ok=True)
+    fd = os.open(os.path.join(state_dir, "agent-sessions.lock"), os.O_WRONLY | os.O_CREAT, 0o600)
+    deadline = time.monotonic() + wait
+    while True:
         try:
-            deadline = time.monotonic() + wait                  # the scanner runs on kitty's main thread: never block on another process's write
-            while True:
-                try:
-                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    break
-                except BlockingIOError:
-                    if time.monotonic() >= deadline:
-                        return False
-                    time.sleep(0.01)
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fd
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                os.close(fd)
+                return None
+            time.sleep(0.01)
+
+
+def _write(state_dir: str, records: dict) -> None:
+    path = path_for(state_dir)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump({"version": 1, "records": records}, f, separators=(",", ":"))
+    os.replace(tmp, path)
+
+
+def flush(state_dir: str, mine: dict, now: float, wait: float = 0.25) -> bool:
+    """Merge `mine` into the shared file (a record from another process wins when it is newer; pin/settle flags win by their own timestamp), prune, write atomically 0600.
+    Never raises, never waits longer than `wait`."""
+    try:
+        lock = _lock(state_dir, wait)
+        if lock is None:
+            return False
+        try:
             merged = load(state_dir)
             for key, rec in mine.items():
-                if key not in merged or rec.get("last", 0) >= merged[key].get("last", 0):
-                    merged[key] = rec
+                other = merged.get(key)
+                if other is None or rec.get("last", 0) >= other.get("last", 0):
+                    merged[key] = dict(rec)
+                    newer_flags = other if other is not None and other.get("flags_ts", 0) > rec.get("flags_ts", 0) else None
+                else:
+                    merged[key] = other
+                    newer_flags = rec if rec.get("flags_ts", 0) > other.get("flags_ts", 0) else None
+                if newer_flags is not None:                      # a pin / settle made elsewhere (the CLI) must not be undone by a stale copy of the record
+                    for f in FLAG_FIELDS:
+                        if f in newer_flags:
+                            merged[key][f] = newer_flags[f]
             prune(merged, now)
-            path = path_for(state_dir)
-            tmp = f"{path}.{os.getpid()}.tmp"
-            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump({"version": 1, "records": merged}, f, separators=(",", ":"))
-            os.replace(tmp, path)
+            _write(state_dir, merged)
             return True
         finally:
             os.close(lock)
     except Exception:
         return False
+
+
+def set_flag(state_dir: str, key: str, field: str, value: bool, now: float | None = None, wait: float = 1.0) -> bool:
+    """Set `pinned` / `settled` on the record `key` (False when there is no such record or the lock stayed busy). Under the same lock as flush; stamped with `flags_ts` so the
+    scanner's own, staler copy of the record cannot undo it on its next write."""
+    if field not in ("pinned", "settled"):
+        raise ValueError(field)
+    now = time.time() if now is None else now
+    try:
+        lock = _lock(state_dir, wait)
+        if lock is None:
+            return False
+        try:
+            records = load(state_dir)
+            if key not in records:
+                return False
+            records[key][field] = bool(value)
+            if field == "pinned" and value:
+                records[key]["settled"] = False                      # pinning brings a settled conversation back
+            records[key]["flags_ts"] = now
+            _write(state_dir, records)
+            return True
+        finally:
+            os.close(lock)
+    except Exception:
+        return False
+
+
+def lifecycle(entry: dict, now: float, settle_after: float = SETTLE_AFTER_S) -> str:
+    """pinned | running | recent | settled. A pinned conversation is always shown; a running one is live; a closed one is `settled` when you settled it or it has not been touched for
+    `settle_after` (3 days by default) — settled ones leave the default picker but stay reachable (`pick --all`) and are never deleted by this."""
+    if entry.get("pinned"):
+        return "pinned"
+    if entry.get("running"):
+        return "running"
+    if entry.get("settled") or now - entry.get("last", now) > settle_after:
+        return "settled"
+    return "recent"
+
+
+def key_for_window(records: dict, kitty_pid: int, window_id) -> str | None:
+    """The record of the agent session running in that window (the newest one the scanner bound to it), or None."""
+    best = None
+    for key, rec in records.items():
+        if rec.get("kitty_pid") == kitty_pid and str(rec.get("wid")) == str(window_id) and rec.get("open"):
+            if best is None or rec.get("last", 0) > records[best].get("last", 0):
+                best = key
+    return best
 
 
 # ── reading it back ───────────────────────────────────────────────────────────

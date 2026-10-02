@@ -114,6 +114,70 @@ class ConcurrencyTests(unittest.TestCase):
             json.load(f)
 
 
+class LifecycleTests(unittest.TestCase):
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.key = f"claude:{SID}"
+
+    def seed(self, **kw):
+        recs = {}
+        J.observe(recs, obs(**kw), 1000.0)
+        J.flush(self.d, recs, 1000.0)
+        return recs
+
+    def test_a_pin_made_by_the_cli_survives_the_scanners_stale_copy_and_newer_activity(self):
+        stale = self.seed()                                              # the scanner's in-memory copy: it has never heard of a pin
+        self.assertTrue(J.set_flag(self.d, self.key, "pinned", True, 2000.0))
+        J.observe(stale, obs(state="working"), 3000.0)                   # the scanner keeps observing: a newer `last`, no flag
+        J.flush(self.d, stale, 3000.0)
+        rec = J.load(self.d)[self.key]
+        self.assertTrue(rec["pinned"])                                    # the newer activity won, the pin was not erased
+        self.assertEqual((rec["state"], rec["last"]), ("working", 3000))
+        self.assertTrue(J.set_flag(self.d, self.key, "pinned", False, 4000.0))
+        J.flush(self.d, stale, 4100.0)                                    # …and an unpin is not undone by the same stale copy either
+        self.assertFalse(J.load(self.d)[self.key]["pinned"])
+
+    def test_pinning_unsettles_and_unknown_keys_or_fields_are_refused(self):
+        self.seed()
+        self.assertTrue(J.set_flag(self.d, self.key, "settled", True, 2000.0))
+        self.assertTrue(J.load(self.d)[self.key]["settled"])
+        self.assertTrue(J.set_flag(self.d, self.key, "pinned", True, 2001.0))
+        self.assertFalse(J.load(self.d)[self.key]["settled"])
+        self.assertFalse(J.set_flag(self.d, "claude:nope", "pinned", True))
+        with self.assertRaises(ValueError):
+            J.set_flag(self.d, self.key, "last", True)                   # only the two user flags can be set
+
+    def test_pinned_records_are_exempt_from_the_age_and_size_limits(self):
+        recs = {f"a:{i}": {"agent": "a", "last": 1000.0 + i} for i in range(J.RECORD_MAX + 20)}
+        recs["old-pinned"] = {"agent": "a", "last": 0, "pinned": True}
+        recs["old"] = {"agent": "a", "last": 0}
+        J.prune(recs, 1000.0 + J.MAX_AGE_S + 5)
+        self.assertIn("old-pinned", recs)
+        self.assertNotIn("old", recs)
+        self.assertEqual(len([k for k, r in recs.items() if not r.get("pinned")]), J.RECORD_MAX)
+
+    def test_lifecycle_states(self):
+        now = 10 * 86400.0
+        lc = lambda **kw: J.lifecycle(dict(kw), now)                      # noqa: E731
+        self.assertEqual(lc(pinned=True, running=True), "pinned")
+        self.assertEqual(lc(pinned=True, running=False, last=0), "pinned")  # pinned beats age
+        self.assertEqual(lc(running=True, last=now), "running")
+        self.assertEqual(lc(running=False, last=now - 3600), "recent")
+        self.assertEqual(lc(running=False, last=now - 3600, settled=True), "settled")     # settled by hand
+        self.assertEqual(lc(running=False, last=now - 4 * 86400), "settled")              # untouched for > 3 days
+        self.assertEqual(J.lifecycle({"running": False, "last": now - 5 * 86400}, now, settle_after=10 * 86400), "recent")
+
+    def test_the_record_of_a_running_window_is_found_by_kitty_and_window(self):
+        recs = {}
+        J.observe(recs, obs(kitty_pid=10, wid=7), 1000.0)
+        J.observe(recs, obs(sid=None, agent="codex", argv=["codex"], kitty_pid=10, wid=8), 1000.0)
+        self.assertEqual(J.key_for_window(recs, 10, 7), f"claude:{SID}")
+        self.assertEqual(J.key_for_window(recs, 10, "8"), "codex:w10.8")
+        self.assertIsNone(J.key_for_window(recs, 11, 7))
+        J.close_missing(recs, 10, set(), 2000.0)
+        self.assertIsNone(J.key_for_window(recs, 10, 7))                  # a closed window has no running record
+
+
 class RedactionTests(unittest.TestCase):
     def test_secret_flags_and_credential_shaped_values_are_hidden_but_ordinary_flags_are_kept(self):
         r = J.redact_argv

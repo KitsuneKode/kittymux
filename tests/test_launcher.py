@@ -131,6 +131,43 @@ class RowTests(unittest.TestCase):
         closed = [r for r in rows if r["kind"] == "closed"]
         self.assertEqual([r["action"]["key"] for r in closed], ["k1", "k4"])                                  # the newest of each distinct (agent, cwd, tab)
 
+    def closed(self, key, life, last=NOW - 100, **kw):
+        return dict({"key": key, "agent": "claude", "tab": key, "cwd": f"/p/{key}", "last": last, "lifecycle": life}, **kw)
+
+    def test_pinned_conversations_come_first_and_always_show_whatever_their_age(self):
+        rows = self.rows(closed=[self.closed("new", "recent"), self.closed("old-pin", "pinned", last=NOW - 90 * 86400, pinned=True), self.closed("mid", "recent", last=NOW - 500)])
+        closed = [r for r in rows if r["kind"] == "closed"]
+        self.assertEqual([r["jkey"] for r in closed], ["old-pin", "new", "mid"])
+        self.assertTrue(closed[0]["text"].startswith("★") and closed[0]["pinned"])
+        self.assertTrue(closed[1]["text"].startswith("↺"))
+
+    def test_settled_ones_are_folded_behind_one_row_that_shows_them(self):
+        closed = [self.closed("a", "recent"), self.closed("b", "settled"), self.closed("c", "settled")]
+        rows = self.rows(closed=closed)
+        self.assertEqual([r["jkey"] for r in rows if r["kind"] == "closed"], ["a"])
+        more = [r for r in rows if r["kind"] == "more"]
+        self.assertEqual(len(more), 1)
+        self.assertEqual(more[0]["action"], {"op": "all"})
+        self.assertIn("2 settled conversations", more[0]["text"])
+        self.assertEqual(self.kinds(rows).index("more"), self.kinds(rows).index("closed") + 1)         # right after the list it folds
+        everything = self.rows(closed=closed, include_settled=True)
+        self.assertEqual(sorted(r["jkey"] for r in everything if r["kind"] == "closed"), ["a", "b", "c"])
+        self.assertEqual([r["settled"] for r in everything if r["kind"] == "closed" and r["jkey"] in ("b", "c")], [True, True])
+        self.assertNotIn("more", self.kinds(everything))
+
+    def test_the_recent_cap_does_not_hide_a_pin(self):
+        closed = [self.closed(f"r{i}", "recent", last=NOW - i) for i in range(12)] + [self.closed("pin", "pinned", last=NOW - 10 ** 6, pinned=True)]
+        rows = [r for r in self.rows(closed=closed) if r["kind"] == "closed"]
+        self.assertEqual(len(rows), 9)                                                                  # 8 recent + the pin
+        self.assertEqual(rows[0]["jkey"], "pin")
+
+    def test_a_pinned_running_agent_leads_the_running_group_and_rows_carry_their_journal_key(self):
+        rows = self.rows(windows=[win(6, "working", tab="a"), dict(win(7, "idle", tab="z"), pinned=True, jkey="codex:s")])
+        running = [r for r in rows if r["kind"] == "running"]
+        self.assertEqual([r["action"]["w"] for r in running], [7, 6])
+        self.assertTrue(running[0]["text"].startswith("★"))
+        self.assertEqual((running[0]["jkey"], running[0]["pinned"]), ("codex:s", True))
+
     def test_a_no_approvals_agent_is_marked_in_every_kind_of_row(self):
         risky = ["claude", "--dangerously-skip-permissions"]
         rows = self.rows(events=[ev("e", w=3)], windows=[win(3, "waiting", agent="claude", argv=risky), win(4, "idle", agent="claude", argv=risky), win(5, "idle", agent="codex")],
@@ -231,6 +268,17 @@ class MenuTests(unittest.TestCase):
         self.assertIsNone(p(1, "three"))
         self.assertIsNone(p(0, "not a row"))
         self.assertIsNone(p(0, ""))
+
+    def test_the_pin_and_settle_keys(self):
+        r = L.parse_choice("rofi", self.ROWS, 11, "1\n")
+        self.assertEqual((r[0]["text"], r[1]), ("two", "pin"))
+        self.assertEqual(L.parse_choice("rofi", self.ROWS, 12, "2\n")[1], "settle")
+        self.assertIsNone(L.parse_choice("rofi", self.ROWS, 13, "2\n"))                                 # a custom key we did not bind
+        self.assertEqual(L.parse_choice("fzf", self.ROWS, 0, "alt-p\n1\ttwo\n")[1], "pin")
+        self.assertEqual(L.parse_choice("fzf", self.ROWS, 0, "alt-s\n2\tthree\n")[1], "settle")
+        argv = L.menu_command("rofi", self.ROWS)[0]
+        self.assertEqual((argv[argv.index("-kb-custom-2") + 1], argv[argv.index("-kb-custom-3") + 1]), ("alt+p", "alt+s"))
+        self.assertIn("alt-a,alt-p,alt-s", L.menu_command("fzf", self.ROWS)[0])
 
     def test_fzf_index_prefix_enter_alt_a_and_cancel(self):
         p = lambda rc, out: L.parse_choice("fzf", self.ROWS, rc, out)            # noqa: E731

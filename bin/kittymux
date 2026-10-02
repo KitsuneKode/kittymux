@@ -18,6 +18,8 @@
                          spawn claude | spawn claude,codex,devin [--tab|--hsplit|--vsplit] [--cwd DIR]     (names or c x d u o a g)
   kittymux pick        ONE searchable list: what needs you (longest-waiting first), every running agent, conversations you closed, a new agent — type, Enter, you are there:
                          pick [--menu rofi|fuzzel|fzf] [--list|--json]      (bind `kittymux pick --menu rofi` in your window manager to reach any agent from anywhere)
+  kittymux pin         keep a conversation at the top of `pick` and out of the age limits; also unpin | settle | unsettle (settled ones fold away; `pick --all` shows them):
+                         pin [KEY | --window ID]      (alt+p / alt+s in the picker do the same on the selected row)
   kittymux reopen      bring back the most recently closed agent conversation in a new tab (it asks before resuming)
   kittymux notify      quiet the popups and bells (everything still lands in the inbox): notify status | mute [1h] | unmute | off | on | done off|on
   kittymux snooze      no popups for ONE agent window for a while: snooze [1h] [--window ID] [--clear]
@@ -1500,10 +1502,27 @@ def spawn(argv: list[str]) -> int:
     return 1 if failed else 0
 
 
-def _reopenable(now: float, since: float = 7 * 86400) -> list[dict]:
-    """Journal entries that were agent sessions, are not running, and can be restarted (a command and an existing directory), newest first."""
-    es = kittymux_journal.entries(kittymux_journal.load(kittymux_layout.state_dir()), now, since)
-    return [e for e in kittymux_journal.recoverable(es) if os.path.isdir(e.get("cwd", ""))]
+def _settle_after() -> float:
+    """Days before an untouched closed conversation counts as settled: $KITTYMUX_SETTLE_DAYS (1–365), default 3."""
+    try:
+        days = float(os.environ.get("KITTYMUX_SETTLE_DAYS", ""))
+        if 1 <= days <= 365:
+            return days * 86400
+    except ValueError:
+        pass
+    return kittymux_journal.SETTLE_AFTER_S
+
+
+def _reopenable(now: float, since: float = kittymux_journal.MAX_AGE_S) -> list[dict]:
+    """Journal entries that were agent sessions, are not running and can be restarted (a command and an existing directory), newest first — each with its `lifecycle`
+    (pinned | recent | settled). A pinned one is never aged out, so `since` defaults to the journal's own limit."""
+    after = _settle_after()
+    out = []
+    for e in kittymux_journal.recoverable(kittymux_journal.entries(kittymux_journal.load(kittymux_layout.state_dir()), now, since)):
+        if os.path.isdir(e.get("cwd", "")):
+            e["lifecycle"] = kittymux_journal.lifecycle(e, now, after)
+            out.append(e)
+    return out
 
 
 def reopen_entry(e: dict, sock: str) -> bool:
@@ -1557,6 +1576,7 @@ def _pick_data(now: float) -> tuple[list, list, list, list]:
     """(unread events, live agent windows across every kitty, closed conversations, installed agents)."""
     sdir = kittymux_layout.state_dir()
     events = [e for e in kittymux_inbox.load(sdir) if e.get("status") == "unread"]
+    records = kittymux_journal.load(sdir)
     windows = []
     for sock in _sockets():
         pid = _socket_pid(sock)
@@ -1574,7 +1594,9 @@ def _pick_data(now: float) -> tuple[list, list, list, list]:
                         continue
                     fg = [p.get("cmdline") or [] for p in w.get("foreground_processes", [])]
                     argv = next((c for c in fg if kittymux_agents.agent_in(c) == v["agent"]), fg[0] if fg else [])
-                    windows.append({"pid": pid, "w": w["id"], "agent": v["agent"], "state": v.get("state", ""), "tab": tab.get("title", ""), "cwd": w.get("cwd", ""), "argv": argv})
+                    jkey = kittymux_journal.key_for_window(records, pid, w["id"])
+                    windows.append({"pid": pid, "w": w["id"], "agent": v["agent"], "state": v.get("state", ""), "tab": tab.get("title", ""), "cwd": w.get("cwd", ""), "argv": argv,
+                                    "jkey": jkey, "pinned": bool(jkey and records[jkey].get("pinned"))})
     return events, windows, _reopenable(now), _installed_agents()
 
 
@@ -1587,6 +1609,25 @@ def _choose_menu(pref: str) -> str | None:
     return next((m for m in order if m in have), None)
 
 
+def _toggle_flag(row: dict, field: str) -> int:
+    """pin / settle the conversation a picker row stands for (a toggle: pinning a pinned one unpins it)."""
+    key = row.get("jkey")
+    if not key:
+        print(f"kittymux pick: nothing to {field} on this row" + (" (only agent windows and conversations can be)" if field != "ack" else ""), file=sys.stderr)
+        return 1
+    if field == "pinned" and not (row.get("pinned")) and not kittymux_journal.set_flag(kittymux_layout.state_dir(), key, "pinned", True):
+        return 1
+    if field == "pinned" and row.get("pinned") and not kittymux_journal.set_flag(kittymux_layout.state_dir(), key, "pinned", False):
+        return 1
+    if field == "settled":
+        if row["kind"] != "closed":
+            print("kittymux pick: only a closed conversation can be settled (a running one is live)", file=sys.stderr)
+            return 1
+        if not kittymux_journal.set_flag(kittymux_layout.state_dir(), key, "settled", not row.get("settled")):
+            return 1
+    return 0
+
+
 def _do_row(row: dict, how: str, sock: str | None) -> int:
     a = row["action"]
     sdir = kittymux_layout.state_dir()
@@ -1597,6 +1638,10 @@ def _do_row(row: dict, how: str, sock: str | None) -> int:
             return 0
         print("kittymux pick: only attention events can be marked read", file=sys.stderr)
         return 1
+    if how == "pin":
+        return _toggle_flag(row, "pinned")
+    if how == "settle":
+        return _toggle_flag(row, "settled")
     if a["op"] == "jump":
         return inbox_jump({"pid": a.get("pid"), "w": a.get("w")})            # also marks that window's events read
     if a["op"] == "reopen":
@@ -1641,43 +1686,91 @@ def pick(argv: list[str]) -> int:
     """`kittymux pick [--menu rofi|fuzzel|fzf|auto] [--list|--json]` — one searchable list of everything that wants you, every running agent, every conversation you closed,
     and a new agent: type to filter, Enter goes there. Bind it in your window manager (`kittymux pick --menu rofi`) to reach any agent from anywhere."""
     menu_pref = next((argv[i + 1] for i, a in enumerate(argv[:-1]) if a == "--menu"), "auto")
-    now = time.time()
     focused = _focused_socket()                  # decided BEFORE the menu opens: a menu takes the keyboard focus away from kitty
     if focused:
         os.environ["KITTYMUX_TARGET"] = focused
-    events, windows, closed, installed = _pick_data(now)
-    rows = kittymux_launcher.build_rows(events, windows, closed, installed, now, home=os.path.expanduser("~"), cwd=_focus_cwd(focused), risk=_risk_table())
-    if "--json" in argv:
-        print(json.dumps(rows, indent=1))
-        return 0
-    if "--list" in argv:
-        for r in rows:
-            print(r["text"])
-        return 0
-    if not rows:
-        print("kittymux pick: nothing to show (no agents installed, running or closed)", file=sys.stderr)
-        return 1
-    menu = _choose_menu(menu_pref)
-    if menu is None:
-        print("kittymux pick: no menu program (install rofi or fuzzel for a window-manager launcher, or run it inside kitty with fzf)", file=sys.stderr)
-        return 1
-    n_need = sum(1 for r in rows if r["kind"] == "event")
-    msg = f"{n_need} need you · alt+a marks read" if menu == "rofi" else ""
+    include_settled = "--all" in argv
     theme, notify_dir, mascot = None, None, None
-    if menu == "rofi" and "--no-theme" not in argv and os.environ.get("KITTYMUX_ROFI_THEME") != "user":
-        theme = _write_rofi_theme(focused)
-        if theme:
-            notify_dir, mascot = os.path.join(HOME_DIR, "assets", "notify"), os.path.join(HOME_DIR, "assets", "notify", "kittymux.png")
-    cmd, stdin = kittymux_launcher.menu_command(menu, rows, msg, theme, notify_dir, mascot)
-    try:
-        r = subprocess.run(cmd, input=stdin, stdout=subprocess.PIPE, text=True, timeout=600)
-    except (OSError, subprocess.SubprocessError):
-        print(f"kittymux pick: could not run {menu}", file=sys.stderr)
+    menu = None
+    for _round in range(12):                     # ack / pin / settle / "show settled" refresh the list and ask again; anything else leaves
+        now = time.time()
+        events, windows, closed, installed = _pick_data(now)
+        rows = kittymux_launcher.build_rows(events, windows, closed, installed, now, home=os.path.expanduser("~"), cwd=_focus_cwd(focused), risk=_risk_table(),
+                                            include_settled=include_settled)
+        if "--json" in argv:
+            print(json.dumps(rows, indent=1))
+            return 0
+        if "--list" in argv:
+            for r in rows:
+                print(r["text"])
+            return 0
+        if not rows:
+            print("kittymux pick: nothing to show (no agents installed, running or closed)", file=sys.stderr)
+            return 1
+        if menu is None:
+            menu = _choose_menu(menu_pref)
+            if menu is None:
+                print("kittymux pick: no menu program (install rofi or fuzzel for a window-manager launcher, or run it inside kitty with fzf)", file=sys.stderr)
+                return 1
+            if menu == "rofi" and "--no-theme" not in argv and os.environ.get("KITTYMUX_ROFI_THEME") != "user":
+                theme = _write_rofi_theme(focused)
+                if theme:
+                    notify_dir, mascot = os.path.join(HOME_DIR, "assets", "notify"), os.path.join(HOME_DIR, "assets", "notify", "kittymux.png")
+        n_need = sum(1 for r in rows if r["kind"] == "event")
+        msg = f"{n_need} need you · alt+a read · alt+p pin · alt+s settle" if menu == "rofi" else ""
+        cmd, stdin = kittymux_launcher.menu_command(menu, rows, msg, theme, notify_dir, mascot)
+        try:
+            r = subprocess.run(cmd, input=stdin, stdout=subprocess.PIPE, text=True, timeout=600)
+        except (OSError, subprocess.SubprocessError):
+            print(f"kittymux pick: could not run {menu}", file=sys.stderr)
+            return 1
+        choice = kittymux_launcher.parse_choice(menu, rows, r.returncode, r.stdout)
+        if choice is None:
+            return 0                                              # cancelled
+        row, how = choice
+        if how == "open" and row["action"]["op"] == "all":
+            include_settled = True
+            continue
+        rc = _do_row(row, how, focused)
+        if how == "open" or rc != 0:
+            return rc
+    return 0
+
+
+def _resolve_journal_key(args: list[str], verb: str) -> str | None:
+    """The journal record a `pin`-style verb means: an explicit KEY, `--window ID`, or (inside a window) this window's agent session."""
+    unknown = [a for a in args if a.startswith("-") and a != "--window"]
+    if unknown:
+        print(f"kittymux {verb}: unknown option {unknown[0]}   usage: kittymux {verb} [KEY | --window ID]", file=sys.stderr)
+        return None
+    keys = [a for i, a in enumerate(args) if not a.startswith("-") and not (i and args[i - 1] == "--window")]
+    records = kittymux_journal.load(kittymux_layout.state_dir())
+    if keys:
+        match = [k for k in records if k == keys[0] or k.startswith(keys[0])]
+        if len(match) == 1:
+            return match[0]
+        print(f"kittymux {verb}: " + ("no conversation matches " if not match else "several conversations match ") + f"'{keys[0]}' (see `kittymux sessions history`)", file=sys.stderr)
+        return None
+    wid = next((args[i + 1] for i, a in enumerate(args[:-1]) if a == "--window"), os.environ.get("KITTY_WINDOW_ID", ""))
+    sock = _target_socket()
+    pid = _socket_pid(sock) if sock else None
+    key = kittymux_journal.key_for_window(records, pid, wid) if str(wid).isdigit() and pid else None
+    if key is None:
+        print(f"kittymux {verb}: run it inside an agent window, or give --window ID or a conversation KEY (`kittymux sessions history` lists them)", file=sys.stderr)
+    return key
+
+
+def lifecycle_verb(verb: str, args: list[str]) -> int:
+    """`kittymux pin|unpin|settle|unsettle [KEY | --window ID]` — keep a conversation at the top of `pick` and out of the age limits (pin), or fold it away / bring it back (settle)."""
+    key = _resolve_journal_key(args, verb)
+    if key is None:
         return 1
-    choice = kittymux_launcher.parse_choice(menu, rows, r.returncode, r.stdout)
-    if choice is None:
-        return 0                                                  # cancelled
-    return _do_row(choice[0], choice[1], focused)
+    field, value = {"pin": ("pinned", True), "unpin": ("pinned", False), "settle": ("settled", True), "unsettle": ("settled", False)}[verb]
+    if not kittymux_journal.set_flag(kittymux_layout.state_dir(), key, field, value):
+        print(f"kittymux {verb}: could not update {key}", file=sys.stderr)
+        return 1
+    print(f"{OK} {verb}: {key}")
+    return 0
 
 
 # ── notification management: mute, snooze ────────────────────────────────────
@@ -2219,6 +2312,8 @@ def main(argv: list[str]) -> int:
         return notify_cmd(argv[1:])
     if cmd == "snooze":
         return snooze(argv[1:])
+    if cmd in ("pin", "unpin", "settle", "unsettle"):
+        return lifecycle_verb(cmd, argv[1:])
     if cmd == "screenshot":
         return screenshot(argv[1:])
     if cmd in ("version", "--version", "-V"):

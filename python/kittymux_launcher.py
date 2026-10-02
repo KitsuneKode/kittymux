@@ -113,9 +113,10 @@ def _age(seconds: float) -> str:
 
 
 def build_rows(events: list[dict], windows: list[dict], closed: list[dict], installed: list[str], now: float, home: str = "", cwd: str = "",
-               risk: dict | None = None, max_closed: int = 8) -> list[dict]:
+               risk: dict | None = None, max_closed: int = 8, include_settled: bool = False) -> list[dict]:
     """events: unread inbox events; windows: live agent windows [{pid, w, agent, state, tab, cwd, argv}]; closed: journal entries that are not running
-    ([{key, agent, tab, cwd, last, turns, sid, argv}]); installed: agent names on PATH. Returns rows [{kind, text, action}]."""
+    ([{key, agent, tab, cwd, last, turns, sid, argv, pinned, settled, lifecycle}]; lifecycle is pinned | recent | settled); installed: agent names on PATH. Pinned conversations come first
+    and always show; settled ones are folded behind one "show settled" row unless `include_settled`. Returns rows [{kind, text, action, jkey, pinned, settled}]."""
     risk = risk or {}
     rows: list[dict] = []
     evented: set = set()
@@ -136,32 +137,41 @@ def build_rows(events: list[dict], windows: list[dict], closed: list[dict], inst
                      "event": e.get("id"), "action": {"op": "jump", "pid": e.get("pid"), "w": e.get("w"), "ack": e.get("id")},
                      "text": f"{glyph}  {clean_text(e.get('agent', 'agent'), 24)}  {clean_text(w.get('tab') or e.get('tab') or '', 60)} — {body}   {_age(now - float(e.get('t', now)))}"
                              + flag(e.get("agent", ""), w.get("argv", []))})
-    for w in sorted(windows, key=lambda w: (STATE_RANK.get(w.get("state", ""), 9), w.get("tab", ""))):
+    for w in sorted(windows, key=lambda w: (not w.get("pinned"), STATE_RANK.get(w.get("state", ""), 9), w.get("tab", ""))):
         key = (str(w.get("pid")), str(w.get("w")))
         if key in evented:
             continue
         st = w.get("state", "")
         rows.append({"kind": "running", "agent": w.get("agent", ""), "tone": "active" if st == "working" else "urgent" if st in ("waiting", "limited") else "",
+                     "jkey": w.get("jkey"), "pinned": bool(w.get("pinned")), "settled": False,
                      "action": {"op": "jump", "pid": w.get("pid"), "w": w.get("w")},
-                     "text": f"{STATE_GLYPH.get(st, '·')}  {clean_text(w.get('agent', 'agent'), 24)}  {clean_text(w.get('tab', ''), 60)}   {_short(w.get('cwd', ''), home)}"
-                             + (f"   {clean_text(st, 12)}" if st and st != "idle" else "")
-                             + flag(w.get("agent", ""), w.get("argv", []))})
+                     "text": f"{'★' if w.get('pinned') else STATE_GLYPH.get(st, '·')}  {clean_text(w.get('agent', 'agent'), 24)}  {clean_text(w.get('tab', ''), 60)}   {_short(w.get('cwd', ''), home)}"
+                             + (f"   {clean_text(st, 12)}" if st and st != "idle" else "") + flag(w.get("agent", ""), w.get("argv", []))})
     seen_closed: set = set()
-    shown_closed = 0
-    for c in closed:                                              # newest first; the same agent in the same place under the same name is one row
+    shown_closed, hidden_settled = 0, 0
+    for c in sorted(closed, key=lambda c: (c.get("lifecycle") != "pinned", -float(c.get("last", 0)))):          # pinned first, then newest
         ident = (c.get("agent"), c.get("cwd"), c.get("tab"))
         if ident in seen_closed:
             continue
         seen_closed.add(ident)
-        shown_closed += 1
-        if shown_closed > max_closed:
-            break
+        life = c.get("lifecycle") or ("pinned" if c.get("pinned") else "settled" if c.get("settled") else "recent")
+        if life == "settled" and not include_settled:
+            hidden_settled += 1
+            continue
+        if life != "pinned":
+            shown_closed += 1                                   # the cap counts recent ones only: a pin never takes a slot from them
+            if shown_closed > max_closed:
+                continue
         bits = [f"closed {_age(now - float(c.get('last', now)))} ago"]
         if c.get("turns"):
             bits.append(f"{c['turns']} runs")
-        rows.append({"kind": "closed", "agent": c.get("agent", ""), "tone": "", "action": {"op": "reopen", "key": c.get("key")},
-                     "text": f"↺  {clean_text(c.get('agent', 'agent'), 24)}  {clean_text(c.get('tab') or '', 60)}   {_short(c.get('cwd', ''), home)}   {' · '.join(bits)}"
+        rows.append({"kind": "closed", "agent": c.get("agent", ""), "tone": "", "jkey": c.get("key"), "pinned": life == "pinned", "settled": life == "settled",
+                     "action": {"op": "reopen", "key": c.get("key")},
+                     "text": f"{'★' if life == 'pinned' else '↺'}  {clean_text(c.get('agent', 'agent'), 24)}  {clean_text(c.get('tab') or '', 60)}   {_short(c.get('cwd', ''), home)}   {' · '.join(bits)}"
                              + flag(c.get("agent", ""), c.get("argv", []))})
+    if hidden_settled:
+        rows.append({"kind": "more", "agent": "", "tone": "", "jkey": None, "pinned": False, "settled": False, "action": {"op": "all"},
+                     "text": f"⋯  {hidden_settled} settled conversation{'s' if hidden_settled != 1 else ''} (older than a few days, or settled by you) — show"})
     here = _short(cwd, home) if cwd else "here"          # (clean_text'd inside _short)
     for name in [a for a in SPAWN_ORDER if a in installed]:
         rows.append({"kind": "new", "agent": name, "tone": "", "action": {"op": "spawn", "agent": name, "where": "tab"}, "text": f"+  new {name}   tab · {here}"})
@@ -252,7 +262,7 @@ def menu_command(menu: str, rows: list[dict], message: str = "", theme_path: str
     if any(_unsafe_char(ch) for t in texts for ch in t):          # defence in depth: one row = one clean line, or the indexes the menu answers with no longer match the rows
         raise ValueError("a menu row contains control characters")
     if menu == "rofi":
-        argv = ["rofi", "-dmenu", "-i", "-no-custom", "-format", "i", "-p", "kittymux ›", "-kb-custom-1", "alt+a"]
+        argv = ["rofi", "-dmenu", "-i", "-no-custom", "-format", "i", "-p", "kittymux ›", "-kb-custom-1", "alt+a", "-kb-custom-2", "alt+p", "-kb-custom-3", "alt+s"]
         if theme_path:
             argv += ["-theme", theme_path]
         if message:
@@ -270,20 +280,21 @@ def menu_command(menu: str, rows: list[dict], message: str = "", theme_path: str
     if menu == "fuzzel":
         return ["fuzzel", "--dmenu", "--prompt", "kittymux  "], "\n".join(texts) + "\n"
     if menu == "fzf":
-        return (["fzf", "--delimiter", "\t", "--with-nth", "2..", "--prompt", "kittymux> ", "--no-sort", "--layout=reverse", "--expect", "alt-a"],
+        return (["fzf", "--delimiter", "\t", "--with-nth", "2..", "--prompt", "kittymux> ", "--no-sort", "--layout=reverse", "--expect", "alt-a,alt-p,alt-s"],
                 "\n".join(f"{i}\t{t}" for i, t in enumerate(texts)) + "\n")
     raise ValueError(menu)
 
 
 def parse_choice(menu: str, rows: list[dict], returncode: int, stdout: str) -> tuple[dict, str] | None:
-    """(row, "open" | "ack") the picker chose, or None (cancelled, empty, out of range). Never raises on odd output."""
+    """(row, "open" | "ack" | "pin" | "settle") the picker chose, or None (cancelled, empty, out of range). Never raises on odd output."""
     out = (stdout or "").rstrip("\n")
     try:
         if menu == "rofi":
-            if returncode not in (0, 10) or not out.strip().isdigit():
+            how = {0: "open", 10: "ack", 11: "pin", 12: "settle"}.get(returncode)
+            if how is None or not out.strip().isdigit():
                 return None
             i = int(out.strip())
-            return (rows[i], "ack" if returncode == 10 else "open") if 0 <= i < len(rows) else None
+            return (rows[i], how) if 0 <= i < len(rows) else None
         if menu == "fuzzel":
             if returncode != 0 or not out:
                 return None
@@ -294,8 +305,8 @@ def parse_choice(menu: str, rows: list[dict], returncode: int, stdout: str) -> t
         if menu == "fzf":
             lines = out.split("\n")
             key = "open"
-            if lines and lines[0] in ("alt-a", ""):
-                key = "ack" if lines[0] == "alt-a" else "open"
+            if lines and lines[0] in ("alt-a", "alt-p", "alt-s", ""):
+                key = {"alt-a": "ack", "alt-p": "pin", "alt-s": "settle"}.get(lines[0], "open")
                 lines = lines[1:]
             if not lines or not lines[0]:
                 return None

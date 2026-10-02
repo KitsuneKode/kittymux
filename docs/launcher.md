@@ -54,6 +54,16 @@ The focused kitty is decided *before* the menu opens (a menu takes the keyboard 
 (the same `▎` as the tab bar), needs-you rows in the *waiting* colour and working rows in the *working* colour. **Every colour is read from your live kitty theme** when the menu opens (nothing is hardcoded), so it
 follows theme switches; the theme is written 0600 to `~/.local/state/kittymux/rofi-kittymux.rasi`. `--no-theme` (or `KITTYMUX_ROFI_THEME=user`) leaves your own rofi theme in charge. Needs rofi 2.x (Wayland-native).
 
+## Pin and settle: keep the list about *now*
+
+Borrowed from T3 Code's thread lifecycle. Two flags on a conversation's journal record, so they outlive the tab:
+
+- **Pin** (`alt+p` in the picker, `kittymux pin [KEY | --window ID]`): the conversation stays at the **top** of `pick` with a `★`, whether it is running or closed, and is **never aged out** of the journal (the 90-day and 300-record limits skip it). Toggle with `alt+p` again or `kittymux unpin`.
+- **Settle** (`alt+s`, `kittymux settle KEY`): fold a closed conversation away. A closed conversation also **settles itself** after 3 days untouched (`KITTYMUX_SETTLE_DAYS`, 1–365). Settled ones leave the default list and sit behind one row — `⋯ 4 settled conversations — show` (or `kittymux pick --all`);
+  nothing is deleted. `alt+s` on a settled row brings it back; pinning one does too.
+
+`ack` / `pin` / `settle` refresh the list and ask again, so you can tidy several in a row. Pinning does not reorder the *tab bar* (kitty has no pinned tabs) — it is about what `pick` offers you.
+
 ## Bring back what you closed: `kittymux reopen`
 
 `ctrl+alt+shift+u` (leader `y`) or `kittymux reopen` reopens the agent conversation closed last, in a new tab in its directory, through the same prompt as any restore. It reads the [journal](sessions.md), so it also works for

@@ -350,6 +350,7 @@ def extra_groups() -> list[tuple[str, list[tuple[str, str]]]]:
             ("spawn claude,codex [--vsplit]", "start agents straight into a new tab / split in the current directory (keys: ctrl+alt+shift+o, then c x d u o a g)"),
             ("pick [--menu rofi]", "ONE searchable list: needs you (longest-waiting first), agents, closed conversations, new agent — bind it in your WM"),
             ("reopen", "bring back the conversation you closed last (asks before resuming)"),
+            ("pin|settle KEY  (alt+p / alt+s in pick)", "pin a conversation to the top of pick (never aged out) · fold a closed one away (settles itself after 3 days)"),
             ("notify mute 1h | snooze 1h", "quiet popups and bells (everything still reaches the inbox) — everywhere / for one window"),
             ("sessions history|recover", "every agent session journaled as it runs: insights, and a session rebuilt after a crash (restored agents ask before resuming)"),
             ("explain", "why each agent pane is in its state + every recent decision (sent or held-back notifications)"),

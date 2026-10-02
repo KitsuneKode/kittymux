@@ -419,6 +419,90 @@ def stat_mode(path):
     return os.stat(path).st_mode & 0o777
 
 
+class LifecycleCliTests(unittest.TestCase):
+    """pin / unpin / settle / unsettle and the lifecycle of reopenable conversations — always against a throwaway state dir."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def setUp(self):
+        import tempfile
+        import time as _t
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = mock.patch.dict(os.environ, {"KITTYMUX_STATE": self.tmp.name, "KITTY_WINDOW_ID": ""})
+        self.env.start()
+        import sys
+        sys.path.insert(0, os.path.join(ROOT, "python"))
+        import kittymux_journal as J
+        self.J, self.now = J, _t.time()
+        self.work = os.path.join(self.tmp.name, "w")
+        os.makedirs(self.work)
+        recs = {}
+        for i, (sid, age) in enumerate((("0a1b2c3d-0000-4000-8000-00000000000a", 600), ("0a1b2c3d-0000-4000-8000-00000000000b", 5 * 86400))):
+            J.observe(recs, {"agent": "claude", "sid": sid, "cwd": self.work, "tab": f"t{i}", "argv": ["claude"], "state": "idle", "kitty_pid": 2 ** 22 + 9, "wid": i + 1, "mode": ""}, self.now - age)
+        J.flush(self.tmp.name, recs, self.now)
+        self.keys = sorted(recs)
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def run_cli(self, fn, *a):
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = fn(*a)
+        return rc, out.getvalue(), err.getvalue()
+
+    def flags(self, key):
+        return {k: v for k, v in self.J.load(self.tmp.name)[key].items() if k in ("pinned", "settled")}
+
+    def test_closed_conversations_are_recent_or_settled_by_age_and_a_pin_beats_age(self):
+        life = {e["key"]: e["lifecycle"] for e in self.m._reopenable(self.now)}
+        self.assertEqual(sorted(life.values()), ["recent", "settled"])
+        old = next(k for k, v in life.items() if v == "settled")
+        self.assertEqual(self.run_cli(self.m.lifecycle_verb, "pin", [old])[0], 0)
+        self.assertEqual({e["key"]: e["lifecycle"] for e in self.m._reopenable(self.now)}[old], "pinned")
+        self.assertEqual(self.flags(old), {"pinned": True, "settled": False})
+        self.assertEqual(self.run_cli(self.m.lifecycle_verb, "unpin", [old])[0], 0)
+        self.assertEqual({e["key"]: e["lifecycle"] for e in self.m._reopenable(self.now)}[old], "settled")
+
+    def test_a_unique_prefix_is_enough_and_a_shared_one_is_refused(self):
+        recs = self.J.load(self.tmp.name)
+        odd = dict(next(iter(recs.values())))
+        recs["codex:uniq-session"] = odd
+        self.J.flush(self.tmp.name, recs, self.now)
+        self.assertEqual(self.run_cli(self.m.lifecycle_verb, "pin", ["codex:uniq"])[0], 0)
+        self.assertTrue(self.flags("codex:uniq-session")["pinned"])
+        rc, _o, err = self.run_cli(self.m.lifecycle_verb, "pin", [self.keys[0][:20]])               # both claude keys share this prefix
+        self.assertEqual(rc, 1)
+        self.assertIn("several conversations match", err)
+
+    def test_settle_and_unsettle_a_recent_conversation(self):
+        recent = next(e["key"] for e in self.m._reopenable(self.now) if e["lifecycle"] == "recent")
+        self.assertEqual(self.run_cli(self.m.lifecycle_verb, "settle", [recent])[0], 0)
+        self.assertEqual({e["key"]: e["lifecycle"] for e in self.m._reopenable(self.now)}[recent], "settled")
+        self.assertEqual(self.run_cli(self.m.lifecycle_verb, "unsettle", [recent])[0], 0)
+        self.assertEqual({e["key"]: e["lifecycle"] for e in self.m._reopenable(self.now)}[recent], "recent")
+
+    def test_the_settle_age_is_configurable_within_sane_bounds(self):
+        with mock.patch.dict(os.environ, {"KITTYMUX_SETTLE_DAYS": "30"}):
+            self.assertEqual(sorted(e["lifecycle"] for e in self.m._reopenable(self.now)), ["recent", "recent"])
+        for bad in ("0", "-3", "9999", "soon", ""):
+            with mock.patch.dict(os.environ, {"KITTYMUX_SETTLE_DAYS": bad}):
+                self.assertEqual(self.m._settle_after(), self.J.SETTLE_AFTER_S, bad)
+
+    def test_unknown_options_ambiguity_and_missing_records_are_refused_and_change_nothing(self):
+        before = self.J.load(self.tmp.name)
+        for args in (["--bogus"], ["nosuchkey"], ["claude:"], []):                                          # "claude:" matches both; [] has no window to mean
+            rc, _out, err = self.run_cli(self.m.lifecycle_verb, "pin", args)
+            self.assertEqual(rc, 1, args)
+            self.assertTrue(err, args)
+        self.assertEqual(self.J.load(self.tmp.name), before)
+
+
 class LauncherTargetTests(unittest.TestCase):
     """A key inside a kitty acts on THAT kitty. (Once a test rig's key-launched spawn followed 'the focused kitty' into the author's real one.)"""
 

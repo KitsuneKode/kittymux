@@ -39,7 +39,7 @@ remote work.
 - `bin/mux-notify` — one desktop notification with a "Jump to it" action (focuses the window via kitty
   remote control, then `hyprctl`); started detached by the scanner, lives ≤ 30 s
 - `python/kittymux_barsize.py` — bar sizing + the `TabBar.tab_id_at` hit-test wrapper (installed by `tab_bar.py`)
-- `python/kittymux_launcher.py` (pure) + `kittymux spawn|pick|reopen|notify|snooze` — docs/launcher.md: agents spawned into a tab (before the `!scratch` tab) or split via `kitty @ launch`; `pick` builds rows (needs-you longest-waiting first → running → closed → new) for rofi/fuzzel/fzf; the focused kitty is chosen BEFORE the menu opens; `assets/agent-risk.json` (flags read from each CLI's `--help`) marks agents started without approvals
+- `python/kittymux_launcher.py` (pure) + `kittymux spawn|pick|reopen|notify|snooze` — docs/launcher.md: agents spawned into a tab (before the `!scratch` tab) or split via `kitty @ launch`; `pick` builds rows (needs-you longest-waiting first → running → closed → new) for rofi/fuzzel/fzf; the focused kitty is chosen BEFORE the menu opens; `assets/agent-risk.json` (flags read from each CLI's `--help`) marks agents started without approvals; pin/settle are journal flags (`pinned`, `settled`, `flags_ts`) merged BY `flags_ts` in `flush` (a stale scanner copy must not erase a user's pin), settled = closed and untouched 3 days or settled by hand
 - `docs/` — `compatibility.md` (which agent markers are verified), `audit-*.md`, `launch-checklist.md`
 - `bin/mux-status` — agent hooks → `kittymux_status` window user var → recorded by `pane-state.py`
 - `python/sidebar-kit.py` — `kitten` overlay: sidebar with real hover/click

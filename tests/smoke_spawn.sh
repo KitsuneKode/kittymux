@@ -37,6 +37,8 @@ ABSENT=$(for a in amp gemini droid grok agy devin cursor-agent opencode; do comm
 cat > "$T/bin/rofi" <<'SH'
 #!/usr/bin/env bash
 cat > "$ROFI_LOG"
+n=$(cat "$ROFI_LOG.n" 2>/dev/null || echo 0); echo $((n + 1)) > "$ROFI_LOG.n"
+if [ "${ROFI_ONCE:-}" = 1 ] && [ "$n" -ge 1 ]; then exit 1; fi          # the picker asks again after pin/settle/ack: cancel the second time
 [ -n "${ROFI_PICK:-}" ] || exit 1
 i=$(grep -a -n -F -- "$ROFI_PICK" "$ROFI_LOG" | head -1 | cut -d: -f1)
 [ -n "$i" ] || exit 1
@@ -191,6 +193,37 @@ KMX snooze 1h --window 999999 >/dev/null 2>&1; [ $? = 1 ] || fail "snooze of a w
 KMX snooze --clear --window "$CLW" >/dev/null || fail "snooze --clear failed"
 grep -q "\"$CLW\"" "$SF" && fail "snooze --clear left the window in the file"
 echo "  ok   notify mute/unmute/status and snooze/--clear"
+# 10. pin / settle: flags on the journal record, shown by pick, set by CLI verbs and by the rofi keys (alt+p = exit 11, alt+s = exit 12)
+python3 - "$HOME_DIR" "$STATE" "$T/a" "$T/bin/claude" <<'PY'
+import sys, time
+sys.path.insert(0, sys.argv[1] + "/python")
+import kittymux_journal as J
+recs, now = {}, time.time()
+def closed(sid, tab, age):
+    J.observe(recs, {"agent": "claude", "sid": sid, "cwd": sys.argv[3], "tab": tab, "argv": [sys.argv[4]], "state": "idle", "kitty_pid": 2 ** 22 + 11, "wid": 1, "mode": ""}, now - age)
+    J.close_missing(recs, 2 ** 22 + 11, set(), now - age + 1)
+closed("0a1b2c3d-0000-4000-8000-0000000000a1", "ancient work", 6 * 86400)
+closed("0a1b2c3d-0000-4000-8000-0000000000a2", "side quest", 300)
+J.flush(sys.argv[2], recs, now)
+PY
+out=$(KMX pick --list); echo "$out" | grep -q "1 settled conversation" || { echo "$out"; fail "an old closed conversation is not folded behind a 'show settled' row"; }
+echo "$out" | grep -q "ancient work" && fail "a settled conversation must not be listed by default"
+KMX pick --list --all | grep -q "ancient work" || fail "pick --all does not show the settled conversation"
+ANC="claude:0a1b2c3d-0000-4000-8000-0000000000a1"
+KMX pin "$ANC" >/dev/null || fail "pin by key failed"
+KMX pick --list | grep -q "^★  claude  ancient work" || { KMX pick --list; fail "a pinned conversation is not listed first with a star (age must not hide it)"; }
+KMX unpin "$ANC" >/dev/null || fail "unpin failed"
+KMX pick --list | grep -q "ancient work" && fail "an unpinned old conversation should settle again"
+rm -f "$ROFI_LOG.n"; ROFI_ONCE=1 ROFI_PICK="side quest" ROFI_RC=12 KMX pick --menu rofi >/dev/null || fail "settle through rofi (alt+s) failed"
+KMX pick --list | grep -q "side quest" && fail "alt+s did not settle the conversation"
+rm -f "$ROFI_LOG.n"; ROFI_ONCE=1 ROFI_PICK="settled conversation" KMX pick --menu rofi >/dev/null 2>&1; true      # "show settled" re-asks with them listed (the second ask is cancelled)
+grep -a -q "ancient work" "$ROFI_LOG" && grep -a -q "side quest" "$ROFI_LOG" || fail "choosing 'show settled' did not list the settled conversations on the next ask"
+KMX pin --window "$CLW" >/dev/null || fail "pin --window failed for a running agent"
+KMX pick --list | grep -q "^★  claude" || { KMX pick --list | head -5; fail "a pinned running agent does not lead with a star"; }
+KMX unpin --window "$CLW" >/dev/null || fail "unpin --window failed"
+KMX pin --bogus >/dev/null 2>&1; [ $? = 1 ] || fail "an unknown option must be refused, not guessed"
+echo "  ok   pin/unpin/settle: folded 'show settled' row, ★ first, alt+p / alt+s through rofi, running agents pinnable, junk options refused"
+
 [ "$(others)" = "$OTHERS_BEFORE" ] || fail "this rig changed the windows of ANOTHER kitty on this machine (before: $OTHERS_BEFORE after: $(others))"
 echo "  ok   no other kitty on this machine was touched"
 echo "PASS: spawn, pick, reopen, mute and snooze work in a real kitty (socket-only)"

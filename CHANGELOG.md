@@ -21,6 +21,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 - **Bar insights**: beside the state glyph, how long a tab has been waiting / working / done-unseen (`1m !`, `1h ◐`, refreshed every 20 s); a red `⚠` on agents started with their approvals off; the armed-mode badge shows
   the right keys for `leader` and `spawn` (width-aware). **Rofi look**: mascot header, per-agent icons, accent rail, colours read from your live kitty theme. `kittymux inbox --waybar` for a status-bar module.
 
+- **Pin and settle** (`kittymux pin|unpin|settle|unsettle`, `alt+p` / `alt+s` in `pick`): pinned conversations lead the list and are never aged out; closed ones untouched for 3 days settle away behind one "show settled" row. Flags merge by their own timestamp so the scanner cannot undo them.
+
 ### Changed
 - Recommended kitty setup is now `allow_remote_control socket-only` + `listen_on unix:${XDG_RUNTIME_DIR}/mykitty`; `kittymux doctor` warns about `yes` and a `/tmp` socket. Every smoke test runs under `socket-only`.
 - A completion notifies only with a known duration ≥ 15 s after a 5 s settle; a hook-announced turn ends only with the agent's own `Stop`. Screen-only completions need ≥ 60 s of work to pop up.
