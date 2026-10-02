@@ -77,16 +77,41 @@ def hue_slot(name: str) -> int:
     return int.from_bytes(hashlib.sha1(name.encode("utf-8", "replace")).digest()[:4], "big") % HUE_SLOTS
 
 
+AVOID_GAP = 24 / 360           # a project hue stays this far (as a fraction of the colour wheel) from every colour in `avoid`
+_MIN_FREE_SLOTS = 5            # …unless that would leave fewer than this many hues: then only the first two `avoid` colours count
+
+
+def _hls(rgb: int) -> tuple[float, float, float]:
+    return colorsys.rgb_to_hls(((rgb >> 16) & 0xFF) / 255, ((rgb >> 8) & 0xFF) / 255, (rgb & 0xFF) / 255)
+
+
+def _hue_gap(a: float, b: float) -> float:
+    d = abs(a - b) % 1.0
+    return min(d, 1.0 - d)
+
+
 @functools.lru_cache(maxsize=512)
-def project_hue(name: str, accent: int, bg: int, minimum: float = 4.5) -> int:
+def project_hue(name: str, accent: int, bg: int, minimum: float = 4.5, avoid: tuple = ()) -> int:
     """A colour for a project: the theme's own accent with its hue turned by the project's slot, so every theme
     gets a matching family (never a fixed palette). Saturation and lightness follow the accent (a grey accent
     still gets colour), then it is nudged until it reads on `bg` at the given WCAG ratio — a hue is a second
     cue next to the project's name, never the only one. On a theme with no lightness room it degrades toward
-    the text colour rather than failing."""
-    r, g, b = (accent >> 16) & 0xFF, (accent >> 8) & 0xFF, accent & 0xFF
-    h, light, sat = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
-    h = (h + hue_slot(name) / HUE_SLOTS) % 1.0
+    the text colour rather than failing.
+
+    `avoid` lists colours a project must not be mistaken for — the caller passes the state colours
+    (waiting, alert, working, done): a folder glyph must not read as "needs you" or "running". Slots whose hue
+    falls within AVOID_GAP of one of them (grey ones have no hue and are ignored) are skipped; the project's
+    slot then indexes into the slots that are left."""
+    h0, light, sat = _hls(accent)
+    taken = [_hls(c)[0] for c in avoid if _hls(c)[2] >= 0.15]
+    free = list(range(HUE_SLOTS))
+    for kept in (taken, taken[:2]):
+        free = [s for s in range(HUE_SLOTS) if all(_hue_gap((h0 + s / HUE_SLOTS) % 1.0, t) >= AVOID_GAP for t in kept)]
+        if len(free) >= _MIN_FREE_SLOTS:
+            break
+    else:
+        free = free or list(range(HUE_SLOTS))
+    h = (h0 + free[hue_slot(name) % len(free)] / HUE_SLOTS) % 1.0
     r2, g2, b2 = colorsys.hls_to_rgb(h, light, max(sat, 0.45))
     candidate = (round(r2 * 255) << 16) | (round(g2 * 255) << 8) | round(b2 * 255)
     return ensure_contrast(candidate, bg, minimum)

@@ -73,6 +73,14 @@ def mid_ellipsis(text: str, width: int, cells: Callable[[str], int] = len) -> st
     return "…"
 
 
+def place_room(avail: int, later: list[int], sep: int = 2, floor: int = 6) -> int:
+    """Cells the folder line may take when pieces drawn AFTER it (the layout picture, pane chips, "N panes") need
+    `later` cells each: they keep theirs (and their separator) — unless that would squeeze the folder line under
+    `floor` cells, then the folder line wins and they are dropped, as the branch alone always did."""
+    want = avail - sum(width + sep for width in later)
+    return want if want >= floor else avail
+
+
 def _inner_variants(inner: str) -> list[str]:
     parts = inner.split("/")
     out = ["/" + inner]

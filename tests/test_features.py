@@ -67,6 +67,12 @@ class FeatureTests(unittest.TestCase):
         self.assertEqual(F.state_dir({"KITTYMUX_STATE": "/a"}), "/a")
         self.assertEqual(F.state_dir({"XDG_STATE_HOME": "/x"}), "/x/kittymux")
 
+    def test_pieces_that_are_not_built_yet_are_marked_planned(self):
+        self.assertEqual(F.PLANNED, frozenset({"sheet", "hover", "panetitle"}))
+        self.assertTrue(F.PLANNED <= set(F.FEATURES))
+        self.assertTrue(F.live().isdisjoint(F.PLANNED))
+        self.assertEqual(F.live(), frozenset({"folder", "hue", "collide"}))
+
 
 if __name__ == "__main__":
     unittest.main()

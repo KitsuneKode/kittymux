@@ -194,7 +194,9 @@ def _tab_hue(cwd: str, pal):
     """The project's hue (cached per name by kittymux_theme), or None when hue is off or the tab has no directory."""
     if not cwd or not _features()["hue"]:
         return None
-    return kittymux_theme.project_hue(_facts(cwd).project, pal.accent, pal.surface_hi)
+    # a project's colour must never read as a state: stay clear of the waiting / alert / working / done hues
+    return kittymux_theme.project_hue(_facts(cwd).project, pal.accent, pal.surface_hi,
+                                      avoid=(pal.waiting, pal.alert, pal.working, pal.done))
 
 
 @_per_pass
@@ -204,7 +206,8 @@ def _title_keys(os_window_id: int) -> dict:
     try:
         tm = get_boss().os_window_map.get(os_window_id)
         for t in (tm.tabs if tm else []):
-            out[t.id] = _compact_title(types.SimpleNamespace(title=t.title or "", tab_id=t.id), 40)
+            # what kitty hands the bar as the tab's title (Tab.data_for_tab_bar): the name you gave it, else the window's title
+            out[t.id] = _compact_title(types.SimpleNamespace(title=t.name or t.title or "", tab_id=t.id), 40)
     except Exception:
         pass
     return out
@@ -216,6 +219,17 @@ def _twins(os_window_id: int) -> frozenset:
     if not _features()["collide"]:
         return frozenset()
     return kittymux_place.colliding(_title_keys(os_window_id))
+
+
+def _piece_cells(piece) -> int:
+    """Cells a subtitle piece takes when drawn: the layout picture, pane chips, or plain text (the folder line itself: 0)."""
+    if isinstance(piece, _MiniMap):
+        return len(piece)
+    if isinstance(piece, list):
+        return sum(_cells(t) for t, _c in piece)
+    if isinstance(piece, _Place):
+        return 0
+    return _cells(piece)
 
 
 class _Place:
@@ -1201,8 +1215,11 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
                         x += 1
                     screen.cursor.bg = row_bg
                 continue
-            if isinstance(text, _Place):                     # the folder line: laid out to the room that is really left
-                runs = kittymux_place.layout(text.facts, avail - _cells(sep), icon=_ICON_FOLDER, branch_icon=_ICON_BRANCH,
+            if isinstance(text, _Place):                     # the folder line: laid out to the room that is really left —
+                # `avail` already has this piece's separator taken off; what is drawn AFTER it (the layout picture, pane
+                # chips, "N panes") keeps its cells unless that would squeeze the folder line out
+                place_room = kittymux_place.place_room(avail, [_piece_cells(p[0]) for p in lead[i + 1:]])
+                runs = kittymux_place.layout(text.facts, place_room, icon=_ICON_FOLDER, branch_icon=_ICON_BRANCH,
                                              hide_project=text.hide, cells=_cells)
                 if runs:
                     x = _put(screen, x, sep, _rgb(color))
@@ -1211,7 +1228,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
                         x = _put(screen, x, run, _rgb(fg), bold)
                     if not extra_data.for_layout:
                         _dump_row(tab.tab_id, legacy=False, pieces=[[r, k] for r, k in runs], emphasised=text.emphasised,
-                                  hue=text.hue, hidden=text.hide)
+                                  hue=text.hue, hidden=text.hide, avail=avail, room=place_room)
                 continue
             if isinstance(text, list):                       # pane chips: coloured runs, drawn whole or not at all
                 if sum(_cells(t) for t, _c in text) <= avail:

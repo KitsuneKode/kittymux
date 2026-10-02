@@ -392,8 +392,9 @@ def doctor() -> int:
 
     print("\nfeatures (kittymux features)")
     try:
-        r.ok("  ".join(f"{n} {'on' if on else 'off'}" for n in kittymux_features.FEATURES
-                       for on, _where in [kittymux_features.source(n)]))
+        live = [n for n in kittymux_features.FEATURES if n in kittymux_features.live()]
+        r.ok("  ".join(f"{n} {'on' if kittymux_features.enabled(n) else 'off'}" for n in live)
+             + "   (planned, no effect yet: " + ", ".join(sorted(kittymux_features.PLANNED, key=kittymux_features.FEATURES.index)) + ")")
     except Exception as e:                                   # a status line must never break doctor
         r.warning(f"could not read the feature switches: {e}")
 
@@ -2032,9 +2033,9 @@ FEATURE_HELP = {
     "folder": "project[:worktree]/inner and branch under each tab (off: just the branch, as before)",
     "hue": "a stable colour per project (folder icon, active name, rail number)",
     "collide": "emphasise the project of tabs that show the same title",
-    "sheet": "the side sheet for a tab (right-click / key)",
-    "hover": "open the sheet on hover (only where kitty delivers it)",
-    "panetitle": "folder + branch in pane title bars",
+    "sheet": "(planned — not built yet) the side sheet for a tab",
+    "hover": "(planned — not built yet) open the sheet on hover, inside the sheet only: kitty sends the bar no idle motion",
+    "panetitle": "(planned — not built yet) folder + branch in pane title bars",
 }
 
 
@@ -2055,6 +2056,8 @@ def features_cmd(argv: list[str]) -> int:
             note = ""
             if os.environ.get(f"KITTYMUX_{argv[1].upper()}", "").strip():
                 note = f"  {WARN} KITTYMUX_{argv[1].upper()} is set in your environment and wins over this"
+            if argv[1] in KF.PLANNED:
+                note += f"  {WARN} not built yet — the choice is saved for when it exists, nothing changes today"
             print(f"{OK} {argv[1]} {cmd}{note}")
             _nudge_bars()
             return 0

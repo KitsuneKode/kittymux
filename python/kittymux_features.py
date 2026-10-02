@@ -14,6 +14,7 @@ PRESETS = {
     "default": frozenset(name for name, on in DEFAULTS.items() if on),
     "full": frozenset(FEATURES),
 }
+PLANNED = frozenset({"sheet", "hover", "panetitle"})     # settings that are saved but nothing reads yet — the CLI says so
 _OFF = {"0", "off", "false", "no"}
 _ON = {"1", "on", "true", "yes"}
 
@@ -22,6 +23,11 @@ def state_dir(env=None) -> str:
     env = os.environ if env is None else env
     return env.get("KITTYMUX_STATE") or os.path.join(
         env.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"), "kittymux")
+
+
+def live() -> frozenset:
+    """The switches something actually reads today."""
+    return frozenset(FEATURES) - PLANNED
 
 
 def _check(name: str) -> None:

@@ -13,6 +13,12 @@ THEMES = {
     "light": (0x1E66F5, 0xEFF1F5, T.blend(0x4C4F69, 0xEFF1F5, 0.15)),
     "grey": (0x888888, 0x101010, T.blend(0xDDDDDD, 0x101010, 0.15)),
 }
+# each theme's state colours: (waiting, alert, working, done) — Catppuccin-like for dark/light, a plain set for grey
+STATUS = {
+    "dark": (0xF9E2AF, 0xF38BA8, 0x89B4FA, 0xA6E3A1),
+    "light": (0xDF8E1D, 0xD20F39, 0x1E66F5, 0x40A02B),
+    "grey": (0xCCAA44, 0xDD5555, 0x6699CC, 0x66BB66),
+}
 
 
 class HueTests(unittest.TestCase):
@@ -47,6 +53,33 @@ class HueTests(unittest.TestCase):
     def test_same_project_same_colour(self):
         accent, _bg, row = THEMES["dark"]
         self.assertEqual(T.project_hue("kittymux", accent, row), T.project_hue("kittymux", accent, row))
+
+    def test_a_projects_hue_never_lands_on_a_status_colour(self):
+        """Spec 3b.3: the hue never uses the alert/waiting colours (and stays off the working/done ones): a project's
+        folder glyph must not read as "needs you" or "running"."""
+        import colorsys
+
+        def hue_of(rgb):
+            return colorsys.rgb_to_hls(((rgb >> 16) & 255) / 255, ((rgb >> 8) & 255) / 255, (rgb & 255) / 255)[0]
+
+        def gap(a, b):
+            d = abs(a - b) % 1.0
+            return min(d, 1.0 - d) * 360
+
+        for theme, (accent, _bg, row) in THEMES.items():
+            status = STATUS[theme]                            # (waiting, alert, working, done)
+            seen = set()
+            for i in range(200):
+                rgb = T.project_hue(f"p{i}", accent, row, avoid=status)
+                seen.add(rgb)
+                self.assertGreaterEqual(T.contrast(rgb, row), 4.5, (theme, i, hex(rgb)))
+                for colour in status:
+                    self.assertGreaterEqual(gap(hue_of(rgb), hue_of(colour)), 18, (theme, i, hex(rgb), hex(colour)))
+            self.assertGreaterEqual(len(seen), 5, theme)      # still a family of distinguishable colours
+
+    def test_a_grey_status_colour_has_no_hue_to_avoid(self):
+        accent, _bg, row = THEMES["dark"]
+        self.assertEqual(T.project_hue("kittymux", accent, row, avoid=(0x808080,)), T.project_hue("kittymux", accent, row))
 
 
 if __name__ == "__main__":

@@ -15,12 +15,13 @@ fail() { echo "FAIL: $*"; [ -s "$STATE/tab_bar-error.log" ] && sed 's/^/  | /' "
 for n in $(seq 201 229); do [ -e "/tmp/.X$n-lock" ] || { DISP=:$n; break; }; done
 Xvfb "$DISP" -screen 0 1400x900x24 >/dev/null 2>&1 & XPID=$!
 sleep 1; kill -0 "$XPID" 2>/dev/null || { echo "SKIP: Xvfb would not start"; XPID=""; exit 0; }
+for _ in $(seq 40); do [ -S "/tmp/.X11-unix/X${DISP#:}" ] && break; sleep 0.25; done      # Xvfb accepts connections a moment after it starts
 for f in tab_bar.py kittymux_theme.py kittymux_deck.py kittymux_git.py kittymux_features.py kittymux_place.py kittymux_layout.py kittymux_barsize.py kittymux_agents.py kittymux_state.py kittymux_scan.py; do
   ln -s "$HOME_DIR/python/$f" "$CFG/$f"
 done
 printf 'window_padding_width 10\nconfirm_os_window_close 0\nallow_remote_control socket-only\ninclude %s/kittymux.conf\nwatcher %s/python/pane-state.py\ntab_bar_edge left\ntab_bar_min_tabs 1\ngeninclude %s/python/kittymux_layout.py\n' \
   "$HOME_DIR" "$HOME_DIR" "$HOME_DIR" > "$CFG/kitty.conf"
-mkdir -p "$T/work/alpha/app" "$T/work/bravo/app" "$T/plain/notes"
+mkdir -p "$T/work/alpha/app" "$T/work/bravo/app" "$T/work/alpha/pane" "$T/plain/notes"
 for r in alpha bravo; do git -C "$T/work/$r" init -q -b main || fail "git init"; done
 cat > "$T/session" <<S
 new_tab
@@ -35,6 +36,10 @@ launch sh
 new_tab
 cd $T/plain/notes
 launch sh
+new_tab
+cd $T/work/alpha/pane
+launch sh
+launch --location=vsplit sh
 focus_tab 0
 S
 others() { for s in /tmp/mykitty-* "${REAL_RUNTIME:-/nonexistent}"/mykitty-*; do [ -S "$s" ] && [ "$s" != "${SOCK#unix:}" ] && kitty @ --to "unix:$s" ls 2>/dev/null | python3 -c 'import sys,json;print(sum(len(t["windows"]) for o in json.load(sys.stdin) for t in o["tabs"]))'; done | tr '\n' ' '; }
@@ -63,8 +68,8 @@ for k in sorted(d, key=int):
           r.get("emphasised"), "none" if r.get("hue") is None else "hue", r["legacy"], r.get("hidden")))
 PY
 }
-for _ in $(seq 80); do [ -s "$STATE/bar-dump.json" ] && [ "$(rows 2>/dev/null | wc -l)" -ge 4 ] && break; sleep 0.25; done
-[ "$(rows | wc -l)" -ge 4 ] || fail "the bar drew fewer than 4 folder lines"
+for _ in $(seq 80); do [ -s "$STATE/bar-dump.json" ] && [ "$(rows 2>/dev/null | wc -l)" -ge 5 ] && break; sleep 0.25; done
+[ "$(rows | wc -l)" -ge 5 ] || fail "the bar drew fewer than 5 folder lines"
 
 # 1. defaults: project highlighted, the twins ("app" in alpha and bravo) emphasised, hue on
 R=$(rows)
@@ -79,6 +84,38 @@ $R"
 echo "$R" | grep -q "|where|False|hue|False|True$" || fail "the plain-folder tab should hide the project and show where it lives:
 $R"
 echo "  ok   a title that already says the project is not repeated (branch / location shown instead)"
+
+# 1b. renaming a tab changes what it shows (kitty draws `tab.name or tab.title`): rename one twin and the other stops being a twin; clear the name and both are twins again
+BRAVO=$(kitty @ --to "$SOCK" ls | python3 -c 'import sys,json
+for o in json.load(sys.stdin):
+    for t in o["tabs"]:
+        if any(w["cwd"].endswith("/work/bravo/app") for w in t["windows"]): print(t["id"])')
+[ -n "$BRAVO" ] || fail "could not find the bravo tab"
+kitty @ --to "$SOCK" set-tab-title --match "id:$BRAVO" renamed >/dev/null 2>&1; sleep 2.5
+R=$(rows)
+echo "$R" | grep "alpha/app" | grep -q "|False|hue|False|False$" || fail "after renaming one twin the other should lose its emphasis:
+$R"
+kitty @ --to "$SOCK" set-tab-title --match "id:$BRAVO" "" >/dev/null 2>&1; sleep 2.5
+R=$(rows)
+echo "$R" | grep "alpha/app" | grep -q "|True|hue|False|False$" || fail "after clearing the name the twins should be emphasised again:
+$R"
+echo "  ok   renaming a twin clears the emphasis, clearing the name brings it back"
+
+# 1c. a split tab keeps the room its pane map needs: the folder line is laid out in what is left AFTER the pieces drawn behind it
+python3 - "$STATE/bar-dump.json" <<'PY' || fail "the folder line ignores the pieces drawn after it (see above)"
+import json, sys
+rows = list(json.load(open(sys.argv[1])).values())
+def where(r): return "".join(t for t, role in r["pieces"] if role in ("project", "inner"))
+split = [r for r in rows if where(r) == "alpha/pane"]
+plain = [r for r in rows if where(r) == "alpha/app"]
+assert split and plain, ("rows missing", [where(r) for r in rows])
+for r in split + plain:
+    assert "room" in r and "avail" in r, ("the dump has no room/avail", r)
+assert all(r["room"] < r["avail"] for r in split), ("a split tab did not reserve room for its pane map", split)
+assert all(r["room"] == r["avail"] for r in plain), ("a single-pane tab reserved room it does not need", plain)
+assert all(any(role == "project" for _t, role in r["pieces"]) for r in split), ("the project vanished from the split tab", split)
+PY
+echo "  ok   a split tab reserves room for its pane map and still shows its project"
 
 # 2. collide off: the twins lose their emphasis, everything else stays
 FEAT off collide; reload

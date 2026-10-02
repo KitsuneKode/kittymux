@@ -219,16 +219,16 @@ with the project's hue.
 
 ### Pick what you want
 
-Every optional piece is its own switch — use all of it, some of it, or none:
+Every optional piece is its own switch — use all of it, some of it, or none (the last three are planned: the switch is saved, nothing reads it yet):
 
 | Switch | What it does | Default |
 |---|---|---|
 | `folder` | the project/branch line under each tab (off: just the branch, as before) | on |
 | `hue` | a stable colour per project, derived from your theme's accent | on |
 | `collide` | emphasise the project of tabs that show the same title | on |
-| `sheet` | the side sheet (planned) | on |
-| `hover` | open the sheet on hover (planned; only where kitty delivers it) | off |
-| `panetitle` | folder + branch in pane title bars (planned) | off |
+| `sheet` | the side sheet — **planned, no effect yet** | planned |
+| `hover` | open the sheet on hover — **planned, no effect yet**; kitty sends the bar no idle mouse motion, so it can only live inside the sheet | planned |
+| `panetitle` | folder + branch in pane title bars — **planned, no effect yet** | planned |
 
 ```bash
 kittymux features                 # what is on, and where each setting comes from

@@ -1222,3 +1222,19 @@ class FeaturesTests(unittest.TestCase):
                 contextlib.redirect_stdout(out):
             self.m.features_cmd(["on", "hue"])
         self.assertIn("KITTYMUX_HUE", out.getvalue())
+
+    def test_pieces_that_do_not_exist_yet_say_so(self):
+        """`off sheet` must not look like it stopped something: nothing reads that switch yet."""
+        _rc, out, _e, _ = self.run_cmd()
+        for name in ("sheet", "hover", "panetitle"):
+            line = next(ln for ln in out.splitlines() if ln.split()[:1] == [name])
+            self.assertIn("planned", line, line)
+        for name in ("folder", "hue", "collide"):
+            line = next(ln for ln in out.splitlines() if ln.split()[:1] == [name])
+            self.assertNotIn("planned", line, line)
+        rc, out, _e, sdir = self.run_cmd("off", "sheet")
+        self.assertEqual(rc, 0)
+        self.assertIn("not built yet", out)
+        self.assertTrue(os.path.exists(os.path.join(sdir, "sheet-off")))      # still saved, for when it exists
+        rc, out, _e, _ = self.run_cmd("off", "hue")
+        self.assertNotIn("not built yet", out)

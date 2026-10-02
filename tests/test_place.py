@@ -131,5 +131,28 @@ class StyleTests(unittest.TestCase):
         self.assertEqual(s["icon"], (2, False))
 
 
+class PlaceRoomTests(unittest.TestCase):
+    """The folder line must not eat the room of the pieces drawn after it (the layout picture, pane chips, "N panes")."""
+
+    def test_nothing_after_it_means_all_the_room(self):
+        self.assertEqual(P.place_room(21, []), 21)
+
+    def test_what_follows_keeps_its_cells_and_its_separator(self):
+        self.assertEqual(P.place_room(21, [8]), 11)             # 8-cell map + the 2-cell separator before it
+        self.assertEqual(P.place_room(30, [8, 6]), 30 - 10 - 8)
+
+    def test_the_folder_line_wins_when_keeping_them_would_squeeze_it_to_nothing(self):
+        self.assertEqual(P.place_room(12, [8]), 12)             # 12 - 10 = 2 < the floor: the map is dropped, as before
+        self.assertEqual(P.place_room(16, [8]), 6)              # exactly the floor still leaves room for the map
+        self.assertEqual(P.place_room(15, [8]), 15)             # one cell under it: the folder line wins
+
+    def test_a_default_bar_split_tab_keeps_both(self):
+        f = P.Facts("kittymux", "", "", "", "main")
+        room = P.place_room(21, [8])
+        parts = P.layout(f, room, icon="F", branch_icon="B", cells=len)
+        self.assertEqual("".join(t for t, _r in parts), "F kittymux")      # the branch gives way, the project stays
+        self.assertLessEqual(len("".join(t for t, _r in parts)), room)
+
+
 if __name__ == "__main__":
     unittest.main()
