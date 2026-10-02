@@ -998,7 +998,9 @@ X windowsize "$W" 1390 890; sleep 0.4; X windowsize "$W" 1400 900; sleep 1.2    
 python3 -c "import sys;sys.path.insert(0,'$HOME_DIR/python');import kittymux_layout as L;L.save('$STATE',$KPID,L.Layout('left','full',22))"
 kitty @ --to "$SOCK" load-config >/dev/null 2>&1; sleep 1; kitty @ --to "$SOCK" load-config >/dev/null 2>&1; sleep 1.5
 reload() { kitty @ --to "$SOCK" load-config >/dev/null 2>&1; sleep 2.5; }
-FEAT() { KITTYMUX_STATE=$STATE "$HOME_DIR/bin/kittymux" features "$@" >/dev/null 2>&1; }
+# `kittymux features` reloads every kitty it can find: confine its discovery to NOTHING (and drop KITTY_LISTEN_ON, which points at the kitty this rig was started from),
+# so only this rig's own `reload` below touches a kitty
+FEAT() { env -u KITTY_LISTEN_ON KITTYMUX_SOCKET_DIRS="$T/no-sockets" KITTYMUX_STATE=$STATE "$HOME_DIR/bin/kittymux" features "$@" >/dev/null 2>&1; }
 # check KIND — prints the rows as one line per tab:  text|roles|emphasised|hue|legacy|hidden
 rows() { python3 - "$STATE/bar-dump.json" <<'PY'
 import json, sys
@@ -1009,7 +1011,7 @@ for k in sorted(d, key=int):
           r.get("emphasised"), "none" if r.get("hue") is None else "hue", r["legacy"], r.get("hidden")))
 PY
 }
-for _ in $(seq 40); do [ -s "$STATE/bar-dump.json" ] && [ "$(rows 2>/dev/null | wc -l)" -ge 4 ] && break; sleep 0.25; done
+for _ in $(seq 80); do [ -s "$STATE/bar-dump.json" ] && [ "$(rows 2>/dev/null | wc -l)" -ge 4 ] && break; sleep 0.25; done
 [ "$(rows | wc -l)" -ge 4 ] || fail "the bar drew fewer than 4 folder lines"
 
 # 1. defaults: project highlighted, the twins ("app" in alpha and bravo) emphasised, hue on
