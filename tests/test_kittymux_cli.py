@@ -503,6 +503,126 @@ class LifecycleCliTests(unittest.TestCase):
         self.assertEqual(self.J.load(self.tmp.name), before)
 
 
+class FanoutCliTests(unittest.TestCase):
+    """`kittymux fanout` against a real repository, fake agents on PATH, and kitty's launch replaced by a recorder."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def setUp(self):
+        import subprocess
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo, self.state, self.bin = (os.path.join(self.tmp.name, n) for n in ("repo", "state", "bin"))
+        for d in (self.repo, self.state, self.bin):
+            os.makedirs(d)
+        self.git = ["git", "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false"]
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=self.repo, check=True)
+        with open(os.path.join(self.repo, "a.txt"), "w") as f:
+            f.write("one\n")
+        subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
+        subprocess.run(self.git + ["commit", "-qm", "init"], cwd=self.repo, check=True)
+        for a in ("claude", "codex", "devin", "opencode"):
+            with open(os.path.join(self.bin, a), "w") as f:
+                f.write("#!/bin/sh\n")
+            os.chmod(os.path.join(self.bin, a), 0o755)
+        self.env = mock.patch.dict(os.environ, {"KITTYMUX_STATE": self.state, "XDG_CONFIG_HOME": os.path.join(self.tmp.name, "xdg"), "PATH": self.bin + ":" + os.environ["PATH"]})
+        self.env.start()
+        self.launched = []
+        only_ours = lambda name, *a, **k: os.path.join(self.bin, name) if os.path.exists(os.path.join(self.bin, name)) else None        # noqa: E731
+        self.p0 = mock.patch.object(self.m.shutil, "which", only_ours)                                  # the agents installed on THIS machine must not matter
+        self.p0.start()
+        self.p1 = mock.patch.object(self.m, "_focused_socket", lambda: "unix:/fake")
+        self.p2 = mock.patch.object(self.m, "_launch_tab_before_scratch", lambda sock, make: (self.launched.append(make(False)), True)[1])
+        self.p1.start()
+        self.p2.start()
+
+    def tearDown(self):
+        self.p2.stop()
+        self.p1.stop()
+        self.p0.stop()
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def run_cli(self, *argv):
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = self.m.fanout(list(argv))
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_one_tab_per_agent_in_its_own_worktree_with_the_prompt_in_each_clis_own_form(self):
+        rc, out, err = self.run_cli("fix the login bug", "claude,devin,opencode", "--name", "fix", "--cwd", self.repo)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(len(self.launched), 3)
+        by_title = {a[a.index("--tab-title") + 1]: a for a in self.launched}
+        self.assertEqual(sorted(by_title), ["claude · fix", "devin · fix", "opencode · fix"])
+        tail = lambda a: a[a.index("--") + 1:]                                  # noqa: E731
+        self.assertEqual(tail(by_title["claude · fix"])[1:], ["fix the login bug"])
+        self.assertEqual(tail(by_title["devin · fix"])[1:], ["--", "fix the login bug"])
+        self.assertEqual(tail(by_title["opencode · fix"])[1:], ["--prompt", "fix the login bug"])
+        for title, a in by_title.items():
+            path = next(x[len("--cwd="):] for x in a if x.startswith("--cwd="))
+            self.assertTrue(os.path.isdir(path) and path.endswith(f".worktrees/fix-{title.split(' ')[0]}"), path)
+        self.assertEqual(sorted(self.m.kittymux_fanout.load(self.state)["fix"]["agents"][i]["agent"] for i in range(3)), ["claude", "devin", "opencode"])
+        self.assertIn("fanout compare fix", out)
+
+    def test_a_hostile_prompt_reaches_the_agent_as_one_argument(self):
+        evil = 'x"; touch /tmp/pwned; `id` $(id)'
+        self.assertEqual(self.run_cli(evil, "claude", "--name", "h", "--cwd", self.repo)[0], 0)
+        a = self.launched[0]
+        self.assertEqual(a[a.index("--") + 2:], [evil])
+        self.assertFalse(os.path.exists("/tmp/pwned"))
+
+    def test_refusals_change_nothing(self):
+        cases = [(("p", "nosuch"), 2), (("p", "claude,agy"), 1), (("-x", "claude"), 2), (("", "claude"), 2), (("p",), 2),
+                 (("p", "claude", "--name", "bad name"), 2), (("p", "claude", "--base", "nosuchref"), 1), (("p", "claude", "--bogus"), 2)]
+        for args, want in cases:
+            rc, _o, err = self.run_cli(*args, "--cwd", self.repo) if "--bogus" not in args else self.run_cli(*args)
+            self.assertEqual(rc, want, (args, err))
+        plain = os.path.join(self.tmp.name, "plain")
+        os.makedirs(plain)
+        self.assertEqual(self.run_cli("p", "claude", "--cwd", plain)[0], 1)                         # not a git repository
+        self.assertEqual(self.launched, [])
+        self.assertFalse(os.path.exists(os.path.join(self.repo, ".worktrees")))                     # nothing was created by any refusal
+
+    def test_no_kitty_socket_refuses_before_creating_anything(self):
+        with mock.patch.object(self.m, "_focused_socket", lambda: None):
+            self.assertEqual(self.run_cli("p", "claude", "--name", "n", "--cwd", self.repo)[0], 1)
+        self.assertFalse(os.path.exists(os.path.join(self.repo, ".worktrees")))
+
+    def test_a_name_that_exists_is_refused_not_reused(self):
+        self.assertEqual(self.run_cli("p", "claude", "--name", "dup", "--cwd", self.repo)[0], 0)
+        rc, _o, err = self.run_cli("p", "claude", "--name", "dup", "--cwd", self.repo)
+        self.assertEqual(rc, 1)
+        self.assertIn("already exists", err)
+
+    def test_compare_list_and_clean(self):
+        self.assertEqual(self.run_cli("p", "claude,codex", "--name", "c", "--cwd", self.repo)[0], 0)
+        rec = self.m.kittymux_fanout.load(self.state)["c"]
+        with open(os.path.join(rec["agents"][0]["path"], "a.txt"), "a") as f:
+            f.write("two\nthree\n")
+        rc, out, _ = self.run_cli("compare", "c")
+        self.assertEqual(rc, 0)
+        lines = {l.split()[0]: l for l in out.splitlines()[1:]}
+        self.assertIn("1 file +2", lines["claude"])
+        self.assertIn("no changes", lines["codex"])
+        self.assertIn("c", self.run_cli("list")[1])
+        rc, out, _ = self.run_cli("clean", "c")                                                     # dry run
+        self.assertIn("dry run", out)
+        self.assertTrue(os.path.isdir(rec["agents"][0]["path"]))
+        rc, out, _ = self.run_cli("clean", "c", "--yes")
+        self.assertIn("kept claude", out)                                                           # it has uncommitted work
+        self.assertTrue(os.path.isdir(rec["agents"][0]["path"]))
+        self.assertFalse(os.path.exists(rec["agents"][1]["path"]))
+        self.assertIn("c", self.m.kittymux_fanout.load(self.state))                                 # not forgotten while something is kept
+        self.run_cli("clean", "c", "--yes", "--force")
+        self.assertFalse(os.path.exists(rec["agents"][0]["path"]))
+        self.assertNotIn("c", self.m.kittymux_fanout.load(self.state))
+
+
 class LauncherTargetTests(unittest.TestCase):
     """A key inside a kitty acts on THAT kitty. (Once a test rig's key-launched spawn followed 'the focused kitty' into the author's real one.)"""
 

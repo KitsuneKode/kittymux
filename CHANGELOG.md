@@ -25,6 +25,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 
 - **What did the agent change?** (`kittymux changes`): `7 files +142 −30` since the run started, on a finished tab, on that agent's row in `pick`, and as a command. Snapshots use a temporary index and a private object store — your repository is never written to.
 
+- **Fan-out** (`kittymux fanout "PROMPT" claude,codex,devin`): the same task to several agents at once, each in its own git worktree + branch + tab, with the prompt given in each CLI's own (verified) form; `fanout compare` shows what each did relative to the base, `fanout clean` tidies up.
+
 ### Changed
 - Recommended kitty setup is now `allow_remote_control socket-only` + `listen_on unix:${XDG_RUNTIME_DIR}/mykitty`; `kittymux doctor` warns about `yes` and a `/tmp` socket. Every smoke test runs under `socket-only`.
 - A completion notifies only with a known duration ≥ 15 s after a 5 s settle; a hook-announced turn ends only with the agent's own `Stop`. Screen-only completions need ≥ 60 s of work to pop up.

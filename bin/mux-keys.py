@@ -349,6 +349,8 @@ def extra_groups() -> list[tuple[str, list[tuple[str, str]]]]:
             ("sessions save|restore|new|list", "save/restore sessions WITH agent conversations (--resume), new ones from templates; autosaves too"),
             ("spawn claude,codex [--vsplit]", "start agents straight into a new tab / split in the current directory (keys: ctrl+alt+shift+o, then c x d u o a g)"),
             ("pick [--menu rofi]", "ONE searchable list: needs you (longest-waiting first), agents, closed conversations, new agent — bind it in your WM"),
+            ("fanout \"PROMPT\" claude,codex", "ONE task to several agents, each in its own worktree + branch + tab; then `fanout compare NAME`"),
+            ("changes", "what the agent in this window changed since its run started (7 files +142 −30)"),
             ("reopen", "bring back the conversation you closed last (asks before resuming)"),
             ("pin|settle KEY  (alt+p / alt+s in pick)", "pin a conversation to the top of pick (never aged out) · fold a closed one away (settles itself after 3 days)"),
             ("notify mute 1h | snooze 1h", "quiet popups and bells (everything still reaches the inbox) — everywhere / for one window"),

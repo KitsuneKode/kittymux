@@ -1,0 +1,11 @@
+{
+  "_about": "How each agent takes an INITIAL prompt on its command line, read from each CLI's own --help (2026-10-02). positional: `agent [flags] PROMPT`; dashdash: `agent [flags] -- PROMPT` (devin); flag: `agent [flags] FLAG PROMPT`. Add yours in ~/.config/kittymux/prompt.json (same shape). An agent not listed cannot be fanned out to.",
+  "claude":       {"form": "positional"},
+  "codex":        {"form": "positional"},
+  "cursor-agent": {"form": "positional"},
+  "grok":         {"form": "positional"},
+  "droid":        {"form": "positional"},
+  "devin":        {"form": "dashdash"},
+  "opencode":     {"form": "flag", "flag": "--prompt"},
+  "agy":          {"form": "flag", "flag": "--prompt-interactive"}
+}

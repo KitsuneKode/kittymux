@@ -33,7 +33,8 @@ def _clean_env(extra: dict | None = None) -> dict:
 
 
 def _git(args: list[str], cwd: str, env: dict | None = None, timeout: float = TIMEOUT_S) -> tuple[int, str]:
-    cmd = ["git", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "core.quotePath=false", *args]
+    cmd = ["git", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "core.quotePath=false",
+           "-c", "gc.auto=0", "-c", "maintenance.auto=false", *args]            # never let our background reads trigger gc / maintenance inside YOUR repository
     try:
         r = subprocess.run(cmd, cwd=cwd, env=_clean_env(env), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=timeout)
     except (OSError, subprocess.SubprocessError):

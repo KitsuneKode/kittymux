@@ -82,6 +82,25 @@ It also shows on a **finished tab** in the bar (`✓` state, the summary leads t
   Stores are bounded (a week, 512 MB). Off: `KITTYMUX_CHANGES=0` or `touch ~/.local/state/kittymux/changes-off`.
 - **Limits.** The baseline is taken on the scanner's next tick (≤ 2 s after the run starts): edits in that first moment count as before. If kittymux was not watching when the run started (a kitty restart mid-run) the summary compares with `HEAD` and says so. Not a git repository → nothing is shown. Cost on a huge monorepo is one `git add -A` per run start/end.
 
+## Fan-out: one task, several agents
+
+```sh
+cd ~/code/api
+kittymux fanout "fix the login redirect bug; keep the tests green" claude,codex,devin --name login
+kittymux fanout compare login     # what each did, relative to the same base commit
+kittymux fanout clean login --yes # tidy up (keeps a worktree with uncommitted work unless --force)
+```
+
+Each agent gets its **own git worktree and branch** (`<repo>/.worktrees/login-claude`, branch `login-claude`, all from one base commit — `--base REF`, default `HEAD`) and its own tab titled `claude · login`, with the prompt already
+given, so they cannot overwrite each other and you can compare real results. `compare` diffs each worktree against the base **whether the agent committed or not** (untracked new files included) — `claude 7 files +142 −30 · codex 3 files +40 −2 · devin no changes` —
+and reads only: your main checkout is never touched. `fanout list` shows past fan-outs.
+
+How the prompt is given is **per CLI and read from each one's own `--help`** (`assets/agent-prompt.json`): claude / codex / cursor-agent / grok / droid take it as the last argument, devin after `--`, opencode as `--prompt`, agy as `--prompt-interactive`.
+An agent with no verified form is refused, never guessed; add yours in `~/.config/kittymux/prompt.json`. The prompt is one argument (no shell ever sees it, so quotes and `$()` are just text), at most 8000 characters, and cannot start with `-`.
+Note that a prompt on a command line is visible to other local users in `ps` for as long as the agent runs — don't put secrets in it.
+
+It refuses to run outside a git repository, with an existing name/branch/path (it never reuses someone's work), or without a kitty to open the tabs in; it creates all the worktrees or none (a failure part-way removes what it made).
+
 ## Bring back what you closed: `kittymux reopen`
 
 `ctrl+alt+shift+u` (leader `y`) or `kittymux reopen` reopens the agent conversation closed last, in a new tab in its directory, through the same prompt as any restore. It reads the [journal](sessions.md), so it also works for

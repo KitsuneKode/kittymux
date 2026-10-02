@@ -31,6 +31,7 @@ bash tests/smoke_reload.sh
 bash tests/smoke_workflows.sh
 bash tests/smoke_resume.sh     # save → restore: the prompt, Enter/n, --direct, autosave, the journal
 bash tests/smoke_spawn.sh      # spawn (CLI + real keys), pick via a fake rofi, reopen, mute/snooze — real kitty, fake agents
+bash tests/smoke_fanout.sh     # one prompt → three fake agents in three real worktrees (each CLI's own prompt form); compare / clean; main checkout untouched
 bash tests/smoke_changes.sh    # a fake agent edits a real git repo: baseline/summary, dirty-before and ignored excluded, repo untouched
 bash tests/smoke_socket.sh     # allow_remote_control socket-only refuses in-band control (yes obeys it: the control); $XDG_RUNTIME_DIR socket works
 bash tests/smoke_inbox.sh      # real OSC 99 notifications → typed inbox events

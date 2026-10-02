@@ -26,6 +26,8 @@ class RepoCase(unittest.TestCase):
         os.makedirs(self.repo)
         os.makedirs(self.state)
         sh(["git", "init", "-q"], self.repo)
+        sh(["git", "config", "gc.auto", "0"], self.repo)                      # the test's own commits must not start background maintenance that rewrites objects under us
+        sh(["git", "config", "maintenance.auto", "false"], self.repo)
         self.write("a.txt", "one\ntwo\n")
         self.write(".gitignore", "build/\n")
         sh(["git", "add", "."], self.repo)

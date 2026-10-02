@@ -74,6 +74,8 @@ jobs:
         run: bash tests/smoke_spawn.sh
       - name: what the agent changed (snapshots at run start/end, repo untouched)
         run: bash tests/smoke_changes.sh
+      - name: fan-out (one prompt, several agents, a worktree each)
+        run: bash tests/smoke_fanout.sh
       - name: inbox from real OSC 99 agent notifications
         run: bash tests/smoke_inbox.sh
       - name: tab clicks survive wobble; agent tabs survive a stray middle-click

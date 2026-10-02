@@ -20,6 +20,8 @@
                          pick [--menu rofi|fuzzel|fzf] [--list|--json]      (bind `kittymux pick --menu rofi` in your window manager to reach any agent from anywhere)
   kittymux pin         keep a conversation at the top of `pick` and out of the age limits; also unpin | settle | unsettle (settled ones fold away; `pick --all` shows them):
                          pin [KEY | --window ID]      (alt+p / alt+s in the picker do the same on the selected row)
+  kittymux fanout      ONE task to several agents at once, each in its own git worktree + branch + tab (they cannot collide), then compare what each did:
+                         fanout "fix the login bug" claude,codex,devin [--name N] [--base REF]    fanout list | compare NAME | clean NAME [--yes] [--force]
   kittymux changes     what the agent in a window changed since its run started: `7 files +142 −30` + the biggest files (never writes into your repo):
                          changes [--window ID] [--files] [--json] [--all]     (also shown on a finished tab and in `pick`)
   kittymux reopen      bring back the most recently closed agent conversation in a new tab (it asks before resuming)
@@ -52,6 +54,7 @@ HOME_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(HOME_DIR, "python"))
 import kittymux_agents  # noqa: E402
 import kittymux_changes  # noqa: E402
+import kittymux_fanout  # noqa: E402
 import kittymux_inbox  # noqa: E402
 import kittymux_journal  # noqa: E402
 import kittymux_launcher  # noqa: E402
@@ -1778,6 +1781,117 @@ def lifecycle_verb(verb: str, args: list[str]) -> int:
     return 0
 
 
+# ── fan-out: one task, several agents, each in its own worktree ──────────────
+def _prompt_forms() -> dict:
+    user = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "kittymux", "prompt.json")
+    return kittymux_launcher.load_prompt_forms(os.path.join(HOME_DIR, "assets", "agent-prompt.json"), user)
+
+
+def fanout(argv: list[str]) -> int:
+    """`kittymux fanout "PROMPT" claude,codex,devin [--name N] [--base REF] [--cwd DIR]` — the same task to several agents at once, each in its OWN git worktree and branch
+    (`<repo>/.worktrees/<name>-<agent>`, from one base commit), one tab each, so they cannot step on each other. Then `fanout compare NAME` to see what each did.
+    Also: `fanout list` · `fanout compare NAME` · `fanout clean NAME [--yes] [--force]`."""
+    usage = "usage: kittymux fanout \"PROMPT\" AGENT[,AGENT…] [--name N] [--base REF] [--cwd DIR]   |   fanout list | compare NAME | clean NAME [--yes] [--force]"
+    opts, pos, it = {}, [], iter(argv)
+    for a in it:
+        if a in ("--name", "--base", "--cwd"):
+            opts[a[2:]] = next(it, "")
+        elif a in ("--yes", "--force"):
+            opts[a[2:]] = True
+        elif a.startswith("-") and a != "-":
+            print(f"kittymux fanout: unknown option {a}\n{usage}", file=sys.stderr)
+            return 2
+        else:
+            pos.append(a)
+    sdir = kittymux_layout.state_dir()
+    records = kittymux_fanout.load(sdir)
+    if pos[:1] == ["list"] and len(pos) == 1:
+        for name, r in sorted(records.items(), key=lambda kv: -kv[1].get("created", 0)):
+            print(f"  {name:<28} {', '.join(i['agent'] for i in r['agents']):<34} {time.strftime('%Y-%m-%d %H:%M', time.localtime(r.get('created', 0)))}  {kittymux_launcher.clean_text(r.get('prompt', ''), 50)}")
+        if not records:
+            print("no fan-outs yet")
+        return 0
+    if pos[:1] in (["compare"], ["clean"]) and len(pos) == 2 and pos[1] in records:
+        rec = records[pos[1]]
+        if pos[0] == "compare":
+            rows = kittymux_fanout.compare(sdir, rec)
+            print(c("1", f"{pos[1]}") + c("2", f"   base {rec['base'][:8]}   {kittymux_launcher.clean_text(rec.get('prompt', ''), 60)}"))
+            for r in rows:
+                text = "worktree gone" if not r["exists"] else kittymux_changes.format_summary(r["summary"]) if r["summary"] else "unreadable"
+                print(f"  {r['agent']:<14} {text:<22} {c('2', r['branch'])}")
+            return 0
+        if not opts.get("yes"):
+            print(c("2", "dry run — nothing is removed (add --yes)"))
+            for it_ in rec["agents"]:
+                print(f"  would remove worktree {it_['path']} and branch {it_['branch']}" + ("" if opts.get("force") else "   (kept if it has uncommitted changes)"))
+            return 0
+        notes = kittymux_fanout.remove(rec["repo"], rec["agents"], force=bool(opts.get("force")))
+        for n in notes:
+            print(f"  {n}")
+        if not any(n.startswith("kept") for n in notes):
+            kittymux_fanout.forget(sdir, pos[1])
+        return 0
+    if len(pos) != 2:
+        print(usage, file=sys.stderr)
+        return 2
+    prompt, agent_arg = pos
+    forms = _prompt_forms()
+    agents, seen = [], set()
+    for n in agent_arg.split(","):
+        a = kittymux_launcher.resolve_agent(n)
+        if not a:
+            print(f"{BAD} kittymux fanout: '{n}' is not a known agent ({', '.join(kittymux_launcher.SPAWN_ORDER)})", file=sys.stderr)
+            return 2
+        if a not in seen:
+            seen.add(a)
+            agents.append(a)
+    for a in agents:
+        if not shutil.which(a):
+            print(f"{BAD} kittymux fanout: {a} is not installed (not on PATH)", file=sys.stderr)
+            return 1
+        if a not in forms:
+            print(f"{BAD} kittymux fanout: no verified way to give {a} a first prompt (add it to ~/.config/kittymux/prompt.json)", file=sys.stderr)
+            return 1
+    if kittymux_launcher.validate_prompt(prompt) is None:
+        print(f"{BAD} kittymux fanout: the prompt must be 1–{kittymux_launcher.PROMPT_MAX} characters and not start with '-'", file=sys.stderr)
+        return 2
+    prompt = kittymux_launcher.validate_prompt(prompt)
+    cwd = os.path.abspath(os.path.expanduser(opts.get("cwd") or os.getcwd()))
+    repo = kittymux_fanout.main_repo(cwd)
+    if repo is None:
+        print(f"{BAD} kittymux fanout: {cwd} is not inside a git repository (parallel agents need a worktree each)", file=sys.stderr)
+        return 1
+    name = opts.get("name") or time.strftime("fanout-%m%d-%H%M")
+    if not kittymux_fanout.NAME_RE.match(name):
+        print(f"{BAD} kittymux fanout: --name is letters, digits, . _ - (up to 41)", file=sys.stderr)
+        return 2
+    base = kittymux_fanout.resolve_base(repo, opts.get("base"))
+    if base is None:
+        print(f"{BAD} kittymux fanout: --base {kittymux_launcher.clean_text(opts.get('base') or 'HEAD', 60)} is not a commit in {repo}", file=sys.stderr)
+        return 1
+    sock = _focused_socket()
+    if not sock:
+        print(f"{BAD} kittymux fanout: no kitty remote-control socket found", file=sys.stderr)
+        return 1
+    items, err = kittymux_fanout.create(repo, name, base, agents)
+    if err:
+        print(f"{BAD} kittymux fanout: {err}", file=sys.stderr)
+        return 1
+    kittymux_fanout.save(sdir, name, repo, base, prompt, items)
+    failed = 0
+    for it_ in items:
+        exe = shutil.which(it_["agent"])
+        extra = kittymux_launcher.prompt_args(forms, it_["agent"], prompt)
+        make = lambda scratch, it_=it_, exe=exe, extra=extra: kittymux_launcher.launch_args(it_["agent"], exe, "tab", it_["path"], None, scratch, extra, f"{it_['agent']} · {name}")      # noqa: E731
+        if _launch_tab_before_scratch(sock, make):
+            print(f"{OK} {it_['agent']:<14} {c('2', it_['branch'])}")
+        else:
+            failed += 1
+            print(f"{BAD} kitty did not start {it_['agent']} (its worktree is ready: {it_['path']})", file=sys.stderr)
+    print(c("2", f"  base {base[:8]} · see what each did: kittymux fanout compare {name} · tidy up: kittymux fanout clean {name} --yes"))
+    return 1 if failed else 0
+
+
 # ── what did the agent change? ──────────────────────────────────────────────
 def checkpoint(argv: list[str]) -> int:
     """`kittymux checkpoint start|finish --pid KITTY_PID --window ID --cwd DIR` — internal: the scanner runs it detached when an agent's run starts / ends (kittymux_changes)."""
@@ -2380,6 +2494,8 @@ def main(argv: list[str]) -> int:
         return notify_cmd(argv[1:])
     if cmd == "snooze":
         return snooze(argv[1:])
+    if cmd == "fanout":
+        return fanout(argv[1:])
     if cmd == "checkpoint":
         return checkpoint(argv[1:])
     if cmd == "changes":

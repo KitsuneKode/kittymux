@@ -69,7 +69,7 @@ def resolve_agent(name: str) -> str | None:
 
 
 def launch_args(agent: str, exe: str, where: str, cwd: str | None = None, source_window: str | None = None, before_scratch: bool = False,
-                extra: list[str] | None = None) -> list[str]:
+                extra: list[str] | None = None, tab_title: str | None = None) -> list[str]:
     """The arguments after `kitty @ --to SOCK launch` that start `exe` as a tab (`tab`), or as a split (`hsplit`/`vsplit`). The working directory is the source window's
     (`--cwd=current`) unless `cwd` is given. `before_scratch` puts a new tab before the `!scratch` tab so the scratch tab stays last (same rule as mux-newtab)."""
     if where not in ("tab", "hsplit", "vsplit"):
@@ -81,11 +81,54 @@ def launch_args(agent: str, exe: str, where: str, cwd: str | None = None, source
             args += ["--match", "title:^!scratch and state:focused_os_window", "--location=before"]
     else:
         args += ["--type=window", f"--location={where}"]
+    if tab_title:
+        args += ["--tab-title", clean_text(tab_title, 60)]
     args += [f"--cwd={cwd}" if cwd else "--cwd=current"]
     if source_window and str(source_window).isdigit():
         args += ["--source-window", f"id:{source_window}"]
     args += ["--title", agent, f"--var=kittymux_agent={agent}", "--", exe, *(extra or [])]
     return args
+
+
+# ── giving an agent its first prompt (fan-out) ────────────────────────────────
+PROMPT_MAX = 8000
+
+
+def load_prompt_forms(builtin_path: str, user_path: str | None = None) -> dict:
+    out: dict = {}
+    for path in (builtin_path, user_path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError, TypeError):
+            continue
+        if isinstance(data, dict):
+            out.update({k: v for k, v in data.items() if isinstance(v, dict) and not k.startswith("_") and v.get("form") in ("positional", "dashdash", "flag")})
+    return out
+
+
+def validate_prompt(text) -> str | None:
+    """The prompt, or None when it is unusable: empty, too long, containing NUL, or starting with `-` (a positional prompt would be read as an option). It is passed as ONE argv
+    element — never through a shell — so quotes and `$()` in it are just text."""
+    if not isinstance(text, str):
+        return None
+    t = text.strip()
+    if not t or len(t) > PROMPT_MAX or "\0" in t or t.startswith("-"):
+        return None
+    return t
+
+
+def prompt_args(forms: dict, agent: str, prompt: str) -> list[str] | None:
+    """The arguments that hand `prompt` to `agent` as its first message, or None if we do not know how (an agent without a verified form is never guessed at)."""
+    d = forms.get(agent)
+    if not d or validate_prompt(prompt) is None:
+        return None
+    if d["form"] == "positional":
+        return [prompt]
+    if d["form"] == "dashdash":
+        return ["--", prompt]
+    flag = d.get("flag", "")
+    return [flag, prompt] if re.fullmatch(r"--[a-z][a-z-]{0,30}", flag) else None
 
 
 # ── the rows ──────────────────────────────────────────────────────────────────

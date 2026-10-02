@@ -25,6 +25,7 @@ Anything it shows or stores that came from a terminal is treated as **untrusted 
 | Session files | an edited file running something unexpected | a restored agent asks first; its record is validated (strings only, same program, plain-token id); anything else opens a shell. (A session file is already code you chose to launch — this is defence in depth.) | `tests/test_kittymux_cli.py::ResumePromptTests` |
 | State on disk | other users reading titles, agent messages, commands | state dir `0700`, files we write `0600` from creation, atomic replace | `tests/test_install.sh`, `tests/test_journal.py`, doctor |
 | Output that leaves the machine | a pasted `sessions list --json` leaking a token passed as a flag | secret-looking flag values and credential-shaped tokens are redacted from printed JSON/lists (the 0600 journal keeps the real command so recovery works) | `tests/test_journal.py::RedactionTests` |
+| Fan-out prompts | a prompt becoming a shell command or an option of the agent | passed as ONE argv element, never through a shell; refused if it starts with `-`, contains NUL or is over 8000 chars; the agent's flag names come from a validated table; branch/worktree names are validated and an existing path or branch is never reused | `tests/test_fanout.py`, `tests/smoke_fanout.sh` (backticks stay text) |
 | Running git in your repos | a hostile repository (config, hooks, filters, fsmonitor, external diff) making kittymux's background snapshot run something | detached low-priority helper; file-system monitor, external diff and textconv off; no terminal; `GIT_*` from our environment stripped; `safe.directory` honoured (a repo git distrusts is skipped); the repo is never written to (private object store) | `tests/test_changes.py` (repository untouched), `tests/smoke_changes.sh` |
 | Destructive commands | `uninstall --purge` deleting a mistyped `KITTYMUX_STATE` (`/`, your home) | refused unless the directory is recognisably kittymux's; never follows a symlink | `tests/test_kittymux_cli.py::PurgeGuardTests` |
 | Which kitty | a launcher acting on another instance (or a test rig on yours) | a command started inside a kitty targets that kitty; focus-following only outside every kitty | `LauncherTargetTests`, the tripwire in `smoke_spawn.sh` |
@@ -34,6 +35,7 @@ Anything it shows or stores that came from a terminal is treated as **untrusted 
 ## Things to do yourself
 
 - Use `allow_remote_control socket-only` and a socket in `$XDG_RUNTIME_DIR` (`kittymux doctor` checks both).
+- Do not put secrets in a `fanout` prompt (it is a command-line argument, visible in `ps` while the agent runs).
 - Do not pass secrets as command-line flags to anything: `ps` shows them to every local user, and kittymux's session files and journal record the command you started an agent with.
 - Treat a session file from someone else like a script from someone else.
 
