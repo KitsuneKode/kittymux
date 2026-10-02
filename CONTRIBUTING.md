@@ -22,6 +22,7 @@ Real-kitty tests (Xvfb, private config and socket; they SKIP if a tool is missin
 - `python3 -m py_compile` on touched Python, `bash -n` and `shellcheck -S error` on touched shell, `git diff --check`.
 - Keys: a new chord is checked against your window manager (`kittymux doctor`) and updates `kittymux-keys.conf.tpl` **and** the README key table together.
 - Docs: update the README/`docs/` page a user would read; don't append a changelog paragraph — add a line under *Unreleased* in [CHANGELOG.md](CHANGELOG.md).
+- No credentials in the repo — not real, not key-looking. Build sample secrets at run time from filler; use synthetic ids. `tests/test_no_secrets.py` and CI's gitleaks job enforce it (details in AGENTS.md).
 - Never claim more than you verified: a mocked provider response or an Xvfb run is not live-provider or compositor verification (say which you did).
 
 ## Adding an agent

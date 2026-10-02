@@ -10,7 +10,7 @@ import kittymux_resume as R  # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 AGENTS = R.load_agents(os.path.join(ROOT, "assets", "resume-agents.json"))
-SID = "4d4710c8-de7d-4c89-b7d2-c76a51f6fed7"
+SID = "0a1b2c3d-0000-4000-8000-000000000001"
 
 
 class DefinitionTests(unittest.TestCase):
@@ -146,9 +146,9 @@ class SessionIdTests(unittest.TestCase):
         self.assertEqual(R.claude_session(self.home, 4242, os.path.join(self.d, "noproc"))["id"], SID)
 
     def test_open_files_name_the_session(self):
-        fake_proc(self.proc, 5001, fds=["/home/u/.codex/sessions/2026/10/02/rollout-2026-10-02T11-52-03-01a0fb46-e943-7081-8553-993e0c7f1f38.jsonl", "/dev/null"])
+        fake_proc(self.proc, 5001, fds=["/home/u/.codex/sessions/2026/10/02/rollout-2026-10-02T11-52-03-0a1b2c3d-0000-4000-8000-000000000005.jsonl", "/dev/null"])
         pat = AGENTS["codex"]["open_file_pattern"]
-        self.assertEqual(R.open_session_ids([5001], pat, self.proc), ["01a0fb46-e943-7081-8553-993e0c7f1f38"])
+        self.assertEqual(R.open_session_ids([5001], pat, self.proc), ["0a1b2c3d-0000-4000-8000-000000000005"])
         self.assertEqual(R.open_session_ids([4242, 9999], pat, self.proc), [])
 
 
@@ -330,9 +330,9 @@ class AgentIdentityTests(unittest.TestCase):
     # ids on the command line
     def test_an_id_on_the_command_line_is_the_conversation_the_window_was_started_on(self):
         f = R.argv_session_id
-        self.assertEqual(f(AGENTS["opencode"], ["opencode", "-s", "ses_fc7aa6d21ffeml3zCp99jR7fyd"]), "ses_fc7aa6d21ffeml3zCp99jR7fyd")
-        self.assertEqual(f(AGENTS["agy"], ["agy", "--conversation=c6941cdb-3241-484a-b39f-4fd92ebd1382"]), "c6941cdb-3241-484a-b39f-4fd92ebd1382")
-        self.assertEqual(f(AGENTS["cursor-agent"], ["cursor-agent", "--model", "x", "--resume", "375db6e9-2e3a-47c3-925c-8566208428a7"]), "375db6e9-2e3a-47c3-925c-8566208428a7")
+        self.assertEqual(f(AGENTS["opencode"], ["opencode", "-s", "ses_example0001"]), "ses_example0001")
+        self.assertEqual(f(AGENTS["agy"], ["agy", "--conversation=0a1b2c3d-0000-4000-8000-000000000002"]), "0a1b2c3d-0000-4000-8000-000000000002")
+        self.assertEqual(f(AGENTS["cursor-agent"], ["cursor-agent", "--model", "x", "--resume", "0a1b2c3d-0000-4000-8000-000000000003"]), "0a1b2c3d-0000-4000-8000-000000000003")
         self.assertIsNone(f(AGENTS["devin"], ["devin", "-r"]))                           # the picker, not an id
         self.assertIsNone(f(AGENTS["devin"], ["devin", "-r", "--model", "x"]))
         self.assertIsNone(f(AGENTS["opencode"], ["opencode", "-s", "-c"]))
@@ -341,25 +341,25 @@ class AgentIdentityTests(unittest.TestCase):
     # Devin: the session lock a running window holds names the session
     def test_devins_session_lock_names_its_session_and_the_pattern_ignores_other_files(self):
         pat = AGENTS["devin"]["open_file_pattern"]
-        fake_proc(self.proc, 2555541, fds=["/home/u/.local/share/devin/cli/session_locks/tall-yogurt.lock", "/home/u/.local/share/devin/cli/sessions.db"])
-        self.assertEqual(R.open_session_ids([2555541], pat, self.proc), ["tall-yogurt"])
+        fake_proc(self.proc, 2555541, fds=["/home/u/.local/share/devin/cli/session_locks/calm-otter.lock", "/home/u/.local/share/devin/cli/sessions.db"])
+        self.assertEqual(R.open_session_ids([2555541], pat, self.proc), ["calm-otter"])
         fake_proc(self.proc, 2, fds=["/home/u/.local/share/devin/cli/session_locks/-evil.lock", "/x/session_locks/a/b.lock"])
         self.assertEqual(R.open_session_ids([2], pat, self.proc), [])
 
     def test_a_devin_window_resolves_through_its_acp_childs_lock_and_resumes_by_name(self):
         fake_proc(self.proc, 100, start="100")
-        fake_proc(self.proc, 101, fds=["/h/.local/share/devin/cli/session_locks/tall-yogurt.lock"])
+        fake_proc(self.proc, 101, fds=["/h/.local/share/devin/cli/session_locks/calm-otter.lock"])
         plan = R.build_plan([win(3, "/w", (100, ["devin", "-r"]), (101, ["/h/.local/share/devin/cli/_versions/3000.11.3/bin/devin", "acp"]))], AGENTS, self.home, self.proc)
-        self.assertEqual((plan[0]["mode"], plan[0]["session_id"], plan[0]["resume"]), ("exact", "tall-yogurt", ["devin", "-r", "tall-yogurt"]))
+        self.assertEqual((plan[0]["mode"], plan[0]["session_id"], plan[0]["resume"]), ("exact", "calm-otter", ["devin", "-r", "calm-otter"]))
         ident = R.identify(AGENTS, [{"pid": 100, "cmdline": ["devin", "-r"]}, {"pid": 101, "cmdline": ["devin", "acp"]}], self.home, self.proc)
-        self.assertEqual(ident["sid"], "tall-yogurt")
+        self.assertEqual(ident["sid"], "calm-otter")
 
     def test_two_devin_windows_each_get_their_own_session(self):
-        for pid, name in ((100, "tall-yogurt"), (200, "admitted-cattle")):
+        for pid, name in ((100, "calm-otter"), (200, "quiet-heron")):
             fake_proc(self.proc, pid, start="100")
             fake_proc(self.proc, pid + 1, fds=[f"/h/devin/cli/session_locks/{name}.lock"])
         plan = R.build_plan([win(3, "/w", (100, ["devin", "-r"]), (101, ["devin", "acp"])), win(4, "/w", (200, ["devin", "-r"]), (201, ["devin", "acp"]))], AGENTS, self.home, self.proc)
-        self.assertEqual([e["session_id"] for e in plan], ["tall-yogurt", "admitted-cattle"])      # same directory: still exact, never opened twice
+        self.assertEqual([e["session_id"] for e in plan], ["calm-otter", "quiet-heron"])      # same directory: still exact, never opened twice
 
     # touched-since-start
     def test_proc_start_epoch(self):
@@ -369,7 +369,7 @@ class AgentIdentityTests(unittest.TestCase):
 
     def test_agy_resumes_the_directorys_last_conversation_only_if_this_run_touched_it(self):
         base = os.path.join(self.home, ".gemini", "antigravity-cli")
-        cid = "c6941cdb-3241-484a-b39f-4fd92ebd1382"
+        cid = "0a1b2c3d-0000-4000-8000-000000000002"
         os.makedirs(os.path.join(base, "cache"))
         with open(os.path.join(base, "cache", "last_conversations.json"), "w") as f:
             json.dump({"/w": cid, "/other": "not-a-uuid"}, f)
@@ -384,7 +384,7 @@ class AgentIdentityTests(unittest.TestCase):
     def test_cursor_chats_are_found_by_the_md5_of_the_directory(self):
         import hashlib
         root = os.path.join(self.home, ".config", "cursor", "chats", hashlib.md5(b"/w").hexdigest())
-        a, b = "375db6e9-2e3a-47c3-925c-8566208428a7", "48fe3a73-0fbc-4fab-ba7d-1ab365f6e897"
+        a, b = "0a1b2c3d-0000-4000-8000-000000000003", "0a1b2c3d-0000-4000-8000-000000000004"
         self.touch(os.path.join(root, a, "store.db"), self.started - 500)
         self.touch(os.path.join(root, b, "store.db"), self.started + 30)
         os.makedirs(os.path.join(root, "../../not-a-uuid"), exist_ok=True)
@@ -441,7 +441,7 @@ class AgentIdentityTests(unittest.TestCase):
 
 
 class PromptTests(unittest.TestCase):
-    SID = "4d4710c8-de7d-4c89-b7d2-c76a51f6fed7"
+    SID = "0a1b2c3d-0000-4000-8000-000000000001"
 
     def line(self):
         return ("launch --cwd=/w --title=claude 'kitty-unserialize-data={\"id\": 3}' --var=kittymux_resume=exact --var=kittymux_sid=%s "

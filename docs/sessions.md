@@ -29,7 +29,7 @@ kitty alone restores an agent window as a **fresh** `claude`/`codex`: layout and
    and the resume command). The window shows what it would resume and what the journal knows about it, then waits for one key:
 
    ```
-   claude was running here — resume session 4d4710c8?
+   claude was running here — resume session 0a1b2c3d?
      ~/code/api
      last active 12m ago · 7 runs finished · 1h20m of work · tab “api work”
      Enter resume   n new conversation   s shell   a resume all   i commands
@@ -70,7 +70,7 @@ kittymux sessions rewrite FILE | --recent               rewrite an already saved
 | Codex | when the process holds its `rollout-…-<uuid>.jsonl` open | `codex resume --last` (its help: `--all` disables cwd filtering, so it is per directory) | `codex [flags] resume <id>` | yes |
 | grok | not exposed | `--continue` ("most recent session for the current working directory") | `grok … --resume <id or title>` | yes |
 | droid | not exposed | `-r --last` ("most recent session in the current folder") | `droid -r <id>` | yes |
-| Devin | **yes** — the session's name *is* its id (`tall-yogurt`): a running window's `devin acp` child holds `~/.local/share/devin/cli/session_locks/<id>.lock` open (same process group; the lock file holds that pid). Checked on two live windows against `devin list --format json`. | `-c` (scope not stated) | `devin -r <id>` | yes |
+| Devin | **yes** — the session's name *is* its id (`calm-otter`): a running window's `devin acp` child holds `~/.local/share/devin/cli/session_locks/<id>.lock` open (same process group; the lock file holds that pid). Checked on two live windows against `devin list --format json`. | `-c` (scope not stated) | `devin -r <id>` | yes |
 | opencode | a bare TUI exposes none (title is a static "OpenCode", only a log file open); one **started with `-s <id>`** keeps it on its command line. Otherwise: `opencode session list --format json` (the CLI is the contract; the database schema is not) → the directory's newest session **touched since this window's process started** | `-c` (scope not stated) | `opencode -s <id>` | yes |
 | cursor-agent | no id while it runs before a first message; chats live at `~/.config/cursor/chats/<md5 of the directory>/<chat uuid>/store.db`: the directory's newest chat **touched since the process started**; or `--resume <id>` on its command line | `--continue` (scope not stated) | `cursor-agent --resume <id>` | yes (layout seen on disk; md5 mapping checked against 2 real directories) |
 | Antigravity (`agy`) | no conversation file is held open before the first message; `~/.gemini/antigravity-cli/cache/last_conversations.json` maps a directory to its last conversation id (`conversations/<uuid>.db`): used when that conversation was **touched since the process started**; or `--conversation <id>` on its command line | `--continue` (scope not stated) | `agy --conversation <id>` | yes (files seen on disk) |

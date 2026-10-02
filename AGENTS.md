@@ -103,6 +103,10 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
 
 ## Rules
 
+- **No credential — real or credential-SHAPED — in the repository, ever** (tests, docs, fixtures, commit messages). A real token once reached a public commit because a test fixture was copied from a process
+  listing. Never copy a value out of tool output, `ps`, `env`, logs or the user's data into a file: build sample values at run time from filler (`"sbp_" + "x" * 24`), and use obviously synthetic ids
+  (`0a1b2c3d-0000-4000-8000-000000000001`, `calm-otter`) — not session ids, names or paths from the user's machine. `tests/test_no_secrets.py` and the CI gitleaks job enforce it; if something does get in, rotate it first, then
+  remove it from history with the *smallest* rewrite (the commits are GPG-signed: `git filter-repo` re-writes every SHA and drops every signature — amend the one commit and force-push with a lease instead).
 - No hardcoded palettes (theme tokens come from kitty's live colours); no module-level timer state; never read silence as waiting.
 - Recommend `allow_remote_control socket-only` + `listen_on unix:${XDG_RUNTIME_DIR}/mykitty` everywhere (README, install hint, doctor, error messages); every smoke rig runs under `socket-only` — never write a rig or doc that needs `yes`. Printed output that may be pasted (`sessions list/history --json`) goes through `kittymux_journal.redact_argv`.
 - Never restart the user's live kitties. Work in an isolated worktree INSIDE the repo — `git worktree add .worktrees/<name> -b <name> main`

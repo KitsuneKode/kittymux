@@ -9,7 +9,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
 import kittymux_journal as J  # noqa: E402
 
-SID = "4d4710c8-de7d-4c89-b7d2-c76a51f6fed7"
+SID = "0a1b2c3d-0000-4000-8000-000000000001"
 
 
 def obs(**kw):

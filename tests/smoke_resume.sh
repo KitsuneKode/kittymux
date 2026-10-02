@@ -84,7 +84,7 @@ for t in json.load(sys.stdin)[0]["tabs"]:
         for p in w["foreground_processes"]:
             if p["cmdline"][-2:-1] and p["cmdline"][1].endswith("/claude"): print(p["pid"]); raise SystemExit')
 [ -n "$CLPID" ] || fail "the fake claude is not running in the first kitty"
-SID=4d4710c8-de7d-4c89-b7d2-c76a51f6fed7
+SID=0a1b2c3d-0000-4000-8000-000000000001
 START=$(python3 -c 'import sys;print(open("/proc/%s/stat"%sys.argv[1]).read().rsplit(")",1)[1].split()[19])' "$CLPID")
 printf '{"pid": %s, "sessionId": "%s", "cwd": "%s", "procStart": %s, "status": "idle"}' "$CLPID" "$SID" "$T/a" "$START" > "$T/ch/sessions/$CLPID.json"
 KMX() { KITTYMUX_STATE=$STATE KITTYMUX_TARGET=$SOCK1 KITTYMUX_CLAUDE_HOME=$T/ch XDG_CONFIG_HOME=$T/xdg python3 "$HOME_DIR/bin/kittymux" "$@"; }
@@ -143,7 +143,7 @@ for t in json.load(sys.stdin)[0]["tabs"]:
                 print(w["id"], "claude" if "\"agent\":\"claude\"" in info else "opencode")')
 [ "$(echo "$WINS" | wc -l)" = 2 ] || { echo "$WINS"; fail "the two prompts are not waiting in the restored kitty"; }
 CW=$(echo "$WINS" | awk '$2=="claude"{print $1}'); OW=$(echo "$WINS" | awk '$2=="opencode"{print $1}')
-kitty @ --to $SOCK3 get-text --match id:$CW | grep -q "resume session 4d4710c8" || { kitty @ --to $SOCK3 get-text --match id:$CW; fail "the claude prompt does not name its session"; }
+kitty @ --to $SOCK3 get-text --match id:$CW | grep -q "resume session 0a1b2c3d" || { kitty @ --to $SOCK3 get-text --match id:$CW; fail "the claude prompt does not name its session"; }
 echo "  ok   restore asks: two prompts waiting, nothing started, the session named on screen"
 kitty @ --to $SOCK3 send-text --match id:$CW '\r'
 kitty @ --to $SOCK3 send-text --match id:$OW 'n'

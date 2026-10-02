@@ -325,7 +325,7 @@ class SessionsCliTests(unittest.TestCase):
         path = os.path.join(self.sdir, "s.kitty-session")
         with open(path, "w") as f:
             f.write("launch 'kitty-unserialize-data={\"id\": 1}' --var=kittymux_status=working --var=kittymux_resume=exact "
-                    "--var=kittymux_sid=4d4710c8-de7d-4c89-b7d2-c76a51f6fed7 /usr/bin/claude --model x\n")
+                    "--var=kittymux_sid=0a1b2c3d-0000-4000-8000-000000000001 /usr/bin/claude --model x\n")
         os.chmod(path, 0o644)
         with mock.patch.object(self.m, "agent_enabled", lambda n, a, *k: True):
             first = self.m.rewrite_file(path, direct=True)
@@ -333,7 +333,7 @@ class SessionsCliTests(unittest.TestCase):
         self.assertEqual(len(first), 1)
         self.assertEqual(first, second)
         text = open(path).read()
-        self.assertIn("--resume 4d4710c8-de7d-4c89-b7d2-c76a51f6fed7", text)
+        self.assertIn("--resume 0a1b2c3d-0000-4000-8000-000000000001", text)
         self.assertNotIn("kittymux_status", text)
         self.assertEqual(stat_mode(path), 0o600)
         self.assertFalse(os.path.exists(path + ".tmp"))
@@ -344,7 +344,7 @@ class SessionsCliTests(unittest.TestCase):
         path = os.path.join(self.sdir, "s.kitty-session")
         with open(path, "w") as f:
             f.write("launch 'kitty-unserialize-data={\"id\": 1}' --var=kittymux_resume=exact "
-                    "--var=kittymux_sid=4d4710c8-de7d-4c89-b7d2-c76a51f6fed7 /usr/bin/claude --model x\n")
+                    "--var=kittymux_sid=0a1b2c3d-0000-4000-8000-000000000001 /usr/bin/claude --model x\n")
         with mock.patch.object(self.m, "agent_enabled", lambda n, a, *k: True):
             first = self.m.rewrite_file(path)
             second = self.m.rewrite_file(path)
@@ -356,7 +356,7 @@ class SessionsCliTests(unittest.TestCase):
     def test_history_and_recover_read_the_journal(self):
         import kittymux_journal as J
         import time
-        sid = "4d4710c8-de7d-4c89-b7d2-c76a51f6fed7"
+        sid = "0a1b2c3d-0000-4000-8000-000000000001"
         work = os.path.join(self.tmp.name, "proj")
         os.makedirs(work)
         now = time.time()
@@ -773,7 +773,7 @@ if __name__ == "__main__":
 
 class ResumePromptTests(unittest.TestCase):
     """The prompt a restored agent window runs, driven through a real pty — the way kitty runs it."""
-    SID = "4d4710c8-de7d-4c89-b7d2-c76a51f6fed7"
+    SID = "0a1b2c3d-0000-4000-8000-000000000001"
 
     def setUp(self):
         import tempfile
@@ -834,7 +834,7 @@ class ResumePromptTests(unittest.TestCase):
     def test_enter_resumes_the_conversation_with_every_flag(self):
         ran, screen = self.run_prompt(b"\r")
         self.assertEqual(ran, "claude --model x --resume " + self.SID)
-        self.assertIn("resume session 4d4710c8", screen)
+        self.assertIn("resume session 0a1b2c3d", screen)
 
     def test_n_starts_a_new_conversation_with_the_original_command(self):
         self.assertEqual(self.run_prompt(b"n")[0], "claude --model x")

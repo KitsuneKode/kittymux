@@ -692,7 +692,7 @@ class AutosaveTests(ScanBase):
 
 
 class JournalIntegrationTests(ScanBase):
-    SID = "4d4710c8-de7d-4c89-b7d2-c76a51f6fed7"
+    SID = "0a1b2c3d-0000-4000-8000-000000000001"
 
     def setUp(self):
         super().setUp()
