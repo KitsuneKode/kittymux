@@ -104,6 +104,7 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
 ## Rules
 
 - No hardcoded palettes (theme tokens come from kitty's live colours); no module-level timer state; never read silence as waiting.
+- Recommend `allow_remote_control socket-only` + `listen_on unix:${XDG_RUNTIME_DIR}/mykitty` everywhere (README, install hint, doctor, error messages); every smoke rig runs under `socket-only` — never write a rig or doc that needs `yes`. Printed output that may be pasted (`sessions list/history --json`) goes through `kittymux_journal.redact_argv`.
 - Never restart the user's live kitties. Work in an isolated worktree INSIDE the repo — `git worktree add .worktrees/<name> -b <name> main`
   (`.worktrees/` is git-ignored, and editors/agents scoped to this folder can see it) — test with the smoke rigs, merge to `main`, then apply
   to live by reload only (`kittymux upgrade`); record `kitty @ ls` window counts before/after. `main` is what live kitties load, so never
@@ -198,6 +199,7 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   `bash tests/smoke_sidebar.sh` (collapse/expand button, right-click peek, edge drag with real mouse events),
   `bash tests/smoke_drag.sh` (tab drag-to-reorder with real pointer events — kitty's DnD works under Xvfb),
   `bash tests/smoke_resume.sh` (fake agents → `sessions save` → a second kitty restores them: claude started with `--resume <id>` and its flags, a lone opencode with `-c`, ambiguous droids as saved; autosave + pruning),
+  `bash tests/smoke_socket.sh` (`allow_remote_control socket-only` refuses a printed escape sequence — `yes` obeys it, the control — and the `$XDG_RUNTIME_DIR` socket is discovered),
   `bash tests/smoke_inbox.sh` (real OSC 99 notifications from an agent pane → typed inbox events, the pane follows a completion, focus acknowledges),
   `bash tests/smoke_click.sh` (tab clicks with wobble and slowness; a middle-click spares an agent tab),
   `bash tests/smoke_native.sh` (kitty ≥ 0.49.2: the native divider's pixels, the real X cursor name over it, a native drag, the single-pane fallback),

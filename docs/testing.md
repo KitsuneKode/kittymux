@@ -30,6 +30,7 @@ bash tests/smoke_panes.sh
 bash tests/smoke_reload.sh
 bash tests/smoke_workflows.sh
 bash tests/smoke_resume.sh     # save → restore: the prompt, Enter/n, --direct, autosave, the journal
+bash tests/smoke_socket.sh     # allow_remote_control socket-only refuses in-band control (yes obeys it: the control); $XDG_RUNTIME_DIR socket works
 bash tests/smoke_inbox.sh      # real OSC 99 notifications → typed inbox events
 bash tests/smoke_click.sh      # tab clicks with wobble; middle-click spares an agent tab
 bash tests/smoke_native.sh     # native divider: pixels, real X cursor, native drag (kitty >= 0.49.2)
@@ -59,7 +60,7 @@ remove only their own temporary instances in their EXIT cleanup; never kill proc
 
 | Boundary | Automated checks | Still needs environment-specific verification |
 |---|---|---|
-| Remote control | Missing/foreign sockets fail closed; parent beats stale inherited env; explicit targets and fd handles | Custom runtime paths and restricted `/proc` installations |
+| Remote control | In-band escape-sequence control refused under `socket-only` (real kitty, with a positive control); missing/foreign sockets fail closed; parent beats stale inherited env; explicit targets and fd handles | Custom runtime paths and restricted `/proc` installations |
 | Scratch tabs | Overlapping instance IDs, stale/legacy flags, wrong OS window, changed launch identity; real two-instance test | Concurrent scratch commands and user moving panes during validation |
 | Sessions and agent jumps | Regex characters/leading hyphens, empty TSV fields, inactive-tab focus flags, send contract; real anonymous-session jump | Many parked sessions across multiple monitors/compositor workspaces |
 | Scanner and attention | Debounce, focus acknowledgement, hook-only completion, handled requests, startup replay suppression, timer reload lifecycle | Agent TUI wording/version changes; verify a real screen before changing patterns |

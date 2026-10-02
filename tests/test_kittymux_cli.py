@@ -374,6 +374,10 @@ class SessionsCliTests(unittest.TestCase):
         self.assertIn("1 runs finished", out)
         rc, out, _ = self.run_cli(self.m.sessions_history, ["--json", "--since", "1h"])
         self.assertEqual(json.loads(out)["insights"]["sessions"], 2)
+        recs2 = J.load(self.tmp.name)
+        recs2[f"claude:{sid}"]["argv"] = ["/usr/bin/claude", "--api-key", "hunter2hunter2"]
+        J.flush(self.tmp.name, recs2, now)
+        self.assertNotIn("hunter2", self.run_cli(self.m.sessions_history, ["--json"])[1])             # pasted output carries no secret
         with mock.patch.object(self.m, "agent_enabled", lambda n, a, *k: True):
             rc, out, _ = self.run_cli(self.m.sessions_recover, ["--since", "1h"])
         self.assertEqual(rc, 0)

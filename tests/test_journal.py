@@ -114,6 +114,27 @@ class ConcurrencyTests(unittest.TestCase):
             json.load(f)
 
 
+class RedactionTests(unittest.TestCase):
+    def test_secret_flags_and_credential_shaped_values_are_hidden_but_ordinary_flags_are_kept(self):
+        r = J.redact_argv
+        self.assertEqual(r(["claude", "--model", "opus", "--resume", SID]), ["claude", "--model", "opus", "--resume", SID])
+        self.assertEqual(r(["x", "--api-key", "abc123", "--model", "m"]), ["x", "--api-key", "<redacted>", "--model", "m"])
+        self.assertEqual(r(["x", "--token=abc123"]), ["x", "--token=<redacted>"])
+        # credential-SHAPED values are built at run time from filler: no real (or key-looking) literal belongs in the repository
+        shaped_a, shaped_b = "sbp_" + "x" * 24, "sk-" + "y" * 30
+        self.assertEqual(r(["mcp", "--access-token", shaped_a]), ["mcp", "--access-token", "<redacted>"])
+        self.assertEqual(r(["x", shaped_b]), ["x", "<redacted>"])
+        self.assertEqual(r(["x", "--password"]), ["x", "--password"])                 # a flag at the end has no value to hide
+        self.assertEqual(r([5, None]), ["5", "None"])                                  # never raises on odd input
+
+    def test_the_stored_journal_keeps_the_real_command_so_recovery_works(self):
+        d = tempfile.mkdtemp()
+        recs = {}
+        J.observe(recs, obs(argv=["x", "--api-key", "abc123"]), 1.0)
+        J.flush(d, recs, 1.0)
+        self.assertEqual(J.load(d)[f"claude:{SID}"]["argv"], ["x", "--api-key", "abc123"])
+
+
 class ReadBackTests(unittest.TestCase):
     def test_entries_insights_and_recoverable(self):
         proc = tempfile.mkdtemp()

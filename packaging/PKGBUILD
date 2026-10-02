@@ -32,7 +32,7 @@ package() {
   cd "$pkgname"
   install -dm755 "$pkgdir/usr/share/kittymux"
   cp -a bin lib python assets tools install.sh kittymux.conf kittymux-keys.conf.tpl \
-        kittymux-leader.conf.tpl README.md "$pkgdir/usr/share/kittymux/"
+        kittymux-leader.conf.tpl open-actions.conf.tpl addons docs README.md SECURITY.md "$pkgdir/usr/share/kittymux/"
   find "$pkgdir/usr/share/kittymux" -name __pycache__ -type d -prune -exec rm -rf {} +
   install -dm755 "$pkgdir/usr/bin"
   ln -sf /usr/share/kittymux/bin/kittymux "$pkgdir/usr/bin/kittymux"

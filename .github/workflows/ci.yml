@@ -57,6 +57,8 @@ jobs:
         run: bash tests/smoke_drag.sh
       - name: session save/restore resumes agents (real kitties)
         run: bash tests/smoke_resume.sh
+      - name: socket-only refuses in-band control; private runtime-dir socket works
+        run: bash tests/smoke_socket.sh
       - name: inbox from real OSC 99 agent notifications
         run: bash tests/smoke_inbox.sh
       - name: tab clicks survive wobble; agent tabs survive a stray middle-click

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 
 RECORD_MAX = 300
@@ -171,6 +172,32 @@ def insights(recs: list[dict]) -> dict:
         a["work_s"] += e.get("work_s", 0)
     return {"sessions": len(recs), "running": sum(1 for e in recs if e["running"]), "turns": sum(e.get("turns", 0) for e in recs),
             "work_s": sum(e.get("work_s", 0) for e in recs), "by_agent": by_agent}
+
+
+_SECRET_FLAG = ("token", "key", "secret", "password", "passwd", "auth", "credential", "bearer")
+_SECRET_VALUE = re.compile(r"(?:sk|pk|rk|sbp|ghp|gho|ghu|ghs|github_pat|xox[abprs]|AKIA|AIza|ya29|eyJ)[A-Za-z0-9_\-.]{12,}|[A-Za-z0-9+/_-]{40,}={0,2}")
+
+
+def redact_argv(argv: list) -> list:
+    """A command line safe to print or paste: the value of a secret-looking flag (`--api-key X`, `--token=X`) and anything shaped like a credential become `<redacted>`.
+    The stored journal keeps the real command (0600, like a session file) so recovery can restart it; this is for output that leaves the machine."""
+    out, hide_next = [], False
+    for tok in argv:
+        tok = str(tok)
+        if hide_next:
+            out.append("<redacted>")
+            hide_next = False
+            continue
+        flag, eq, val = tok.partition("=") if tok.startswith("-") else (tok, "", "")
+        if tok.startswith("-") and any(w in flag.lower() for w in _SECRET_FLAG):
+            if eq:
+                out.append(f"{flag}=<redacted>")
+            else:
+                out.append(tok)
+                hide_next = True
+            continue
+        out.append("<redacted>" if _SECRET_VALUE.fullmatch(tok) else tok)
+    return out
 
 
 def human_span(seconds: float) -> str:

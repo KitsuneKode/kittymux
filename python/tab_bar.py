@@ -1111,7 +1111,7 @@ def _profile_record(elapsed: float) -> None:
             plog = _ERR_LOG.parent / "tab_bar-profile.log"
             if plog.exists() and plog.stat().st_size > 64 * 1024:
                 plog.write_text("")
-            with open(plog, "a", encoding="utf-8") as f:
+            with os.fdopen(os.open(plog, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), "a", encoding="utf-8") as f:
                 f.write(f"draw_tab calls={p['n']} avg_ms={p['total'] / p['n'] * 1000:.3f} "
                         f"max_ms={p['max'] * 1000:.3f} calls_per_sec={p['n'] / max(now - p['since'], 1e-6):.1f}\n")
             p.update(n=0, total=0.0, max=0.0, since=0.0)

@@ -1,0 +1,18 @@
+name: Bug report
+description: Something is wrong or broken
+body:
+  - type: textarea
+    id: what
+    attributes: {label: What happened, description: "What you did, what you expected, what you got."}
+    validations: {required: true}
+  - type: textarea
+    id: doctor
+    attributes: {label: "`kittymux doctor` output", render: text, description: "Redact paths or titles you do not want public."}
+    validations: {required: true}
+  - type: input
+    id: versions
+    attributes: {label: "Versions", placeholder: "kittymux version · kitty --version · distro · compositor"}
+    validations: {required: true}
+  - type: textarea
+    id: explain
+    attributes: {label: "`kittymux explain` (for a wrong agent state or notification)", render: text}

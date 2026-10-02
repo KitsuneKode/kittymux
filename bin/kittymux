@@ -998,12 +998,14 @@ def sessions_list(argv: list[str]) -> int:
         print("kittymux sessions: no kitty remote-control socket found", file=sys.stderr)
         return 1
     plan = _session_plan(sock)
+    shown = [dict(e, argv=kittymux_journal.redact_argv(e["argv"]), resume=kittymux_journal.redact_argv(e["resume"]) if e["resume"] else e["resume"]) for e in plan]
     if "--json" in argv:
-        print(json.dumps(plan, indent=1, sort_keys=True))
+        print(json.dumps(shown, indent=1, sort_keys=True))                    # output that may be pasted: secret-looking values hidden
         return 0
     if not plan:
         print("no agent windows in this kitty")
         return 0
+    plan = shown
     for e in plan:
         how = {"exact": "exact session", "latest": "latest in dir", "none": "new session"}[e["mode"]]
         cmd = shlex.join(e["resume"]) if e["resume"] else "(restored as saved)"
@@ -1272,7 +1274,8 @@ def sessions_history(argv: list[str]) -> int:
     recs = kittymux_journal.entries(kittymux_journal.load(kittymux_layout.state_dir()), now, span)
     ins = kittymux_journal.insights(recs)
     if "--json" in argv:
-        print(json.dumps({"insights": ins, "sessions": recs}, indent=1, sort_keys=True))
+        safe = [dict(e, argv=kittymux_journal.redact_argv(e["argv"])) if isinstance(e.get("argv"), list) else e for e in recs]     # output that may be pasted: no secrets
+        print(json.dumps({"insights": ins, "sessions": safe}, indent=1, sort_keys=True))
         return 0
     if not recs:
         print("no agent sessions recorded in that time (the scanner records them while a kitty runs)")

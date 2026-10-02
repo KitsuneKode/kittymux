@@ -1,0 +1,16 @@
+name: Agent support
+description: An agent is not detected, its state is wrong, or it will not resume
+body:
+  - type: input
+    id: agent
+    attributes: {label: Agent and version, placeholder: "e.g. opencode 2.0.21"}
+    validations: {required: true}
+  - type: textarea
+    id: screen
+    attributes:
+      label: What the pane shows
+      description: "Paste `kitty @ get-text --match id:N` of the relevant lines (redact anything private) and say what state you expected."
+      render: text
+  - type: textarea
+    id: resume
+    attributes: {label: "`kittymux sessions list` / `sessions check` output (for resume problems)", render: text}
