@@ -1,0 +1,15 @@
+# kittymux template: agent — one agent with a shell beside it, and a second tab for everything else
+# Placeholders: @NAME@ session name · @Q:CWD@ project directory · @AGENT@ the agent CLI (default claude) · @SHELL@ your shell
+# The --var marks the window so `kittymux sessions save` can bring it back with its conversation (--resume).
+
+new_tab @NAME@
+layout splits
+cd @Q:CWD@
+launch --title @AGENT@ --var=kittymux_agent=@AGENT@ @AGENT@
+launch --location=vsplit --title shell @SHELL@
+
+new_tab utils
+cd @Q:CWD@
+launch @SHELL@
+
+focus_tab 0

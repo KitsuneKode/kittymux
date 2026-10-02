@@ -314,6 +314,7 @@ def scan_all(timer_id=None) -> None:
             _RT.verdicts.pop(wid, None)
             _RT.book.pop(wid, None)
             dirty = True
+        _maybe_autosave(now, live)
         for table in (_RT.notified, vars(_RT).get("alerted", {})):
             for wid in [k for k in table if k not in live]:
                 table.pop(wid, None)
@@ -444,6 +445,46 @@ def _sync_spinner() -> None:
             _stop_spinner()
     except Exception:
         _debug()
+
+
+# ── autosave: the last state of things ───────────────────────────────────────
+# So a crash, a reboot or "I closed kitty" never loses the layout or the agents' conversations: when the set of windows changes (and has been stable for
+# AUTOSAVE_SETTLE), and at least every AUTOSAVE_PERIOD, `kittymux sessions autosave` saves this kitty with kitty's own save_as_session and rewrites agent
+# windows to `--resume <id>`. It is a detached subprocess (a couple of times an hour at most); the scanner only compares a tuple of window ids per tick.
+# Restore with `kittymux sessions restore last`. Off: KITTYMUX_AUTOSAVE=0 or the file `autosave-off`.
+AUTOSAVE_SETTLE = 20.0
+AUTOSAVE_MIN_GAP = 60.0
+AUTOSAVE_PERIOD = 900.0
+
+
+def _autosave_enabled() -> bool:
+    return os.environ.get("KITTYMUX_AUTOSAVE") != "0" and not os.path.exists(os.path.join(state_dir(), "autosave-off"))
+
+
+def _maybe_autosave(now: float, window_ids) -> str:
+    """Decide (and, when due, start) an autosave. Returns what it did (for tests/debugging)."""
+    st = vars(_RT).setdefault("autosave", {"sig": None, "since": 0.0, "last": now, "pending": False})
+    sig = hash(tuple(sorted(window_ids)))
+    if st["sig"] is None:
+        st["sig"], st["last"] = sig, now                       # first look: a baseline, nothing has changed yet
+        return "baseline"
+    if sig != st["sig"]:
+        st["sig"], st["since"], st["pending"] = sig, now, True
+    due = (st["pending"] and now - st["since"] >= AUTOSAVE_SETTLE and now - st["last"] >= AUTOSAVE_MIN_GAP) or now - st["last"] >= AUTOSAVE_PERIOD
+    if not due or not window_ids or not _autosave_enabled():
+        return "idle"
+    st["last"], st["pending"] = now, False
+    try:
+        from kitty.fast_data_types import get_boss
+        sock = getattr(get_boss(), "listening_on", "") or ""
+        if not sock.startswith("unix:"):
+            return "no socket"
+        env = dict(os.environ, KITTYMUX_TARGET=sock)
+        subprocess.Popen([os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "bin", "kittymux"), "sessions", "autosave"],
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, env=env)
+        return "started"
+    except Exception:
+        return "error"
 
 
 # ── typed events: the inbox ──────────────────────────────────────────────────

@@ -1,0 +1,354 @@
+{
+  "_about": "How to reopen each agent's conversation. exact/latest are argument lists appended to the flags the agent was started with ({id} = the session id); strip* are flags removed first so the new one is not doubled. `form: subcommand` means `<agent> [flags] resume <id>`. `probe` is what `kittymux sessions check` looks for in the installed CLI's own --help before it enables the agent here. verified:true = checked against that CLI's --help on the author's machine; verified:false = from public documentation, only enabled where the probe passes. Add or override agents in ~/.config/kittymux/resume.json (same shape). latest_scope: whether the agent's own help says its 'continue the latest session' is limited to the current directory (directory) or does not say (unstated: then it is only used when it is the single window of that agent).",
+  "claude": {
+    "verified": true,
+    "locator": "claude-registry",
+    "exact": [
+      "--resume",
+      "{id}"
+    ],
+    "latest": [
+      "--continue"
+    ],
+    "strip_with_value": [
+      "--resume",
+      "-r",
+      "--session-id"
+    ],
+    "strip": [
+      "--continue",
+      "-c"
+    ],
+    "probe": {
+      "args": [
+        "--help"
+      ],
+      "expect": [
+        "--resume",
+        "--continue"
+      ]
+    },
+    "latest_scope": "directory"
+  },
+  "codex": {
+    "verified": true,
+    "form": "subcommand",
+    "helpers": [
+      "app-server",
+      "app-server-daemon",
+      "mcp-server",
+      "exec",
+      "login"
+    ],
+    "locator": "open-file",
+    "open_file_pattern": "rollout-[0-9T:.-]+-([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\\.jsonl",
+    "exact": [
+      "resume",
+      "{id}"
+    ],
+    "latest": [
+      "resume",
+      "--last"
+    ],
+    "probe": {
+      "args": [
+        "resume",
+        "--help"
+      ],
+      "expect": [
+        "--last",
+        "SESSION_ID"
+      ]
+    },
+    "latest_scope": "directory"
+  },
+  "devin": {
+    "verified": true,
+    "helpers": [
+      "acp",
+      "cloud",
+      "list",
+      "ls",
+      "rm",
+      "ssh",
+      "forward",
+      "mcp"
+    ],
+    "exact": [
+      "-r",
+      "{id}"
+    ],
+    "latest": [
+      "-c"
+    ],
+    "strip_with_value": [
+      "-r",
+      "--resume"
+    ],
+    "strip": [
+      "-c",
+      "--continue"
+    ],
+    "probe": {
+      "args": [
+        "--help"
+      ],
+      "expect": [
+        "--resume",
+        "--continue"
+      ]
+    },
+    "latest_scope": "unstated"
+  },
+  "droid": {
+    "verified": true,
+    "helpers": [
+      "resume",
+      "exec",
+      "mcp",
+      "plugin"
+    ],
+    "exact": [
+      "-r",
+      "{id}"
+    ],
+    "latest": [
+      "-r",
+      "--last"
+    ],
+    "strip_with_value": [
+      "-r",
+      "--resume",
+      "--fork"
+    ],
+    "strip": [
+      "--last"
+    ],
+    "probe": {
+      "args": [
+        "--help"
+      ],
+      "expect": [
+        "--resume",
+        "--last"
+      ]
+    },
+    "latest_scope": "directory"
+  },
+  "opencode": {
+    "verified": true,
+    "helpers": [
+      "session",
+      "serve",
+      "run",
+      "auth",
+      "models",
+      "mcp"
+    ],
+    "exact": [
+      "-s",
+      "{id}"
+    ],
+    "latest": [
+      "-c"
+    ],
+    "strip_with_value": [
+      "-s",
+      "--session"
+    ],
+    "strip": [
+      "-c",
+      "--continue"
+    ],
+    "probe": {
+      "args": [
+        "--help"
+      ],
+      "expect": [
+        "--session",
+        "--continue"
+      ]
+    },
+    "latest_scope": "unstated"
+  },
+  "cursor-agent": {
+    "verified": true,
+    "names": [
+      "cursor"
+    ],
+    "helpers": [
+      "ls",
+      "resume",
+      "persist",
+      "mcp",
+      "login"
+    ],
+    "exact": [
+      "--resume",
+      "{id}"
+    ],
+    "latest": [
+      "--continue"
+    ],
+    "strip_with_value": [
+      "--resume"
+    ],
+    "strip": [
+      "--continue"
+    ],
+    "probe": {
+      "args": [
+        "--help"
+      ],
+      "expect": [
+        "--resume",
+        "--continue"
+      ]
+    },
+    "latest_scope": "unstated"
+  },
+  "gemini": {
+    "verified": false,
+    "helpers": [
+      "mcp"
+    ],
+    "latest": [
+      "--resume"
+    ],
+    "strip": [
+      "--resume",
+      "-r"
+    ],
+    "probe": {
+      "args": [
+        "--help"
+      ],
+      "expect": [
+        "--resume"
+      ]
+    },
+    "latest_scope": "unstated"
+  },
+  "amp": {
+    "verified": false,
+    "form": "subcommand",
+    "helpers": [
+      "threads",
+      "mcp",
+      "login"
+    ],
+    "latest": [
+      "threads",
+      "continue"
+    ],
+    "probe": {
+      "args": [
+        "threads",
+        "--help"
+      ],
+      "expect": [
+        "continue"
+      ]
+    },
+    "latest_scope": "unstated"
+  },
+  "grok": {
+    "verified": true,
+    "helpers": [
+      "agent",
+      "clone",
+      "completions",
+      "cursor-worker",
+      "dashboard",
+      "doctor",
+      "du",
+      "export",
+      "inspect",
+      "leader",
+      "login",
+      "logout",
+      "mcp",
+      "memory",
+      "models",
+      "plugin",
+      "sessions",
+      "setup",
+      "trace",
+      "update",
+      "usage",
+      "version",
+      "worktree",
+      "wrap"
+    ],
+    "latest_scope": "directory",
+    "exact": [
+      "--resume",
+      "{id}"
+    ],
+    "latest": [
+      "--continue"
+    ],
+    "strip_with_value": [
+      "--resume",
+      "-r",
+      "--session-id",
+      "-s"
+    ],
+    "strip": [
+      "--continue",
+      "-c",
+      "--fork-session"
+    ],
+    "probe": {
+      "args": [
+        "--help"
+      ],
+      "expect": [
+        "--resume",
+        "--continue"
+      ]
+    }
+  },
+  "agy": {
+    "verified": true,
+    "names": [
+      "antigravity"
+    ],
+    "helpers": [
+      "agent",
+      "agents",
+      "changelog",
+      "help",
+      "install",
+      "mcp",
+      "models",
+      "plugin",
+      "plugins",
+      "update"
+    ],
+    "latest_scope": "unstated",
+    "exact": [
+      "--conversation",
+      "{id}"
+    ],
+    "latest": [
+      "--continue"
+    ],
+    "strip_with_value": [
+      "--conversation"
+    ],
+    "strip": [
+      "--continue",
+      "-c"
+    ],
+    "probe": {
+      "args": [
+        "--help"
+      ],
+      "expect": [
+        "--conversation",
+        "--continue"
+      ]
+    }
+  }
+}

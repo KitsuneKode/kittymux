@@ -63,6 +63,14 @@ To restart safely: save sessions (`ctrl+alt+shift+s`), quit that kitty, start it
 
 One thing only you can do: `kittymux hooks --install` adds `PostToolUse`/`SessionEnd` to `~/.claude/settings.json` (backup first). It makes Claude itself report "tool finished, still working" and "session ended", which is what stops a quiet screen being mistaken for "finished". `kittymux doctor` tells you when it is missing.
 
+## Sessions that resume agents
+
+1. In a kitty with a Claude/Codex/… tab running: `kittymux sessions list` — each agent window with `exact session` / `latest in dir` / `new session` and the command it would come back as.
+2. `kittymux sessions check` — each installed agent CLI's `--help` probed for the resume flags.
+3. `kittymux sessions save mytest` (or `ctrl+alt+shift+s`), close that kitty, then `kittymux sessions restore mytest`: the agents should reopen **in their conversations** (Claude shows the previous transcript).
+4. `kittymux sessions new demo --template agent --agent claude --cwd ~/some/project` then `kittymux sessions restore demo`: a ready project session.
+5. After a crash or reboot: `kittymux sessions restore last` (kittymux autosaves).
+
 ## If something does not work
 
 `kittymux doctor` first. Then, for the bar: `KITTYMUX_DEBUG=1` writes drag errors to `~/.local/state/kittymux/barsize-debug.log`. A missing key is almost always the window manager: `kittymux doctor` lists chords Hyprland binds that kittymux also uses.

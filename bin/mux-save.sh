@@ -66,5 +66,10 @@ SAVE_ARGS="$(join_shell_words \
     .
 )"
 
+# Agents come back WITH their conversation: mark each agent window with its session id (kitty serialises user variables into the saved file),
+# let kitty save, then rewrite the saved launch lines to `claude --resume <id>` etc. (kittymux sessions; docs/sessions.md).
+KITTYMUX_CLI="$SCRIPT_DIR/kittymux"
+KITTYMUX_TARGET="$KITTY_SOCKET" "$KITTYMUX_CLI" sessions prepare >/dev/null 2>&1 || true
 kitty_action_for_window "id:${SOURCE_WINDOW_ID}" save_as_session "$SAVE_ARGS"
+KITTYMUX_TARGET="$KITTY_SOCKET" "$KITTYMUX_CLI" sessions rewrite --recent >/dev/null 2>&1 || true
 notify_kitty "Saved session: ${SAVE_LABEL:-focused window}"

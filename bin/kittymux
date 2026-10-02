@@ -10,6 +10,8 @@
                          layout default [clear]   (pin the current layout as the start for new windows; otherwise new kitties start with your last choice)
   kittymux inbox       everything that wants your attention (questions, permissions, usage limits, finished runs), newest first:
                          inbox [--all] [--json] [--limit N]   inbox ack [ID… | --all]   inbox clear   inbox jump [ID]   inbox watch
+  kittymux sessions    save/restore sessions WITH the agents' conversations (claude --resume <id>, codex resume <id>, …) and make new ones from templates:
+                         sessions [list] | save [NAME] [--all] | restore [NAME|last] | autosave | new NAME [--template T] [--agent A] [--cwd DIR] | templates | check | prepare | rewrite FILE|--recent
   kittymux explain     why each agent pane is in its state, and every recent decision (state changes, notifications sent or held back):
                          explain [--window ID] [--last N] [--all] [--json]
   kittymux dim         dim the panes that are not focused (kitty ≥ 0.49.2): dim [on|off|toggle|show]
@@ -25,6 +27,7 @@ different states, and the real key bindings. Close the window when you're done.
 import json
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -36,6 +39,7 @@ HOME_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(HOME_DIR, "python"))
 import kittymux_agents  # noqa: E402
 import kittymux_inbox  # noqa: E402
+import kittymux_resume  # noqa: E402
 import kittymux_layout  # noqa: E402
 import kittymux_theme  # noqa: E402
 
@@ -343,6 +347,20 @@ def doctor() -> int:
         r.ok("Codex notify calls mux-status")
     if not hooks_ok and not shutil.which("claude"):
         r.ok("no hook-capable agents detected (heuristic status still works)")
+
+    print("\nagent resume (sessions come back with their conversation)")
+    resume_defs = _resume_agents()
+    for name in sorted(resume_defs):
+        if not shutil.which(name) and not any(shutil.which(a) for a in resume_defs[name].get("names", [])):
+            continue
+        ok, detail, _ = probe_agent(name, resume_defs[name])
+        r.ok(f"{name}: resume flags confirmed in its --help") if ok else r.warning(f"{name}: {detail}", "kittymux will restore it as a new conversation; adjust ~/.config/kittymux/resume.json (docs/sessions.md)")
+    known = {kittymux_agents.AGENTS[a].name if hasattr(kittymux_agents.AGENTS[a], "name") else a for a in kittymux_agents.AGENTS}
+    covered = set(resume_defs) | {a for d in resume_defs.values() for a in d.get("names", [])}
+    for name in sorted(k for k in kittymux_agents.AGENTS if k not in covered):
+        if shutil.which(name):
+            r.warning(f"{name} is installed but has no resume definition",
+                      f"`{name} --help` shows its resume flags; add them to ~/.config/kittymux/resume.json (docs/sessions.md) and `kittymux sessions check` will verify them")
 
     print("\nwindow manager")
     steals = kittymux_layout.hypr_focus_on_activate()
@@ -765,6 +783,375 @@ def inbox(argv: list[str]) -> int:
     return 0
 
 
+# ── sessions: save/restore with agent resume, templates ──────────────────────
+TEMPLATE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$")
+CHECK_TTL_S = 12 * 3600
+
+
+def _resume_agents() -> dict:
+    user = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "kittymux", "resume.json")
+    return kittymux_resume.load_agents(os.path.join(HOME_DIR, "assets", "resume-agents.json"), user)
+
+
+def _sessions_dir() -> str:
+    return os.path.join(kittymux_layout.state_dir(), "sessions")
+
+
+def probe_agent(name: str, d: dict, which=shutil.which, run=subprocess.run) -> tuple[bool, str, str]:
+    """(ok, detail, exe): does the installed CLI's own --help mention what the definition needs? Nothing is enabled on a guess."""
+    exe = which(name) or next((which(a) for a in d.get("names", []) if which(a)), None)
+    if not exe:
+        return False, "not installed", ""
+    probe = d.get("probe") or {}
+    try:
+        out = run([exe, *probe.get("args", ["--help"])], capture_output=True, text=True, timeout=8, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return False, "could not run it", exe
+    text = (out.stdout or "") + (out.stderr or "")
+    missing = [t for t in probe.get("expect", []) if t not in text]
+    return (not missing), ("its --help has the resume flags" if not missing else "its --help does not mention: " + ", ".join(missing)), exe
+
+
+def agent_enabled(name: str, agents: dict, cache_path: str | None = None, now: float | None = None, probe=probe_agent) -> bool:
+    """Probe result for an agent, cached for 12 h per executable (path + mtime): the probe runs the CLI, so not on every call."""
+    cache_path = cache_path or os.path.join(kittymux_layout.state_dir(), "resume-check.json")
+    now = time.time() if now is None else now
+    try:
+        with open(cache_path, encoding="utf-8") as f:
+            cache = json.load(f)
+    except (OSError, ValueError):
+        cache = {}
+    d = agents.get(name)
+    if d is None:
+        return False
+    exe = shutil.which(name) or next((shutil.which(a) for a in d.get("names", []) if shutil.which(a)), None)
+    try:
+        stamp = [exe, os.stat(exe).st_mtime] if exe else [None, 0]
+    except OSError:
+        stamp = [exe, 0]
+    hit = cache.get(name)
+    if hit and hit.get("stamp") == stamp and now - hit.get("at", 0) < CHECK_TTL_S:
+        return bool(hit.get("ok"))
+    ok, detail, _ = probe(name, d)
+    cache[name] = {"ok": ok, "detail": detail, "stamp": stamp, "at": now}
+    try:
+        os.makedirs(os.path.dirname(cache_path), mode=0o700, exist_ok=True)
+        tmp = cache_path + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(cache, f)
+        os.replace(tmp, cache_path)
+    except OSError:
+        pass
+    return ok
+
+
+def _live_windows(sock: str) -> list[dict]:
+    rc, out = _run(["kitty", "@", "--to", sock, "ls"], 6)
+    if rc != 0:
+        return []
+    try:
+        data = json.loads(out)
+    except ValueError:
+        return []
+    wins = []
+    for osw in data:
+        for tab in osw.get("tabs", []):
+            for w in tab.get("windows", []):
+                wins.append({"id": w["id"], "cwd": w.get("cwd", ""), "tab": tab.get("title", ""), "user_vars": w.get("user_vars") or {},
+                             "fg": [{"pid": p.get("pid"), "cmdline": p.get("cmdline") or []} for p in w.get("foreground_processes", [])]})
+    return wins
+
+
+def _session_plan(sock: str) -> list[dict]:
+    agents = _resume_agents()
+    claude_home = os.environ.get("KITTYMUX_CLAUDE_HOME") or os.path.expanduser("~/.claude")
+    return kittymux_resume.build_plan(_live_windows(sock), agents, claude_home, enabled=lambda n: agent_enabled(n, agents))
+
+
+def sessions_prepare(sock: str, windows=None, plan=None) -> list[dict]:
+    """Mark every agent window with what its restore needs, as kitty user variables — kitty's own save serialises them as `--var=` lines, which makes
+    the saved file self-describing. Windows that carried a mark but no longer run an agent are cleared."""
+    windows = windows if windows is not None else _live_windows(sock)
+    plan = plan if plan is not None else _session_plan(sock)
+    marked = set()
+    for e in plan:
+        marked.add(e["id"])
+        sid = e["session_id"] if e["mode"] == "exact" else ""
+        _run(["kitty", "@", "--to", sock, "set-user-vars", "--match", f"id:{e['id']}", f"kittymux_agent={e['agent']}", f"kittymux_resume={e['mode']}",
+              f"kittymux_sid={sid}"], 4)
+    for w in windows:
+        if w["id"] not in marked and any(k in w["user_vars"] for k in ("kittymux_sid", "kittymux_resume")):
+            _run(["kitty", "@", "--to", sock, "set-user-vars", "--match", f"id:{w['id']}", "kittymux_agent=", "kittymux_resume=", "kittymux_sid="], 4)
+    return plan
+
+
+def rewrite_file(path: str) -> list[str]:
+    """Rewrite one saved session file in place (0600, atomic). Returns what changed."""
+    agents = _resume_agents()
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    new, report = kittymux_resume.rewrite_session(text, agents, enabled=lambda n: agent_enabled(n, agents))
+    if new != text:
+        tmp = path + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(new)
+        os.replace(tmp, path)
+    else:
+        os.chmod(path, 0o600)
+    return report
+
+
+def _wait_for_write(paths_before: dict, directory: str, seconds: float = 6.0) -> list[str]:
+    """kitty's save action is asynchronous: wait for session files in `directory` to appear or change."""
+    import glob
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        changed = [p for p in glob.glob(os.path.join(directory, "*.kitty-session")) if os.stat(p).st_mtime != paths_before.get(p)]
+        if changed:
+            time.sleep(0.4)                                   # let kitty finish writing
+            return changed
+        time.sleep(0.2)
+    return []
+
+
+def sessions_save(argv: list[str]) -> int:
+    name = next((a for a in argv if not a.startswith("-")), "")
+    if name and not TEMPLATE_NAME.match(name):
+        print("kittymux sessions: a session name is letters, digits, . _ - (up to 60)", file=sys.stderr)
+        return 2
+    sock = _target_socket()
+    if not sock:
+        print("kittymux sessions: no kitty remote-control socket found", file=sys.stderr)
+        return 1
+    sdir = _sessions_dir()
+    os.makedirs(sdir, mode=0o700, exist_ok=True)
+    plan = sessions_prepare(sock)
+    name = name or time.strftime("saved-%Y%m%d-%H%M%S")
+    import glob
+    before = {p: os.stat(p).st_mtime for p in glob.glob(os.path.join(sdir, "*.kitty-session"))}
+    match = "all" if "--all" in argv else "state:focused_os_window"
+    args = " ".join(shlex.quote(a) for a in ("--save-only", "--use-foreground-process", "--base-dir", sdir, f"--match={match}", f"{name}.kitty-session"))
+    rc, _ = _run(["kitty", "@", "--to", sock, "action", "save_as_session", args], 8)
+    changed = _wait_for_write(before, sdir) if rc == 0 else []
+    if not changed:
+        print("kittymux sessions: kitty did not write the session file", file=sys.stderr)
+        return 1
+    report = []
+    for p in changed:
+        report += rewrite_file(p)
+    path = os.path.join(sdir, f"{name}.kitty-session")
+    print(f"{OK} saved {path}")
+    for line in report:
+        print(f"    {line}")
+    skipped = [e for e in plan if not e["resume"]]
+    for e in skipped:
+        print(f"  {WARN} window {e['id']} ({e['agent']}): restored as a new conversation — {e['why']}")
+    return 0
+
+
+def sessions_autosave(keep: int = 5) -> int:
+    """`autosave-<kitty pid>.kitty-session`, silently; older autosaves are pruned to the newest `keep`. Run by the scanner (kittymux_scan._maybe_autosave)."""
+    import glob
+    sock = _target_socket()
+    pid = _socket_pid(sock) if sock else None
+    if pid is None:
+        return 1
+    import io
+    from contextlib import redirect_stderr, redirect_stdout
+    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+        rc = sessions_save([f"autosave-{pid}", "--all"])
+    old = sorted(glob.glob(os.path.join(_sessions_dir(), "autosave-*.kitty-session")), key=os.path.getmtime, reverse=True)[keep:]
+    for p in old:
+        try:
+            os.unlink(p)
+        except OSError:
+            pass
+    return rc
+
+
+def sessions_list(argv: list[str]) -> int:
+    sock = _target_socket()
+    if not sock:
+        print("kittymux sessions: no kitty remote-control socket found", file=sys.stderr)
+        return 1
+    plan = _session_plan(sock)
+    if "--json" in argv:
+        print(json.dumps(plan, indent=1, sort_keys=True))
+        return 0
+    if not plan:
+        print("no agent windows in this kitty")
+        return 0
+    for e in plan:
+        how = {"exact": "exact session", "latest": "latest in dir", "none": "new session"}[e["mode"]]
+        cmd = shlex.join(e["resume"]) if e["resume"] else "(restored as saved)"
+        print("  win %-5s %-13s %-14s %-24s %s" % (e["id"], e["agent"], how, e["cwd"].replace(os.path.expanduser("~"), "~")[-24:], cmd))
+        if e["mode"] == "none":
+            print(c("2", "      " + e["why"]))
+    return 0
+
+
+def sessions_check(argv: list[str]) -> int:
+    agents = _resume_agents()
+    bad = 0
+    print(c("1", "resume support, probed against each installed CLI's own --help"))
+    for name, d in sorted(agents.items()):
+        ok, detail, exe = probe_agent(name, d)
+        shown = OK if ok else (WARN if detail == "not installed" else BAD)
+        tag = "verified by the author" if d.get("verified") else "from public docs (enabled only because this probe passes)"
+        print(f"  {shown} {name:<13} {detail}" + (c("2", f"  [{tag}]") if ok else ""))
+        if not ok and detail != "not installed":
+            bad += 1
+    print(c("2", "\n  An agent not listed here (gemini, goose, qwen, kimi, …) has no verified resume definition: add one to ~/.config/kittymux/resume.json (see docs/sessions.md)."))
+    return 1 if bad else 0
+
+
+def sessions_rewrite(argv: list[str]) -> int:
+    sdir = _sessions_dir()
+    if "--recent" in argv:
+        import glob
+        seconds = 20.0
+        paths = [p for p in glob.glob(os.path.join(sdir, "*.kitty-session"))]
+        before = {p: 0.0 for p in paths}
+        deadline = time.time() + 6.0
+        recent = []
+        while time.time() < deadline:
+            recent = [p for p in glob.glob(os.path.join(sdir, "*.kitty-session")) if time.time() - os.stat(p).st_mtime < seconds]
+            if recent:
+                time.sleep(0.4)
+                break
+            time.sleep(0.2)
+        files = recent
+    else:
+        files = [a for a in argv if not a.startswith("-")]
+    if not files:
+        print("kittymux sessions: no session file to rewrite", file=sys.stderr)
+        return 1
+    for p in files:
+        try:
+            for line in rewrite_file(p):
+                print(f"  {line}")
+        except OSError as e:
+            print(f"kittymux sessions: {p}: {e}", file=sys.stderr)
+            return 1
+    return 0
+
+
+def _find_session(arg: str) -> str | None:
+    import glob
+    sdir = _sessions_dir()
+    if arg in ("", "last"):
+        files = sorted(glob.glob(os.path.join(sdir, "*.kitty-session")), key=os.path.getmtime, reverse=True)
+        return files[0] if files else None
+    path = arg if os.path.sep in arg else os.path.join(sdir, arg if arg.endswith(".kitty-session") else arg + ".kitty-session")
+    return path if os.path.isfile(path) else None
+
+
+def sessions_restore(argv: list[str]) -> int:
+    path = _find_session(next((a for a in argv if not a.startswith("-")), "last"))
+    if not path:
+        print("kittymux sessions: no such saved session (kittymux sessions save NAME first)", file=sys.stderr)
+        return 1
+    sock = _target_socket()
+    if sock and "--new-window" not in argv:
+        rc, _ = _run(["kitty", "@", "--to", sock, "action", "goto_session", path], 8)          # kitty's own session switch
+        if rc == 0:
+            print(f"{OK} restored {path} (goto_session)")
+            return 0
+    subprocess.Popen(["kitty", "--session", path], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    print(f"{OK} opening {path} in a new kitty")
+    return 0
+
+
+def _template_dirs() -> list[str]:
+    user = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "kittymux", "templates")
+    return [user, os.path.join(HOME_DIR, "assets", "templates")]
+
+
+def list_templates() -> dict:
+    out = {}
+    for d in reversed(_template_dirs()):                       # the user's directory wins
+        try:
+            for f in sorted(os.listdir(d)):
+                if f.endswith(".kitty-session"):
+                    out[f[:-len(".kitty-session")]] = os.path.join(d, f)
+        except OSError:
+            pass
+    return out
+
+
+def sessions_new(argv: list[str]) -> int:
+    opts, pos, it = {"template": "agent", "agent": "claude", "cwd": os.getcwd(), "agent2": "codex"}, [], iter(argv)
+    for a in it:
+        if a in ("--template", "--agent", "--cwd", "--agent2"):
+            opts[a[2:]] = next(it, "")
+        elif a == "--force":
+            continue
+        elif a.startswith("-"):
+            print("usage: kittymux sessions new NAME [--template T] [--agent A] [--cwd DIR]", file=sys.stderr)
+            return 2
+        else:
+            pos.append(a)
+    if len(pos) != 1 or not TEMPLATE_NAME.match(pos[0]):
+        print("usage: kittymux sessions new NAME [--template T] [--agent A] [--cwd DIR]   (NAME: letters, digits, . _ -)", file=sys.stderr)
+        return 2
+    templates = list_templates()
+    if opts["template"] not in templates:
+        print(f"kittymux sessions: no template '{opts['template']}' (have: {', '.join(sorted(templates))})", file=sys.stderr)
+        return 2
+    for key in ("agent", "agent2"):
+        if not TEMPLATE_NAME.match(opts[key] or ""):
+            print(f"kittymux sessions: --{key} must be a command name", file=sys.stderr)
+            return 2
+    cwd = os.path.abspath(os.path.expanduser(opts["cwd"]))
+    if not os.path.isdir(cwd):
+        print(f"kittymux sessions: {cwd} is not a directory", file=sys.stderr)
+        return 2
+    with open(templates[opts["template"]], encoding="utf-8") as f:
+        text = f.read()
+    shell = os.environ.get("SHELL") or "/bin/sh"
+    body = kittymux_resume.render_template(text, {"NAME": pos[0], "CWD": cwd, "AGENT": opts["agent"], "AGENT2": opts["agent2"], "SHELL": shell})
+    if "@" in re.sub(r"#.*", "", body) and re.search(r"@[A-Z_0-9]+@|@Q:[A-Z_0-9]+@", re.sub(r"#.*", "", body)):
+        print("kittymux sessions: the template has a placeholder this command does not know", file=sys.stderr)
+        return 2
+    sdir = _sessions_dir()
+    os.makedirs(sdir, mode=0o700, exist_ok=True)
+    path = os.path.join(sdir, pos[0] + ".kitty-session")
+    if os.path.exists(path) and "--force" not in argv:
+        print(f"kittymux sessions: {path} exists (--force to replace it)", file=sys.stderr)
+        return 1
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(body)
+    print(f"{OK} {path}\n    open it with: kittymux sessions restore {pos[0]}")
+    return 0
+
+
+def sessions(argv: list[str]) -> int:
+    cmd = argv[0] if argv and not argv[0].startswith("-") else "list"
+    rest = argv[1:] if argv and not argv[0].startswith("-") else argv
+    table = {"list": sessions_list, "save": sessions_save, "restore": sessions_restore, "new": sessions_new, "check": sessions_check,
+             "rewrite": sessions_rewrite}
+    if cmd == "templates":
+        for name, path in sorted(list_templates().items()):
+            first = open(path, encoding="utf-8").readline().strip("# \n")
+            print(f"  {name:<8} {first}")
+        return 0
+    if cmd == "autosave":
+        return sessions_autosave()
+    if cmd == "prepare":
+        sock = _target_socket()
+        if not sock:
+            return 1
+        sessions_prepare(sock)
+        return 0
+    if cmd not in table:
+        print("usage: kittymux sessions [list|save|restore|new|templates|check|prepare|rewrite]", file=sys.stderr)
+        return 2
+    return table[cmd](rest)
+
+
 # ── explain ──────────────────────────────────────────────────────────────────
 def describe_event(ev: dict) -> str:
     """One decision-log event as a human sentence (kittymux_scan._record writes them)."""
@@ -1182,6 +1569,8 @@ def main(argv: list[str]) -> int:
         return explain(argv[1:])
     if cmd == "inbox":
         return inbox(argv[1:])
+    if cmd == "sessions":
+        return sessions(argv[1:])
     if cmd == "screenshot":
         return screenshot(argv[1:])
     if cmd in ("version", "--version", "-V"):

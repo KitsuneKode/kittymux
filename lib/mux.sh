@@ -128,28 +128,23 @@ quote_session_value() {
 # Write a session file template. Includes session_name directive so kitty
 # tags the created tabs with the session group.
 write_session_template() {
+    # The default new-session layout comes from a template file (assets/templates/plain.kitty-session, or ~/.config/kittymux/templates/plain.kitty-session
+    # if you made your own); `kittymux sessions new NAME --template agent|duo|review|…` renders the agent-aware ones.
     local session_file="$1"
     local project_dir="$2"
     local session_name="$3"
-    local quoted_dir
-
-    quoted_dir="$(quote_session_value "$project_dir")"
-
-    cat > "$session_file" <<EOF
-# Kitty session: ${session_name}
-# Edit this file to change the default layout.
-
-new_tab code
-launch --cwd ${quoted_dir} zsh
-
-new_tab utils
-layout splits
-launch --cwd ${quoted_dir} zsh
-launch --cwd ${quoted_dir} --location=vsplit zsh
-
-# Land on the code tab first.
-focus_tab 0
-EOF
+    local tpl_dir="${XDG_CONFIG_HOME:-$HOME/.config}/kittymux/templates"
+    local tpl="$tpl_dir/plain.kitty-session"
+    [[ -f "$tpl" ]] || tpl="$(dirname "${BASH_SOURCE[0]}")/../assets/templates/plain.kitty-session"
+    SESSION_NAME_FOR_TEMPLATE="$session_name" SESSION_DIR_FOR_TEMPLATE="$project_dir" SESSION_SHELL_FOR_TEMPLATE="${SHELL:-/bin/sh}" \
+        python3 - "$tpl" "$(dirname "${BASH_SOURCE[0]}")/../python" > "$session_file" <<'PY'
+import os, sys
+sys.path.insert(0, sys.argv[2])
+import kittymux_resume as R
+text = open(sys.argv[1], encoding="utf-8").read()
+sys.stdout.write(R.render_template(text, {"NAME": os.environ["SESSION_NAME_FOR_TEMPLATE"], "CWD": os.environ["SESSION_DIR_FOR_TEMPLATE"],
+                                          "SHELL": os.environ["SESSION_SHELL_FOR_TEMPLATE"]}))
+PY
 }
 
 # ── JSON helpers ──────────────────────────────────────────────────────────────

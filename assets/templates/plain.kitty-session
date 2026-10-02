@@ -1,0 +1,15 @@
+# kittymux template: plain — a code tab and a utils tab (the original default)
+# Placeholders: @NAME@ session name · @Q:CWD@ project directory (shell-quoted) · @SHELL@ your shell
+
+new_tab code
+cd @Q:CWD@
+launch @SHELL@
+
+new_tab utils
+layout splits
+cd @Q:CWD@
+launch @SHELL@
+launch --location=vsplit @SHELL@
+
+# Land on the code tab first.
+focus_tab 0

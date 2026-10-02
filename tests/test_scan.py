@@ -637,6 +637,59 @@ class AttentionTests(ScanBase):
         self.assertEqual(w.bells, 0)
 
 
+class AutosaveTests(ScanBase):
+    def setUp(self):
+        super().setUp()
+        vars(KS._RT).pop("autosave", None)
+        self.k.boss.listening_on = "unix:/tmp/mykitty-9"
+        self.popen = mock.patch.object(KS.subprocess, "Popen")
+        self.popen_mock = self.popen.start()
+
+    def tearDown(self):
+        self.popen.stop()
+        super().tearDown()
+
+    def test_the_first_look_is_a_baseline_not_a_save(self):
+        self.assertEqual(KS._maybe_autosave(1000.0, [1, 2]), "baseline")
+        self.popen_mock.assert_not_called()
+
+    def test_a_change_saves_once_it_has_settled_and_only_once(self):
+        KS._maybe_autosave(1000.0, [1, 2])
+        self.assertEqual(KS._maybe_autosave(1010.0, [1, 2, 3]), "idle")                    # a new window: wait for it to settle
+        self.assertEqual(KS._maybe_autosave(1015.0, [1, 2, 3]), "idle")
+        self.assertEqual(KS._maybe_autosave(1070.0, [1, 2, 3]), "started")                  # settled AND the minimum gap has passed
+        argv = self.popen_mock.call_args[0][0]
+        self.assertEqual(argv[-2:], ["sessions", "autosave"])
+        self.assertEqual(self.popen_mock.call_args[1]["env"]["KITTYMUX_TARGET"], "unix:/tmp/mykitty-9")
+        self.assertEqual(KS._maybe_autosave(1080.0, [1, 2, 3]), "idle")
+        self.assertEqual(self.popen_mock.call_count, 1)
+
+    def test_rapid_changes_are_debounced_into_one_save(self):
+        KS._maybe_autosave(1000.0, [1])
+        for i, t in enumerate(range(1010, 1060, 5)):                                          # a window opens every 5 s for 50 s
+            KS._maybe_autosave(float(t), list(range(i + 2)))
+        self.assertEqual(self.popen_mock.call_count, 0)                                       # never stable for 20 s yet
+        self.assertEqual(KS._maybe_autosave(1085.0, list(range(11))), "started")          # the set has been stable since 1055
+
+    def test_a_periodic_save_catches_cwd_and_agent_drift(self):
+        KS._maybe_autosave(1000.0, [1, 2])
+        self.assertEqual(KS._maybe_autosave(1000.0 + KS.AUTOSAVE_PERIOD + 1, [1, 2]), "started")
+
+    def test_off_switches_and_no_windows(self):
+        KS._maybe_autosave(1000.0, [1])
+        with mock.patch.dict(os.environ, {"KITTYMUX_AUTOSAVE": "0"}):
+            self.assertEqual(KS._maybe_autosave(1000.0 + KS.AUTOSAVE_PERIOD + 1, [1]), "idle")
+        open(os.path.join(self.state, "autosave-off"), "w").close()
+        self.assertEqual(KS._maybe_autosave(1000.0 + 2 * KS.AUTOSAVE_PERIOD + 2, [1]), "idle")
+        os.unlink(os.path.join(self.state, "autosave-off"))
+        self.assertEqual(KS._maybe_autosave(1000.0 + 3 * KS.AUTOSAVE_PERIOD + 3, []), "idle")   # nothing to save
+
+    def test_a_missing_socket_never_raises(self):
+        KS._maybe_autosave(1000.0, [1])
+        self.k.boss.listening_on = ""
+        self.assertEqual(KS._maybe_autosave(1000.0 + KS.AUTOSAVE_PERIOD + 1, [1]), "no socket")
+
+
 class FalseCompletionTests(ScanBase):
     """Codex 'finished' notifications while it was still working."""
 

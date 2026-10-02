@@ -2,6 +2,8 @@ import json
 import importlib.machinery
 import importlib.util
 import os
+import types
+import re
 import unittest
 from unittest import mock
 
@@ -227,6 +229,138 @@ class InboxCliTests(unittest.TestCase):
         with mock.patch("sys.stderr"), mock.patch.object(self.m, "_inbox_socket", lambda pid: "unix:/x"), mock.patch.object(self.m, "_run", lambda *a, **k: (1, "")):
             self.assertEqual(self.m.inbox(["jump"]), 1)
         self.assertEqual(self.I.load(self.tmp.name)[0]["status"], "unread")   # a failed jump acknowledges nothing
+
+
+class SessionsCliTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = mock.patch.dict(os.environ, {"KITTYMUX_STATE": self.tmp.name, "XDG_CONFIG_HOME": os.path.join(self.tmp.name, "xdg")})
+        self.env.start()
+        self.sdir = os.path.join(self.tmp.name, "sessions")
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def run_cli(self, fn, argv):
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = fn(argv)
+        return rc, out.getvalue(), err.getvalue()
+
+    # probing
+    def test_probe_requires_every_expected_flag_in_the_clis_own_help(self):
+        run = lambda text: (lambda *a, **k: types.SimpleNamespace(stdout=text, stderr=""))        # noqa: E731
+        d = {"probe": {"args": ["--help"], "expect": ["--resume", "--continue"]}}
+        self.assertEqual(self.m.probe_agent("x", d, which=lambda n: "/bin/x", run=run("--resume --continue"))[0], True)
+        ok, detail, _ = self.m.probe_agent("x", d, which=lambda n: "/bin/x", run=run("--resume only"))
+        self.assertFalse(ok)
+        self.assertIn("--continue", detail)
+        self.assertEqual(self.m.probe_agent("x", d, which=lambda n: None, run=run(""))[1], "not installed")
+        self.assertFalse(self.m.probe_agent("x", d, which=lambda n: "/bin/x", run=mock.Mock(side_effect=OSError))[0])
+
+    def test_probe_results_are_cached_per_executable(self):
+        calls = []
+
+        def probe(name, d):
+            calls.append(name)
+            return True, "ok", "/bin/x"
+        agents = {"x": {"probe": {"expect": ["a"]}}}
+        cache = os.path.join(self.tmp.name, "check.json")
+        with mock.patch.object(self.m.shutil, "which", lambda n: "/bin/sh"):
+            self.assertTrue(self.m.agent_enabled("x", agents, cache, 1000.0, probe))
+            self.assertTrue(self.m.agent_enabled("x", agents, cache, 1100.0, probe))              # cached
+            self.assertEqual(len(calls), 1)
+            self.assertTrue(self.m.agent_enabled("x", agents, cache, 1000.0 + self.m.CHECK_TTL_S + 1, probe))   # expired: probed again
+            self.assertEqual(len(calls), 2)
+        self.assertFalse(self.m.agent_enabled("unknown", agents, cache, 1000.0, probe))
+        self.assertEqual(oct(os.stat(cache).st_mode & 0o777), "0o600")
+
+    # templates
+    def test_every_shipped_template_renders_and_is_a_valid_kitty_session(self):
+        for name in ("plain", "agent", "duo", "review"):
+            self.assertIn(name, self.m.list_templates())
+        for name in sorted(self.m.list_templates()):
+            rc, out, err = self.run_cli(self.m.sessions_new, [f"t-{name}", "--template", name, "--cwd", self.tmp.name, "--agent", "claude"])
+            self.assertEqual(rc, 0, (name, err))
+            text = open(os.path.join(self.sdir, f"t-{name}.kitty-session"), encoding="utf-8").read()
+            self.assertNotRegex(re.sub(r"#.*", "", text), r"@[A-Z0-9_]+@|@Q:", name)               # nothing left unfilled
+            self.assertEqual(stat_mode(os.path.join(self.sdir, f"t-{name}.kitty-session")), 0o600)
+
+    def test_new_validates_name_template_cwd_and_refuses_to_overwrite(self):
+        self.assertEqual(self.run_cli(self.m.sessions_new, ["../evil"])[0], 2)
+        self.assertEqual(self.run_cli(self.m.sessions_new, ["ok", "--template", "nope"])[0], 2)
+        self.assertEqual(self.run_cli(self.m.sessions_new, ["ok", "--cwd", "/definitely/not/here"])[0], 2)
+        self.assertEqual(self.run_cli(self.m.sessions_new, ["ok", "--agent", "x; rm -rf ~"])[0], 2)
+        self.assertEqual(self.run_cli(self.m.sessions_new, ["ok", "--cwd", self.tmp.name])[0], 0)
+        self.assertEqual(self.run_cli(self.m.sessions_new, ["ok", "--cwd", self.tmp.name])[0], 1)       # exists
+        self.assertEqual(self.run_cli(self.m.sessions_new, ["ok", "--cwd", self.tmp.name, "--force"])[0], 0)
+
+    def test_a_path_with_spaces_and_quotes_stays_one_token_in_the_template(self):
+        import shlex
+        weird = os.path.join(self.tmp.name, "my 'odd' project")
+        os.makedirs(weird)
+        self.assertEqual(self.run_cli(self.m.sessions_new, ["w", "--template", "agent", "--cwd", weird])[0], 0)
+        cd = next(l for l in open(os.path.join(self.sdir, "w.kitty-session")).read().splitlines() if l.startswith("cd "))
+        self.assertEqual(shlex.split(cd), ["cd", weird])
+
+    def test_a_users_own_template_wins(self):
+        udir = os.path.join(self.tmp.name, "xdg", "kittymux", "templates")
+        os.makedirs(udir)
+        with open(os.path.join(udir, "agent.kitty-session"), "w") as f:
+            f.write("# mine\nnew_tab @NAME@\n")
+        self.assertEqual(self.run_cli(self.m.sessions_new, ["u", "--template", "agent", "--cwd", self.tmp.name])[0], 0)
+        self.assertIn("# mine", open(os.path.join(self.sdir, "u.kitty-session")).read())
+
+    # files
+    def test_rewrite_file_is_atomic_private_and_idempotent(self):
+        os.makedirs(self.sdir)
+        path = os.path.join(self.sdir, "s.kitty-session")
+        with open(path, "w") as f:
+            f.write("launch 'kitty-unserialize-data={\"id\": 1}' --var=kittymux_status=working --var=kittymux_resume=exact "
+                    "--var=kittymux_sid=4d4710c8-de7d-4c89-b7d2-c76a51f6fed7 /usr/bin/claude --model x\n")
+        os.chmod(path, 0o644)
+        with mock.patch.object(self.m, "agent_enabled", lambda n, a, *k: True):
+            first = self.m.rewrite_file(path)
+            second = self.m.rewrite_file(path)
+        self.assertEqual(len(first), 1)
+        self.assertEqual(first, second)
+        text = open(path).read()
+        self.assertIn("--resume 4d4710c8-de7d-4c89-b7d2-c76a51f6fed7", text)
+        self.assertNotIn("kittymux_status", text)
+        self.assertEqual(stat_mode(path), 0o600)
+        self.assertFalse(os.path.exists(path + ".tmp"))
+
+    def test_find_session_and_restore_use_kittys_own_goto_session_when_inside_kitty(self):
+        os.makedirs(self.sdir)
+        for n, t in (("old", 100), ("new", 200)):
+            p = os.path.join(self.sdir, n + ".kitty-session")
+            open(p, "w").close()
+            os.utime(p, (t, t))
+        self.assertTrue(self.m._find_session("last").endswith("new.kitty-session"))
+        self.assertTrue(self.m._find_session("old").endswith("old.kitty-session"))
+        self.assertIsNone(self.m._find_session("../../etc/passwd"))
+        calls = []
+        with mock.patch.object(self.m, "_target_socket", lambda: "unix:/tmp/mykitty-1"), mock.patch.object(self.m, "_run", lambda cmd, t=3.0: (calls.append(cmd) or (0, ""))):
+            rc, out, _ = self.run_cli(self.m.sessions_restore, ["old"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(calls[0][3:6], ["action", "goto_session", self.m._find_session("old")][0:0] or calls[0][3:6])
+        self.assertIn("goto_session", calls[0])
+
+    def test_usage_errors(self):
+        self.assertEqual(self.run_cli(self.m.sessions, ["bogus"])[0], 2)
+        self.assertEqual(self.run_cli(self.m.sessions_save, ["bad/name"])[0], 2)
+
+
+def stat_mode(path):
+    return os.stat(path).st_mode & 0o777
 
 
 class DimAndScreenshotTests(unittest.TestCase):

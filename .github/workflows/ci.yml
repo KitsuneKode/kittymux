@@ -55,6 +55,8 @@ jobs:
         run: bash tests/smoke_sidebar.sh
       - name: tab drag-to-reorder (real pointer events)
         run: bash tests/smoke_drag.sh
+      - name: session save/restore resumes agents (real kitties)
+        run: bash tests/smoke_resume.sh
       - name: inbox from real OSC 99 agent notifications
         run: bash tests/smoke_inbox.sh
       - name: tab clicks survive wobble; agent tabs survive a stray middle-click

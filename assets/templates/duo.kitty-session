@@ -1,0 +1,11 @@
+# kittymux template: duo — two agents side by side (say, one builds while the other reviews), a shell under them
+# Placeholders: @NAME@ · @Q:CWD@ · @AGENT@ the first agent (default claude) · @AGENT2@ the second (default codex) · @SHELL@
+
+new_tab @NAME@
+layout splits
+cd @Q:CWD@
+launch --title @AGENT@ --var=kittymux_agent=@AGENT@ @AGENT@
+launch --location=vsplit --title @AGENT2@ --var=kittymux_agent=@AGENT2@ @AGENT2@
+launch --location=hsplit --title shell @SHELL@
+
+focus_tab 0

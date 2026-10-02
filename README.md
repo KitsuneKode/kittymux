@@ -231,6 +231,14 @@ stripped) are kept, in `scan-<pid>.json` (mode 0600, inside the 0700 state dir).
 > **A notification never takes your focus.** If your compositor focuses windows that request attention (Hyprland `misc:focus_on_activate`), a bell would jump you to that window and workspace;
 > kittymux detects this and turns the bell request off (see [docs/notifications.md](docs/notifications.md)). Override with `touch ~/.local/state/kittymux/attention-on`.
 
+### Sessions that come back — with their conversations
+
+`ctrl+alt+shift+s` (or `kittymux sessions save NAME`) saves with kitty's own `save_as_session` and then rewrites every agent window to its resume command — `claude … --resume <id>`,
+`codex resume <id>`, `grok --resume`, `droid -r`, `agy --conversation`, … — keeping the flags it was started with. kittymux **autosaves** too (`kittymux sessions restore last` after a crash or a
+reboot). `kittymux sessions new api --template agent` makes a ready project session (templates: plain, agent, duo, review). Nothing is guessed: each CLI's own `--help` is probed first, ambiguous
+cases (two windows, no exposed id) are restored as saved rather than opening one conversation twice, and `kittymux sessions list` shows what would happen and why. Details, the per-agent table and how
+to add an agent: [docs/sessions.md](docs/sessions.md).
+
 ### The inbox — questions, permissions, usage limits, finished runs
 
 Everything that wants your attention is a typed event in one private store — what the agent announced **itself** (its own OSC 9/99 notification, captured natively from kitty's notification
