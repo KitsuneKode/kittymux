@@ -1481,6 +1481,7 @@ trap cleanup EXIT
 for n in $(seq 230 259); do [ -e "/tmp/.X$n-lock" ] || { DISP=:$n; break; }; done
 Xvfb "$DISP" -screen 0 1200x800x24 >/dev/null 2>&1 & XPID=$!; sleep 1
 kill -0 "$XPID" 2>/dev/null || { echo "SKIP: Xvfb would not start"; XPID=""; exit 0; }
+for _ in $(seq 40); do [ -S "/tmp/.X11-unix/X${DISP#:}" ] && break; sleep 0.25; done      # Xvfb accepts connections a moment after it starts
 mkdir -p "$T/cfg"; printf 'allow_remote_control socket-only\ntab_bar_edge left\ntab_bar_min_tabs 1\ntab_bar_style separator\nconfirm_os_window_close 0\n' > "$T/cfg/kitty.conf"
 printf 'new_tab one\nlaunch sh\nnew_tab two\nlaunch sh\nnew_tab three\nlaunch sh\nfocus_tab 0\n' > "$T/session"
 env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP KITTY_CONFIG_DIRECTORY=$T/cfg \
@@ -1521,6 +1522,7 @@ trap cleanup EXIT
 for n in $(seq 260 289); do [ -e "/tmp/.X$n-lock" ] || { DISP=:$n; break; }; done
 Xvfb "$DISP" -screen 0 1000x700x24 >/dev/null 2>&1 & XPID=$!; sleep 1
 kill -0 "$XPID" 2>/dev/null || { echo "SKIP: Xvfb would not start"; XPID=""; exit 0; }
+for _ in $(seq 40); do [ -S "/tmp/.X11-unix/X${DISP#:}" ] && break; sleep 0.25; done      # Xvfb accepts connections a moment after it starts
 mkdir -p "$T/cfg"
 cat > "$T/cfg/window_title_bar.py" <<PY
 import json

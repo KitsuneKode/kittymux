@@ -47,3 +47,11 @@ and a TUI that rewords its prompts needs a one-line change in `python/kittymux_s
 - **Tools** used when present: `fzf`, `jq`, `git`, `notify-send`, `gh` (PR numbers), `ss` (listening ports).
 - `pane-state.py` is cached by kitty for the life of the process; it only holds hook state now, so an upgrade
   never needs a restart for it. New *helper modules* are picked up by `kittymux upgrade` (two reloads).
+
+## Side-sheet probes (kitty 0.49.2)
+
+| Question | How checked | Answer |
+|---|---|---|
+| Does idle mouse motion over the tab bar reach Python? | `tests/probe_motion.sh` (Xvfb, real pointer events) | **No.** 0 of 8 idle moves reached `TabManager.handle_tab_bar_mouse`; only press/release arrive (2 calls). Hover cannot open anything from the bar itself; it can live inside the sheet and the docked panel. |
+| What does `draw_window_title(data)` receive? | `tests/probe_titledata.sh` (Xvfb) | `WindowTitleData(has_activity_since_last_focus, is_active, needs_attention, tab_id, title, window_id)` — no directory, but `window_id` resolves it (`get_boss().window_id_map[window_id].child.current_cwd`). |
+| Does an os-panel land flush beside the bar, and how fast does it start? | `tests/probe_panel.sh` — **manual, Hyprland** | **Not yet run.** Needs a person on the real compositor; an Xvfb run would say nothing about layer-shell. |
