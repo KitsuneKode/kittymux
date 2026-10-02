@@ -20,6 +20,8 @@
                          pick [--menu rofi|fuzzel|fzf] [--list|--json]      (bind `kittymux pick --menu rofi` in your window manager to reach any agent from anywhere)
   kittymux pin         keep a conversation at the top of `pick` and out of the age limits; also unpin | settle | unsettle (settled ones fold away; `pick --all` shows them):
                          pin [KEY | --window ID]      (alt+p / alt+s in the picker do the same on the selected row)
+  kittymux changes     what the agent in a window changed since its run started: `7 files +142 −30` + the biggest files (never writes into your repo):
+                         changes [--window ID] [--files] [--json] [--all]     (also shown on a finished tab and in `pick`)
   kittymux reopen      bring back the most recently closed agent conversation in a new tab (it asks before resuming)
   kittymux notify      quiet the popups and bells (everything still lands in the inbox): notify status | mute [1h] | unmute | off | on | done off|on
   kittymux snooze      no popups for ONE agent window for a while: snooze [1h] [--window ID] [--clear]
@@ -49,6 +51,7 @@ import time
 HOME_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(HOME_DIR, "python"))
 import kittymux_agents  # noqa: E402
+import kittymux_changes  # noqa: E402
 import kittymux_inbox  # noqa: E402
 import kittymux_journal  # noqa: E402
 import kittymux_launcher  # noqa: E402
@@ -1581,6 +1584,7 @@ def _pick_data(now: float) -> tuple[list, list, list, list]:
     for sock in _sockets():
         pid = _socket_pid(sock)
         data = _ls(sock) or []
+        changed = kittymux_changes.load(sdir, pid)
         try:
             with open(os.path.join(sdir, f"scan-{pid}.json"), encoding="utf-8") as f:
                 verdicts = json.load(f)
@@ -1595,8 +1599,9 @@ def _pick_data(now: float) -> tuple[list, list, list, list]:
                     fg = [p.get("cmdline") or [] for p in w.get("foreground_processes", [])]
                     argv = next((c for c in fg if kittymux_agents.agent_in(c) == v["agent"]), fg[0] if fg else [])
                     jkey = kittymux_journal.key_for_window(records, pid, w["id"])
+                    delta = kittymux_changes.format_summary(((changed.get(str(w["id"])) or {}).get("summary")))
                     windows.append({"pid": pid, "w": w["id"], "agent": v["agent"], "state": v.get("state", ""), "tab": tab.get("title", ""), "cwd": w.get("cwd", ""), "argv": argv,
-                                    "jkey": jkey, "pinned": bool(jkey and records[jkey].get("pinned"))})
+                                    "jkey": jkey, "pinned": bool(jkey and records[jkey].get("pinned")), "changes": delta})
     return events, windows, _reopenable(now), _installed_agents()
 
 
@@ -1770,6 +1775,69 @@ def lifecycle_verb(verb: str, args: list[str]) -> int:
         print(f"kittymux {verb}: could not update {key}", file=sys.stderr)
         return 1
     print(f"{OK} {verb}: {key}")
+    return 0
+
+
+# ── what did the agent change? ──────────────────────────────────────────────
+def checkpoint(argv: list[str]) -> int:
+    """`kittymux checkpoint start|finish --pid KITTY_PID --window ID --cwd DIR` — internal: the scanner runs it detached when an agent's run starts / ends (kittymux_changes)."""
+    kind = argv[0] if argv else ""
+    opt = lambda name: next((argv[i + 1] for i, a in enumerate(argv[:-1]) if a == name), "")       # noqa: E731
+    pid, wid, cwd = opt("--pid"), opt("--window"), opt("--cwd")
+    if kind not in ("start", "finish") or not pid.isdigit() or not wid.isdigit() or not os.path.isdir(cwd):
+        print("usage: kittymux checkpoint start|finish --pid KITTY_PID --window ID --cwd DIR", file=sys.stderr)
+        return 2
+    sdir = kittymux_layout.state_dir()
+    ok = kittymux_changes.start(sdir, int(pid), int(wid), cwd) if kind == "start" else kittymux_changes.finish(sdir, int(pid), int(wid), cwd) is not None
+    if kind == "start":
+        kittymux_changes.prune_stores(sdir)
+    return 0 if ok else 1
+
+
+def changes_cmd(argv: list[str]) -> int:
+    """`kittymux changes [--window ID] [--files] [--json] [--all]` — what the agent in a window changed since its run started (or since HEAD when kittymux was not watching
+    at the start): `7 files +142 −30` and the biggest files. Computed now, so it is right even mid-run. `--all`: the cached summary of every window in this kitty (no git)."""
+    unknown = [a for a in argv if a.startswith("-") and a not in ("--files", "--json", "--all", "--window")]
+    if unknown:
+        print(f"kittymux changes: unknown option {unknown[0]}   usage: kittymux changes [--window ID] [--files] [--json] [--all]", file=sys.stderr)
+        return 2
+    sock = _target_socket()
+    pid = _socket_pid(sock) if sock else None
+    if pid is None:
+        print("kittymux changes: no kitty remote-control socket found", file=sys.stderr)
+        return 1
+    sdir = kittymux_layout.state_dir()
+    wins = {str(w["id"]): (w, t.get("title", "")) for o in (_ls(sock) or []) for t in o.get("tabs", []) for w in t.get("windows", [])}
+    if "--all" in argv:
+        cache = kittymux_changes.load(sdir, pid)
+        shown = 0
+        for wid, (w, title) in wins.items():
+            text = kittymux_changes.format_summary((cache.get(wid) or {}).get("summary"))
+            if text:
+                shown += 1
+                print(f"  window {wid:<4} {kittymux_launcher.clean_text(title, 40):<40} {text}")
+        if not shown:
+            print("no agent run has finished in this kitty yet")
+        return 0
+    wid = next((argv[i + 1] for i, a in enumerate(argv[:-1]) if a == "--window"), os.environ.get("KITTY_WINDOW_ID", ""))
+    if not str(wid).isdigit() or wid not in wins:
+        print("kittymux changes: run it inside an agent window, or give --window ID", file=sys.stderr)
+        return 2
+    cwd = wins[wid][0].get("cwd", "")
+    summary = kittymux_changes.finish(sdir, pid, int(wid), cwd)
+    if summary is None:
+        print(f"kittymux changes: {kittymux_launcher.clean_text(cwd, 80) or 'this window'} is not a git repository (or git could not read it)", file=sys.stderr)
+        return 1
+    entry = kittymux_changes.load(sdir, pid).get(wid, {})
+    since = f"since its run started {kittymux_journal.human_span(time.time() - entry['base_ts'])} ago" if entry.get("vs") == "run" and entry.get("base_ts") else "compared with HEAD (kittymux was not watching when the run started)"
+    if "--json" in argv:
+        print(json.dumps({"window": int(wid), "vs": entry.get("vs"), **summary}, indent=1))
+        return 0
+    print(f"{kittymux_changes.format_summary(summary)}   {c('2', since)}")
+    if "--files" in argv or summary["files"] <= 12:
+        for f in summary.get("files_list", [])[:40]:
+            a, d = ("bin" if f["add"] is None else f"+{f['add']}"), ("" if f["del"] is None else f"−{f['del']}")
+            print(f"  {a:>6} {d:>6}  {kittymux_launcher.clean_text(f['path'], 100)}")
     return 0
 
 
@@ -2312,6 +2380,10 @@ def main(argv: list[str]) -> int:
         return notify_cmd(argv[1:])
     if cmd == "snooze":
         return snooze(argv[1:])
+    if cmd == "checkpoint":
+        return checkpoint(argv[1:])
+    if cmd == "changes":
+        return changes_cmd(argv[1:])
     if cmd in ("pin", "unpin", "settle", "unsettle"):
         return lifecycle_verb(cmd, argv[1:])
     if cmd == "screenshot":

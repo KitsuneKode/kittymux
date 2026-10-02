@@ -40,6 +40,7 @@ remote work.
   remote control, then `hyprctl`); started detached by the scanner, lives ≤ 30 s
 - `python/kittymux_barsize.py` — bar sizing + the `TabBar.tab_id_at` hit-test wrapper (installed by `tab_bar.py`)
 - `python/kittymux_launcher.py` (pure) + `kittymux spawn|pick|reopen|notify|snooze` — docs/launcher.md: agents spawned into a tab (before the `!scratch` tab) or split via `kitty @ launch`; `pick` builds rows (needs-you longest-waiting first → running → closed → new) for rofi/fuzzel/fzf; the focused kitty is chosen BEFORE the menu opens; `assets/agent-risk.json` (flags read from each CLI's `--help`) marks agents started without approvals; pin/settle are journal flags (`pinned`, `settled`, `flags_ts`) merged BY `flags_ts` in `flush` (a stale scanner copy must not erase a user's pin), settled = closed and untouched 3 days or settled by hand
+- `python/kittymux_changes.py` + `kittymux changes|checkpoint` — what an agent changed: the scanner (`_checkpoint`) runs a detached `kittymux checkpoint start|finish` on idle/done→working and working→waiting/limited/done/idle (never on first sight); snapshots via a TEMP index + private object dir (`changes-objects/`), cached in `changes-<kittypid>.json`; shown by the bar on a done tab, `pick` rows and the CLI. Never run git on kitty's main thread; never write into the user's repo
 - `docs/` — `compatibility.md` (which agent markers are verified), `audit-*.md`, `launch-checklist.md`
 - `bin/mux-status` — agent hooks → `kittymux_status` window user var → recorded by `pane-state.py`
 - `python/sidebar-kit.py` — `kitten` overlay: sidebar with real hover/click
@@ -206,6 +207,7 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   `bash tests/smoke_drag.sh` (tab drag-to-reorder with real pointer events — kitty's DnD works under Xvfb),
   `bash tests/smoke_resume.sh` (fake agents → `sessions save` → a second kitty restores them: claude started with `--resume <id>` and its flags, a lone opencode with `-c`, ambiguous droids as saved; autosave + pruning),
   `bash tests/smoke_spawn.sh` (spawn by CLI and by real keys, pick through a fake rofi, reopen, mute/snooze),
+  `bash tests/smoke_changes.sh` (a fake agent edits a real git repo: baseline at run start, summary at run end, dirty-before and ignored files excluded, repo untouched),
   `bash tests/smoke_socket.sh` (`allow_remote_control socket-only` refuses a printed escape sequence — `yes` obeys it, the control — and the `$XDG_RUNTIME_DIR` socket is discovered),
   `bash tests/smoke_inbox.sh` (real OSC 99 notifications from an agent pane → typed inbox events, the pane follows a completion, focus acknowledges),
   `bash tests/smoke_click.sh` (tab clicks with wobble and slowness; a middle-click spares an agent tab),

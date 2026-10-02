@@ -36,6 +36,7 @@ for _d in (os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.co
 import importlib  # noqa: E402
 import kittymux_agents  # noqa: E402
 import kittymux_barsize  # noqa: E402
+import kittymux_changes  # noqa: E402
 import kittymux_deck  # noqa: E402
 import kittymux_git  # noqa: E402
 import kittymux_launcher  # noqa: E402
@@ -507,6 +508,22 @@ def _agent_status(tab_id: int) -> str:
 
 def _agent_waiting(tab_id: int) -> bool:
     return _agent_status(tab_id) in kittymux_agents.NEEDS_YOU
+
+
+_CHANGES_CACHE: dict = {"mtime": 0.0, "data": {}}
+
+
+@_per_pass
+def _changes_summary(wid: str) -> str:
+    """`7 files +142 −30` for the finished run of window `wid` (cached by `kittymux checkpoint`; re-read only when the file changed), else ''. Takes the id, not the entry:
+    the per-pass memo keys on its arguments, which must be hashable."""
+    if not wid:
+        return ""
+    path = kittymux_changes.path_for(str(_PANES_JSON.parent), os.getpid())
+    stamp = _mtime(Path(path))
+    if stamp != _CHANGES_CACHE["mtime"]:
+        _CHANGES_CACHE["data"], _CHANGES_CACHE["mtime"] = kittymux_changes.load(str(_PANES_JSON.parent), os.getpid()), stamp
+    return kittymux_changes.format_summary((_CHANGES_CACHE["data"].get(wid) or {}).get("summary"))
 
 
 _RISK: dict = {}
@@ -998,6 +1015,10 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         subtitle = [p for p in subtitle if isinstance(p[0], _MiniMap) and cols >= 26] + [(msg, state_fg)]
     elif state in kittymux_agents.NEEDS_YOU:
         subtitle.append((state, state_fg))    # working needs no word — the spinner says it
+    if state == "done" and not compact:
+        done_text = _changes_summary(str((_tab_verdict(tab.tab_id)[1] or {}).get("wid", "")))
+        if done_text and done_text != "no changes":
+            subtitle.insert(0, (done_text, pal.done))   # a finished tab says what the agent changed
     if risky:
         subtitle.insert(0, ("⚠", pal.alert))  # started with its approvals off: visible without opening anything
 

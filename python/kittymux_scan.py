@@ -230,6 +230,10 @@ def scan_window(window, now: float) -> bool:
                          "ts_state": now if changed else prev.get("ts_state", now), "ts_scan": now}
     if new != old_state:
         _record("state", wid, agent, frm=old_state, to=new, why=why)
+        if new == "working" and old_state in ("idle", "done"):
+            _checkpoint(window, "start", now)
+        elif old_state == "working" and new in ("waiting", "limited", "done", "idle"):
+            _checkpoint(window, "finish", now)
     if new == "working" and old_state != "working":
         book["work_ts"] = now                      # when this run of work began (completion threshold)
     if changed and old_state and new in agents.NEEDS_YOU and old_state not in agents.NEEDS_YOU:
@@ -491,6 +495,45 @@ def _maybe_autosave(now: float, window_ids) -> str:
         subprocess.Popen([os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "bin", "kittymux"), "sessions", "autosave"],
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, env=env)
         return "started"
+    except Exception:
+        return "error"
+
+
+# ── what did it change? (kittymux_changes) ───────────────────────────────────
+# A run starting (idle/done → working) takes a baseline snapshot of the repository around the window's directory; a run ending (working → waiting/limited/done/idle) takes the
+# summary. Both are done by a detached, low-priority `kittymux checkpoint` — git is never run on kitty's main thread. First sight of a window never starts one (we did not see the
+# run begin; the summary then compares with HEAD), at most CHANGES_MAX helpers run at once, and the same (window, kind) is not repeated within CHANGES_GAP seconds.
+CHANGES_MAX, CHANGES_GAP = 2, 3.0
+
+
+def _changes_enabled() -> bool:
+    return os.environ.get("KITTYMUX_CHANGES") != "0" and not os.path.exists(os.path.join(state_dir(), "changes-off"))
+
+
+def _checkpoint(window, kind: str, now: float) -> str:
+    """Start the detached helper for one transition. Returns what it did (tests / decision log). Never raises."""
+    try:
+        if not _changes_enabled():
+            return "off"
+        cwd = getattr(window, "cwd_of_child", "") or ""
+        if not cwd:
+            return "no directory"
+        rt = vars(_RT).setdefault("changes", {"procs": [], "last": {}})
+        rt["procs"] = [p for p in rt["procs"] if p.poll() is None]
+        wid = str(window.id)
+        if len(rt["procs"]) >= CHANGES_MAX:
+            return "busy"
+        if now - rt["last"].get((wid, kind), -1e9) < CHANGES_GAP:
+            return "too soon"
+        rt["last"][(wid, kind)] = now
+        if len(rt["last"]) > 512:
+            rt["last"].clear()
+        exe = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "bin", "kittymux")
+        argv = [exe, "checkpoint", kind, "--pid", str(os.getpid()), "--window", wid, "--cwd", cwd]
+        if shutil.which("nice"):
+            argv = ["nice", "-n", "10", *argv]
+        rt["procs"].append(subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True))
+        return "started " + kind
     except Exception:
         return "error"
 

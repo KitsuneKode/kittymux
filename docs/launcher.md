@@ -64,6 +64,24 @@ Borrowed from T3 Code's thread lifecycle. Two flags on a conversation's journal 
 
 `ack` / `pin` / `settle` refresh the list and ask again, so you can tidy several in a row. Pinning does not reorder the *tab bar* (kitty has no pinned tabs) — it is about what `pick` offers you.
 
+## What did the agent change? `kittymux changes`
+
+When an agent's run starts (idle → working) kittymux remembers the state of the repository around that window; when it ends (or needs you) it diffs again. You get **`7 files +142 −30`** and the biggest files:
+
+```sh
+kittymux changes                 # this window: 7 files +142 −30   since its run started 12m ago, then the files
+kittymux changes --files --json  # every file / machine-readable
+kittymux changes --all           # the cached summary of every window in this kitty (no git, instant)
+```
+
+It also shows on a **finished tab** in the bar (`✓` state, the summary leads the second row) and as `Δ 7 files +142 −30` on that agent's row in `pick` — so you see what a long run did *before* you jump to it.
+
+- **Only the agent's work.** The baseline is taken when the run starts, so a file that was already dirty is not counted; ignored files (`.gitignore`) are not counted; untracked new files are.
+- **Your repository is never written to.** The snapshot uses a temporary index and a private object directory under `~/.local/state/kittymux/changes-objects/` (your repo's objects are read-only alternates): no new objects in `.git`, no index change, no refs, no locks.
+  Git runs with no terminal, the file-system monitor and external diff/textconv programs off, a 25 s timeout and low priority, in a detached helper — never on kitty's main thread; a repository git itself distrusts (`safe.directory`) is skipped.
+  Stores are bounded (a week, 512 MB). Off: `KITTYMUX_CHANGES=0` or `touch ~/.local/state/kittymux/changes-off`.
+- **Limits.** The baseline is taken on the scanner's next tick (≤ 2 s after the run starts): edits in that first moment count as before. If kittymux was not watching when the run started (a kitty restart mid-run) the summary compares with `HEAD` and says so. Not a git repository → nothing is shown. Cost on a huge monorepo is one `git add -A` per run start/end.
+
 ## Bring back what you closed: `kittymux reopen`
 
 `ctrl+alt+shift+u` (leader `y`) or `kittymux reopen` reopens the agent conversation closed last, in a new tab in its directory, through the same prompt as any restore. It reads the [journal](sessions.md), so it also works for

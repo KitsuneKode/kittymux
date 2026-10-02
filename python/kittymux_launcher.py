@@ -124,6 +124,10 @@ def build_rows(events: list[dict], windows: list[dict], closed: list[dict], inst
     def flag(agent: str, argv: list) -> str:
         return "  ⚠ no approvals" if risk_of(risk, agent, argv) else ""
 
+    def delta(w: dict) -> str:                       # what the agent changed in its last/current run (cached by `kittymux checkpoint`; digits only, so safe to print)
+        txt = clean_text(w.get("changes", ""), 40)
+        return f"   Δ {txt}" if txt and txt != "no changes" else ""
+
     live = {(str(w.get("pid")), str(w.get("w"))): w for w in windows}
     needs = sorted((e for e in events if e.get("severity") == "needs-you"), key=lambda e: float(e.get("t", now)))        # longest-waiting first
     rest = sorted((e for e in events if e.get("severity") != "needs-you"), key=lambda e: -float(e.get("t", 0)))
@@ -136,7 +140,7 @@ def build_rows(events: list[dict], windows: list[dict], closed: list[dict], inst
         rows.append({"kind": "event", "agent": e.get("agent", ""), "tone": "urgent" if e.get("severity") == "needs-you" else "",
                      "event": e.get("id"), "action": {"op": "jump", "pid": e.get("pid"), "w": e.get("w"), "ack": e.get("id")},
                      "text": f"{glyph}  {clean_text(e.get('agent', 'agent'), 24)}  {clean_text(w.get('tab') or e.get('tab') or '', 60)} — {body}   {_age(now - float(e.get('t', now)))}"
-                             + flag(e.get("agent", ""), w.get("argv", []))})
+                             + delta(w) + flag(e.get("agent", ""), w.get("argv", []))})
     for w in sorted(windows, key=lambda w: (not w.get("pinned"), STATE_RANK.get(w.get("state", ""), 9), w.get("tab", ""))):
         key = (str(w.get("pid")), str(w.get("w")))
         if key in evented:
@@ -146,7 +150,7 @@ def build_rows(events: list[dict], windows: list[dict], closed: list[dict], inst
                      "jkey": w.get("jkey"), "pinned": bool(w.get("pinned")), "settled": False,
                      "action": {"op": "jump", "pid": w.get("pid"), "w": w.get("w")},
                      "text": f"{'★' if w.get('pinned') else STATE_GLYPH.get(st, '·')}  {clean_text(w.get('agent', 'agent'), 24)}  {clean_text(w.get('tab', ''), 60)}   {_short(w.get('cwd', ''), home)}"
-                             + (f"   {clean_text(st, 12)}" if st and st != "idle" else "") + flag(w.get("agent", ""), w.get("argv", []))})
+                             + (f"   {clean_text(st, 12)}" if st and st != "idle" else "") + delta(w) + flag(w.get("agent", ""), w.get("argv", []))})
     seen_closed: set = set()
     shown_closed, hidden_settled = 0, 0
     for c in sorted(closed, key=lambda c: (c.get("lifecycle") != "pinned", -float(c.get("last", 0)))):          # pinned first, then newest

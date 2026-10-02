@@ -15,6 +15,7 @@ import kittymux_scan as KS  # noqa: E402
 DEVIN_THINKING = "  Thinking · 37m 8s (esc twice to interrupt)\n❯ Press Enter to send queued messages now\n"
 PERMISSION = "Do you want to proceed?\n❯ 1. Yes\n  2. No\n"
 IDLE = "╭────╮\n│ >  │\n╰────╯\n? for shortcuts\n"
+WORKING = "✻ Cogitating… (12s · ↑ 340 tokens · esc to interrupt)\n"
 
 
 class FakeBoss:
@@ -636,6 +637,87 @@ class AttentionTests(ScanBase):
         self.assertEqual(len(att), 1)
         self.assertIn("focus_on_activate", att[0]["outcome"])
         self.assertEqual(w.bells, 0)
+
+
+class ChangesHookTests(ScanBase):
+    """Runs starting and ending trigger the detached checkpoint helper — never on first sight, never in a flood."""
+
+    def setUp(self):
+        super().setUp()
+        vars(KS._RT).pop("changes", None)
+        self.popen = mock.patch("kittymux_scan.subprocess.Popen")
+        self.pm = self.popen.start()
+        self.pm.return_value.poll.return_value = None                      # "still running"
+        self.env4 = mock.patch.dict(os.environ, {"KITTYMUX_CHANGES": "1"})
+        self.env4.start()
+        self.w = FakeWindow(1, "claude", IDLE)
+        self.w.cwd_of_child = "/work/repo"
+        self.add(self.w)
+
+    def tearDown(self):
+        self.env4.stop()
+        self.popen.stop()
+        super().tearDown()
+
+    def kinds(self):
+        return [c.args[0][c.args[0].index("checkpoint") + 1] for c in self.pm.call_args_list if "checkpoint" in c.args[0]]
+
+    def test_a_run_starting_and_ending_start_and_finish_a_checkpoint(self):
+        t = [1000.0]
+        with mock.patch.object(KS.time, "monotonic", lambda: t[0]):
+            KS.scan_all()                                                  # first sight: idle
+            self.w.screen = WORKING
+            KS.scan_all()
+            self.assertEqual(self.kinds(), ["start"])
+            self.w.screen = IDLE
+            t[0] += 10
+            KS.scan_all()
+            KS.scan_all()
+        self.assertEqual(self.kinds(), ["start", "finish"])
+        argv = self.pm.call_args_list[0].args[0]
+        self.assertEqual(argv[argv.index("--cwd") + 1], "/work/repo")
+        self.assertEqual(argv[argv.index("--window") + 1], "1")
+        self.assertEqual(argv[argv.index("--pid") + 1], str(os.getpid()))
+        self.assertEqual(self.pm.call_args_list[0].kwargs["start_new_session"], True)
+
+    def test_first_sight_of_a_window_that_is_already_working_starts_nothing(self):
+        self.w.screen = WORKING
+        KS.scan_all()
+        self.assertEqual(self.kinds(), [])                                 # we did not see the run begin: the summary will compare with HEAD
+
+    def test_a_waiting_run_that_resumes_is_not_a_new_run(self):
+        t = [1000.0]
+        with mock.patch.object(KS.time, "monotonic", lambda: t[0]):
+            KS.scan_all()
+            self.w.screen = WORKING
+            KS.scan_all()
+            self.w.screen = PERMISSION
+            t[0] += 10
+            KS.scan_all()                                                  # working → waiting: the summary so far
+            self.w.screen = WORKING
+            t[0] += 10
+            KS.scan_all()                                                  # waiting → working: the SAME run (no second baseline)
+        self.assertEqual(self.kinds(), ["start", "finish"])
+
+    def test_off_switches_missing_directory_and_the_concurrency_and_gap_limits(self):
+        with mock.patch.dict(os.environ, {"KITTYMUX_CHANGES": "0"}):
+            self.assertEqual(KS._checkpoint(self.w, "start", 1.0), "off")
+        open(os.path.join(self.state, "changes-off"), "w").close()
+        self.assertEqual(KS._checkpoint(self.w, "start", 1.0), "off")
+        os.unlink(os.path.join(self.state, "changes-off"))
+        self.w.cwd_of_child = ""
+        self.assertEqual(KS._checkpoint(self.w, "start", 1.0), "no directory")
+        self.w.cwd_of_child = "/work/repo"
+        self.assertEqual(KS._checkpoint(self.w, "start", 100.0), "started start")
+        self.assertEqual(KS._checkpoint(self.w, "start", 101.0), "too soon")        # the same (window, kind) inside the gap
+        self.assertEqual(KS._checkpoint(self.w, "finish", 101.0), "started finish")
+        other = FakeWindow(2, "claude", IDLE)
+        other.cwd_of_child = "/w2"
+        self.assertEqual(KS._checkpoint(other, "start", 102.0), "busy")             # two helpers already running
+
+    def test_a_failing_spawn_never_breaks_the_scan(self):
+        self.pm.side_effect = OSError("no fork")
+        self.assertEqual(KS._checkpoint(self.w, "start", 1.0), "error")
 
 
 class AgeRefreshTests(ScanBase):

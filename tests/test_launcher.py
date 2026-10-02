@@ -168,6 +168,13 @@ class RowTests(unittest.TestCase):
         self.assertTrue(running[0]["text"].startswith("★"))
         self.assertEqual((running[0]["jkey"], running[0]["pinned"]), ("codex:s", True))
 
+    def test_the_cached_change_summary_shows_on_running_and_event_rows_only_when_there_is_one(self):
+        rows = self.rows(events=[ev("e", w=3)], windows=[dict(win(3, "waiting", agent="claude"), changes="7 files +142 −30"), dict(win(6, "idle"), changes="no changes"), win(7, "idle")])
+        by = {(r["kind"], r["action"]["w"]): r["text"] for r in rows if r["kind"] in ("event", "running")}
+        self.assertIn("Δ 7 files +142 −30", by[("event", 3)])
+        self.assertNotIn("Δ", by[("running", 6)])                       # "no changes" is not worth a column
+        self.assertNotIn("Δ", by[("running", 7)])
+
     def test_a_no_approvals_agent_is_marked_in_every_kind_of_row(self):
         risky = ["claude", "--dangerously-skip-permissions"]
         rows = self.rows(events=[ev("e", w=3)], windows=[win(3, "waiting", agent="claude", argv=risky), win(4, "idle", agent="claude", argv=risky), win(5, "idle", agent="codex")],
