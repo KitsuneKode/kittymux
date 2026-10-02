@@ -70,17 +70,20 @@ kittymux sessions rewrite FILE | --recent               rewrite an already saved
 | Codex | when the process holds its `rollout-…-<uuid>.jsonl` open | `codex resume --last` (its help: `--all` disables cwd filtering, so it is per directory) | `codex [flags] resume <id>` | yes |
 | grok | not exposed | `--continue` ("most recent session for the current working directory") | `grok … --resume <id or title>` | yes |
 | droid | not exposed | `-r --last` ("most recent session in the current folder") | `droid -r <id>` | yes |
-| Devin | not exposed | `-c` (scope not stated) | `devin -r <id>` | yes |
-| opencode | not exposed | `-c` (scope not stated) | `opencode -s <id>` | yes |
-| cursor-agent | not exposed | `--continue` (scope not stated) | `cursor-agent --resume <id>` | yes |
-| Antigravity (`agy`) | not exposed | `--continue` (scope not stated) | `agy --conversation <id>` | yes |
+| Devin | **yes** — the session's name *is* its id (`tall-yogurt`): a running window's `devin acp` child holds `~/.local/share/devin/cli/session_locks/<id>.lock` open (same process group; the lock file holds that pid). Checked on two live windows against `devin list --format json`. | `-c` (scope not stated) | `devin -r <id>` | yes |
+| opencode | a bare TUI exposes none (title is a static "OpenCode", only a log file open); one **started with `-s <id>`** keeps it on its command line. Otherwise: `opencode session list --format json` (the CLI is the contract; the database schema is not) → the directory's newest session **touched since this window's process started** | `-c` (scope not stated) | `opencode -s <id>` | yes |
+| cursor-agent | no id while it runs before a first message; chats live at `~/.config/cursor/chats/<md5 of the directory>/<chat uuid>/store.db`: the directory's newest chat **touched since the process started**; or `--resume <id>` on its command line | `--continue` (scope not stated) | `cursor-agent --resume <id>` | yes (layout seen on disk; md5 mapping checked against 2 real directories) |
+| Antigravity (`agy`) | no conversation file is held open before the first message; `~/.gemini/antigravity-cli/cache/last_conversations.json` maps a directory to its last conversation id (`conversations/<uuid>.db`): used when that conversation was **touched since the process started**; or `--conversation <id>` on its command line | `--continue` (scope not stated) | `agy --conversation <id>` | yes (files seen on disk) |
 | Gemini, Amp | not installed here | from public docs, enabled only if the probe passes | | no |
 
 "Verified" = the flag is in that CLI's own `--help` on the author's machine; on yours, `kittymux sessions check` probes again (cached 12 h per executable) and an agent whose help does
 not show the flags is **not** rewritten. The rules that keep this safe:
 
-- **Exact beats latest.** Claude gets its real id. For the others, "latest" is used only when it cannot attach the wrong conversation: for agents whose help says "latest" is per directory,
-  when it is the only window of that agent in that directory; for agents that do not say, only when it is the single window of that agent.
+- **Exact beats latest.** Claude and Devin get their real ids; any agent started on an id (`-s`, `--resume <id>`, `--conversation <id>`) keeps it. opencode, Cursor and agy get the directory's
+  conversation **only if this window's agent touched it** (its files or its own list changed after the process started) and it is the only window of that agent in that directory — a window that
+  never had a conversation is restored as a new session instead of being pointed at an older one that merely sorts first. Where it cannot look (the CLI is missing, an unknown layout) the old rule applies.
+  Everything else gets "latest" only when it cannot attach the wrong conversation: for agents whose help says "latest" is per directory, when it is the only window of that agent in that
+  directory; for agents that do not say, only when it is the single window of that agent.
 - **Never one conversation twice.** Two windows of one agent in one directory with no exposed ids are restored **as saved** (a new conversation each), not both as `--continue`.
 - **Ids are validated** (`[A-Za-z0-9][A-Za-z0-9._:-]*`, so never an option); the saved line is rebuilt as separate arguments, never through a shell.
 - **Flags you started with are kept**, the agent's old resume/continue flags are removed first so none is doubled, and a prompt argument is never replayed (a Codex started with a prompt or

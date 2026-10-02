@@ -98,7 +98,9 @@
         "--continue"
       ]
     },
-    "latest_scope": "unstated"
+    "latest_scope": "unstated",
+    "locator": "open-file",
+    "open_file_pattern": "session_locks/([A-Za-z0-9][A-Za-z0-9._-]*)\\.lock$"
   },
   "droid": {
     "verified": true,
@@ -169,7 +171,8 @@
         "--continue"
       ]
     },
-    "latest_scope": "unstated"
+    "latest_scope": "unstated",
+    "dir_latest": "opencode-list"
   },
   "cursor-agent": {
     "verified": true,
@@ -205,7 +208,8 @@
         "--continue"
       ]
     },
-    "latest_scope": "unstated"
+    "latest_scope": "unstated",
+    "dir_latest": "cursor-chats"
   },
   "gemini": {
     "verified": false,
@@ -349,6 +353,7 @@
         "--conversation",
         "--continue"
       ]
-    }
+    },
+    "dir_latest": "agy-last"
   }
 }

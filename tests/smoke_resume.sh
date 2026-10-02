@@ -28,10 +28,26 @@ time.sleep(600)
 PY
   chmod +x "$T/bin/$1"
 }
+mk_oc() {   # a fake opencode: answers `session list --format json` for its directory, otherwise records its argv and stays alive
+  cat > "$T/bin/opencode" <<PY
+#!/usr/bin/env python3
+import json, os, sys, time
+if "--help" in sys.argv:
+    print("""  --continue, -c  Continue the last session
+  --session, -s string  Session ID""")
+    sys.exit(0)
+if sys.argv[1:3] == ["session", "list"]:
+    print(json.dumps([{"id": "ses_smoke1", "title": "t", "updated": int(time.time() * 1000), "created": 1, "directory": os.getcwd()}]))
+    sys.exit(0)
+with open(os.path.join("$T/ran", "opencode." + str(os.getpid())), "w") as f:
+    f.write(" ".join(sys.argv[1:]))
+time.sleep(600)
+PY
+  chmod +x "$T/bin/opencode"
+}
 mk claude "  -c, --continue   Continue the most recent conversation
   -r, --resume [value]  Resume a conversation by session ID. --resume <session-id>"
-mk opencode "  --continue, -c  Continue the last session
-  --session, -s string  Session ID"
+mk_oc
 mk droid "  -r, --resume [sessionId]   Resume a session
   --last   With --resume: skip the picker"
 for f in "$HOME_DIR"/python/tab_bar.py "$HOME_DIR"/python/kittymux_*.py; do
@@ -74,9 +90,9 @@ printf '{"pid": %s, "sessionId": "%s", "cwd": "%s", "procStart": %s, "status": "
 KMX() { KITTYMUX_STATE=$STATE KITTYMUX_TARGET=$SOCK1 KITTYMUX_CLAUDE_HOME=$T/ch XDG_CONFIG_HOME=$T/xdg python3 "$HOME_DIR/bin/kittymux" "$@"; }
 
 out=$(KMX sessions list) || fail "sessions list failed: $out"
-echo "$out" | grep -q "exact session" && echo "$out" | grep -q "latest in dir" || fail "list does not show an exact and a latest window: $out"
+echo "$out" | grep -q "opencode .*exact session.*-s ses_smoke1" || fail "the lone opencode is not resolved to its own conversation (touched since it started): $out"
 echo "$out" | grep -q "several droid windows" || fail "list does not explain the two droids: $out"
-echo "  ok   sessions list: claude exact, opencode latest, the two droids explained"
+echo "  ok   sessions list: claude exact, opencode exact via its own session list, the two droids explained"
 
 KMX sessions check >/dev/null 2>&1; true
 KMX sessions save test --all --direct >"$T/save.out" 2>&1 || { cat "$T/save.out"; fail "sessions save failed"; }
@@ -85,11 +101,11 @@ F=$STATE/sessions/test.kitty-session
 [ "$(stat -c %a "$F")" = 600 ] || fail "the session file is not private"
 grep -q -- "--resume $SID" "$F" || { cat "$F"; fail "the saved claude line does not resume its session"; }
 grep -q -- "--dangerously-skip-permissions" "$F" || fail "the flags claude was started with were lost"
-grep -E "opencode" "$F" | grep -q -- " -c" || fail "the lone opencode is not 'continue latest'"
+grep -E "opencode" "$F" | grep -q -- "-s ses_smoke1" || { cat "$F"; fail "the lone opencode did not resolve to -s ses_smoke1"; }
 [ "$(grep -c "bin/droid" "$F")" = 2 ] || { cat "$F"; fail "expected two droid launch lines"; }
 ! grep "bin/droid" "$F" | grep -qE " (-r|--last)( |'|$)" || { grep "bin/droid" "$F"; fail "the two droids were rewritten (one conversation would open twice)"; }
 ! grep -q "kittymux_status\|kittymux_msg" "$F" || fail "restored hook state leaked into the saved file"
-echo "  ok   saved: claude --resume <id> with its flags, opencode -c, droids as saved, no stale hook state, file is 0600"
+echo "  ok   saved: claude --resume <id> with its flags, opencode -s <its id>, droids as saved, no stale hook state, file is 0600"
 
 # autosave: the same save, silently, to autosave-<pid>.kitty-session, pruned to the newest 5
 for i in 1 2 3 4 5 6 7; do : > "$STATE/sessions/autosave-90$i.kitty-session"; touch -d "@$((1000 + i))" "$STATE/sessions/autosave-90$i.kitty-session"; done
@@ -102,9 +118,9 @@ K2=$(start "$F" "$SOCK2")
 for _ in $(seq 60); do [ -S "$T/mykitty-5552" ] && break; sleep 0.25; done; sleep 5
 ran() { for f in "$T"/ran/*; do grep -qx "$(basename "$f")" "$T/ran.before" || printf '%s: %s\n' "$(basename "$f" | cut -d. -f1)" "$(cat "$f")"; done; }
 ran | grep -q "^claude: --dangerously-skip-permissions --resume $SID$" || { ran; fail "the restored claude was not started with --resume $SID"; }
-ran | grep -q "^opencode: -c$" || { ran; fail "the restored opencode was not started with -c"; }
+ran | grep -q "^opencode: -s ses_smoke1$" || { ran; fail "the restored opencode was not started with -s ses_smoke1"; }
 [ "$(ran | grep -c '^droid: $')" = 2 ] || { ran; fail "the restored droids were not started as saved (plain, twice)"; }
-echo "  ok   restored in a second kitty: claude started with --resume $SID, opencode with -c, both droids plain"
+echo "  ok   restored in a second kitty: claude started with --resume $SID, opencode with -s ses_smoke1, both droids plain"
 echo "  ok   --direct restore: agents resumed without asking"
 
 # default save: the same windows come back ASKING. Nothing runs until answered; Enter resumes (all flags), n starts new, a window with nothing to resume is untouched.

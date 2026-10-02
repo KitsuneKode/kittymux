@@ -307,6 +307,139 @@ class SelfDescribingRewriteTests(unittest.TestCase):
         self.assertEqual(once, twice)
 
 
+class AgentIdentityTests(unittest.TestCase):
+    """What each agent exposes about a running window — verified against the real CLIs/data on a live machine (docs/sessions.md): Devin's session lock names
+    its session, an id on the command line is the conversation it was started on, and agy / Cursor / opencode only expose "latest in this directory"."""
+    TICKS = 100                                   # the fake process started 1 s after boot
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.proc, self.home = os.path.join(self.d, "proc"), os.path.join(self.d, "home")
+        os.makedirs(self.home)
+        os.makedirs(self.proc, exist_ok=True)
+        with open(os.path.join(self.proc, "stat"), "w") as f:
+            f.write("cpu 1 2 3\nbtime 1000000\n")
+        self.started = 1000000 + self.TICKS / os.sysconf("SC_CLK_TCK")
+
+    def touch(self, path, when):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write("x")
+        os.utime(path, (when, when))
+
+    # ids on the command line
+    def test_an_id_on_the_command_line_is_the_conversation_the_window_was_started_on(self):
+        f = R.argv_session_id
+        self.assertEqual(f(AGENTS["opencode"], ["opencode", "-s", "ses_fc7aa6d21ffeml3zCp99jR7fyd"]), "ses_fc7aa6d21ffeml3zCp99jR7fyd")
+        self.assertEqual(f(AGENTS["agy"], ["agy", "--conversation=c6941cdb-3241-484a-b39f-4fd92ebd1382"]), "c6941cdb-3241-484a-b39f-4fd92ebd1382")
+        self.assertEqual(f(AGENTS["cursor-agent"], ["cursor-agent", "--model", "x", "--resume", "375db6e9-2e3a-47c3-925c-8566208428a7"]), "375db6e9-2e3a-47c3-925c-8566208428a7")
+        self.assertIsNone(f(AGENTS["devin"], ["devin", "-r"]))                           # the picker, not an id
+        self.assertIsNone(f(AGENTS["devin"], ["devin", "-r", "--model", "x"]))
+        self.assertIsNone(f(AGENTS["opencode"], ["opencode", "-s", "-c"]))
+        self.assertIsNone(f(AGENTS["opencode"], ["opencode", "-s", "x; rm -rf ~"]))        # not a plain token
+
+    # Devin: the session lock a running window holds names the session
+    def test_devins_session_lock_names_its_session_and_the_pattern_ignores_other_files(self):
+        pat = AGENTS["devin"]["open_file_pattern"]
+        fake_proc(self.proc, 2555541, fds=["/home/u/.local/share/devin/cli/session_locks/tall-yogurt.lock", "/home/u/.local/share/devin/cli/sessions.db"])
+        self.assertEqual(R.open_session_ids([2555541], pat, self.proc), ["tall-yogurt"])
+        fake_proc(self.proc, 2, fds=["/home/u/.local/share/devin/cli/session_locks/-evil.lock", "/x/session_locks/a/b.lock"])
+        self.assertEqual(R.open_session_ids([2], pat, self.proc), [])
+
+    def test_a_devin_window_resolves_through_its_acp_childs_lock_and_resumes_by_name(self):
+        fake_proc(self.proc, 100, start="100")
+        fake_proc(self.proc, 101, fds=["/h/.local/share/devin/cli/session_locks/tall-yogurt.lock"])
+        plan = R.build_plan([win(3, "/w", (100, ["devin", "-r"]), (101, ["/h/.local/share/devin/cli/_versions/3000.11.3/bin/devin", "acp"]))], AGENTS, self.home, self.proc)
+        self.assertEqual((plan[0]["mode"], plan[0]["session_id"], plan[0]["resume"]), ("exact", "tall-yogurt", ["devin", "-r", "tall-yogurt"]))
+        ident = R.identify(AGENTS, [{"pid": 100, "cmdline": ["devin", "-r"]}, {"pid": 101, "cmdline": ["devin", "acp"]}], self.home, self.proc)
+        self.assertEqual(ident["sid"], "tall-yogurt")
+
+    def test_two_devin_windows_each_get_their_own_session(self):
+        for pid, name in ((100, "tall-yogurt"), (200, "admitted-cattle")):
+            fake_proc(self.proc, pid, start="100")
+            fake_proc(self.proc, pid + 1, fds=[f"/h/devin/cli/session_locks/{name}.lock"])
+        plan = R.build_plan([win(3, "/w", (100, ["devin", "-r"]), (101, ["devin", "acp"])), win(4, "/w", (200, ["devin", "-r"]), (201, ["devin", "acp"]))], AGENTS, self.home, self.proc)
+        self.assertEqual([e["session_id"] for e in plan], ["tall-yogurt", "admitted-cattle"])      # same directory: still exact, never opened twice
+
+    # touched-since-start
+    def test_proc_start_epoch(self):
+        fake_proc(self.proc, 7, start=str(self.TICKS))
+        self.assertAlmostEqual(R.proc_start_epoch(7, self.proc), self.started)
+        self.assertIsNone(R.proc_start_epoch(99, self.proc))
+
+    def test_agy_resumes_the_directorys_last_conversation_only_if_this_run_touched_it(self):
+        base = os.path.join(self.home, ".gemini", "antigravity-cli")
+        cid = "c6941cdb-3241-484a-b39f-4fd92ebd1382"
+        os.makedirs(os.path.join(base, "cache"))
+        with open(os.path.join(base, "cache", "last_conversations.json"), "w") as f:
+            json.dump({"/w": cid, "/other": "not-a-uuid"}, f)
+        self.touch(os.path.join(base, "conversations", cid + ".db"), self.started - 3600)           # an old conversation
+        self.assertEqual(R.dir_latest("agy-last", "/w", self.started, self.home), (None, "none"))
+        self.touch(os.path.join(base, "conversations", cid + ".db-wal"), self.started + 60)          # written to since: it is this window's
+        self.assertEqual(R.dir_latest("agy-last", "/w", self.started, self.home), (cid, "found"))
+        self.assertEqual(R.dir_latest("agy-last", "/other", self.started, self.home), (None, "none"))  # a corrupt id is never used
+        self.assertEqual(R.dir_latest("agy-last", "/nowhere", self.started, self.home), (None, "none"))
+        self.assertEqual(R.dir_latest("agy-last", "/w", None, self.home), (None, "unknown"))          # unknown start time: do not guess
+
+    def test_cursor_chats_are_found_by_the_md5_of_the_directory(self):
+        import hashlib
+        root = os.path.join(self.home, ".config", "cursor", "chats", hashlib.md5(b"/w").hexdigest())
+        a, b = "375db6e9-2e3a-47c3-925c-8566208428a7", "48fe3a73-0fbc-4fab-ba7d-1ab365f6e897"
+        self.touch(os.path.join(root, a, "store.db"), self.started - 500)
+        self.touch(os.path.join(root, b, "store.db"), self.started + 30)
+        os.makedirs(os.path.join(root, "../../not-a-uuid"), exist_ok=True)
+        self.assertEqual(R.dir_latest("cursor-chats", "/w", self.started, self.home), (b, "found"))   # the newest, touched since start
+        os.utime(os.path.join(root, b, "store.db"), (self.started - 10, self.started - 10))
+        self.assertEqual(R.dir_latest("cursor-chats", "/w", self.started, self.home), (None, "none"))
+        self.assertEqual(R.dir_latest("cursor-chats", "/elsewhere", self.started, self.home), (None, "none"))
+
+    def test_opencode_asks_its_own_cli_and_checks_directory_and_time(self):
+        rows = [{"id": "ses_new", "updated": (self.started + 5) * 1000, "directory": "/w"}, {"id": "ses_old", "updated": (self.started - 99) * 1000, "directory": "/w"}]
+        seen = []
+        run = lambda argv, cwd: (seen.append((argv, cwd)), json.dumps(rows))[1]                   # noqa: E731
+        self.assertEqual(R.dir_latest("opencode-list", "/w", self.started, self.home, run), ("ses_new", "found"))
+        self.assertEqual(seen[0][1], "/w")
+        self.assertEqual(seen[0][0][:3], ["opencode", "session", "list"])
+        self.assertEqual(R.dir_latest("opencode-list", "/w", self.started, self.home, lambda a, c: json.dumps(rows[1:])), (None, "none"))
+        self.assertEqual(R.dir_latest("opencode-list", "/w", self.started, self.home, lambda a, c: json.dumps([dict(rows[0], id="-s")])), (None, "none"))
+        self.assertEqual(R.dir_latest("opencode-list", "/w", self.started, self.home, lambda a, c: None), (None, "unknown"))      # CLI missing/failing
+        self.assertEqual(R.dir_latest("opencode-list", "/w", self.started, self.home, lambda a, c: "not json"), (None, "unknown"))
+        self.assertEqual(R.dir_latest("opencode-list", "/w", self.started, self.home, None), (None, "unknown"))
+
+    def plan(self, agent, argv, cwd="/w", windows=1, run=None):
+        fake_proc(self.proc, 100, start=str(self.TICKS))
+        wins = [win(i + 1, cwd, (100 + i, argv)) for i in range(windows)]
+        for i in range(1, windows):
+            fake_proc(self.proc, 100 + i, start=str(self.TICKS))
+        return R.build_plan(wins, AGENTS, self.home, self.proc, home=self.home, run=run)
+
+    def test_the_plan_uses_the_directory_conversation_when_it_is_the_only_window(self):
+        rows = json.dumps([{"id": "ses_new", "updated": (self.started + 5) * 1000, "directory": "/w"}])
+        e = self.plan("opencode", ["opencode"], run=lambda a, c: rows)[0]
+        self.assertEqual((e["mode"], e["session_id"], e["resume"]), ("exact", "ses_new", ["opencode", "-s", "ses_new"]))
+        self.assertIn("touched since", e["why"])
+
+    def test_a_window_that_never_had_a_conversation_is_not_pointed_at_an_old_one(self):
+        rows = json.dumps([{"id": "ses_old", "updated": (self.started - 999) * 1000, "directory": "/w"}])
+        e = self.plan("opencode", ["opencode"], run=lambda a, c: rows)[0]
+        self.assertEqual((e["mode"], e["resume"]), ("none", None))             # previously `opencode -c`: somebody else's conversation
+        self.assertIn("nothing to resume", e["why"])
+
+    def test_when_it_cannot_look_the_agents_own_latest_is_still_the_fallback(self):
+        e = self.plan("opencode", ["opencode"], run=lambda a, c: None)[0]
+        self.assertEqual((e["mode"], e["resume"]), ("latest", ["opencode", "-c"]))
+
+    def test_several_windows_in_one_directory_are_never_paired_by_guesswork(self):
+        rows = json.dumps([{"id": "ses_new", "updated": (self.started + 5) * 1000, "directory": "/w"}])
+        plan = self.plan("opencode", ["opencode"], windows=2, run=lambda a, c: rows)
+        self.assertEqual([(e["mode"], e["resume"]) for e in plan], [("none", None)] * 2)
+
+    def test_an_id_on_the_command_line_beats_any_lookup(self):
+        e = self.plan("opencode", ["opencode", "-s", "ses_given"], run=lambda a, c: self.fail("must not ask"))[0]
+        self.assertEqual((e["mode"], e["session_id"], e["resume"]), ("exact", "ses_given", ["opencode", "-s", "ses_given"]))
+        self.assertIn("command line", e["why"])
+
+
 class PromptTests(unittest.TestCase):
     SID = "4d4710c8-de7d-4c89-b7d2-c76a51f6fed7"
 

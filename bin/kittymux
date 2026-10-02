@@ -866,10 +866,19 @@ def _live_windows(sock: str) -> list[dict]:
     return wins
 
 
+def _run_in(argv: list[str], cwd: str, seconds: float = 8.0) -> str | None:
+    """stdout of a read-only agent CLI query run in `cwd` (opencode's session list), or None. Only ever called with argv built by kittymux_resume."""
+    try:
+        r = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=seconds, stdin=subprocess.DEVNULL)
+        return r.stdout if r.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 def _session_plan(sock: str) -> list[dict]:
     agents = _resume_agents()
     claude_home = os.environ.get("KITTYMUX_CLAUDE_HOME") or os.path.expanduser("~/.claude")
-    return kittymux_resume.build_plan(_live_windows(sock), agents, claude_home, enabled=lambda n: agent_enabled(n, agents))
+    return kittymux_resume.build_plan(_live_windows(sock), agents, claude_home, enabled=lambda n: agent_enabled(n, agents), home=os.path.expanduser("~"), run=_run_in)
 
 
 def sessions_prepare(sock: str, windows=None, plan=None) -> list[dict]:
@@ -1164,7 +1173,8 @@ def resume_summary(info: dict, records: dict | None = None, now: float | None = 
     records = records if records is not None else kittymux_journal.load(kittymux_layout.state_dir())
     rec = records.get(f"{info['agent']}:{info['sid']}") if info["sid"] else None
     cwd = os.getcwd().replace(os.path.expanduser("~"), "~")
-    what = f"session {info['sid'][:8]}" if info["sid"] else "the latest session in this directory"
+    sid = info["sid"]
+    what = (f"session {sid if len(sid) <= 24 and not kittymux_resume._UUID.fullmatch(sid) else sid[:8]}" if sid else "the latest session in this directory")
     lines = [f"{info['agent']} was running here — resume {what}?", f"  {cwd}"]
     if rec:
         bits = [f"last active {kittymux_journal.human_span(now - rec.get('last', now))} ago"]

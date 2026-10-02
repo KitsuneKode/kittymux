@@ -132,6 +132,89 @@ def open_session_ids(pids: list[int], pattern: str, proc: str = "/proc") -> list
     return seen
 
 
+def proc_start_epoch(pid: int, proc: str = "/proc") -> float | None:
+    """When process `pid` started, as epoch seconds (boot time + start ticks), or None. Lets us ask "was this conversation touched since this window's agent
+    began?" — the difference between *its* conversation and an older one that merely sorts first."""
+    ticks = proc_start(pid, proc)
+    try:
+        with open(f"{proc}/stat") as f:
+            btime = next(int(line.split()[1]) for line in f if line.startswith("btime "))
+        return btime + int(ticks) / os.sysconf("SC_CLK_TCK")
+    except (OSError, StopIteration, ValueError, TypeError):
+        return None
+
+
+def argv_session_id(d: dict, argv: list[str]) -> str | None:
+    """The session id already in the command line (`opencode -s ses_…`, `agy --conversation <id>`, `cursor-agent --resume <id>`): the window was started
+    ON that conversation. Only a plain-token value after one of the agent's session flags counts (`devin -r` alone is the picker, not an id)."""
+    flags = set(d.get("strip_with_value", []))
+    for i, tok in enumerate(argv):
+        flag, eq, val = tok.partition("=")
+        if flag not in flags:
+            continue
+        if not eq:
+            val = argv[i + 1] if i + 1 < len(argv) else ""
+        if val and not val.startswith("-") and _SAFE_ID.match(val):
+            return val
+    return None
+
+
+_TOUCH_SLACK_S = 3.0
+
+
+def _newest_mtime(paths: list[str]) -> float:
+    best = 0.0
+    for p in paths:
+        try:
+            best = max(best, os.stat(p).st_mtime)
+        except OSError:
+            pass
+    return best
+
+
+def dir_latest(kind: str, cwd: str, started: float | None, home: str, run=None) -> tuple[str | None, str]:
+    """The conversation a window started in `cwd` must be on, for agents that expose no id of a running process: the newest conversation of that
+    directory — but ONLY if it was touched after the agent process started (otherwise the window never had one, and "latest" would be someone else's).
+    Returns (id, verdict): verdict "found" | "none" (looked, nothing was touched by this run) | "unknown" (could not look: fall back to the agent's own `latest`)."""
+    if started is None or not cwd:
+        return None, "unknown"
+    floor = started - _TOUCH_SLACK_S
+    try:
+        if kind == "agy-last":                       # ~/.gemini/antigravity-cli: cache/last_conversations.json maps a directory to its last conversation id
+            base = os.path.join(home, ".gemini", "antigravity-cli")
+            with open(os.path.join(base, "cache", "last_conversations.json"), encoding="utf-8") as f:
+                cid = json.load(f).get(cwd)
+            if not isinstance(cid, str) or not _UUID.fullmatch(cid):
+                return None, "none"
+            db = os.path.join(base, "conversations", cid + ".db")
+            return (cid, "found") if _newest_mtime([db, db + "-wal", db + "-shm"]) >= floor else (None, "none")
+        if kind == "cursor-chats":                   # ~/.config/cursor/chats/<md5 of the directory>/<chat uuid>/store.db
+            import hashlib
+            root = os.path.join(home, ".config", "cursor", "chats", hashlib.md5(cwd.encode()).hexdigest())
+            if not os.path.isdir(root):
+                return None, "none"
+            best, best_t = None, 0.0
+            for name in os.listdir(root):
+                if _UUID.fullmatch(name):
+                    t = _newest_mtime([os.path.join(root, name, "store.db"), os.path.join(root, name, "store.db-wal")])
+                    if t > best_t:
+                        best, best_t = name, t
+            return (best, "found") if best and best_t >= floor else (None, "none")
+        if kind == "opencode-list" and run is not None:      # the CLI is opencode's contract (its database schema is not)
+            out = run(["opencode", "session", "list", "--format", "json", "-n", "5"], cwd)
+            rows = json.loads(out) if out else None
+            if not isinstance(rows, list):
+                return None, "unknown"
+            for row in rows:
+                if isinstance(row, dict) and isinstance(row.get("id"), str) and _SAFE_ID.match(row["id"]) and row.get("directory", cwd) == cwd \
+                        and isinstance(row.get("updated"), (int, float)) and row["updated"] / 1000.0 >= floor:
+                    return row["id"], "found"
+            return None, "none"
+    except (OSError, ValueError, AttributeError, TypeError):
+        return None, "unknown"
+    return None, "unknown"
+
+
 # ── the plan: what each agent window should come back as ──────────────────────
 def agent_of(agents: dict, argv: list[str]) -> tuple[str, int] | None:
     """(agent, index of its token in argv) for the agent this command line runs, else None. An agent's name (or one of its `names`) is matched on the
@@ -166,11 +249,11 @@ def identify(agents: dict, fg: list[dict], home_claude: str, proc: str = "/proc"
         elif d.get("locator") == "open-file" and d.get("open_file_pattern"):
             ids = open_session_ids([q.get("pid") for q in fg if q.get("pid")], d["open_file_pattern"], proc)
             sid = ids[0] if len(ids) == 1 else None
-        return {"agent": hit[0], "argv": list(p["cmdline"]), "sid": sid}
+        return {"agent": hit[0], "argv": list(p["cmdline"]), "sid": sid or argv_session_id(d, p["cmdline"])}
     return None
 
 
-def build_plan(windows: list[dict], agents: dict, home_claude: str, proc: str = "/proc", enabled=lambda name: True) -> list[dict]:
+def build_plan(windows: list[dict], agents: dict, home_claude: str, proc: str = "/proc", enabled=lambda name: True, home: str | None = None, run=None) -> list[dict]:
     """`windows`: [{"id", "cwd", "fg": [{"pid", "cmdline"}, …]}] (from `kitty @ ls`). Returns one entry per agent window:
     {"id", "agent", "cwd", "argv", "session_id", "mode", "resume", "why"} — `resume` is the new argv, or None with `why` explaining."""
     found = []
@@ -199,10 +282,19 @@ def build_plan(windows: list[dict], agents: dict, home_claude: str, proc: str = 
         elif d.get("locator") == "open-file" and d.get("open_file_pattern"):
             ids = open_session_ids(e["pids"], d["open_file_pattern"], proc)
             sid = ids[0] if len(ids) == 1 else None
+        how = "the agent's own session id"
+        if not sid:
+            sid, how = argv_session_id(d, e["argv"]), "the session id in its command line (it was started on that conversation)"
+        looked = "unknown"
+        if not sid and d.get("dir_latest") and home and len(per_dir[(e["agent"], e["cwd"])]) == 1:
+            sid, looked = dir_latest(d["dir_latest"], e["cwd"], proc_start_epoch(e["pid"], proc) if e["pid"] else None, home, run)
+            how = "the only %s conversation in this directory touched since this window's agent started" % e["agent"]
         if sid:
             e["session_id"], e["mode"] = sid, "exact"
             e["resume"] = resume_argv(d, e["argv"], sid, "exact", e["idx"])
-            e["why"] = "the agent's own session id" if e["resume"] else "could not build the command"
+            e["why"] = how if e["resume"] else "could not build the command"
+        elif looked == "none":
+            e["why"] = "no %s conversation in this directory was touched since this window started: nothing to resume, restored as a new session" % e["agent"]
         elif d.get("latest_scope") == "directory" and len(per_dir[(e["agent"], e["cwd"])]) == 1:
             e["mode"] = "latest"
             e["resume"] = resume_argv(d, e["argv"], None, "latest", e["idx"])
