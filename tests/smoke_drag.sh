@@ -16,7 +16,7 @@ Xvfb "$DISP" -screen 0 1200x800x24 >/dev/null 2>&1 & XPID=$!
 sleep 1; kill -0 "$XPID" 2>/dev/null || { echo "SKIP: Xvfb would not start"; XPID=""; exit 0; }
 for f in tab_bar.py kittymux_theme.py kittymux_deck.py kittymux_git.py kittymux_layout.py kittymux_barsize.py kittymux_agents.py kittymux_state.py kittymux_scan.py; do ln -s "$HOME_DIR/python/$f" "$CFG/$f"; done
 cat > "$CFG/kitty.conf" <<CONF
-allow_remote_control yes
+allow_remote_control socket-only
 include $HOME_DIR/kittymux.conf
 watcher $HOME_DIR/python/pane-state.py
 tab_bar_edge left

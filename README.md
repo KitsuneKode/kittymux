@@ -98,9 +98,13 @@ instance's `tab_bar.py`).
 Add a remote-control socket if you don't have one:
 
 ```conf
-allow_remote_control yes
-listen_on unix:/tmp/mykitty
+allow_remote_control socket-only
+listen_on unix:${XDG_RUNTIME_DIR}/mykitty
 ```
+
+Both lines are deliberate: `socket-only` stops programs *inside* a terminal (an agent's tool output, a file you `cat`) from controlling kitty with an escape sequence — plain `yes` allows
+that — and the runtime directory is private to you, unlike `/tmp`. kittymux works fully with this setting (every smoke test runs under it); `kittymux doctor` flags `yes` and a `/tmp` socket.
+See [SECURITY.md](SECURITY.md).
 
 Arch: `packaging/PKGBUILD` builds `kittymux-git`.
 

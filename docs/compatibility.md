@@ -37,8 +37,9 @@ and a TUI that rewords its prompts needs a one-line change in `python/kittymux_s
 
 ## Things that depend on the environment
 
-- **Remote control socket** (`allow_remote_control` + `listen_on`) is required by the pickers and CLI.
-  Prefer `listen_on unix:${XDG_RUNTIME_DIR}/mykitty` (private directory). `/tmp` works but any local user
+- **Remote control socket** (`allow_remote_control` + `listen_on`) is required by the pickers and CLI. Use
+  `allow_remote_control socket-only` (no in-band control from program output; every smoke test runs under it) and
+  `listen_on unix:${XDG_RUNTIME_DIR}/mykitty` (private directory; kitty expands environment variables there). `/tmp` works but any local user
   can create files there; kittymux only talks to sockets owned by you, and `doctor` warns.
 - **Fonts**: brand logos live in a bundled icon font installed to `~/.local/share/fonts`. After the first
   install, restart kitty once (kitty caches loaded font faces; a config reload does not re-read a font file

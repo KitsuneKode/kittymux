@@ -29,7 +29,7 @@ export KITTY_CONFIG_DIRECTORY="$T/cfg" KITTYMUX_STATE="$T/state" KITTYMUX_NOTIFY
 export XDG_RUNTIME_DIR="$T/run"
 for f in "$ROOT"/python/*.py; do cp "$f" "$T/cfg/"; done
 cat >"$T/cfg/kitty.conf" <<CONF
-allow_remote_control yes
+allow_remote_control socket-only
 include $ROOT/kittymux.conf
 watcher $T/cfg/pane-state.py
 tab_bar_edge left

@@ -167,8 +167,8 @@ echo
 echo "Done. Reload kitty with ctrl+shift+alt+r (or restart kitty)."
 echo
 say "Notes:"
-say "• remote control: scripts need a listen socket — add e.g. (private directory)"
-say "    allow_remote_control yes"
+say "• remote control: scripts need a listen socket — add (private directory, no in-band control)"
+say "    allow_remote_control socket-only"
 say "    listen_on unix:\${XDG_RUNTIME_DIR}/mykitty"
 say "  to kitty.conf if you don't already have one."
 say "• live Claude quota is opt-in: export KITTYMUX_USAGE_LIVE=1"

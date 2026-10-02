@@ -33,7 +33,7 @@ for f in tab_bar.py kittymux_theme.py kittymux_deck.py kittymux_git.py kittymux_
   ln -s "$HOME_DIR/python/$f" "$CFG/$f"
 done
 cat > "$CFG/kitty.conf" <<CONF
-allow_remote_control yes
+allow_remote_control socket-only
 include $HOME_DIR/kittymux.conf
 watcher $HOME_DIR/python/pane-state.py
 tab_bar_edge left

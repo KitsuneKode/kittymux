@@ -20,7 +20,7 @@ mkdir -p "$T/bin"; printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "%s/ed.out"\n' "$T"
 sed "s|@KITTYMUX_HOME@|$HOME_DIR|g" "$HOME_DIR/open-actions.conf.tpl" > "$CFG/open-actions.conf"
 cp "$HOME_DIR/python/kittymux_layout.py" "$CFG/"
 cat > "$CFG/kitty.conf" <<CONF
-allow_remote_control yes
+allow_remote_control socket-only
 geninclude $CFG/kittymux_layout.py
 CONF
 printf 'launch --cwd=%s sh -c "printf \\"see src/app.py:42:7 and nowhere/none.py:3 ok\\\\n\\"; exec sleep 600"\n' "$PROJ" > "$T/session"

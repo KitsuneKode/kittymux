@@ -46,7 +46,7 @@ if ! git -C "$HOME_DIR" show "$OLD_REV:python/kittymux_agents.py" > "$CFG/kittym
   echo "SKIP: git history does not include $OLD_REV (shallow clone?)"; exit 0
 fi
 cat > "$CFG/kitty.conf" <<CONF
-allow_remote_control yes
+allow_remote_control socket-only
 include $HOME_DIR/kittymux.conf
 watcher $CFG/pane-state.py
 tab_bar_edge left

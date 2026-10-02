@@ -269,13 +269,17 @@ def doctor() -> int:
         else:
             r.fail("pane-state watcher not configured", "run ./install.sh (the keys conf adds it)")
         listen = re.search(r"^\s*listen_on\s+unix:(\S+)", text, re.M)
-        if re.search(r"^\s*allow_remote_control\s+(yes|socket|socket-only)", text, re.M) and listen:
+        rc = re.search(r"^\s*allow_remote_control\s+(\S+)", text, re.M)
+        if rc and rc.group(1) in ("yes", "socket", "socket-only") and listen:
             r.ok("remote control + listen_on enabled")
+            if rc.group(1) == "yes":
+                r.warning("allow_remote_control yes lets any program in a terminal (an agent's output, a file you cat) control kitty with an escape sequence",
+                          "use  allow_remote_control socket-only  — kittymux only needs the socket")
             if listen.group(1).startswith("/tmp/"):
                 r.warning("listen_on puts the control socket in /tmp, which any local user can write to",
                           "prefer  listen_on unix:${XDG_RUNTIME_DIR}/mykitty  (private 0700 directory; kittymux finds it there too)")
         else:
-            r.warning("remote control may be off", "add to kitty.conf: allow_remote_control yes / listen_on unix:/tmp/mykitty")
+            r.warning("remote control may be off", "add to kitty.conf: allow_remote_control socket-only / listen_on unix:${XDG_RUNTIME_DIR}/mykitty")
     import glob as _glob
     for f in ["tab_bar.py"] + sorted(os.path.basename(g) for g in _glob.glob(os.path.join(HOME_DIR, "python", "kittymux_*.py"))):
         p = os.path.join(CFG, f)
@@ -292,7 +296,7 @@ def doctor() -> int:
     print("\nlive kitty")
     socks = _sockets()
     if not socks:
-        r.warning("no kitty remote-control socket found", "set listen_on unix:/tmp/mykitty and restart kitty")
+        r.warning("no kitty remote-control socket found", "set  allow_remote_control socket-only  and  listen_on unix:${XDG_RUNTIME_DIR}/mykitty  in kitty.conf and restart kitty")
     else:
         rc, out = _run(["kitty", "@", "--to", socks[0], "get-colors"])
         if rc == 0:
@@ -503,7 +507,7 @@ def demo(argv: list[str]) -> int:
                     os.symlink(os.path.join(user_fonts, name), os.path.join(data, "fonts", "user", name))
         env["XDG_DATA_HOME"] = data
     open(os.path.join(cfg, "kitty.conf"), "w").write(
-        font_conf + "allow_remote_control yes\nlisten_on unix:/tmp/mykitty\n"
+        font_conf + "allow_remote_control socket-only\nlisten_on unix:/tmp/mykitty\n"
         "include theme.conf\n"
         f"include {cfg}/kittymux-keys.conf\ninclude {cfg}/kittymux-leader.conf\n"
         f"include {HOME_DIR}/kittymux.conf\ntab_bar_edge {edge}\nwindow_padding_width 10\n"
@@ -610,7 +614,7 @@ def layout(argv: list[str]) -> int:
     pid = _socket_pid(sock) if sock else None
     if pid is None:
         print("kittymux layout: no kitty remote-control socket found "
-              "(set listen_on unix:/tmp/mykitty in kitty.conf)", file=sys.stderr)
+              "(set allow_remote_control socket-only and listen_on unix:${XDG_RUNTIME_DIR}/mykitty in kitty.conf)", file=sys.stderr)
         return 1
     current = kittymux_layout.base_layout(sdir, pid, CFG)
 
@@ -1407,7 +1411,7 @@ def explain(argv: list[str]) -> int:
         return 2
     socks = _sockets() if every else ([s] if (s := _target_socket()) else [])
     if not socks:
-        print("kittymux explain: no kitty remote-control socket found (set listen_on unix:/tmp/mykitty in kitty.conf)", file=sys.stderr)
+        print("kittymux explain: no kitty remote-control socket found (set allow_remote_control socket-only and listen_on unix:${XDG_RUNTIME_DIR}/mykitty in kitty.conf)", file=sys.stderr)
         return 1
     state_dir = kittymux_layout.state_dir()
     report = []

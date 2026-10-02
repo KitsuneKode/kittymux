@@ -52,7 +52,7 @@ start() {
     [[ -n "${WAYLAND_DISPLAY:-}" ]] || echo "mux-panel: no Wayland session — the panel will not reserve space" >&2
     local target target_pid
     target="$(pick_target)"
-    [[ -n "$target" ]] || { echo "mux-panel: no kitty remote-control socket found (set listen_on unix:/tmp/mykitty)" >&2; return 1; }
+    [[ -n "$target" ]] || { echo "mux-panel: no kitty remote-control socket found (set allow_remote_control socket-only and listen_on unix:${XDG_RUNTIME_DIR}/mykitty)" >&2; return 1; }
     # ls window pid is the pane's child process, not kitty's PID. Verify its
     # /proc parent executable; custom socket names need no numeric suffix.
     target_pid="$(kitty @ --to "$target" ls 2>/dev/null | python3 -c '

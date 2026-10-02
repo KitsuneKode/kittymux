@@ -15,7 +15,7 @@ Xvfb "$DISP" -screen 0 1200x800x24 >/dev/null 2>&1 & XPID=$!
 sleep 1; kill -0 "$XPID" 2>/dev/null || { echo "SKIP: Xvfb would not start"; XPID=""; exit 0; }
 sed "s|@KITTYMUX_HOME@|$HOME_DIR|g" "$HOME_DIR/kittymux-keys.conf.tpl" > "$CFG/kittymux-keys.conf"
 cat > "$CFG/kitty.conf" <<CONF
-allow_remote_control yes
+allow_remote_control socket-only
 enabled_layouts splits
 include $CFG/kittymux-keys.conf
 CONF
