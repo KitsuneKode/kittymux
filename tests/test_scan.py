@@ -638,6 +638,71 @@ class AttentionTests(ScanBase):
         self.assertEqual(w.bells, 0)
 
 
+class QuietTests(ScanBase):
+    """`kittymux notify mute` and `kittymux snooze`: quiet the interruption, never lose the news."""
+
+    def setUp(self):
+        super().setUp()
+        self.w = FakeWindow(1, "claude", "")
+        self.w.user_vars = {}
+        self.popen = mock.patch("kittymux_scan.subprocess.Popen")
+        self.popen_mock = self.popen.start()
+        self.which = mock.patch("kittymux_scan.shutil.which", return_value="x")
+        self.which.start()
+        self.env3 = mock.patch.dict(os.environ, {"KITTYMUX_NOTIFY": "1"})                 # ScanBase switches popups off; these tests are about WHY they are held back
+        self.env3.start()
+        vars(KS._RT).pop("notify_log", None)
+        KS._RT.notified.clear()
+
+    def tearDown(self):
+        self.env3.stop()
+        self.which.stop()
+        self.popen.stop()
+        super().tearDown()
+
+    def mute(self, seconds):
+        with open(os.path.join(self.state, "notify-mute-until"), "w") as f:
+            f.write(str(time.time() + seconds))
+
+    def test_a_global_mute_holds_back_the_popup_with_a_reason_until_it_expires(self):
+        self.mute(600)
+        self.assertEqual(KS._notify(self.w, "waiting", "q"), "suppressed: muted (kittymux notify unmute); the event is in the inbox")
+        self.popen_mock.assert_not_called()
+        self.mute(-1)                                                                  # expired
+        self.assertEqual(KS._notify(self.w, "waiting", "q"), "sent")
+
+    def test_a_snoozed_window_is_quiet_and_only_that_window(self):
+        self.w.user_vars = {"kittymux_snooze_until": str(time.time() + 600)}
+        other = FakeWindow(2, "claude", "")
+        other.user_vars = {}
+        self.assertTrue(KS._notify(self.w, "waiting", "q").startswith("suppressed: this window is snoozed"))
+        self.assertEqual(KS._notify(other, "waiting", "q"), "sent")
+        self.w.user_vars = {"kittymux_snooze_until": str(time.time() - 5)}              # over
+        self.assertEqual(KS._notify(self.w, "waiting", "q"), "sent")
+
+    def test_garbage_in_the_mute_file_or_the_variable_means_not_muted(self):
+        with open(os.path.join(self.state, "notify-mute-until"), "w") as f:
+            f.write("tomorrow-ish")
+        self.w.user_vars = {"kittymux_snooze_until": "never"}
+        self.assertIsNone(KS._quiet_reason(self.w))
+        self.assertIsNone(KS._quiet_reason(FakeWindow(3, "claude", "")))              # a window without user_vars at all
+
+    def test_the_bell_is_skipped_too(self):
+        self.mute(600)
+        self.assertTrue(KS._alert(self.w).startswith("skipped: muted"))
+        self.assertEqual(self.w.bells, 0)
+
+    def test_a_muted_event_is_still_in_the_inbox(self):
+        self.add(self.w)
+        self.mute(600)
+        KS.scan_all()
+        self.w.screen = PERMISSION
+        KS.scan_all()
+        ev = KS._inbox().load(self.state)
+        self.assertEqual([(e["kind"], e["severity"]) for e in ev], [("permission", "needs-you")])
+        self.popen_mock.assert_not_called()                                              # nothing popped up, nothing lost
+
+
 class AutosaveTests(ScanBase):
     def setUp(self):
         super().setUp()

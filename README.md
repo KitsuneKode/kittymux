@@ -137,6 +137,9 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+h j k l` | pane nav (`shift+alt+arrows`) · `ctrl+alt+o` last pane |
 | `ctrl+alt+shift+1..9` | focus pane **N** of this tab straight away (the digit `ctrl+alt+e` draws on each pane) |
 | `ctrl+alt+e` · `ctrl+alt+shift+x` | number every pane on screen, press its digit to **focus** it · to **swap** with it (tmux's display-panes) |
+| `ctrl+alt+v` | **pick**: what needs you (longest-waiting first), every running agent, conversations you closed, a new agent — one searchable list (`kittymux pick --menu rofi` from your window manager) |
+| `ctrl+alt+shift+o` then `c` `x` `d` `u` `o` `a` `g` | **spawn** claude · codex · devin · cursor · opencode · agy · grok in a new tab (`shift` + letter: split right) in the current directory |
+| `ctrl+alt+shift+u` | reopen the agent conversation you closed last (it asks before resuming) |
 | `ctrl+alt+enter` | split horizontal · `+shift` vertical |
 | `ctrl+alt+d` / `+shift` | pane → new tab / chooser · `ctrl+alt+shift+h` shows/hides pane title bars (the drag handles) |
 | `ctrl+alt+z` / `0` | zoom pane / equalize |
@@ -168,6 +171,12 @@ When tmux is focused, only the keys tmux actually binds pass through
 On Hyprland's scrolling layout the `ctrl+alt+` layer is WM-owned — kittymux
 uses `ctrl+alt+g` (not `+a`), `shift+alt+arrows`, `ctrl+alt+0`, `ctrl+alt+q` so
 nothing gets silently swallowed.
+
+## Spawn, pick, reopen, mute
+
+`ctrl+alt+shift+o` then `c`/`x`/`d`/`u`/`o`/`a`/`g` starts claude/codex/devin/cursor/opencode/agy/grok in a new tab (with `shift`: a split) in the current directory — `kittymux spawn claude,codex,devin` opens several.
+`ctrl+alt+v` (or `kittymux pick --menu rofi` bound in your window manager) is one searchable list of what needs you (longest-waiting first), every running agent, conversations you closed and a new agent;
+`ctrl+alt+shift+u` reopens the one you closed last. `kittymux notify mute 1h` / `kittymux snooze 1h` quiet popups and bells without losing anything (the inbox keeps it all). [docs/launcher.md](docs/launcher.md)
 
 ## Agent status
 

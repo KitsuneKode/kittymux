@@ -30,6 +30,7 @@ bash tests/smoke_panes.sh
 bash tests/smoke_reload.sh
 bash tests/smoke_workflows.sh
 bash tests/smoke_resume.sh     # save → restore: the prompt, Enter/n, --direct, autosave, the journal
+bash tests/smoke_spawn.sh      # spawn (CLI + real keys), pick via a fake rofi, reopen, mute/snooze — real kitty, fake agents
 bash tests/smoke_socket.sh     # allow_remote_control socket-only refuses in-band control (yes obeys it: the control); $XDG_RUNTIME_DIR socket works
 bash tests/smoke_inbox.sh      # real OSC 99 notifications → typed inbox events
 bash tests/smoke_click.sh      # tab clicks with wobble; middle-click spares an agent tab

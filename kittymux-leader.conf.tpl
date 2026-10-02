@@ -76,6 +76,10 @@ map --mode leader a launch --type=overlay @KITTYMUX_HOME@/bin/mux-agents.sh
 map --mode leader w launch --type=background @KITTYMUX_HOME@/bin/mux-agents.sh --next-waiting
 # new agent in its own worktree
 map --mode leader g launch --type=overlay --cwd=current @KITTYMUX_HOME@/bin/mux-agent-new
+# pick: needs-you, agents, closed conversations, new agent
+map --mode leader v launch --type=overlay --title kittymux-pick @KITTYMUX_HOME@/bin/kittymux pick
+# reopen the conversation you closed last
+map --mode leader y launch --type=background @KITTYMUX_HOME@/bin/kittymux reopen
 # send a prompt to an agent
 map --mode leader semicolon launch --type=overlay @KITTYMUX_HOME@/bin/mux-send.sh
 # sidebar deck

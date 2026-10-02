@@ -16,6 +16,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 - `kittymux dim`, `kittymux screenshot`, clickable `path/file.py:42:7` (kitty ≥ 0.49.2), `kittymux demo` showcase tabs, `docs/try-it.md`.
 - `SECURITY.md`, `CONTRIBUTING.md`, issue and PR templates; `tests/smoke_socket.sh`.
 
+- **Spawn, pick, reopen, mute** ([docs/launcher.md](docs/launcher.md)): `kittymux spawn claude,codex [--vsplit]` (keys: `ctrl+alt+shift+o` then `c x d u o a g`), `kittymux pick` (one searchable list — needs-you longest-waiting first, running agents, closed conversations, new agent — in fzf, rofi or fuzzel; `⚠ no approvals` marks agents started with approvals off), `kittymux reopen` (`ctrl+alt+shift+u`), `kittymux notify mute|status|unmute`, `kittymux snooze` (muting quiets popups and bells, never the inbox).
+
 ### Changed
 - Recommended kitty setup is now `allow_remote_control socket-only` + `listen_on unix:${XDG_RUNTIME_DIR}/mykitty`; `kittymux doctor` warns about `yes` and a `/tmp` socket. Every smoke test runs under `socket-only`.
 - A completion notifies only with a known duration ≥ 15 s after a 5 s settle; a hook-announced turn ends only with the agent's own `Stop`. Screen-only completions need ≥ 60 s of work to pop up.

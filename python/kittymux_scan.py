@@ -688,6 +688,25 @@ def _notify_enabled(kind: str = "needs") -> bool:
     return True
 
 
+def _quiet_reason(window=None, wall: float | None = None) -> str | None:
+    """Why popups and bells are held back right now, or None: `kittymux notify mute` (a file with the end time) or `kittymux snooze` (a window user variable with the end
+    time). Events still go to the inbox either way — muting quiets the interruption, it never loses the news. Reasons are static text (no clocks)."""
+    wall = wall if wall is not None else time.time()
+    try:
+        with open(os.path.join(state_dir(), "notify-mute-until"), encoding="utf-8") as f:
+            if float(f.read().strip()) > wall:
+                return "suppressed: muted (kittymux notify unmute); the event is in the inbox"
+    except (OSError, ValueError):
+        pass
+    try:
+        until = float((getattr(window, "user_vars", None) or {}).get("kittymux_snooze_until") or 0)
+        if until > wall:
+            return "suppressed: this window is snoozed (kittymux snooze --clear); the event is in the inbox"
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
 def _plain(text, limit: int) -> str:
     """Notification text: cleaned, and markup-escaped (many daemons render Pango markup)."""
     return _clean(text, limit).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -727,6 +746,9 @@ def _alert(window) -> str:
             return "skipped: you are looking at it"
         if os.environ.get("KITTYMUX_BELL") == "0" or os.path.exists(os.path.join(state_dir(), "bell-off")):
             return "skipped: switched off (bell-off)"
+        quiet = _quiet_reason(window)
+        if quiet:
+            return "skipped: " + quiet.split(": ", 1)[1]
         allowed, why = _attention_allowed()
         if not allowed:
             return "skipped: " + why
@@ -780,6 +802,9 @@ def _notify(window, state: str, detail: str, agent: str = "") -> str:
             return "suppressed: you are looking at it"
         if not _notify_enabled(kind):
             return "suppressed: notifications are switched off"
+        quiet = _quiet_reason(window)
+        if quiet:
+            return quiet
         if not shutil.which("notify-send"):
             return "suppressed: notify-send is not installed"
         now = time.monotonic()

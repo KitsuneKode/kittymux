@@ -16,6 +16,9 @@ def tpl_chords() -> set:
     for path in ("kittymux-keys.conf.tpl", "kittymux-leader.conf.tpl"):
         with open(os.path.join(ROOT, path), encoding="utf-8") as f:
             for line in f:
+                if re.match(r"\s*map\s+--new-mode\b", line):          # `map --new-mode NAME [--opts…] CHORD`: the chord that enters the mode is the last token
+                    chords.add(line.split()[-1].lower())
+                    continue
                 m = re.match(r"\s*map\s+(\S+)", line)
                 if m:
                     chords.add(m.group(1).lower())
@@ -45,6 +48,36 @@ class ReadmeKeyTableTests(unittest.TestCase):
 
     def test_the_check_sees_the_table(self):
         self.assertGreater(len(readme_chords()), 10)
+
+
+def _norm(chord: str) -> str:
+    parts = chord.lower().split("+")
+    return "+".join(sorted(parts[:-1]) + [parts[-1]])               # ctrl+shift+alt+r == ctrl+alt+shift+r
+
+
+class NoChordBoundTwiceTests(unittest.TestCase):
+    def test_no_chord_is_bound_twice_in_one_mode_whatever_the_modifier_order(self):
+        """A second binding of one chord silently wins or loses (the spawn chord once collided with the reload chord, spelled ctrl+shift+alt+r)."""
+        seen: dict = {}
+        dupes = []
+        for path in ("kittymux.conf", "kittymux-keys.conf.tpl", "kittymux-leader.conf.tpl"):
+            with open(os.path.join(ROOT, path), encoding="utf-8") as f:
+                for n, line in enumerate(f, 1):
+                    if line.lstrip().startswith("#"):
+                        continue
+                    m = re.match(r"\s*map\s+((?:--\S+(?:\s+\S+)?\s+)*)(\S+)\s", line + " ")
+                    if not m:
+                        continue
+                    opts, chord = m.group(1), m.group(2)
+                    mode = re.search(r"--mode\s+(\S+)", opts)
+                    when = re.search(r"--when-focus-on\s+(\S+)", opts)
+                    if "--new-mode" in opts:
+                        chord = line.split()[-1]
+                    key = (mode.group(1) if mode else "", when.group(1) if when else "", _norm(chord))
+                    if key in seen:
+                        dupes.append(f"{path}:{n} duplicates {seen[key]} ({chord})")
+                    seen[key] = f"{path}:{n}"
+        self.assertEqual(dupes, [])
 
 
 if __name__ == "__main__":

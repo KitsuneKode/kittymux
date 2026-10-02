@@ -39,6 +39,7 @@ remote work.
 - `bin/mux-notify` — one desktop notification with a "Jump to it" action (focuses the window via kitty
   remote control, then `hyprctl`); started detached by the scanner, lives ≤ 30 s
 - `python/kittymux_barsize.py` — bar sizing + the `TabBar.tab_id_at` hit-test wrapper (installed by `tab_bar.py`)
+- `python/kittymux_launcher.py` (pure) + `kittymux spawn|pick|reopen|notify|snooze` — docs/launcher.md: agents spawned into a tab (before the `!scratch` tab) or split via `kitty @ launch`; `pick` builds rows (needs-you longest-waiting first → running → closed → new) for rofi/fuzzel/fzf; the focused kitty is chosen BEFORE the menu opens; `assets/agent-risk.json` (flags read from each CLI's `--help`) marks agents started without approvals
 - `docs/` — `compatibility.md` (which agent markers are verified), `audit-*.md`, `launch-checklist.md`
 - `bin/mux-status` — agent hooks → `kittymux_status` window user var → recorded by `pane-state.py`
 - `python/sidebar-kit.py` — `kitten` overlay: sidebar with real hover/click
@@ -125,7 +126,7 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   config error at every reload. They are emitted by `kittymux_layout.gated_conf(version, …)` (the geninclude), keyed on the version of the kitty process asking
   (`kitty.constants.version` — a kitty updated under a running session still reports its old version, which is exactly what we want). Opt-in looks
   (`kittymux dim`) are flag files in `$KITTYMUX_STATE`, never default-on. Custom shaders also need `slangc` installed (`have_slangc`).
-- Keys: every new chord is checked against the window manager (`hyprctl binds -j`; `kittymux doctor` does all chords, `test_template_avoids_the_keys_hyprland_takes_with_ctrl_alt`
+- Keys: every new chord is checked against ALL of: our template, `kittymux.conf`, the user's own kitty confs (modifier ORDER differs: `ctrl+shift+alt+r` is `ctrl+alt+shift+r` — `test_no_chord_is_bound_twice…` normalises) and the window manager, and tried with REAL key events (`smoke_spawn.sh`). Also: kept-quiet is not lost — mute/snooze (`kittymux_scan._quiet_reason`) suppress popups and bells but every event still reaches the inbox. Keys: every new chord is checked against the window manager (`hyprctl binds -j`; `kittymux doctor` does all chords, `test_template_avoids_the_keys_hyprland_takes_with_ctrl_alt`
   pins the known-taken `ctrl+alt` letters: a s f c x p w m + arrows/minus/equal). Hyprland sees a global chord first; `ctrl+alt+p` once shipped and was dead on arrival.
 - Overlay UIs (`launch --type=overlay`): one keypress must close them. Never `sys.stdin.read(n)` for a fixed n (a lone Esc blocks until n bytes arrive — it took 3 presses to
   quit); read what is there with `select`/`os.read`, parse sequences, treat a lone ESC as Escape. The key that opens an overlay is still bound while it has focus, so give the
@@ -203,6 +204,7 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   `bash tests/smoke_sidebar.sh` (collapse/expand button, right-click peek, edge drag with real mouse events),
   `bash tests/smoke_drag.sh` (tab drag-to-reorder with real pointer events — kitty's DnD works under Xvfb),
   `bash tests/smoke_resume.sh` (fake agents → `sessions save` → a second kitty restores them: claude started with `--resume <id>` and its flags, a lone opencode with `-c`, ambiguous droids as saved; autosave + pruning),
+  `bash tests/smoke_spawn.sh` (spawn by CLI and by real keys, pick through a fake rofi, reopen, mute/snooze),
   `bash tests/smoke_socket.sh` (`allow_remote_control socket-only` refuses a printed escape sequence — `yes` obeys it, the control — and the `$XDG_RUNTIME_DIR` socket is discovered),
   `bash tests/smoke_inbox.sh` (real OSC 99 notifications from an agent pane → typed inbox events, the pane follows a completion, focus acknowledges),
   `bash tests/smoke_click.sh` (tab clicks with wobble and slowness; a middle-click spares an agent tab),

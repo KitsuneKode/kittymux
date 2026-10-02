@@ -114,6 +114,34 @@ map ctrl+alt+y           launch --type=background @KITTYMUX_HOME@/bin/mux-agents
 map ctrl+alt+shift+g     launch --type=overlay --cwd=current @KITTYMUX_HOME@/bin/mux-agent-new
 # send a prompt to a background agent pane without switching focus
 map ctrl+alt+semicolon   launch --type=overlay @KITTYMUX_HOME@/bin/mux-send.sh
+# ctrl+alt+v — pick: what needs you, every agent, closed conversations and a new agent in ONE searchable list (rofi/fuzzel from your WM: `kittymux pick --menu rofi`)
+map ctrl+alt+v           launch --type=overlay --title kittymux-pick @KITTYMUX_HOME@/bin/kittymux pick
+map --when-focus-on title:kittymux-pick ctrl+alt+v close_window
+# ctrl+alt+shift+u — reopen the agent conversation you closed last (it asks before resuming)
+map ctrl+alt+shift+u     launch --type=background @KITTYMUX_HOME@/bin/kittymux reopen
+# ctrl+alt+shift+o — spawn mode: then a letter starts that agent in a new tab (shift+letter: split right) — c claude · x codex · d devin · u cursor · o opencode · a agy · g grok
+map --new-mode spawn --on-action end --on-unknown end --timeout 3.0 ctrl+alt+shift+o
+# spawn claude in a new tab (shift: split right)
+map --mode spawn c launch --type=background @KITTYMUX_HOME@/bin/kittymux spawn claude
+map --mode spawn shift+c launch --type=background @KITTYMUX_HOME@/bin/kittymux spawn claude --vsplit
+# spawn codex in a new tab (shift: split right)
+map --mode spawn x launch --type=background @KITTYMUX_HOME@/bin/kittymux spawn codex
+map --mode spawn shift+x launch --type=background @KITTYMUX_HOME@/bin/kittymux spawn codex --vsplit
+# spawn devin in a new tab (shift: split right)
+map --mode spawn d launch --type=background @KITTYMUX_HOME@/bin/kittymux spawn devin
+map --mode spawn shift+d launch --type=background @KITTYMUX_HOME@/bin/kittymux spawn devin --vsplit
+# spawn cursor-agent in a new tab (shift: split right)
+map --mode spawn u launch --type=background @KITTYMUX_HOME@/bin/kittymux spawn cursor-agent
+map --mode spawn shift+u launch --type=background @KITTYMUX_HOME@/bin/kittymux spawn cursor-agent --vsplit
+# spawn opencode in a new tab (shift: split right)
+map --mode spawn o launch --type=background @KITTYMUX_HOME@/bin/kittymux spawn opencode
+map --mode spawn shift+o launch --type=background @KITTYMUX_HOME@/bin/kittymux spawn opencode --vsplit
+# spawn agy in a new tab (shift: split right)
+map --mode spawn a launch --type=background @KITTYMUX_HOME@/bin/kittymux spawn agy
+map --mode spawn shift+a launch --type=background @KITTYMUX_HOME@/bin/kittymux spawn agy --vsplit
+# spawn grok in a new tab (shift: split right)
+map --mode spawn g launch --type=background @KITTYMUX_HOME@/bin/kittymux spawn grok
+map --mode spawn shift+g launch --type=background @KITTYMUX_HOME@/bin/kittymux spawn grok --vsplit
 # per-window activity state feeding the picker's busy/waiting markers
 watcher @KITTYMUX_HOME@/python/pane-state.py
 # ctrl+alt+shift+e — move this window's bar: left → bottom → top → right

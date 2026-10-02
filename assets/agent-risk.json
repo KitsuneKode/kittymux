@@ -1,0 +1,10 @@
+{
+  "_about": "Flags that switch an agent's approvals off, read from each CLI's own --help (2026-10-02). A tab whose command line has one is shown as '!' (no approvals): a risk worth seeing at a glance. Only flags the CLI documents; add yours in ~/.config/kittymux/risk.json (same shape).",
+  "claude":       {"flags": ["--dangerously-skip-permissions"], "pairs": [["--permission-mode", "bypassPermissions"]]},
+  "codex":        {"flags": ["--dangerously-bypass-approvals-and-sandbox"]},
+  "cursor-agent": {"flags": ["--force", "-f", "--yolo"]},
+  "opencode":     {"flags": ["--auto"]},
+  "devin":        {"pairs": [["--permission-mode", "dangerous"]]},
+  "agy":          {"flags": ["--dangerously-skip-permissions"]},
+  "grok":         {"flags": ["--always-approve"], "pairs": [["--permission-mode", "bypassPermissions"]]}
+}
