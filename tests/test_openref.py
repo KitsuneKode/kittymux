@@ -72,10 +72,18 @@ class GatedConfTests(unittest.TestCase):
             self.assertEqual(L.gated_conf((0, 49, 1), d), "")
             self.assertEqual(L.gated_conf((0, 0, 0), d), "")          # version unknown: stay silent
 
-    def test_detect_url_regex_on_0_49_2(self):
+    def test_detect_url_regex_and_the_pane_title_template_on_0_49_2(self):
         with tempfile.TemporaryDirectory() as d:
             out = L.gated_conf((0, 49, 2), d)
-            self.assertEqual(out, f"detect_url_regex {L.DETECT_URL_REGEX}\n")
+            self.assertEqual(out, f"detect_url_regex {L.DETECT_URL_REGEX}\nwindow_title_template {L.PANE_TITLE_TEMPLATE}\n")
+
+    def test_the_pane_title_template_falls_back_to_kittys_own_title(self):
+        """No window_title_bar.py, a hook that failed, or the switch off all make `{custom}` empty: the bar must then show the usual title, never a blank."""
+        self.assertIn("{custom or title}", L.PANE_TITLE_TEMPLATE)
+        self.assertTrue(L.PANE_TITLE_TEMPLATE.startswith('"') and L.PANE_TITLE_TEMPLATE.endswith('"'))
+        with tempfile.TemporaryDirectory() as d:
+            for version in ((0, 49, 1), (0, 0, 0)):
+                self.assertNotIn("window_title_template", L.gated_conf(version, d))
 
     def test_dim_is_opt_in_and_gated(self):
         with tempfile.TemporaryDirectory() as d:

@@ -8,13 +8,13 @@
 import os
 
 FEATURES = ("folder", "hue", "collide", "sheet", "hover", "panetitle")
-DEFAULTS = {"folder": True, "hue": True, "collide": True, "sheet": True, "hover": False, "panetitle": False}
+DEFAULTS = {"folder": True, "hue": True, "collide": True, "sheet": True, "hover": False, "panetitle": True}   # panetitle only shows when pane title bars are on
 PRESETS = {
     "minimal": frozenset({"folder"}),
     "default": frozenset(name for name, on in DEFAULTS.items() if on),
     "full": frozenset(FEATURES),
 }
-PLANNED = frozenset({"sheet", "hover", "panetitle"})     # settings that are saved but nothing reads yet — the CLI says so
+PLANNED = frozenset({"sheet", "hover"})     # settings that are saved but nothing reads yet — the CLI says so
 _OFF = {"0", "off", "false", "no"}
 _ON = {"1", "on", "true", "yes"}
 

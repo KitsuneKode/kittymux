@@ -42,6 +42,7 @@ import kittymux_features  # noqa: E402
 import kittymux_git  # noqa: E402
 import kittymux_launcher  # noqa: E402
 import kittymux_layout  # noqa: E402
+import kittymux_panetitle  # noqa: E402
 import kittymux_place  # noqa: E402
 import kittymux_scan  # noqa: E402
 import kittymux_state  # noqa: E402
@@ -51,7 +52,7 @@ import kittymux_theme  # noqa: E402
 # for the life of the process — so after an upgrade a running kitty would keep serving
 # the OLD helpers to the NEW tab bar (AttributeError on any name added since). Reload
 # them every time this file runs.
-for _mod in (kittymux_theme, kittymux_agents, kittymux_git, kittymux_features, kittymux_place, kittymux_layout,
+for _mod in (kittymux_theme, kittymux_agents, kittymux_git, kittymux_features, kittymux_place, kittymux_panetitle, kittymux_layout,
              kittymux_state, kittymux_scan, kittymux_barsize, kittymux_deck):
     try:
         importlib.reload(_mod)
@@ -460,7 +461,7 @@ def _best_process_label(foreground: list[list[str]], last_cmd: str) -> str:
 
 
 def _clean_visible_title(title: str) -> str:
-    title = title.strip()
+    title = kittymux_place.clean(title)         # whatever the program in the window set: no control characters reach the screen
     if title.startswith("[") and "] " in title:
         title = title.split("] ", 1)[1]
 

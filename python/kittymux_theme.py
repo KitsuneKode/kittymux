@@ -61,11 +61,13 @@ def ensure_contrast(fg: int, bg: int, minimum: float = 3.0) -> int:
     if contrast(fg, bg) >= minimum:
         return fg
     target = 0xFFFFFF if luminance(bg) < 0.5 else 0x000000
-    for step in range(1, 21):
-        cand = blend(target, fg, step * 0.05)
-        if contrast(cand, bg) >= minimum:
-            return cand
-    return target
+    other = 0x000000 if target == 0xFFFFFF else 0xFFFFFF       # a mid-tone background (a solid accent block) may only be reachable the other way
+    for end in (target, other):
+        for step in range(1, 21):
+            cand = blend(end, fg, step * 0.05)
+            if contrast(cand, bg) >= minimum:
+                return cand
+    return target if contrast(target, bg) >= contrast(other, bg) else other
 
 
 HUE_SLOTS = 24                 # 15° apart before the state hues are kept clear

@@ -78,6 +78,10 @@ def render_conf(layout: Layout) -> str:
 # on this machine may be older than the files on disk (a package update under a live session). So
 # these lines are emitted only when the version of the kitty process asking says it understands them.
 DETECT_URL_MIN = (0, 49, 2)          # detect_url_regex
+PANE_TITLE_MIN = (0, 49, 2)          # window_title_template with `{custom}` (window_title_bar.py's draw_window_title) — verified on 0.49.2
+# kitty's own default template with `{title}` swapped for `{custom or title}`: no hook file, a failing hook or the switch off leave `{custom}` empty,
+# and the pane title bar must then show the usual title — never a blank bar
+PANE_TITLE_TEMPLATE = '"{fmt.fg.red}{bell_symbol}{activity_symbol}{fmt.fg.window}{progress_percent}{custom or title}"'
 DIM_SHADER_MIN = (0, 49, 2)          # dim-inactive-windows stopped dimming the tab bar here (custom_shaders itself is 0.49.0)
 DIM_FLAG = "dim-inactive"            # $KITTYMUX_STATE/dim-inactive present → dim the windows that are not focused
 
@@ -120,6 +124,8 @@ def gated_conf(version: tuple, sdir: str, slangc: bool = False) -> str:
     lines = []
     if version >= DETECT_URL_MIN:
         lines.append(f"detect_url_regex {DETECT_URL_REGEX}")
+    if version >= PANE_TITLE_MIN:
+        lines.append(f"window_title_template {PANE_TITLE_TEMPLATE}")
     if version >= DIM_SHADER_MIN and slangc and os.path.exists(os.path.join(sdir, DIM_FLAG)):
         lines.append("custom_shaders dim-inactive-windows")
     return "".join(line + "\n" for line in lines)

@@ -68,10 +68,16 @@ class FeatureTests(unittest.TestCase):
         self.assertEqual(F.state_dir({"XDG_STATE_HOME": "/x"}), "/x/kittymux")
 
     def test_pieces_that_are_not_built_yet_are_marked_planned(self):
-        self.assertEqual(F.PLANNED, frozenset({"sheet", "hover", "panetitle"}))
+        self.assertEqual(F.PLANNED, frozenset({"sheet", "hover"}))
         self.assertTrue(F.PLANNED <= set(F.FEATURES))
         self.assertTrue(F.live().isdisjoint(F.PLANNED))
-        self.assertEqual(F.live(), frozenset({"folder", "hue", "collide"}))
+        self.assertEqual(F.live(), frozenset({"folder", "hue", "collide", "panetitle"}))
+
+    def test_pane_title_bars_are_on_by_default_because_they_only_show_when_you_turn_the_bars_on(self):
+        self.assertTrue(F.DEFAULTS["panetitle"])
+        self.assertTrue(F.enabled("panetitle", self.sdir, {}))
+        self.assertIn("panetitle", F.PRESETS["default"])
+        self.assertNotIn("panetitle", F.PRESETS["minimal"])
 
 
 if __name__ == "__main__":

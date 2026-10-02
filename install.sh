@@ -98,10 +98,11 @@ link_py() {
     ln -s "$KITTYMUX_HOME/python/$name" "$dest"
 }
 link_py tab_bar.py
+link_py window_title_bar.py      # kitty's per-pane title bar loads this by name (it hands over to kittymux_panetitle)
 for helper in "$KITTYMUX_HOME"/python/kittymux_*.py; do
     link_py "$(basename "$helper")"
 done
-ok "tab_bar.py + helper modules → symlinks"
+ok "tab_bar.py, window_title_bar.py + helper modules → symlinks"
 
 # ── managed tab-edge file (mux-edge.sh rewrites it) ─────────────────────────
 [[ -f "$EDGE_FILE" ]] || printf '# managed by kittymux mux-edge.sh — do not edit\ntab_bar_edge bottom\n' > "$EDGE_FILE"

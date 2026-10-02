@@ -7,6 +7,7 @@
 # same pieces. `layout` returns [(text, role)]; the caller picks colours (`style`).
 
 import os
+import re
 from typing import Callable, NamedTuple
 
 ROLES = ("icon", "project", "worktree", "inner", "where", "branch")
@@ -21,8 +22,22 @@ class Facts(NamedTuple):
     branch: str
 
 
+_SPACES = re.compile(r"[\t\n\r\x0b\x0c]")
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def clean(text: str) -> str:
+    """Text safe to draw: every control character gone (a directory can be NAMED with an escape sequence, and kitty's own title sanitiser lets ESC
+    and 0x1a-0x1f through), tabs and newlines turned into spaces, runs of whitespace collapsed."""
+    return " ".join(_CONTROL.sub("", _SPACES.sub(" ", text)).split())
+
+
 def facts(cwd: str, info, home: str | None = None) -> Facts:
-    """`info` is kittymux_git.info(cwd) (a GitInfo) or None. Never raises."""
+    """`info` is kittymux_git.info(cwd) (a GitInfo) or None. Never raises. Every field is `clean`ed."""
+    return Facts(*(clean(x) for x in _facts(cwd, info, home)))
+
+
+def _facts(cwd: str, info, home: str | None = None) -> Facts:
     home = home or os.path.expanduser("~")
     if not cwd:
         return Facts("~", "", "", "", "")

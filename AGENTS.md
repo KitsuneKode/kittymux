@@ -29,13 +29,17 @@ remote work.
 - `python/kittymux_theme.py` / `kittymux_agents.py` / `kittymux_deck.py` — pure helper modules
   (no kitty imports; unit-tested in `tests/`). Theme tokens derive from live kitty colours; symlinked
   into the config dir by `install.sh`. Never hardcode a palette in `tab_bar.py`/`sidebar-kit.py`.
-- `python/kittymux_features.py` (pure) + `kittymux features [list | on|off NAME | preset minimal|default|full]` — the switchboard for the optional pieces of the bar: `folder`, `hue`, `collide` are live; `sheet`,
-  `hover`, `panetitle` are planned (saved, nothing reads them — the CLI says so). Precedence: env `KITTYMUX_<NAME>` > flag file `<name>-off|-on` in `$KITTYMUX_STATE` > default; the bar resolves it once per pass
+- `python/kittymux_features.py` (pure) + `kittymux features [list | on|off NAME | preset minimal|default|full]` — the switchboard for the optional pieces of the bar: `folder`, `hue`, `collide`, `panetitle` are live; `sheet`,
+  `hover` are planned (saved, nothing reads them — the CLI says so). Precedence: env `KITTYMUX_<NAME>` > flag file `<name>-off|-on` in `$KITTYMUX_STATE` > default; the bar resolves it once per pass
   (`tab_bar._features`). With `folder` off the bar draws the line it always drew — keep that path as it was.
 - `python/kittymux_place.py` (pure) — the folder line under a vertical tab: `facts` (project / worktree / inner / where / branch), `layout` (what fits: branch goes first, then the path, then the icon; the worktree outranks the
   path; the project name is only ever middle-truncated), `place_room` (the room pieces drawn AFTER it keep), `style` (one bright element per row), and the title rules `redundant` / `worktree_named` / `colliding`.
   `kittymux_theme.project_hue` is a stable, calm per-project tint (SHA-1 slots, never `hash()`), kept clear of the state colours and ≥ 4.5:1 on the row. The bar compares what is DRAWN — `tab.name or tab.title`
   with the agent prefix stripped — never the raw window title. `KITTYMUX_BAR_DUMP=1` writes `$KITTYMUX_STATE/bar-dump.json` (a test hook for `tests/smoke_place.sh`).
+- `python/kittymux_panetitle.py` + `python/window_title_bar.py` — the folder line in kitty's per-pane title bars (kitty ≥ 0.49.2). kitty loads `window_title_bar.py` ONCE per process, so it is a trampoline into
+  `kittymux_panetitle.draw` (reloaded by tab_bar.py like the other helpers). `kittymux_layout.gated_conf` emits `window_title_template` with `{custom or title}`: an empty hook result (switch off, failure, no directory)
+  falls back to kitty's own title, never a blank bar. Colours derive from the bar's REAL fg/bg (`window_title_bar_*` else the tab colours) and `kittymux_theme.ensure_contrast` turns the other way on mid-tone
+  backgrounds. `KITTYMUX_PANETITLE_DUMP=1` records what each pane drew (`tests/smoke_panetitle.sh`).
 - `tests/shot_bar.sh` — a screenshot of the bar (dark|light, any width, rail) with synthetic repos; `tests/profile_bar.sh` — draw cost with N tabs (compare two trees; the folder line costs ~0.02 ms/draw at 23 tabs).
 - `assets/notify/` (built by `tools/build-notify-icons.py`) — one PNG per agent for notifications; `docs/brand/` — the mascot
   brief and image-model prompts (`tools/build-brand.py` derives sizes from `assets/brand/mascot.png`); `docs/notifications.md` — the
@@ -227,6 +231,7 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   `bash tests/smoke_resize.sh` (a fast pointer burst: the bar edge reaches the pointer, every tab re-flows on release),
   `bash tests/smoke_panes.sh` (`ctrl+alt+shift+1..9` and the `ctrl+alt+e` overview agree on pane numbers; `ctrl+alt+PgUp/Home/End` scroll — real key events),
   `bash tests/smoke_place.sh` (the folder line: twins, hidden duplicates, worktrees, a split's room, every switch on its own, all-off = the old line),
+  `bash tests/smoke_panetitle.sh` (the folder line in pane title bars: bold on the focused pane, own title appended only when new, an empty title, tab renames, the switch),
   `bash tests/smoke_demo.sh` (`kittymux demo` opens every showcase tab — the front door must stay healthy),
   `bash tests/smoke_keys.sh` (the keymap overlay: one Esc/q/the chord closes it, no stacking, typing filters),
   `bash tests/smoke_openref.sh` (ctrl+shift+click on `src/app.py:42:7` opens `$EDITOR +42`; kitty ≥ 0.49.2),

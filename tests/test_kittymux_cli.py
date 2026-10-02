@@ -1226,10 +1226,10 @@ class FeaturesTests(unittest.TestCase):
     def test_pieces_that_do_not_exist_yet_say_so(self):
         """`off sheet` must not look like it stopped something: nothing reads that switch yet."""
         _rc, out, _e, _ = self.run_cmd()
-        for name in ("sheet", "hover", "panetitle"):
+        for name in ("sheet", "hover"):
             line = next(ln for ln in out.splitlines() if ln.split()[:1] == [name])
             self.assertIn("planned", line, line)
-        for name in ("folder", "hue", "collide"):
+        for name in ("folder", "hue", "collide", "panetitle"):
             line = next(ln for ln in out.splitlines() if ln.split()[:1] == [name])
             self.assertNotIn("planned", line, line)
         rc, out, _e, sdir = self.run_cmd("off", "sheet")

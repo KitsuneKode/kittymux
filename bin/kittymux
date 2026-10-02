@@ -521,7 +521,7 @@ def demo(argv: list[str]) -> int:
     os.makedirs(cfg)
     os.makedirs(state, mode=0o700)
     import glob
-    for path in [os.path.join(HOME_DIR, "python", "tab_bar.py")] + sorted(glob.glob(os.path.join(HOME_DIR, "python", "kittymux_*.py"))):
+    for path in [os.path.join(HOME_DIR, "python", "tab_bar.py"), os.path.join(HOME_DIR, "python", "window_title_bar.py")] + sorted(glob.glob(os.path.join(HOME_DIR, "python", "kittymux_*.py"))):
         os.symlink(path, os.path.join(cfg, os.path.basename(path)))
     tpl = open(os.path.join(HOME_DIR, "kittymux-keys.conf.tpl"), encoding="utf-8").read()
     open(os.path.join(cfg, "kittymux-keys.conf"), "w").write(tpl.replace("@KITTYMUX_HOME@", HOME_DIR))
@@ -2037,7 +2037,7 @@ FEATURE_HELP = {
     "collide": "emphasise the project of tabs that show the same title",
     "sheet": "(planned — not built yet) the side sheet for a tab",
     "hover": "(planned — not built yet) open the sheet on hover, inside the sheet only: kitty sends the bar no idle motion",
-    "panetitle": "(planned — not built yet) folder + branch in pane title bars",
+    "panetitle": "the same line in each pane's title bar, plus the pane's own title (ctrl+alt+shift+h shows the bars; kitty ≥ 0.49.2)",
 }
 
 
@@ -2460,7 +2460,7 @@ def plan_uninstall(cfg_dir: str, home_dir: str, font_dir: str, bin_dir: str | No
     try:
         for name in sorted(os.listdir(cfg_dir)):
             path = os.path.join(cfg_dir, name)
-            if (name == "tab_bar.py" or name.startswith("kittymux_")) and os.path.islink(path) \
+            if (name in ("tab_bar.py", "window_title_bar.py") or name.startswith("kittymux_")) and os.path.islink(path) \
                     and os.path.realpath(path).startswith(os.path.realpath(py_dir) + os.sep):
                 links.append(path)
     except OSError:

@@ -42,6 +42,16 @@ class ContrastTests(unittest.TestCase):
         self.assertGreaterEqual(T.contrast(out, 0xffffff), 3.0)
         self.assertLess(T.luminance(out), T.luminance(0xdddddd))
 
+    def test_ensure_turns_the_other_way_when_the_usual_way_cannot_get_there(self):
+        """A solid accent block (a mid-tone tab colour): nothing lighter than the background reaches 4.5:1, something darker does."""
+        bg = 0x7AA2F7
+        out = T.ensure_contrast(0xC0CAF5, bg, 4.5)
+        self.assertGreaterEqual(T.contrast(out, bg), 4.5)
+        self.assertLess(T.luminance(out), T.luminance(bg))
+        # and when neither direction can reach it, the better of the two comes back rather than a worse one
+        worst = T.ensure_contrast(0x808080, 0x808080, 21.0)
+        self.assertGreaterEqual(T.contrast(worst, 0x808080), T.contrast(0xFFFFFF, 0x808080))
+
 
 class DimTests(unittest.TestCase):
     def test_dim_scales_channels(self):

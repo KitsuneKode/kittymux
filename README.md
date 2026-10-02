@@ -224,10 +224,13 @@ never the only cue.
   instead of repeating the name.
 - Narrow bar? The branch goes first, then the path; a long name is cut in the middle (`kit…ux:hue`), never dropped.
 - The slim rail has no room for a line, so it tints the tab number with the project's colour.
+- **Pane title bars** (`ctrl+alt+shift+h` shows them on every pane of a split tab) carry the same line — `alpha/src/ui  ⑂ main  ·  nvim README.md` — in colours
+  derived from the bar's own, so they read on any theme: the focused pane's project is bold, an empty or repeated pane title is left out, and
+  `kittymux features off panetitle` hands the bars back to kitty's own title. Renaming a tab never changes them (a tab name and a pane title are different things).
 
 ### Pick what you want
 
-Every optional piece is its own switch — use all of it, some of it, or none (the last three are planned: the switch is saved, nothing reads it yet):
+Every optional piece is its own switch — use all of it, some of it, or none (the last two are planned: the switch is saved, nothing reads it yet):
 
 | Switch | What it does | Default |
 |---|---|---|
@@ -236,7 +239,7 @@ Every optional piece is its own switch — use all of it, some of it, or none (t
 | `collide` | emphasise the project of tabs that show the same title | on |
 | `sheet` | the side sheet — **planned, no effect yet** | planned |
 | `hover` | open the sheet on hover — **planned, no effect yet**; kitty sends the bar no idle mouse motion, so it can only live inside the sheet | planned |
-| `panetitle` | folder + branch in pane title bars — **planned, no effect yet** | planned |
+| `panetitle` | the same line in each pane's title bar, then the pane's own title (`ctrl+alt+shift+h` shows the bars; kitty ≥ 0.49.2) | on |
 
 ```bash
 kittymux features                 # what is on, and where each setting comes from

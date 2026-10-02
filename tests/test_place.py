@@ -97,6 +97,24 @@ class LayoutTests(unittest.TestCase):
         self.assertLessEqual(wide("".join(t for t, _r in out)), 12)
 
 
+class ControlCharactersTests(unittest.TestCase):
+    """A directory can be NAMED with an escape sequence (`mkdir $'\\e[31mx'`), and kitty's own title sanitiser leaves ESC (0x1b) and 0x1a-0x1f
+    through: neither may reach a screen we draw on."""
+    EVIL = "ev\x1b[31mil\x07\x9bdir\n\x7f"
+
+    def test_no_control_character_survives_in_any_field(self):
+        info = G.GitInfo(top="/work/" + self.EVIL, branch="main", project=self.EVIL, worktree=self.EVIL)
+        for f in (P.facts("/work/" + self.EVIL + "/in\x1bner", info, HOME), P.facts("/x/" + self.EVIL + "/leaf" + self.EVIL, None, HOME)):
+            for field in f:
+                self.assertFalse(any(ord(c) < 32 or 127 <= ord(c) < 160 for c in field), repr(field))
+        self.assertEqual(P.facts("/x/a\x1bb", None, HOME).project, "ab")
+
+    def test_clean_keeps_ordinary_text_and_collapses_whitespace(self):
+        self.assertEqual(P.clean("  héllo \t wörld  "), "héllo wörld")
+        self.assertEqual(P.clean("日本語"), "日本語")
+        self.assertEqual(P.clean("a\x1b[31mb"), "a[31mb")
+
+
 class HiddenProjectKeepsTheWorktreeTests(unittest.TestCase):
     """A tab titled "kittymux" sitting in worktree `ui`: the project is already said, the WORKTREE is not — parallel
     agents on one repo must stay distinguishable."""
