@@ -11,7 +11,9 @@
   kittymux inbox       everything that wants your attention (questions, permissions, usage limits, finished runs), newest first:
                          inbox [--all] [--json] [--limit N]   inbox ack [ID… | --all]   inbox clear   inbox jump [ID]   inbox watch
   kittymux sessions    save/restore sessions WITH the agents' conversations (claude --resume <id>, codex resume <id>, …) and make new ones from templates:
-                         sessions [list] | save [NAME] [--all] | restore [NAME|last] | autosave | new NAME [--template T] [--agent A] [--cwd DIR] | templates | check | prepare | rewrite FILE|--recent
+                         sessions [list] | save [NAME] [--all] [--direct] | restore [NAME|last] | autosave | new NAME [--template T] [--agent A] [--cwd DIR] | templates | check | prepare | rewrite FILE|--recent
+                         sessions history [--since 7d] [--json]   sessions recover [NAME] [--since 6h]   (every agent session is journaled as it runs)
+                         Restored agent windows ASK before resuming (Enter resume · n new · s shell · a all); KITTYMUX_RESUME=auto or `touch $STATE/resume-auto` skips the question
   kittymux explain     why each agent pane is in its state, and every recent decision (state changes, notifications sent or held back):
                          explain [--window ID] [--last N] [--all] [--json]
   kittymux dim         dim the panes that are not focused (kitty ≥ 0.49.2): dim [on|off|toggle|show]
@@ -39,6 +41,7 @@ HOME_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(HOME_DIR, "python"))
 import kittymux_agents  # noqa: E402
 import kittymux_inbox  # noqa: E402
+import kittymux_journal  # noqa: E402
 import kittymux_resume  # noqa: E402
 import kittymux_layout  # noqa: E402
 import kittymux_theme  # noqa: E402
@@ -886,12 +889,17 @@ def sessions_prepare(sock: str, windows=None, plan=None) -> list[dict]:
     return plan
 
 
-def rewrite_file(path: str) -> list[str]:
-    """Rewrite one saved session file in place (0600, atomic). Returns what changed."""
+def prompt_wrapper() -> list[str]:
+    return [os.path.join(HOME_DIR, "bin", "kittymux"), "resume-prompt"]
+
+
+def rewrite_file(path: str, direct: bool = False) -> list[str]:
+    """Rewrite one saved session file in place (0600, atomic). Returns what changed. By default each agent window comes back ASKING (`kittymux resume-prompt`)
+    whether to resume its conversation; `direct` writes the resume command itself (it resumes without asking)."""
     agents = _resume_agents()
     with open(path, encoding="utf-8") as f:
         text = f.read()
-    new, report = kittymux_resume.rewrite_session(text, agents, enabled=lambda n: agent_enabled(n, agents))
+    new, report = kittymux_resume.rewrite_session(text, agents, enabled=lambda n: agent_enabled(n, agents), wrapper=None if direct else prompt_wrapper())
     if new != text:
         tmp = path + ".tmp"
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -940,7 +948,7 @@ def sessions_save(argv: list[str]) -> int:
         return 1
     report = []
     for p in changed:
-        report += rewrite_file(p)
+        report += rewrite_file(p, direct="--direct" in argv)
     path = os.path.join(sdir, f"{name}.kitty-session")
     print(f"{OK} saved {path}")
     for line in report:
@@ -1030,7 +1038,7 @@ def sessions_rewrite(argv: list[str]) -> int:
         return 1
     for p in files:
         try:
-            for line in rewrite_file(p):
+            for line in rewrite_file(p, direct="--direct" in argv):
                 print(f"  {line}")
         except OSError as e:
             print(f"kittymux sessions: {p}: {e}", file=sys.stderr)
@@ -1128,11 +1136,189 @@ def sessions_new(argv: list[str]) -> int:
     return 0
 
 
+# ── the restore prompt ───────────────────────────────────────────────────────
+RESUME_ALL_S = 120          # "resume all" answers every other waiting prompt for this long
+
+
+def _resume_all_file() -> str:
+    return os.path.join(kittymux_layout.state_dir(), "resume-all-until")
+
+
+def _resume_all_active(now: float | None = None) -> bool:
+    try:
+        with open(_resume_all_file(), encoding="utf-8") as f:
+            return float(f.read().strip() or 0) > (now if now is not None else time.time())
+    except (OSError, ValueError):
+        return False
+
+
+def _auto_resume() -> bool:
+    """Resume without asking: KITTYMUX_RESUME=auto, a `resume-auto` flag file in the state dir, or a recent `a` (resume all) answer."""
+    return (os.environ.get("KITTYMUX_RESUME", "").lower() == "auto" or os.path.exists(os.path.join(kittymux_layout.state_dir(), "resume-auto"))
+            or _resume_all_active())
+
+
+def resume_summary(info: dict, records: dict | None = None, now: float | None = None) -> list[str]:
+    """The lines the prompt shows: what it would resume and what we know about that conversation (from the journal)."""
+    now = now if now is not None else time.time()
+    records = records if records is not None else kittymux_journal.load(kittymux_layout.state_dir())
+    rec = records.get(f"{info['agent']}:{info['sid']}") if info["sid"] else None
+    cwd = os.getcwd().replace(os.path.expanduser("~"), "~")
+    what = f"session {info['sid'][:8]}" if info["sid"] else "the latest session in this directory"
+    lines = [f"{info['agent']} was running here — resume {what}?", f"  {cwd}"]
+    if rec:
+        bits = [f"last active {kittymux_journal.human_span(now - rec.get('last', now))} ago"]
+        if rec.get("turns"):
+            bits.append(f"{rec['turns']} run{'s' if rec['turns'] != 1 else ''} finished")
+        if rec.get("work_s"):
+            bits.append(f"{kittymux_journal.human_span(rec['work_s'])} of work")
+        if rec.get("tab"):
+            bits.append(f"tab “{rec['tab'][:30]}”")
+        lines.append("  " + " · ".join(bits))
+    return lines
+
+
+def resume_prompt(argv: list[str]) -> int:
+    """`kittymux resume-prompt --info JSON` — what a restored agent window runs instead of the agent. Asks once, then REPLACES itself with the answer
+    (exec), so the agent is the window's foreground process exactly as if it had been started directly. Enter/r resume · n new conversation · s shell ·
+    a resume this and every other waiting prompt · i show the commands."""
+    info = None
+    if len(argv) == 2 and argv[0] == "--info":
+        info = kittymux_resume.parse_info(argv[1])
+    shell = [os.environ.get("SHELL") or "/bin/sh"]
+    if info is None:
+        print("kittymux: this restored window has a resume record I do not understand — opening a shell instead.", file=sys.stderr)
+        os.execvp(shell[0], shell)
+    choice = "resume" if _auto_resume() else None
+    tty = None
+    if choice is None:
+        try:
+            tty = os.open("/dev/tty", os.O_RDWR)
+        except OSError:
+            choice = "new"                      # nobody to ask: the original command is the harmless one
+    if choice is None:
+        choice = _ask_on_tty(tty, info)
+        os.close(tty)
+    if choice == "all":
+        try:
+            os.makedirs(kittymux_layout.state_dir(), mode=0o700, exist_ok=True)
+            with open(_resume_all_file(), "w", encoding="utf-8") as f:
+                f.write(str(time.time() + RESUME_ALL_S))
+        except OSError:
+            pass
+        choice = "resume"
+    target = {"resume": info["resume"], "new": info["orig"], "shell": shell}[choice]
+    if shutil.which(target[0]) is None:
+        print(f"kittymux: {target[0]} is not on PATH — opening a shell instead.", file=sys.stderr)
+        target = shell
+    os.execvp(target[0], target)
+    return 1
+
+
+def _ask_on_tty(fd: int, info: dict) -> str:
+    import select
+    import termios
+    import tty as ttymod
+    old = termios.tcgetattr(fd)
+    out = lambda text: os.write(fd, text.encode())
+    for line in resume_summary(info):
+        out(c("1", line) + "\r\n" if line.startswith(info["agent"]) else c("2", line) + "\r\n")
+    out("  " + c("1", "Enter") + " resume   " + c("1", "n") + " new conversation   " + c("1", "s") + " shell   " + c("1", "a") + " resume all   " + c("1", "i") + " commands\r\n")
+    choice = None
+    try:
+        ttymod.setcbreak(fd)
+        while choice is None:
+            ready, _, _ = select.select([fd], [], [], 0.5)
+            if not ready:
+                if _resume_all_active():                # another window's prompt was answered with "a"
+                    choice = "resume"
+                continue
+            data = os.read(fd, 32)
+            if not data:
+                choice = "new"
+                break
+            if ready and data == b"\x1b":                # a lone ESC; a sequence arrives in one read together
+                more, _, _ = select.select([fd], [], [], 0.05)
+                if more:
+                    data += os.read(fd, 32)
+            action = kittymux_resume.prompt_choice(data)
+            if action == "info":
+                out("  new:     " + shlex.join(info["orig"]) + "\r\n  resume:  " + shlex.join(info["resume"]) + "\r\n")
+            elif action:
+                choice = action
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    return choice
+
+
+# ── journal: history and recovery ────────────────────────────────────────────
+def sessions_history(argv: list[str]) -> int:
+    span = kittymux_journal.parse_span(next((argv[i + 1] for i, a in enumerate(argv[:-1]) if a == "--since"), "7d"), 7 * 86400)
+    now = time.time()
+    recs = kittymux_journal.entries(kittymux_journal.load(kittymux_layout.state_dir()), now, span)
+    ins = kittymux_journal.insights(recs)
+    if "--json" in argv:
+        print(json.dumps({"insights": ins, "sessions": recs}, indent=1, sort_keys=True))
+        return 0
+    if not recs:
+        print("no agent sessions recorded in that time (the scanner records them while a kitty runs)")
+        return 0
+    print(c("1", f"{ins['sessions']} agent sessions · {ins['running']} running now · {ins['turns']} runs finished · "
+                 f"{kittymux_journal.human_span(ins['work_s'])} of agent work"))
+    print(c("2", "  " + "   ".join(f"{a} {v['sessions']}×/{kittymux_journal.human_span(v['work_s'])}" for a, v in sorted(ins["by_agent"].items()))))
+    for e in recs:
+        sid = (e.get("sid") or "")[:8] or "—"
+        print("  %-13s %-9s %-26s %6s ago  %3s runs %7s  %s" % (
+            e["agent"], sid, (e.get("cwd") or "").replace(os.path.expanduser("~"), "~")[-26:], kittymux_journal.human_span(now - e.get("last", now)),
+            e.get("turns", 0), kittymux_journal.human_span(e.get("work_s", 0)), c("32", "running") if e["running"] else c("2", "closed")))
+    return 0
+
+
+def sessions_recover(argv: list[str]) -> int:
+    """A session file with one tab per agent conversation that was active recently and is not running now (a crash, a closed kitty). Each comes back
+    through the resume prompt. `kittymux sessions restore recovered` opens it."""
+    span = kittymux_journal.parse_span(next((argv[i + 1] for i, a in enumerate(argv[:-1]) if a == "--since"), "6h"), 6 * 3600)
+    name = next((a for a in argv if not a.startswith("-") and not re.fullmatch(r"\d+[smhd]", a)), "recovered")
+    if not TEMPLATE_NAME.match(name):
+        print("kittymux sessions: a session name is letters, digits, . _ - (up to 60)", file=sys.stderr)
+        return 2
+    agents = _resume_agents()
+    now = time.time()
+    todo = kittymux_journal.recoverable(kittymux_journal.entries(kittymux_journal.load(kittymux_layout.state_dir()), now, span))
+    lines, shown = [f"# kittymux: recovered agent sessions, {time.strftime('%Y-%m-%d %H:%M')}", ""], []
+    for e in todo:
+        if not os.path.isdir(e.get("cwd", "")) or not isinstance(e.get("argv"), list):
+            continue
+        hit = kittymux_resume.agent_of(agents, e["argv"])
+        mode = "exact" if e.get("sid") else "latest"
+        new = hit and kittymux_resume.resume_argv(agents[hit[0]], e["argv"], e.get("sid") or None, mode, hit[1])
+        if not new:
+            continue
+        launch = prompt_wrapper() + ["--info", kittymux_resume.prompt_info(hit[0], mode, e.get("sid"), e["argv"], new)]
+        title = re.sub(r"[\r\n]+", " ", e.get("tab") or e["agent"])[:40]
+        lines += [f"new_tab {title}", f"cd {shlex.quote(e['cwd'])}", "launch --title " + shlex.quote(e["agent"]) + " " + shlex.join(launch), ""]
+        shown.append(e)
+    if not shown:
+        print("nothing to recover: no agent session that was active recently and is not running now")
+        return 0
+    sdir = _sessions_dir()
+    os.makedirs(sdir, mode=0o700, exist_ok=True)
+    path = os.path.join(sdir, name + ".kitty-session")
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\nfocus_tab 0\n")
+    print(f"{OK} {path}")
+    for e in shown:
+        print(f"    {e['agent']:<13} {(e.get('cwd') or '').replace(os.path.expanduser('~'), '~')}  (last active {kittymux_journal.human_span(now - e.get('last', now))} ago)")
+    print(f"  open it with: kittymux sessions restore {name}")
+    return 0
+
+
 def sessions(argv: list[str]) -> int:
     cmd = argv[0] if argv and not argv[0].startswith("-") else "list"
     rest = argv[1:] if argv and not argv[0].startswith("-") else argv
     table = {"list": sessions_list, "save": sessions_save, "restore": sessions_restore, "new": sessions_new, "check": sessions_check,
-             "rewrite": sessions_rewrite}
+             "rewrite": sessions_rewrite, "history": sessions_history, "recover": sessions_recover}
     if cmd == "templates":
         for name, path in sorted(list_templates().items()):
             first = open(path, encoding="utf-8").readline().strip("# \n")
@@ -1147,7 +1333,7 @@ def sessions(argv: list[str]) -> int:
         sessions_prepare(sock)
         return 0
     if cmd not in table:
-        print("usage: kittymux sessions [list|save|restore|new|templates|check|prepare|rewrite]", file=sys.stderr)
+        print("usage: kittymux sessions [list|save|restore|new|templates|check|prepare|rewrite|history|recover]", file=sys.stderr)
         return 2
     return table[cmd](rest)
 
@@ -1571,6 +1757,8 @@ def main(argv: list[str]) -> int:
         return inbox(argv[1:])
     if cmd == "sessions":
         return sessions(argv[1:])
+    if cmd == "resume-prompt":
+        return resume_prompt(argv[1:])
     if cmd == "screenshot":
         return screenshot(argv[1:])
     if cmd in ("version", "--version", "-V"):

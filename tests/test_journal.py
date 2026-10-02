@@ -1,0 +1,140 @@
+import json
+import multiprocessing
+import os
+import stat
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
+import kittymux_journal as J  # noqa: E402
+
+SID = "4d4710c8-de7d-4c89-b7d2-c76a51f6fed7"
+
+
+def obs(**kw):
+    d = {"agent": "claude", "sid": SID, "cwd": "/w/a", "tab": "my tab", "argv": ["claude", "--model", "x"], "state": "idle", "kitty_pid": 10, "wid": 7, "mode": "exact"}
+    d.update(kw)
+    return d
+
+
+class ObserveTests(unittest.TestCase):
+    def test_a_session_accumulates_runs_and_working_time(self):
+        r = {}
+        self.assertTrue(J.observe(r, obs(state="idle"), 1000.0))
+        J.observe(r, obs(state="working"), 1010.0)
+        J.observe(r, obs(state="working"), 1100.0)                     # still working: only `last` moves
+        self.assertFalse(J.observe(r, obs(state="working"), 1110.0))
+        J.observe(r, obs(state="done"), 1130.0)                        # 120 s of work, one finished run
+        J.observe(r, obs(state="working"), 1200.0)
+        J.observe(r, obs(state="idle"), 1230.0)                        # 30 s more, not a completion
+        rec = r[f"claude:{SID}"]
+        self.assertEqual((rec["turns"], rec["work_s"], rec["state"], rec["last"]), (1, 150, "idle", 1230))
+        self.assertEqual((rec["first"], rec["cwd"], rec["argv"]), (1000, "/w/a", ["claude", "--model", "x"]))
+
+    def test_a_window_bound_record_becomes_the_sessions_record_when_its_id_appears(self):
+        r = {}
+        J.observe(r, obs(sid=None, state="working"), 1000.0)
+        self.assertEqual(list(r), ["claude:w10.7"])
+        J.observe(r, obs(sid=SID, state="working"), 1030.0)
+        self.assertEqual(list(r), [f"claude:{SID}"])
+        self.assertEqual(r[f"claude:{SID}"]["first"], 1000)              # its history came with it
+        self.assertEqual(r[f"claude:{SID}"]["sid"], SID)
+
+    def test_fields_update_when_they_change_and_empty_values_do_not_erase(self):
+        r = {}
+        J.observe(r, obs(), 1.0)
+        self.assertTrue(J.observe(r, obs(cwd="/w/b", tab="renamed"), 2.0))
+        J.observe(r, obs(cwd="", tab=None, argv=None), 3.0)
+        rec = r[f"claude:{SID}"]
+        self.assertEqual((rec["cwd"], rec["tab"], rec["argv"]), ("/w/b", "renamed", ["claude", "--model", "x"]))
+
+    def test_closing_finalises_work_and_marks_closed(self):
+        r = {}
+        J.observe(r, obs(state="working"), 1000.0)
+        self.assertFalse(J.close_missing(r, 99, set(), 1100.0))          # another kitty's windows are not ours to close
+        self.assertTrue(J.close_missing(r, 10, set(), 1100.0))
+        rec = r[f"claude:{SID}"]
+        self.assertEqual((rec["open"], rec["work_s"], rec["state"]), (False, 100, ""))
+        self.assertFalse(J.close_missing(r, 10, set(), 1200.0))
+
+    def test_prune_by_age_and_count(self):
+        r = {f"a:{i}": {"agent": "a", "last": 1000.0 + i} for i in range(J.RECORD_MAX + 20)}
+        r["old"] = {"agent": "a", "last": 0}
+        J.prune(r, 1000.0 + J.MAX_AGE_S - 5)
+        self.assertNotIn("old", r)
+        self.assertEqual(len(r), J.RECORD_MAX)
+        self.assertIn(f"a:{J.RECORD_MAX + 19}", r)                        # the newest survive
+
+
+class FileTests(unittest.TestCase):
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+
+    def test_roundtrip_private_atomic_and_newest_wins_on_merge(self):
+        a, b = {}, {}
+        J.observe(a, obs(), 1000.0)
+        self.assertTrue(J.flush(self.d, a, 1000.0))
+        self.assertEqual(stat.S_IMODE(os.stat(J.path_for(self.d)).st_mode), 0o600)
+        J.observe(b, obs(state="working", kitty_pid=11), 2000.0)         # another kitty saw the same session later
+        J.flush(self.d, b, 2000.0)
+        J.flush(self.d, a, 2001.0)                                        # a stale copy must not overwrite the newer record
+        rec = J.load(self.d)[f"claude:{SID}"]
+        self.assertEqual((rec["kitty_pid"], rec["state"], rec["last"]), (11, "working", 2000))
+        self.assertEqual([f for f in os.listdir(self.d) if f.endswith(".tmp")], [])
+
+    def test_bad_or_missing_file_is_empty_and_flush_never_raises(self):
+        self.assertEqual(J.load(self.d), {})
+        with open(J.path_for(self.d), "w") as f:
+            f.write("{not json")
+        self.assertEqual(J.load(self.d), {})
+        self.assertFalse(J.flush("/proc/not/writable", {"k": {"agent": "a"}}, 1.0))
+
+    def test_the_file_stays_bounded(self):
+        mine = {f"a:{i}": {"agent": "a", "last": 1000.0 + i, "cwd": "/x", "argv": ["a"]} for i in range(J.RECORD_MAX * 3)}
+        J.flush(self.d, mine, 5000.0)
+        self.assertEqual(len(J.load(self.d)), J.RECORD_MAX)
+
+
+def _w(args):
+    d, base = args
+    for i in range(20):
+        r = {}
+        J.observe(r, obs(sid=f"{base:08x}-0000-4000-8000-{i:012x}", kitty_pid=base, wid=i), 1000.0 + i)
+        J.flush(d, r, 1000.0 + i)
+
+
+class ConcurrencyTests(unittest.TestCase):
+    def test_several_processes_share_one_journal_without_losing_records(self):
+        d = tempfile.mkdtemp()
+        with multiprocessing.get_context("fork").Pool(4) as pool:
+            pool.map(_w, [(d, k) for k in range(1, 5)])
+        self.assertEqual(len(J.load(d)), 80)
+        with open(J.path_for(d)) as f:
+            json.load(f)
+
+
+class ReadBackTests(unittest.TestCase):
+    def test_entries_insights_and_recoverable(self):
+        proc = tempfile.mkdtemp()
+        os.makedirs(os.path.join(proc, "10"))                             # kitty 10 is alive; 11 is not
+        r = {}
+        J.observe(r, obs(), 5000.0)
+        J.observe(r, obs(sid=None, agent="codex", argv=["codex"], kitty_pid=11, wid=3, state="working"), 5000.0)
+        J.observe(r, obs(sid="aaaaaaaa-0000-4000-8000-000000000001", agent="droid", argv=["droid"], kitty_pid=11, wid=4), 100.0)
+        es = J.entries(r, 5100.0, 3600, proc)
+        self.assertEqual([e["agent"] for e in es], ["claude", "codex"])      # the droid is older than the window
+        self.assertEqual([e["running"] for e in es], [True, False])
+        ins = J.insights(es)
+        self.assertEqual((ins["sessions"], ins["running"]), (2, 1))
+        self.assertEqual([e["agent"] for e in J.recoverable(es)], ["codex"])  # claude is running; codex's kitty is gone
+
+    def test_spans(self):
+        self.assertEqual(J.parse_span("90m", 0), 5400)
+        self.assertEqual(J.parse_span("2d", 0), 172800)
+        self.assertEqual(J.parse_span("junk", 7), 7)
+        self.assertEqual([J.human_span(s) for s in (5, 600, 5400, 8000, 300000)], ["5s", "10m", "1h30m", "2h13m", "3d"])
+
+
+if __name__ == "__main__":
+    unittest.main()

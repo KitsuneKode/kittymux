@@ -99,6 +99,7 @@ class ScanBase(unittest.TestCase):
             d.clear()
         vars(KS._RT).pop("decisions", None)
         vars(KS._RT).pop("attention", None)
+        vars(KS._RT).pop("journal", None)
         self._hypr = mock.patch("kittymux_layout.hypr_focus_on_activate", return_value=None)   # never depend on the compositor running the tests
         self._hypr.start()
         self.agent = mock.patch.object(KS, "agent_of", side_effect=lambda w: w.agent)
@@ -688,6 +689,92 @@ class AutosaveTests(ScanBase):
         KS._maybe_autosave(1000.0, [1])
         self.k.boss.listening_on = ""
         self.assertEqual(KS._maybe_autosave(1000.0 + KS.AUTOSAVE_PERIOD + 1, [1]), "no socket")
+
+
+class JournalIntegrationTests(ScanBase):
+    SID = "4d4710c8-de7d-4c89-b7d2-c76a51f6fed7"
+
+    def setUp(self):
+        super().setUp()
+        self.claude = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.claude, "sessions"))
+        with open(os.path.join(self.claude, "sessions", "424242.json"), "w") as f:
+            json.dump({"pid": 424242, "sessionId": self.SID, "cwd": "/w/a"}, f)
+        self._env2 = mock.patch.dict(os.environ, {"KITTYMUX_CLAUDE_HOME": self.claude})
+        self._env2.start()
+
+    def tearDown(self):
+        self._env2.stop()
+        super().tearDown()
+
+    def agent_window(self, wid=1, screen="idle", cmdline=("claude", "--model", "x")):
+        w = FakeWindow(wid, "claude", screen)
+        w.child = types.SimpleNamespace(child_fd=None, foreground_processes=[{"pid": 424242, "cmdline": list(cmdline)}])
+        w.cwd_of_child = "/w/a"
+        self.add(w)
+        return w
+
+    def records(self):
+        import kittymux_journal as J
+        return J.load(self.state)
+
+    def test_an_agent_window_is_journaled_with_its_session_id_command_and_cwd(self):
+        w = self.agent_window()
+        KS.scan_window(w, 1.0)
+        KS._journal_tick(self.k.boss, {"1"}, 1000.0)
+        rec = self.records()["claude:" + self.SID]
+        self.assertEqual((rec["cwd"], rec["argv"], rec["kitty_pid"], rec["wid"]), ("/w/a", ["claude", "--model", "x"], os.getpid(), 1))
+
+    def test_state_changes_feed_turns_and_working_time(self):
+        w = self.agent_window(screen="")
+        KS.scan_window(w, 1.0)
+        rec = lambda: KS._journal_rt()["recs"]["claude:" + self.SID]
+        with mock.patch.object(KS.time, "time", return_value=1000.0):
+            KS._journal_note(w, "working")
+        with mock.patch.object(KS.time, "time", return_value=1090.0):
+            KS._journal_note(w, "done")
+        self.assertEqual((rec()["turns"], rec()["work_s"]), (1, 90))
+
+    def test_a_closed_window_is_marked_closed_and_the_file_survives(self):
+        w = self.agent_window()
+        KS.scan_window(w, 1.0)
+        KS._journal_tick(self.k.boss, {"1"}, 1000.0)
+        self.k.boss.all_windows.clear()
+        KS._journal_tick(self.k.boss, set(), 1010.0)
+        self.assertFalse(self.records()["claude:" + self.SID]["open"])
+
+    def test_writes_are_coalesced(self):
+        w = self.agent_window()
+        KS.scan_window(w, 1.0)
+        with mock.patch("kittymux_journal.flush", return_value=True) as flush:
+            for t in (1000.0, 1001.0, 1002.0, 1003.0):
+                KS._journal_note(w, "working" if t % 2 else "idle", t)
+                KS._journal_tick(self.k.boss, {"1"}, t)
+            self.assertEqual(flush.call_count, 1)                                         # JOURNAL_FLUSH_GAP
+            KS._journal_note(w, "done", 1010.0)
+            KS._journal_tick(self.k.boss, {"1"}, 1010.0)
+            self.assertEqual(flush.call_count, 2)
+
+    def test_off_switch_records_nothing_and_a_non_agent_window_is_ignored(self):
+        w = self.agent_window()
+        with mock.patch.dict(os.environ, {"KITTYMUX_JOURNAL": "0"}):
+            KS.scan_window(w, 1.0)
+            KS._journal_tick(self.k.boss, {"1"}, 1000.0)
+        self.assertEqual(self.records(), {})
+
+    def test_a_window_without_an_agent_process_is_ignored(self):
+        plain = FakeWindow(2, "claude", "")
+        plain.child = types.SimpleNamespace(child_fd=None, foreground_processes=[{"pid": 5, "cmdline": ["zsh"]}])
+        self.add(plain)
+        KS.scan_window(plain, 1.0)
+        KS._journal_tick(self.k.boss, {"2"}, 2000.0)
+        self.assertEqual(self.records(), {})
+
+    def test_a_failing_journal_never_breaks_the_scan(self):
+        w = self.agent_window()
+        with mock.patch("kittymux_journal.observe", side_effect=RuntimeError("boom")):
+            KS.scan_window(w, 1.0)
+            KS._journal_tick(self.k.boss, {"1"}, 1000.0)
 
 
 class FalseCompletionTests(ScanBase):

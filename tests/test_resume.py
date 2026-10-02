@@ -307,6 +307,62 @@ class SelfDescribingRewriteTests(unittest.TestCase):
         self.assertEqual(once, twice)
 
 
+class PromptTests(unittest.TestCase):
+    SID = "4d4710c8-de7d-4c89-b7d2-c76a51f6fed7"
+
+    def line(self):
+        return ("launch --cwd=/w --title=claude 'kitty-unserialize-data={\"id\": 3}' --var=kittymux_resume=exact --var=kittymux_sid=%s "
+                "--var=kittymux_status=working /usr/bin/claude --model x\n" % self.SID)
+
+    def test_a_wrapper_makes_the_window_ask_first_and_carries_both_commands(self):
+        agents = AGENTS
+        new, report = R.rewrite_session(self.line(), agents, wrapper=["/k/bin/kittymux", "resume-prompt"])
+        tokens = shlex.split(new)
+        self.assertEqual(tokens[tokens.index("/k/bin/kittymux"):][:3], ["/k/bin/kittymux", "resume-prompt", "--info"])
+        info = R.parse_info(tokens[-1])
+        self.assertEqual((info["agent"], info["mode"], info["sid"]), ("claude", "exact", self.SID))
+        self.assertEqual(info["orig"], ["/usr/bin/claude", "--model", "x"])
+        self.assertEqual(info["resume"], ["/usr/bin/claude", "--model", "x", "--resume", self.SID])
+        self.assertNotIn("kittymux_status", new)
+        self.assertIn("asks", report[0])
+        again, report2 = R.rewrite_session(new, agents, wrapper=["/k/bin/kittymux", "resume-prompt"])        # a rewritten file is left alone
+        self.assertEqual((again, report2), (new, []))
+
+    def test_without_a_wrapper_it_resumes_directly(self):
+        new, _ = R.rewrite_session(self.line(), AGENTS)
+        self.assertIn("--resume " + self.SID, new)
+        self.assertNotIn("resume-prompt", new)
+
+    def test_info_is_validated_because_a_session_file_is_editable(self):
+        good = dict(agent="claude", mode="exact", sid=self.SID, orig=["claude"], resume=["claude", "--resume", self.SID])
+        self.assertIsNotNone(R.parse_info(json.dumps(good)))
+        for bad in (dict(good, sid="--dangerously-skip-permissions"), dict(good, resume=["rm", "-rf", "~"]), dict(good, orig=[]), dict(good, mode="auto"),
+                    dict(good, agent="a b; c"), dict(good, orig=["claude", 5]), dict(good, resume=["claude\0"]), dict(good, orig="claude"),
+                    dict(good, resume=["claude"] * 500)):
+            self.assertIsNone(R.parse_info(json.dumps(bad)), bad)
+        for junk in ("", "{", "[]", "null", "5"):
+            self.assertIsNone(R.parse_info(junk))
+
+    def test_keys(self):
+        c = R.prompt_choice
+        self.assertEqual([c(k) for k in (b"\r", b"\n", b"r", b"R", b"y")], ["resume"] * 5)
+        self.assertEqual([c(k) for k in (b"n", b"s", b"a", b"i", b"\x1b", b"\x03")], ["new", "shell", "all", "info", "shell", "shell"])
+        self.assertIsNone(c(b"\x1b[A"))               # an arrow key is not Escape
+        self.assertIsNone(c(b"x"))
+        self.assertEqual(c(b"xyn"), "resume")           # the first recognised key of what arrived
+
+    def test_identify_uses_the_agents_own_session_id_only(self):
+        agents = AGENTS
+        home = tempfile.mkdtemp()
+        os.makedirs(os.path.join(home, "sessions"))
+        with open(os.path.join(home, "sessions", "77.json"), "w") as f:
+            json.dump({"pid": 77, "sessionId": self.SID}, f)
+        got = R.identify(agents, [{"pid": 77, "cmdline": ["/usr/bin/claude", "-p", "x"]}], home, proc=tempfile.mkdtemp())
+        self.assertEqual((got["agent"], got["sid"], got["argv"][0]), ("claude", self.SID, "/usr/bin/claude"))
+        self.assertIsNone(R.identify(agents, [{"pid": 1, "cmdline": ["zsh"]}], home))
+        self.assertIsNone(R.identify(agents, [{"pid": 78, "cmdline": ["claude"]}], home, proc=tempfile.mkdtemp())["sid"])    # no registry file: unknown, not guessed
+
+
 class TemplateTests(unittest.TestCase):
     def test_placeholders_and_quoting(self):
         out = R.render_template("cd @Q:CWD@\nnew_tab @NAME@\nlaunch @Q:AGENT@ @UNKNOWN@\n", {"CWD": "/w/my project's", "NAME": "api", "AGENT": "claude"})

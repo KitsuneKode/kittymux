@@ -14,8 +14,8 @@ fail() { echo "FAIL: $*"; [ -f "$T/k.log" ] && tail -6 "$T/k.log"; exit 1; }
 for n in $(seq 161 199); do [ -e "/tmp/.X$n-lock" ] || { DISP=:$n; break; }; done
 Xvfb "$DISP" -screen 0 1400x900x24 >/dev/null 2>&1 & XPID=$!
 sleep 1; kill -0 "$XPID" 2>/dev/null || { echo "SKIP: Xvfb would not start"; XPID=""; exit 0; }
-for f in tab_bar.py kittymux_theme.py kittymux_deck.py kittymux_git.py kittymux_layout.py kittymux_barsize.py kittymux_agents.py kittymux_state.py kittymux_scan.py kittymux_inbox.py; do
-  ln -s "$HOME_DIR/python/$f" "$CFG/$f"
+for f in "$HOME_DIR"/python/tab_bar.py "$HOME_DIR"/python/kittymux_*.py; do
+  ln -s "$f" "$CFG/$(basename "$f")"
 done
 printf 'allow_remote_control yes\ninclude %s/kittymux.conf\nwatcher %s/python/pane-state.py\ntab_bar_edge left\ntab_bar_min_tabs 1\ngeninclude %s/python/kittymux_layout.py\n' \
   "$HOME_DIR" "$HOME_DIR" "$HOME_DIR" > "$CFG/kitty.conf"

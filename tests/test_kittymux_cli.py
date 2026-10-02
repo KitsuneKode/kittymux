@@ -328,8 +328,8 @@ class SessionsCliTests(unittest.TestCase):
                     "--var=kittymux_sid=4d4710c8-de7d-4c89-b7d2-c76a51f6fed7 /usr/bin/claude --model x\n")
         os.chmod(path, 0o644)
         with mock.patch.object(self.m, "agent_enabled", lambda n, a, *k: True):
-            first = self.m.rewrite_file(path)
-            second = self.m.rewrite_file(path)
+            first = self.m.rewrite_file(path, direct=True)
+            second = self.m.rewrite_file(path, direct=True)
         self.assertEqual(len(first), 1)
         self.assertEqual(first, second)
         text = open(path).read()
@@ -337,6 +337,58 @@ class SessionsCliTests(unittest.TestCase):
         self.assertNotIn("kittymux_status", text)
         self.assertEqual(stat_mode(path), 0o600)
         self.assertFalse(os.path.exists(path + ".tmp"))
+
+    def test_rewrite_file_by_default_makes_the_agent_window_ask(self):
+        import shlex
+        os.makedirs(self.sdir)
+        path = os.path.join(self.sdir, "s.kitty-session")
+        with open(path, "w") as f:
+            f.write("launch 'kitty-unserialize-data={\"id\": 1}' --var=kittymux_resume=exact "
+                    "--var=kittymux_sid=4d4710c8-de7d-4c89-b7d2-c76a51f6fed7 /usr/bin/claude --model x\n")
+        with mock.patch.object(self.m, "agent_enabled", lambda n, a, *k: True):
+            first = self.m.rewrite_file(path)
+            second = self.m.rewrite_file(path)
+        self.assertEqual((len(first), second), (1, []))
+        tokens = shlex.split(open(path).read())
+        self.assertEqual(tokens[-3:-1], ["resume-prompt", "--info"])
+        self.assertTrue(os.access(tokens[-4], os.X_OK))                              # the wrapper it launches is this install's kittymux
+
+    def test_history_and_recover_read_the_journal(self):
+        import kittymux_journal as J
+        import time
+        sid = "4d4710c8-de7d-4c89-b7d2-c76a51f6fed7"
+        work = os.path.join(self.tmp.name, "proj")
+        os.makedirs(work)
+        now = time.time()
+        recs = {}
+        J.observe(recs, {"agent": "claude", "sid": sid, "cwd": work, "tab": "api work", "argv": ["/usr/bin/claude", "--model", "x"], "state": "working",
+                         "kitty_pid": 2 ** 22 + 5, "wid": 3, "mode": ""}, now - 900)
+        J.observe(recs, {"agent": "claude", "sid": sid, "cwd": work, "tab": "api work", "argv": ["/usr/bin/claude", "--model", "x"], "state": "done",
+                         "kitty_pid": 2 ** 22 + 5, "wid": 3, "mode": ""}, now - 600)
+        J.observe(recs, {"agent": "codex", "sid": None, "cwd": "/gone/dir", "tab": "x", "argv": ["codex"], "state": "idle", "kitty_pid": 2 ** 22 + 5, "wid": 4,
+                         "mode": ""}, now - 600)
+        J.flush(self.tmp.name, recs, now)
+        rc, out, _ = self.run_cli(self.m.sessions_history, [])
+        self.assertEqual(rc, 0)
+        self.assertIn("2 agent sessions", out)
+        self.assertIn("1 runs finished", out)
+        rc, out, _ = self.run_cli(self.m.sessions_history, ["--json", "--since", "1h"])
+        self.assertEqual(json.loads(out)["insights"]["sessions"], 2)
+        with mock.patch.object(self.m, "agent_enabled", lambda n, a, *k: True):
+            rc, out, _ = self.run_cli(self.m.sessions_recover, ["--since", "1h"])
+        self.assertEqual(rc, 0)
+        text = open(os.path.join(self.sdir, "recovered.kitty-session")).read()
+        self.assertIn("new_tab api work", text)
+        self.assertIn("resume-prompt", text)
+        self.assertNotIn("/gone/dir", text)                                          # a directory that no longer exists is not recovered
+        self.assertEqual(stat_mode(os.path.join(self.sdir, "recovered.kitty-session")), 0o600)
+        self.assertEqual(self.run_cli(self.m.sessions_recover, ["bad/name"])[0], 2)
+
+    def test_recover_with_nothing_to_do_says_so(self):
+        rc, out, _ = self.run_cli(self.m.sessions_recover, [])
+        self.assertEqual(rc, 0)
+        self.assertIn("nothing to recover", out)
+        self.assertFalse(os.path.exists(os.path.join(self.sdir, "recovered.kitty-session")))
 
     def test_find_session_and_restore_use_kittys_own_goto_session_when_inside_kitty(self):
         os.makedirs(self.sdir)
@@ -713,3 +765,105 @@ class UninstallTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ResumePromptTests(unittest.TestCase):
+    """The prompt a restored agent window runs, driven through a real pty — the way kitty runs it."""
+    SID = "4d4710c8-de7d-4c89-b7d2-c76a51f6fed7"
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.bin = os.path.join(self.tmp.name, "bin")
+        os.makedirs(self.bin)
+        self.out = os.path.join(self.tmp.name, "ran")
+        for name in ("claude", "fakeshell"):
+            with open(os.path.join(self.bin, name), "w") as f:
+                f.write('#!/bin/sh\necho "%s $*" > "$RAN"\n' % name)
+            os.chmod(os.path.join(self.bin, name), 0o755)
+        self.env = dict(os.environ, KITTYMUX_STATE=self.tmp.name, RAN=self.out, PATH=self.bin + ":/usr/bin:/bin", SHELL=os.path.join(self.bin, "fakeshell"),
+                        XDG_CONFIG_HOME=os.path.join(self.tmp.name, "xdg"))
+        self.env.pop("KITTYMUX_RESUME", None)
+        sys_path = os.path.join(ROOT, "python")
+        import sys
+        sys.path.insert(0, sys_path)
+        import kittymux_resume as R
+        self.info = R.prompt_info("claude", "exact", self.SID, ["claude", "--model", "x"], ["claude", "--model", "x", "--resume", self.SID])
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_prompt(self, keys, info=None, env=None):
+        """Run the prompt on a pty, send `keys` once it is showing, return (what ran, the screen text)."""
+        import pty
+        import select
+        import time
+        pid, fd = pty.fork()
+        if pid == 0:
+            os.execve(os.path.join(ROOT, "bin", "kittymux"), ["kittymux", "resume-prompt", "--info", info or self.info], env or self.env)
+        screen, sent, deadline = b"", False, time.time() + 10
+        while time.time() < deadline:
+            r, _, _ = select.select([fd], [], [], 0.2)
+            if r:
+                try:
+                    chunk = os.read(fd, 4096)
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                screen += chunk
+            if not sent and b"commands" in screen and keys is not None:
+                for key in ([keys] if isinstance(keys, bytes) else keys):
+                    time.sleep(0.3)
+                    os.write(fd, key)
+                sent = True
+            done, _ = os.waitpid(pid, os.WNOHANG)
+            if done:
+                break
+        else:
+            os.kill(pid, 9)
+            os.waitpid(pid, 0)
+            self.fail("the prompt did not finish: " + screen.decode(errors="replace"))
+        ran = open(self.out).read().strip() if os.path.exists(self.out) else ""
+        return ran, screen.decode(errors="replace")
+
+    def test_enter_resumes_the_conversation_with_every_flag(self):
+        ran, screen = self.run_prompt(b"\r")
+        self.assertEqual(ran, "claude --model x --resume " + self.SID)
+        self.assertIn("resume session 4d4710c8", screen)
+
+    def test_n_starts_a_new_conversation_with_the_original_command(self):
+        self.assertEqual(self.run_prompt(b"n")[0], "claude --model x")
+
+    def test_s_and_a_lone_escape_open_a_shell(self):
+        self.assertEqual(self.run_prompt(b"s")[0], "fakeshell")
+        self.assertEqual(self.run_prompt(b"\x1b")[0], "fakeshell")
+
+    def test_a_resumes_and_answers_the_other_waiting_prompts(self):
+        self.assertEqual(self.run_prompt(b"a")[0], "claude --model x --resume " + self.SID)
+        until = float(open(os.path.join(self.tmp.name, "resume-all-until")).read())
+        self.assertGreater(until, __import__("time").time() + 60)
+        ran, screen = self.run_prompt(None)                                           # the next restored window does not even ask
+        self.assertEqual(ran, "claude --model x --resume " + self.SID)
+
+    def test_auto_mode_never_asks(self):
+        ran, screen = self.run_prompt(None, env=dict(self.env, KITTYMUX_RESUME="auto"))
+        self.assertEqual(ran, "claude --model x --resume " + self.SID)
+        self.assertNotIn("Enter", screen)
+
+    def test_i_shows_both_commands_and_keeps_waiting(self):
+        import time
+        ran, screen = self.run_prompt([b"i", b"s"])           # "i" prints and keeps waiting; "s" then leaves
+        self.assertEqual(ran, "fakeshell")
+        self.assertIn("--resume " + self.SID, screen)
+
+    def test_an_invalid_record_opens_a_shell_instead_of_running_anything(self):
+        ran, screen = self.run_prompt(None, info='{"agent":"claude","mode":"exact","sid":"","orig":["claude"],"resume":["rm","-rf","x"]}')
+        self.assertEqual(ran, "fakeshell")
+        self.assertIn("do not understand", screen)
+
+    def test_a_missing_agent_falls_back_to_a_shell(self):
+        os.unlink(os.path.join(self.bin, "claude"))
+        ran, screen = self.run_prompt(b"\r")
+        self.assertEqual(ran, "fakeshell")
+        self.assertIn("not on PATH", screen)

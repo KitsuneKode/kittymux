@@ -347,6 +347,7 @@ def extra_groups() -> list[tuple[str, list[tuple[str, str]]]]:
             ("doctor", "check the install and your window manager's key conflicts"),
             ("inbox [ack|jump|clear|watch]", "questions, permissions, usage limits and finished runs — jump to the one that needs you"),
             ("sessions save|restore|new|list", "save/restore sessions WITH agent conversations (--resume), new ones from templates; autosaves too"),
+            ("sessions history|recover", "every agent session journaled as it runs: insights, and a session rebuilt after a crash (restored agents ask before resuming)"),
             ("explain", "why each agent pane is in its state + every recent decision (sent or held-back notifications)"),
             ("upgrade", "after a git pull: reload every kitty and re-check"),
             ("layout mode|edge|width|pick", "tab bar: full / rail / hidden, side, width, presets"),

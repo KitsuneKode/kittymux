@@ -71,6 +71,9 @@ States, most important first — a state needs positive evidence, and silence is
 - Claude hooks installed by `kittymux hooks --install`: `UserPromptSubmit`/`PostToolUse` → working, `Notification` → waiting, `Stop` → done, `SessionEnd` → idle.
   `kittymux doctor` reports missing events. Change `HOOK_EVENTS`, README's snippet and the tests together.
 
+**Restore asks; the journal remembers.** A rewritten agent window runs `kittymux resume-prompt --info <json>` (default; `--direct` writes the resume command) — never auto-resume without the user's switch (`KITTYMUX_RESUME=auto`,
+`resume-auto`). The prompt validates the record (`kittymux_resume.parse_info`: a session file is editable), reads keys with `select`/`os.read` (a lone ESC = shell), and `exec`s the answer. `python/kittymux_journal.py` (pure) + the scanner
+(`_journal_note` on state changes, `_journal_tick` heartbeat; coalesced non-blocking writes; state in `_RT.journal`) keep `agent-sessions.json`: bounded, 0600, lock-merged; `sessions history` / `recover` read it.
 **Sessions resume agents** (`python/kittymux_resume.py` pure; `kittymux sessions`; docs/sessions.md): kitty's own `save_as_session --use-foreground-process` does the saving (never reimplement it); we mark agent
 windows with user vars (`kittymux_agent/resume/sid` — kitty serialises `--var=` into the file) before the save and rewrite the saved `launch` lines after (`rewrite_session`, no window-id matching, idempotent). Agent
 definitions are DATA (`assets/resume-agents.json` + `~/.config/kittymux/resume.json`) and each is probed against the installed CLI's `--help` (`sessions check`, cached 12 h) before it is used: never add a flag you did not

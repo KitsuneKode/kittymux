@@ -234,10 +234,11 @@ stripped) are kept, in `scan-<pid>.json` (mode 0600, inside the 0700 state dir).
 ### Sessions that come back — with their conversations
 
 `ctrl+alt+shift+s` (or `kittymux sessions save NAME`) saves with kitty's own `save_as_session` and then rewrites every agent window to its resume command — `claude … --resume <id>`,
-`codex resume <id>`, `grok --resume`, `droid -r`, `agy --conversation`, … — keeping the flags it was started with. kittymux **autosaves** too (`kittymux sessions restore last` after a crash or a
+`codex resume <id>`, `grok --resume`, `droid -r`, `agy --conversation`, … — keeping the flags it was started with — and a restored agent window **asks** first (Enter resume · n new · s shell · a all; `KITTYMUX_RESUME=auto` skips the question). kittymux **autosaves** too (`kittymux sessions restore last` after a crash or a
 reboot). `kittymux sessions new api --template agent` makes a ready project session (templates: plain, agent, duo, review). Nothing is guessed: each CLI's own `--help` is probed first, ambiguous
 cases (two windows, no exposed id) are restored as saved rather than opening one conversation twice, and `kittymux sessions list` shows what would happen and why. Details, the per-agent table and how
-to add an agent: [docs/sessions.md](docs/sessions.md).
+to add an agent: [docs/sessions.md](docs/sessions.md). Every agent session is also **journaled** as it runs (`kittymux sessions history` for the numbers, `kittymux sessions recover`
+after a crash).
 
 ### The inbox — questions, permissions, usage limits, finished runs
 

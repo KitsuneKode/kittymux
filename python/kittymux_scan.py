@@ -214,6 +214,8 @@ def scan_window(window, now: float) -> bool:
     if adt and adt > float(view.get("ts_status") or 0):
         view["status"], view["ts_status"] = "done", adt        # the agent's own "finished" notification counts like its Stop hook
     new = st.resolve(view, agent, marker, now, focused)
+    if new != prev.get("state", "") or wid not in _journal_rt()["keys"]:
+        _journal_note(window, new)
     for k in _PRIVATE:
         if k in view:
             book[k] = view[k]
@@ -315,6 +317,7 @@ def scan_all(timer_id=None) -> None:
             _RT.book.pop(wid, None)
             dirty = True
         _maybe_autosave(now, live)
+        _journal_tick(boss, live, time.time())
         for table in (_RT.notified, vars(_RT).get("alerted", {})):
             for wid in [k for k in table if k not in live]:
                 table.pop(wid, None)
@@ -485,6 +488,93 @@ def _maybe_autosave(now: float, window_ids) -> str:
         return "started"
     except Exception:
         return "error"
+
+
+# ── the journal: every agent session, recorded as it runs ────────────────────
+# kittymux_journal keeps one record per agent session (which agent, where, what command, last state, runs, working time) in agent-sessions.json. The scanner
+# feeds it from here: an observation on every state change (cheap: the identity — session id, command — is read only then) and one per HEARTBEAT_S for every
+# agent window, so a session id that appears late, a `cd`, or a renamed tab is picked up. Writes are coalesced (FLUSH_GAP) and never block (see journal.flush).
+JOURNAL_FLUSH_GAP = 5.0
+
+
+def _journal_rt() -> dict:
+    return vars(_RT).setdefault("journal", {"recs": {}, "keys": {}, "dirty": False, "flushed": 0.0, "beat": 0.0})
+
+
+def _journal_enabled() -> bool:
+    return os.environ.get("KITTYMUX_JOURNAL") != "0" and not os.path.exists(os.path.join(state_dir(), "journal-off"))
+
+
+def _journal_mod():
+    _ensure_path()
+    import kittymux_journal
+    import kittymux_resume
+    return kittymux_journal, kittymux_resume
+
+
+def _journal_agents(R) -> dict:
+    """The resume definitions (shipped + the user's override), loaded once per scanner life: they only tell the journal which commands are agents."""
+    rt = _journal_rt()
+    if "agents" not in rt:
+        here = globals().get("__file__")
+        shipped = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(here))), "assets", "resume-agents.json") if here else ""
+        user = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "kittymux", "resume.json")
+        rt["agents"] = R.load_agents(shipped, user)
+    return rt["agents"]
+
+
+def _journal_note(window, state: str, wall: float | None = None) -> None:
+    """One observation of an agent window. Never raises: the journal must not be able to hurt the scanner."""
+    rt = _journal_rt()
+    wid = str(window.id)
+    try:
+        if not _journal_enabled():
+            rt["keys"].setdefault(wid, None)
+            return
+        J, R = _journal_mod()
+        wall = wall if wall is not None else time.time()
+        agents = _journal_agents(R)
+        fg = [{"pid": p.get("pid"), "cmdline": p.get("cmdline") or []} for p in getattr(window.child, "foreground_processes", [])]
+        ident = R.identify(agents, fg, os.environ.get("KITTYMUX_CLAUDE_HOME") or os.path.expanduser("~/.claude"))
+        if ident is None:
+            return
+        tab = getattr(window, "tabref", lambda: None)()
+        obs = {"agent": ident["agent"], "sid": ident["sid"], "argv": ident["argv"], "state": state, "kitty_pid": os.getpid(), "wid": window.id,
+               "cwd": getattr(window, "cwd_of_child", "") or "", "tab": getattr(tab, "effective_title", "") if tab is not None else ""}
+        key = J.key_for(obs["agent"], obs["sid"], obs["kitty_pid"], obs["wid"])
+        old = rt["keys"].get(wid)
+        if J.observe(rt["recs"], obs, wall) or old != key:
+            rt["dirty"] = True
+        rt["keys"][wid] = key
+    except Exception:
+        _debug()
+
+
+def _journal_tick(boss, live, wall: float) -> None:
+    """Heartbeat (re-observe every agent window), close what vanished, and write when something changed."""
+    rt = _journal_rt()
+    try:
+        if not _journal_enabled():
+            return
+        J, _ = _journal_mod()
+        if wall - rt["beat"] >= J.HEARTBEAT_S:
+            rt["beat"] = wall
+            for w in list(boss.all_windows):
+                v = _RT.verdicts.get(str(w.id)) or {}
+                if v.get("agent"):
+                    _journal_note(w, v.get("state", ""), wall)
+        gone = [k for k in rt["keys"] if k not in live]
+        for k in gone:
+            rt["keys"].pop(k, None)
+        running = {v for v in rt["keys"].values() if v}
+        if J.close_missing(rt["recs"], os.getpid(), running, wall) or gone:
+            rt["dirty"] = True
+        if rt["dirty"] and wall - rt["flushed"] >= JOURNAL_FLUSH_GAP:
+            rt["flushed"] = wall
+            if J.flush(state_dir(), rt["recs"], wall):
+                rt["dirty"] = False
+    except Exception:
+        _debug()
 
 
 # ── typed events: the inbox ──────────────────────────────────────────────────

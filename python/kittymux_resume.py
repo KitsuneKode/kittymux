@@ -152,6 +152,24 @@ def agent_of(agents: dict, argv: list[str]) -> tuple[str, int] | None:
     return None
 
 
+def identify(agents: dict, fg: list[dict], home_claude: str, proc: str = "/proc") -> dict | None:
+    """One window's agent, as the journal wants it: {"agent", "argv", "sid"} from its foreground processes ([{"pid", "cmdline"}, …]) — the agent's own
+    session id when it exposes one (never a guess), else sid None. None when no agent runs there."""
+    for p in fg:
+        hit = agent_of(agents, p.get("cmdline") or [])
+        if hit is None:
+            continue
+        d, sid = agents[hit[0]], None
+        if d.get("locator") == "claude-registry" and p.get("pid"):
+            info = claude_session(home_claude, p["pid"], proc)
+            sid = info["id"] if info else None
+        elif d.get("locator") == "open-file" and d.get("open_file_pattern"):
+            ids = open_session_ids([q.get("pid") for q in fg if q.get("pid")], d["open_file_pattern"], proc)
+            sid = ids[0] if len(ids) == 1 else None
+        return {"agent": hit[0], "argv": list(p["cmdline"]), "sid": sid}
+    return None
+
+
 def build_plan(windows: list[dict], agents: dict, home_claude: str, proc: str = "/proc", enabled=lambda name: True) -> list[dict]:
     """`windows`: [{"id", "cwd", "fg": [{"pid", "cmdline"}, …]}] (from `kitty @ ls`). Returns one entry per agent window:
     {"id", "agent", "cwd", "argv", "session_id", "mode", "resume", "why"} — `resume` is the new argv, or None with `why` explaining."""
@@ -258,7 +276,51 @@ def _vars(tokens: list[str]) -> dict:
     return out
 
 
-def rewrite_session(text: str, agents: dict, enabled=lambda name: True) -> tuple[str, list[str]]:
+PROMPT_KEYS = {"\r": "resume", "\n": "resume", "r": "resume", "y": "resume", "n": "new", "s": "shell", "a": "all", "i": "info", "\x1b": "shell", "\x03": "shell"}
+
+
+def prompt_info(agent: str, mode: str, sid: str | None, orig: list[str], resume: list[str]) -> str:
+    """What the restore prompt needs, as ONE argv token (JSON): the agent, how it would resume, the original command and the resume command."""
+    return json.dumps({"agent": agent, "mode": mode, "sid": sid or "", "orig": orig, "resume": resume}, separators=(",", ":"))
+
+
+def parse_info(text: str) -> dict | None:
+    """Validate a prompt_info payload. It sits in a session file (user-editable, possibly stale or hostile), so every field is checked: string lists only,
+    a resume command that starts with the same program as the original, an id that is a plain token. Returns None for anything else."""
+    try:
+        d = json.loads(text)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(d, dict):
+        return None
+    orig, resume = d.get("orig"), d.get("resume")
+    ok_list = lambda v: isinstance(v, list) and 0 < len(v) <= 200 and all(isinstance(t, str) and t and "\0" not in t and len(t) < 4096 for t in v)
+    if not (ok_list(orig) and ok_list(resume)) or os.path.basename(orig[0]) != os.path.basename(resume[0]):
+        return None
+    sid = d.get("sid") or ""
+    if sid and not (isinstance(sid, str) and _SAFE_ID.match(sid)):
+        return None
+    agent, mode = d.get("agent"), d.get("mode")
+    if not (isinstance(agent, str) and re.fullmatch(r"[A-Za-z0-9._-]{1,40}", agent)) or mode not in ("exact", "latest"):
+        return None
+    return {"agent": agent, "mode": mode, "sid": sid, "orig": orig, "resume": resume}
+
+
+def prompt_choice(data: bytes, default: str = "resume") -> str | None:
+    """The first recognised key in what a tty delivered (a lone ESC is Escape; an escape SEQUENCE such as an arrow key is ignored). None = keep waiting."""
+    text = data.decode("utf-8", "replace")
+    if text == "\x1b":
+        return "shell"
+    if text.startswith("\x1b"):
+        return None
+    for ch in text:
+        action = PROMPT_KEYS.get(ch.lower())
+        if action:
+            return action
+    return None
+
+
+def rewrite_session(text: str, agents: dict, enabled=lambda name: True, wrapper: list[str] | None = None) -> tuple[str, list[str]]:
     """Rewrite a saved session file using only what is IN it: each window kitty serialised carries the `--var=kittymux_sid=<id>` and
     `--var=kittymux_resume=exact|latest` we set on it just before saving (see `kittymux sessions prepare`), and its foreground command. No live kitty,
     no window ids to match — so a file can be rewritten any time, anywhere. Restored hook state is stripped from every line."""
@@ -281,8 +343,12 @@ def rewrite_session(text: str, agents: dict, enabled=lambda name: True) -> tuple
         if hit and mode in ("exact", "latest") and enabled(hit[0]):
             new = resume_argv(agents[hit[0]], command, meta.get("sid"), mode, hit[1])
             if new:
-                tokens = tokens[:start] + new
-                report.append("%s → %s" % (hit[0], shlex.join(new)))
+                if wrapper:          # ask first: the window starts the prompt, which then runs `new` or the original `command`
+                    tokens = tokens[:start] + wrapper + ["--info", prompt_info(hit[0], mode, meta.get("sid"), command, new)]
+                    report.append("%s → asks, then %s" % (hit[0], shlex.join(new)))
+                else:
+                    tokens = tokens[:start] + new
+                    report.append("%s → %s" % (hit[0], shlex.join(new)))
         out.append(shlex.join(tokens))
     return "\n".join(out) + ("\n" if text.endswith("\n") else ""), report
 
