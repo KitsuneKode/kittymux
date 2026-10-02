@@ -99,8 +99,14 @@ def _where_variants(where: str) -> list[str]:
     return out
 
 
+def worktree_named(title: str, f: Facts) -> bool:
+    """True when the title says the linked worktree too ("kittymux:ui"): then nothing of project or worktree needs repeating."""
+    t = " ".join(title.lower().split())
+    return bool(t and f.worktree) and t == f"{f.project}:{f.worktree}".lower()
+
+
 def layout(f: Facts, width: int, *, icon: str = "", branch_icon: str = "", hide_project: bool = False,
-           cells: Callable[[str], int] = len) -> list[tuple[str, str]]:
+           hide_worktree: bool = False, cells: Callable[[str], int] = len) -> list[tuple[str, str]]:
     """Pieces that fit in `width` cells, most useful first: the branch goes first when room runs out, then the
     path, then the icon; the worktree outranks the path (parallel agents on one repo must stay apart) and the
     project name is only ever middle-truncated. Returns [] when there is no room at all."""
@@ -125,8 +131,10 @@ def layout(f: Facts, width: int, *, icon: str = "", branch_icon: str = "", hide_
             if icon_on and icon_text:
                 parts.append((icon_text, "icon"))
             parts.append((f.project, "project"))
-            if wt_on and worktree:
+            if wt_on and worktree and not hide_worktree:
                 parts.append((worktree, "worktree"))
+        elif wt_on and f.worktree and not hide_worktree:
+            parts.append((f.worktree, "worktree"))       # the project is already said by the title; the worktree is not
         if ctx:
             parts.append((ctx, context[0]))
         if branch_on and branch:

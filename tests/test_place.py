@@ -97,6 +97,38 @@ class LayoutTests(unittest.TestCase):
         self.assertLessEqual(wide("".join(t for t, _r in out)), 12)
 
 
+class HiddenProjectKeepsTheWorktreeTests(unittest.TestCase):
+    """A tab titled "kittymux" sitting in worktree `ui`: the project is already said, the WORKTREE is not — parallel
+    agents on one repo must stay distinguishable."""
+
+    def lay(self, f, width, **kw):
+        return P.layout(f, width, icon="F", branch_icon="B", cells=len, **kw)
+
+    def test_the_worktree_stays_when_only_the_project_is_hidden(self):
+        f = P.facts("/work/kittymux/.worktrees/ui/src", WT, HOME)
+        self.assertEqual(text(self.lay(f, 40, hide_project=True)), "ui/src  B feat/ui")
+        root = P.facts("/work/kittymux/.worktrees/ui", WT, HOME)
+        self.assertEqual(text(self.lay(root, 40, hide_project=True)), "ui  B feat/ui")
+
+    def test_a_title_that_names_the_worktree_hides_it_too(self):
+        f = P.facts("/work/kittymux/.worktrees/ui/src", WT, HOME)
+        self.assertEqual(text(self.lay(f, 40, hide_project=True, hide_worktree=True)), "src  B feat/ui")
+
+    def test_which_titles_name_the_worktree(self):
+        f = P.Facts("kittymux", "ui", "", "", "x")
+        self.assertTrue(P.worktree_named("kittymux:ui", f))
+        self.assertFalse(P.worktree_named("kittymux", f))
+        self.assertFalse(P.worktree_named("", f))
+        self.assertFalse(P.worktree_named("kittymux:ui", P.Facts("kittymux", "", "", "", "x")))     # no worktree to name
+
+    def test_it_fits_every_width_and_never_raises(self):
+        f = P.facts("/work/kittymux/.worktrees/ui/a/b/c", WT, HOME)
+        for hide_wt in (False, True):
+            for width in range(0, 40):
+                parts = self.lay(f, width, hide_project=True, hide_worktree=hide_wt)
+                self.assertLessEqual(len(text(parts)), max(width, 0), (width, hide_wt, parts))
+
+
 class RedundantAndCollidingTests(unittest.TestCase):
     def test_redundant(self):
         f = P.Facts("kittymux", "ui", "", "", "x")

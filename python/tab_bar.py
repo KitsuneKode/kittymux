@@ -236,10 +236,10 @@ def _piece_cells(piece) -> int:
 
 class _Place:
     """The folder line of a vertical tab. Laid out at DRAW time: the room left by the state word is only known there."""
-    __slots__ = ("facts", "hide", "style", "emphasised", "hue")
+    __slots__ = ("facts", "hide", "hide_wt", "style", "emphasised", "hue")
 
-    def __init__(self, facts, hide, style, emphasised, hue):
-        self.facts, self.hide, self.style, self.emphasised, self.hue = facts, hide, style, emphasised, hue
+    def __init__(self, facts, hide, hide_wt, style, emphasised, hue):
+        self.facts, self.hide, self.hide_wt, self.style, self.emphasised, self.hue = facts, hide, hide_wt, style, emphasised, hue
 
 
 def _place_piece(tab, cwd: str, pal, active: bool, os_window_id: int) -> "_Place":
@@ -247,7 +247,8 @@ def _place_piece(tab, cwd: str, pal, active: bool, os_window_id: int) -> "_Place
     title = _title_keys(os_window_id).get(tab.tab_id, "")
     hue = _tab_hue(cwd, pal)
     emphasised = tab.tab_id in _twins(os_window_id)
-    return _Place(f, kittymux_place.redundant(title, f), kittymux_place.style(pal, active, hue, emphasised), emphasised, hue)
+    return _Place(f, kittymux_place.redundant(title, f), kittymux_place.worktree_named(title, f),
+                  kittymux_place.style(pal, active, hue, emphasised), emphasised, hue)
 
 
 _BAR_DUMP = os.environ.get("KITTYMUX_BAR_DUMP") == "1"      # test hook (tests/smoke_place.sh): what each tab's folder line drew
@@ -1092,7 +1093,9 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     risky = (not compact) and _runs_without_approvals(info, foreground)
 
     subtitle: list = []
-    if cwd and _features()["folder"]:
+    if compact:
+        pass                                                 # the slim rail draws no subtitle: skip the folder/branch work (and the twin scan) altogether
+    elif cwd and _features()["folder"]:
         subtitle.append((_place_piece(tab, cwd, pal, active, draw_data.os_window_id), pal.faint))
     else:                                                    # folder off: the line this bar always drew
         branch = _git_anchor(cwd)[1] if cwd else ""
@@ -1222,15 +1225,16 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
                 # chips, "N panes") keeps its cells unless that would squeeze the folder line out
                 place_room = kittymux_place.place_room(avail, [_piece_cells(p[0]) for p in lead[i + 1:]])
                 runs = kittymux_place.layout(text.facts, place_room, icon=_ICON_FOLDER, branch_icon=_ICON_BRANCH,
-                                             hide_project=text.hide, cells=_cells)
+                                             hide_project=text.hide, hide_worktree=text.hide_wt, cells=_cells)
                 if runs:
                     x = _put(screen, x, sep, _rgb(color))
                     for run, role in runs:
                         fg, bold = text.style[role]
                         x = _put(screen, x, run, _rgb(fg), bold)
+                    screen.cursor.bold = False               # never leave bold on the cursor for what is drawn next (the divider)
                     if not extra_data.for_layout:
                         _dump_row(tab.tab_id, legacy=False, pieces=[[r, k] for r, k in runs], emphasised=text.emphasised,
-                                  hue=text.hue, hidden=text.hide, avail=avail, room=place_room)
+                                  hue=text.hue, hidden=text.hide, hidden_wt=text.hide_wt, avail=avail, room=place_room)
                 continue
             if isinstance(text, list):                       # pane chips: coloured runs, drawn whole or not at all
                 if sum(_cells(t) for t, _c in text) <= avail:

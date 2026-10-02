@@ -23,6 +23,10 @@ printf 'window_padding_width 10\nconfirm_os_window_close 0\nallow_remote_control
   "$HOME_DIR" "$HOME_DIR" "$HOME_DIR" > "$CFG/kitty.conf"
 mkdir -p "$T/work/alpha/app" "$T/work/bravo/app" "$T/work/alpha/pane" "$T/plain/notes"
 for r in alpha bravo; do git -C "$T/work/$r" init -q -b main || fail "git init"; done
+# a repo of its own with a linked worktree (a repo needs a commit before it can have one)
+mkdir -p "$T/work/delta" && git -C "$T/work/delta" init -q -b main || fail "git init delta"
+git -C "$T/work/delta" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q --allow-empty -m init || fail "git commit"
+git -C "$T/work/delta" worktree add -q -b wtbranch "$T/work/wt" || fail "git worktree add"
 cat > "$T/session" <<S
 new_tab
 cd $T/work/alpha/app
@@ -43,6 +47,9 @@ launch --location=vsplit sh
 new_tab
 cd $T/work/bravo
 launch bash -c 'printf "· Pondering… (12s · ↓ 1.2k tokens)\n"; exec -a claude sleep 86400'
+new_tab delta
+cd $T/work/wt
+launch sh
 focus_tab 0
 S
 others() { for s in /tmp/mykitty-* "${REAL_RUNTIME:-/nonexistent}"/mykitty-*; do [ -S "$s" ] && [ "$s" != "${SOCK#unix:}" ] && kitty @ --to "unix:$s" ls 2>/dev/null | python3 -c 'import sys,json;print(sum(len(t["windows"]) for o in json.load(sys.stdin) for t in o["tabs"]))'; done | tr '\n' ' '; }
@@ -71,8 +78,8 @@ for k in sorted(d, key=int):
           r.get("emphasised"), "none" if r.get("hue") is None else "hue", r["legacy"], r.get("hidden")))
 PY
 }
-for _ in $(seq 80); do [ -s "$STATE/bar-dump.json" ] && [ "$(rows 2>/dev/null | wc -l)" -ge 6 ] && break; sleep 0.25; done
-[ "$(rows | wc -l)" -ge 6 ] || fail "the bar drew fewer than 6 folder lines"
+for _ in $(seq 80); do [ -s "$STATE/bar-dump.json" ] && [ "$(rows 2>/dev/null | wc -l)" -ge 7 ] && break; sleep 0.25; done
+[ "$(rows | wc -l)" -ge 7 ] || fail "the bar drew fewer than 7 folder lines"
 
 # 1. defaults: project highlighted, the twins ("app" in alpha and bravo) emphasised, hue on
 R=$(rows)
@@ -91,6 +98,10 @@ echo "  ok   a title that already says the project is not repeated (branch / loc
 [ "$(echo "$R" | grep -c '^[^|]*|branch|False|hue|False|True$')" -ge 2 ] || fail "the agent tab at a repo root repeats the project its title already shows (expected two hidden-project branch rows):
 $R"
 echo "  ok   an agent tab's title (agent prefix stripped) counts as saying the project too"
+# a tab NAMED "delta" in delta's linked worktree `wt`: the title says the project, not the worktree — so the worktree is what the line shows
+echo "$R" | grep -q '^wt[^|]*|worktree,branch|False|hue|False|True$' || fail "a tab named after the project in a linked worktree should still show the worktree:
+$R"
+echo "  ok   a linked worktree stays visible when the title already names the project"
 
 # 1b. renaming a tab changes what it shows (kitty draws `tab.name or tab.title`): rename one twin and the other stops being a twin; clear the name and both are twins again
 BRAVO=$(kitty @ --to "$SOCK" ls | python3 -c 'import sys,json
