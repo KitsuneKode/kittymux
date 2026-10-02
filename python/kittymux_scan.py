@@ -563,6 +563,7 @@ def _journal_tick(boss, live, wall: float) -> None:
                 v = _RT.verdicts.get(str(w.id)) or {}
                 if v.get("agent"):
                     _journal_note(w, v.get("state", ""), wall)
+                    rt["dirty"] = True              # `last seen` moves on every beat: write it (once a minute at most), or a crash would lose how recent it was
         gone = [k for k in rt["keys"] if k not in live]
         for k in gone:
             rt["keys"].pop(k, None)

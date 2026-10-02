@@ -29,6 +29,11 @@ bash tests/smoke_resize.sh
 bash tests/smoke_panes.sh
 bash tests/smoke_reload.sh
 bash tests/smoke_workflows.sh
+bash tests/smoke_resume.sh     # save → restore: the prompt, Enter/n, --direct, autosave, the journal
+bash tests/smoke_inbox.sh      # real OSC 99 notifications → typed inbox events
+bash tests/smoke_click.sh      # tab clicks with wobble; middle-click spares an agent tab
+bash tests/smoke_native.sh     # native divider: pixels, real X cursor, native drag (kitty >= 0.49.2)
+for t in demo keys openref extras; do bash tests/smoke_$t.sh; done
 ```
 
 The workflow rig starts two kitties with overlapping IDs. It verifies scratch identity before
@@ -61,6 +66,8 @@ remove only their own temporary instances in their EXIT cleanup; never kill proc
 | Previews and resize | Single-flight work, A→B→A, reordered callbacks, slow same-pane refresh, shutdown, final release beyond throttle, unsaved right edge | Real layer-shell panel resizing on each supported compositor |
 | Usage HUD | Provider failure/refresh, malformed credentials/responses, failure cooldown, exact counters, local-midnight/DST boundaries | Opt-in live responses from each vendor/account type |
 | Credential transport | Fake credentials absent from argv; real curl against a loopback fixture; escaping/newline rejection | System proxy/TLS policies and credential rotation if old argv was captured |
+| Restore prompt | Hostile/stale records (flag-like ids, mismatched programs, oversized or non-string argv), keys incl. a lone Esc, no tty, missing binary, `a` resume-all — through a real pty; real kitties restore through the prompt | Each real agent's `--resume` against a real conversation (only its `--help` is probed; run `kittymux sessions check`) |
+| Agent journal | Fold/prune bounds, two-kitty merge, 4-process concurrent writes, scanner heartbeat/coalescing, closed windows, off switch; live kitty records its agents | Session ids for agents that expose none (Devin, opencode, cursor, agy: recorded without an id) |
 | Persistence | Private bytes before replacement, failed writes preserve prior data, symlinks not followed | Simultaneous HUDs can still be last-writer-wins for history observations |
 
 Tests use fake credentials, temporary state and synthetic provider responses. Localhost transport

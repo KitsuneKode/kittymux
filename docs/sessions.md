@@ -107,4 +107,5 @@ Definitions are data: `assets/resume-agents.json` (shipped) and `~/.config/kitty
 ## Privacy and files
 
 Everything lives under `~/.local/state/kittymux/` (0700; files 0600): `sessions/*.kitty-session`, `resume-check.json`, `agent-sessions.json` (the journal), `resume-all-until` (the "resume all" window). A session file holds directories, commands, titles and session ids
-(not conversation content). The conversations themselves stay where each agent keeps them.
+(not conversation content). The conversations themselves stay where each agent keeps them. The journal records a command **with its flags**, exactly as `/proc` already shows it to your
+other processes — don't pass secrets as command-line flags (use the agent's own config or environment).

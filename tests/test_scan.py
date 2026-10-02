@@ -755,6 +755,17 @@ class JournalIntegrationTests(ScanBase):
             KS._journal_tick(self.k.boss, {"1"}, 1010.0)
             self.assertEqual(flush.call_count, 2)
 
+    def test_a_quiet_running_agents_last_seen_still_reaches_disk(self):
+        w = self.agent_window()
+        KS.scan_window(w, 1.0)
+        KS._RT.verdicts["1"]["agent"] = "claude"
+        KS._journal_tick(self.k.boss, {"1"}, 1000.0)
+        first = self.records()["claude:" + self.SID]["last"]
+        KS._journal_tick(self.k.boss, {"1"}, 1030.0)                                   # inside the heartbeat: nothing to write
+        self.assertEqual(self.records()["claude:" + self.SID]["last"], first)
+        KS._journal_tick(self.k.boss, {"1"}, 1100.0)                                   # a beat later, with no state change at all
+        self.assertEqual(self.records()["claude:" + self.SID]["last"], 1100)
+
     def test_off_switch_records_nothing_and_a_non_agent_window_is_ignored(self):
         w = self.agent_window()
         with mock.patch.dict(os.environ, {"KITTYMUX_JOURNAL": "0"}):
