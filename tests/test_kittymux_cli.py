@@ -1164,3 +1164,61 @@ class ResumePromptTests(unittest.TestCase):
         ran, screen = self.run_prompt(b"\r")
         self.assertEqual(ran, "fakeshell")
         self.assertIn("not on PATH", screen)
+
+
+class FeaturesTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def run_cmd(self, *argv):
+        import contextlib
+        import io
+        import tempfile
+        sdir = tempfile.mkdtemp()
+        env = {"KITTYMUX_STATE": sdir}
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.dict(os.environ, env, clear=False), mock.patch.object(self.m, "_nudge_bars"), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            for k in [k for k in os.environ if k.startswith("KITTYMUX_") and k != "KITTYMUX_STATE"]:
+                os.environ.pop(k)
+            rc = self.m.features_cmd(list(argv))
+        return rc, out.getvalue(), err.getvalue(), sdir
+
+    def test_list_shows_every_feature_and_where_it_comes_from(self):
+        rc, out, _err, _ = self.run_cmd()
+        self.assertEqual(rc, 0)
+        for name in ("folder", "hue", "collide", "sheet", "hover", "panetitle"):
+            self.assertIn(name, out)
+        self.assertIn("default", out)
+
+    def test_off_and_on_round_trip(self):
+        rc, out, _e, sdir = self.run_cmd("off", "hue")
+        self.assertEqual(rc, 0)
+        self.assertTrue(os.path.exists(os.path.join(sdir, "hue-off")))
+
+    def test_preset_and_unknown_names(self):
+        rc, _o, _e, sdir = self.run_cmd("preset", "minimal")
+        self.assertEqual(rc, 0)
+        self.assertTrue(os.path.exists(os.path.join(sdir, "hue-off")))
+        rc, _o, err, _ = self.run_cmd("on", "nonsense")
+        self.assertEqual(rc, 2)
+        self.assertIn("unknown feature", err)
+        rc, _o, err, _ = self.run_cmd("preset", "loud")
+        self.assertEqual(rc, 2)
+
+    def test_usage_on_garbage(self):
+        rc, _o, err, _ = self.run_cmd("frobnicate")
+        self.assertEqual(rc, 2)
+        self.assertIn("usage: kittymux features", err)
+
+    def test_an_env_override_is_called_out(self):
+        import contextlib
+        import io
+        import tempfile
+        sdir = tempfile.mkdtemp()
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, {"KITTYMUX_STATE": sdir, "KITTYMUX_HUE": "off"}), mock.patch.object(self.m, "_nudge_bars"), \
+                contextlib.redirect_stdout(out):
+            self.m.features_cmd(["on", "hue"])
+        self.assertIn("KITTYMUX_HUE", out.getvalue())

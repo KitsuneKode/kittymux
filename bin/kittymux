@@ -55,6 +55,7 @@ sys.path.insert(0, os.path.join(HOME_DIR, "python"))
 import kittymux_agents  # noqa: E402
 import kittymux_changes  # noqa: E402
 import kittymux_fanout  # noqa: E402
+import kittymux_features  # noqa: E402
 import kittymux_inbox  # noqa: E402
 import kittymux_journal  # noqa: E402
 import kittymux_launcher  # noqa: E402
@@ -388,6 +389,13 @@ def doctor() -> int:
         if shutil.which(name):
             r.warning(f"{name} is installed but has no resume definition",
                       f"`{name} --help` shows its resume flags; add them to ~/.config/kittymux/resume.json (docs/sessions.md) and `kittymux sessions check` will verify them")
+
+    print("\nfeatures (kittymux features)")
+    try:
+        r.ok("  ".join(f"{n} {'on' if on else 'off'}" for n in kittymux_features.FEATURES
+                       for on, _where in [kittymux_features.source(n)]))
+    except Exception as e:                                   # a status line must never break doctor
+        r.warning(f"could not read the feature switches: {e}")
 
     print("\nlauncher (kittymux pick)")
     menus = [m for m in ("rofi", "fuzzel", "fzf") if shutil.which(m)]
@@ -2008,6 +2016,54 @@ def notify_cmd(argv: list[str]) -> int:
     return 2
 
 
+FEATURE_HELP = {
+    "folder": "project[:worktree]/inner and branch under each tab (off: just the branch, as before)",
+    "hue": "a stable colour per project (folder icon, active name, rail number)",
+    "collide": "emphasise the project of tabs that show the same title",
+    "sheet": "the side sheet for a tab (right-click / key)",
+    "hover": "open the sheet on hover (only where kitty delivers it)",
+    "panetitle": "folder + branch in pane title bars",
+}
+
+
+def _nudge_bars() -> None:
+    """Reload every running kitty once so a switch shows now (the bar reads the switches on each redraw)."""
+    for sock in _sockets():
+        _run(["kitty", "@", "--to", sock, "load-config"], 8)
+
+
+def features_cmd(argv: list[str]) -> int:
+    """`kittymux features [list] | on|off NAME | preset minimal|default|full` — pick which optional pieces are on."""
+    KF = kittymux_features
+    sdir = KF.state_dir()
+    cmd = argv[0] if argv else "list"
+    try:
+        if cmd in ("on", "off") and len(argv) == 2:
+            KF.set_feature(sdir, argv[1], cmd == "on")
+            note = ""
+            if os.environ.get(f"KITTYMUX_{argv[1].upper()}", "").strip():
+                note = f"  {WARN} KITTYMUX_{argv[1].upper()} is set in your environment and wins over this"
+            print(f"{OK} {argv[1]} {cmd}{note}")
+            _nudge_bars()
+            return 0
+        if cmd == "preset" and len(argv) == 2:
+            KF.apply_preset(sdir, argv[1])
+            print(f"{OK} preset {argv[1]}: " + ", ".join(sorted(KF.PRESETS[argv[1]], key=KF.FEATURES.index)))
+            _nudge_bars()
+            return 0
+        if cmd in ("list", "status") and len(argv) <= 1:
+            for name in KF.FEATURES:
+                on, where = KF.source(name, sdir)
+                print(f"  {name:<10} {'on ' if on else 'off'}  {c('2', where):<18} {FEATURE_HELP[name]}")
+            print(c("2", "\n  presets: minimal (folder only) · default · full     kittymux features off hue"))
+            return 0
+    except ValueError as e:
+        print(f"{BAD} {e}", file=sys.stderr)
+        return 2
+    print("usage: kittymux features [list] | on NAME | off NAME | preset minimal|default|full", file=sys.stderr)
+    return 2
+
+
 def snooze(argv: list[str]) -> int:
     """`kittymux snooze [1h] [--window ID] [--clear]` — no popups or bells for ONE agent window for a while (its events still reach the inbox). Stored in the private state dir
     (kittymux_quiet), never as a window variable: a program in the window could set that itself and silence its own "needs you"."""
@@ -2494,6 +2550,8 @@ def main(argv: list[str]) -> int:
         return notify_cmd(argv[1:])
     if cmd == "snooze":
         return snooze(argv[1:])
+    if cmd == "features":
+        return features_cmd(argv[1:])
     if cmd == "fanout":
         return fanout(argv[1:])
     if cmd == "checkpoint":
