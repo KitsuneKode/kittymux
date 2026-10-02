@@ -176,7 +176,7 @@ nothing gets silently swallowed.
 
 `ctrl+alt+shift+o` then `c`/`x`/`d`/`u`/`o`/`a`/`g` starts claude/codex/devin/cursor/opencode/agy/grok in a new tab (with `shift`: a split) in the current directory — `kittymux spawn claude,codex,devin` opens several.
 `ctrl+alt+v` (or `kittymux pick --menu rofi` bound in your window manager) is one searchable list of what needs you (longest-waiting first), every running agent, conversations you closed and a new agent;
-`ctrl+alt+shift+u` reopens the one you closed last. `kittymux notify mute 1h` / `kittymux snooze 1h` quiet popups and bells without losing anything (the inbox keeps it all). [docs/launcher.md](docs/launcher.md)
+`ctrl+alt+shift+u` reopens the one you closed last. `kittymux notify mute 1h` / `kittymux snooze 1h` quiet popups and bells without losing anything (the inbox keeps it all). The bar shows how long a tab has been waiting/working (`1m !`) and flags agents started with approvals off (`⚠`). [docs/launcher.md](docs/launcher.md)
 
 ## Agent status
 

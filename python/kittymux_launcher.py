@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import unicodedata
 
 # the order agents are offered to spawn, and the names people type
 SPAWN_ORDER = ["claude", "codex", "devin", "cursor-agent", "opencode", "agy", "grok", "droid", "gemini", "amp"]
@@ -17,6 +18,19 @@ ALIASES = {"cursor": "cursor-agent", "antigravity": "agy", "c": "claude", "x": "
 _AGENT_NAME = re.compile(r"^[a-z][a-z0-9-]{0,30}$")
 STATE_GLYPH = {"limited": "⊘", "waiting": "◆", "working": "◐", "done": "✓", "idle": "·", "": "·"}
 STATE_RANK = {"limited": 0, "waiting": 1, "done": 2, "working": 3, "idle": 4, "": 5}
+
+
+# What the bar's header shows while a keyboard mode is armed (kitty names the mode; the keys are ours).
+MODE_HINTS = {"leader": ["hjkl cnp saw g ?", "hjkl cnp g ?", "? help"],
+              "spawn": ["c x d u o a g  ⇧ split", "c x d u o a g ⇧", "cxduoag"]}
+
+
+def mode_hint(mode: str, room: int | None = None) -> str:
+    """The key reminder for an armed mode: the longest variant that fits in `room` cells ('' when none does, or the mode has none)."""
+    for hint in MODE_HINTS.get((mode or "").lower(), []):
+        if room is None or len(hint) <= room:
+            return hint
+    return ""
 
 
 # ── risk: agents running with their approvals off ─────────────────────────────
@@ -75,8 +89,21 @@ def launch_args(agent: str, exe: str, where: str, cwd: str | None = None, source
 
 
 # ── the rows ──────────────────────────────────────────────────────────────────
+def clean_text(value, limit: int = 120) -> str:
+    """Text from a terminal (a window title, an agent's message, a path) made safe to put in ONE line of a menu. Any program can set a window title with an escape
+    sequence, so everything shown comes through here: control characters (newline, NUL, ESC), format characters (bidi overrides that reorder what you read, zero-width
+    joiners), line separators, private-use and unassigned code points all become a space; whitespace is collapsed; the length is bounded."""
+    out = [" " if _unsafe_char(ch) else ch for ch in str(value if value is not None else "")]
+    return " ".join("".join(out).split())[:limit]
+
+
+def _unsafe_char(ch: str) -> bool:
+    return unicodedata.category(ch) in ("Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp") or (ch.isspace() and ch != " ")
+
+
 def _short(path: str, home: str, width: int = 28) -> str:
-    p = (path or "").replace(home, "~", 1) if home and (path or "").startswith(home) else (path or "")
+    path = clean_text(path, 400)
+    p = path.replace(home, "~", 1) if home and path.startswith(home) else path
     return p if len(p) <= width else "…" + p[-(width - 1):]
 
 
@@ -104,27 +131,41 @@ def build_rows(events: list[dict], windows: list[dict], closed: list[dict], inst
         w = live.get(key, {})
         evented.add(key)
         glyph = "◆" if e.get("severity") == "needs-you" else "✓"
-        body = (e.get("body") or e.get("title") or "").replace("\n", " ")[:70]
-        rows.append({"kind": "event", "event": e.get("id"), "action": {"op": "jump", "pid": e.get("pid"), "w": e.get("w"), "ack": e.get("id")},
-                     "text": f"{glyph}  {e.get('agent', 'agent')}  {w.get('tab') or e.get('tab') or ''} — {body}   {_age(now - float(e.get('t', now)))}" + flag(e.get("agent", ""), w.get("argv", []))})
+        body = clean_text(e.get("body") or e.get("title") or "", 70)
+        rows.append({"kind": "event", "agent": e.get("agent", ""), "tone": "urgent" if e.get("severity") == "needs-you" else "",
+                     "event": e.get("id"), "action": {"op": "jump", "pid": e.get("pid"), "w": e.get("w"), "ack": e.get("id")},
+                     "text": f"{glyph}  {clean_text(e.get('agent', 'agent'), 24)}  {clean_text(w.get('tab') or e.get('tab') or '', 60)} — {body}   {_age(now - float(e.get('t', now)))}"
+                             + flag(e.get("agent", ""), w.get("argv", []))})
     for w in sorted(windows, key=lambda w: (STATE_RANK.get(w.get("state", ""), 9), w.get("tab", ""))):
         key = (str(w.get("pid")), str(w.get("w")))
         if key in evented:
             continue
         st = w.get("state", "")
-        rows.append({"kind": "running", "action": {"op": "jump", "pid": w.get("pid"), "w": w.get("w")},
-                     "text": f"{STATE_GLYPH.get(st, '·')}  {w.get('agent', 'agent')}  {w.get('tab', '')}   {_short(w.get('cwd', ''), home)}" + (f"   {st}" if st and st != "idle" else "")
+        rows.append({"kind": "running", "agent": w.get("agent", ""), "tone": "active" if st == "working" else "urgent" if st in ("waiting", "limited") else "",
+                     "action": {"op": "jump", "pid": w.get("pid"), "w": w.get("w")},
+                     "text": f"{STATE_GLYPH.get(st, '·')}  {clean_text(w.get('agent', 'agent'), 24)}  {clean_text(w.get('tab', ''), 60)}   {_short(w.get('cwd', ''), home)}"
+                             + (f"   {clean_text(st, 12)}" if st and st != "idle" else "")
                              + flag(w.get("agent", ""), w.get("argv", []))})
-    for c in closed[:max_closed]:
+    seen_closed: set = set()
+    shown_closed = 0
+    for c in closed:                                              # newest first; the same agent in the same place under the same name is one row
+        ident = (c.get("agent"), c.get("cwd"), c.get("tab"))
+        if ident in seen_closed:
+            continue
+        seen_closed.add(ident)
+        shown_closed += 1
+        if shown_closed > max_closed:
+            break
         bits = [f"closed {_age(now - float(c.get('last', now)))} ago"]
         if c.get("turns"):
             bits.append(f"{c['turns']} runs")
-        rows.append({"kind": "closed", "action": {"op": "reopen", "key": c.get("key")},
-                     "text": f"↺  {c.get('agent', 'agent')}  {c.get('tab') or ''}   {_short(c.get('cwd', ''), home)}   {' · '.join(bits)}" + flag(c.get("agent", ""), c.get("argv", []))})
-    here = _short(cwd, home) if cwd else "here"
+        rows.append({"kind": "closed", "agent": c.get("agent", ""), "tone": "", "action": {"op": "reopen", "key": c.get("key")},
+                     "text": f"↺  {clean_text(c.get('agent', 'agent'), 24)}  {clean_text(c.get('tab') or '', 60)}   {_short(c.get('cwd', ''), home)}   {' · '.join(bits)}"
+                             + flag(c.get("agent", ""), c.get("argv", []))})
+    here = _short(cwd, home) if cwd else "here"          # (clean_text'd inside _short)
     for name in [a for a in SPAWN_ORDER if a in installed]:
-        rows.append({"kind": "new", "action": {"op": "spawn", "agent": name, "where": "tab"}, "text": f"+  new {name}   tab · {here}"})
-        rows.append({"kind": "new", "action": {"op": "spawn", "agent": name, "where": "vsplit"}, "text": f"+  new {name}   split right · {here}"})
+        rows.append({"kind": "new", "agent": name, "tone": "", "action": {"op": "spawn", "agent": name, "where": "tab"}, "text": f"+  new {name}   tab · {here}"})
+        rows.append({"kind": "new", "agent": name, "tone": "", "action": {"op": "spawn", "agent": name, "where": "vsplit"}, "text": f"+  new {name}   split right · {here}"})
     seen: dict = {}
     for r in rows:                                               # menus that return the text (fuzzel) need it unique
         n = seen.get(r["text"], 0)
@@ -134,14 +175,97 @@ def build_rows(events: list[dict], windows: list[dict], closed: list[dict], inst
     return rows
 
 
+# ── look: icons and a rofi theme derived from the live kitty theme ────────────
+def icon_for(agent: str, notify_dir: str, fallback: str) -> str:
+    """Path of the agent's mark (assets/notify/<agent>.png, which carries the mascot badge) — chosen from OUR directory by a validated name, never from output — else `fallback`."""
+    name = ALIASES.get((agent or "").lower(), (agent or "").lower())
+    if _AGENT_NAME.match(name):
+        path = os.path.join(notify_dir, name + ".png")
+        if os.path.isfile(path):
+            return path
+    return fallback
+
+
+_HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def rofi_theme(colors: dict, mascot: str, title: str = "kittymux", subtitle: str = "agents · needs you first") -> str:
+    """A rofi theme in kittymux's look: the mascot and name in a header, a search bar, rows with their agent's icon and an accent rail on the selected one (the same `▎` the tab bar
+    uses), needs-you rows in the waiting colour, working rows in the working colour. Every colour comes from `colors` ({name: "#rrggbb"}, derived from the LIVE kitty theme by the
+    caller — nothing here is a palette of ours). Returns "" when a colour is missing or malformed: the caller then leaves the user's own rofi theme alone."""
+    need = ("bg", "bar", "surface", "surface_hi", "text", "muted", "faint", "accent", "waiting", "working", "alert")
+    if any(not _HEX.match(str(colors.get(k, ""))) for k in need) or not mascot or any(c in mascot for c in '"\\\n'):
+        return ""
+    c = {k: colors[k] for k in need}
+    return f"""* {{
+    bg: {c['bg']}f4; bar: {c['bar']}; surface: {c['surface']}; surface-hi: {c['surface_hi']};
+    fg: {c['text']}; muted: {c['muted']}; faint: {c['faint']}; accent: {c['accent']};
+    waiting: {c['waiting']}; working: {c['working']}; alert: {c['alert']};
+    background-color: transparent; text-color: @fg;
+}}
+window {{ transparency: "real"; location: center; anchor: center; width: 720px; padding: 0; border: 2px; border-color: @accent; border-radius: 14px; background-color: @bg; }}
+mainbox {{ children: [ header, inputbar, message, listview ]; spacing: 0; padding: 0; background-color: transparent; }}
+header, inputbar, message {{ expand: false; }}
+header {{ orientation: horizontal; children: [ icon-mascot, titles ]; spacing: 16px; padding: 14px 20px; background-color: @bar; border-radius: 12px 12px 0 0; }}
+icon-mascot {{ expand: false; filename: "{mascot}"; size: 56px; vertical-align: 0.5; }}
+titles {{ orientation: vertical; children: [ textbox-title, textbox-subtitle ]; spacing: 2px; vertical-align: 0.5; expand: true; background-color: transparent; }}
+textbox-title, textbox-subtitle {{ expand: false; }}
+textbox-title {{ content: "{title}"; text-color: @accent; }}
+textbox-subtitle {{ content: "{subtitle}"; text-color: @faint; }}
+inputbar {{ children: [ prompt, entry ]; spacing: 10px; padding: 12px 20px; background-color: @surface; }}
+prompt {{ text-color: @accent; }}
+entry {{ placeholder: "type to find an agent, a conversation or a new one…"; placeholder-color: @faint; text-color: @fg; }}
+message {{ padding: 8px 20px 0 20px; background-color: transparent; }}
+textbox {{ text-color: @muted; background-color: transparent; }}
+listview {{ lines: 10; columns: 1; scrollbar: false; spacing: 3px; padding: 10px 12px 12px 12px; fixed-height: false; expand: true; background-color: transparent; }}
+element {{ padding: 9px 12px; spacing: 14px; border-radius: 8px; border: 0 0 0 3px; border-color: transparent; background-color: transparent; text-color: @fg; }}
+element-icon {{ size: 28px; background-color: transparent; }}
+element-text {{ vertical-align: 0.5; background-color: transparent; text-color: inherit; }}
+element normal.urgent, element alternate.urgent {{ text-color: @waiting; }}
+element normal.active, element alternate.active {{ text-color: @working; }}
+element selected.normal, element selected.active {{ background-color: @surface-hi; border-color: @accent; text-color: @fg; }}
+element selected.urgent {{ background-color: @surface-hi; border-color: @waiting; text-color: @waiting; }}
+"""
+
+
+# ── a status-bar module (waybar custom module: {"text", "tooltip", "class"}) ─────────────
+def waybar_status(events: list[dict], now: float) -> dict:
+    """What a waybar `custom` module shows: `◆ 2` when agents need you (class `needs-you`), `✓ 1` for finished-unseen (class `unread`), hidden when there is nothing. The tooltip lists
+    the most pressing few (longest-waiting first). All text goes through clean_text: it comes from terminals."""
+    unread = [e for e in events if e.get("status", "unread") == "unread"]
+    needs = sorted((e for e in unread if e.get("severity") == "needs-you"), key=lambda e: float(e.get("t", now)))
+    rest = [e for e in unread if e.get("severity") != "needs-you"]
+    if not unread:
+        return {"text": "", "tooltip": "", "class": "idle"}
+    lines = [f"{'◆' if e.get('severity') == 'needs-you' else '✓'} {clean_text(e.get('agent', 'agent'), 20)} {clean_text(e.get('tab') or '', 30)} — "
+             f"{clean_text(e.get('body') or e.get('title') or '', 50)} ({_age(now - float(e.get('t', now)))})" for e in (needs + rest)[:8]]
+    text = f"◆ {len(needs)}" if needs else f"✓ {len(rest)}"
+    return {"text": text, "tooltip": "\n".join(lines), "class": "needs-you" if needs else "unread"}
+
+
 # ── menus ─────────────────────────────────────────────────────────────────────
-def menu_command(menu: str, rows: list[dict], message: str = "") -> tuple[list[str], str]:
-    """(argv, stdin text) for a dmenu-style picker. rofi and fzf answer with an index; fuzzel answers with the text (rows are unique)."""
+def menu_command(menu: str, rows: list[dict], message: str = "", theme_path: str | None = None, notify_dir: str | None = None,
+                 mascot: str | None = None) -> tuple[list[str], str]:
+    """(argv, stdin text) for a dmenu-style picker. rofi and fzf answer with an index; fuzzel answers with the text (rows are unique). For rofi, `theme_path` applies our theme and
+    `notify_dir` + `mascot` give each row its agent's icon (and mark needs-you / working rows) through rofi's row options — appended AFTER the text was checked, from our own table."""
     texts = [r["text"] for r in rows]
+    if any(_unsafe_char(ch) for t in texts for ch in t):          # defence in depth: one row = one clean line, or the indexes the menu answers with no longer match the rows
+        raise ValueError("a menu row contains control characters")
     if menu == "rofi":
-        argv = ["rofi", "-dmenu", "-i", "-no-custom", "-format", "i", "-p", "kittymux", "-kb-custom-1", "alt+a"]
+        argv = ["rofi", "-dmenu", "-i", "-no-custom", "-format", "i", "-p", "kittymux ›", "-kb-custom-1", "alt+a"]
+        if theme_path:
+            argv += ["-theme", theme_path]
         if message:
-            argv += ["-mesg", message]
+            argv += ["-mesg", clean_text(message, 120)]
+        if notify_dir and mascot:
+            argv += ["-show-icons"]
+            lines = []
+            for r in rows:
+                opts = ["icon", icon_for(r.get("agent", ""), notify_dir, mascot)]
+                if r.get("tone") in ("urgent", "active"):
+                    opts += [r["tone"], "true"]
+                lines.append(r["text"] + "\0" + "\x1f".join(opts))
+            return argv, "\n".join(lines) + "\n"
         return argv, "\n".join(texts) + "\n"
     if menu == "fuzzel":
         return ["fuzzel", "--dmenu", "--prompt", "kittymux  "], "\n".join(texts) + "\n"

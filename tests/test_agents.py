@@ -251,6 +251,47 @@ class MascotGlyphTests(unittest.TestCase):
         self.assertFalse(A.glyph_font_loaded(f.name + ".missing", mtime))
         os.unlink(f.name)
 
+    def test_a_reinstall_of_the_same_font_does_not_hide_the_glyph_a_changed_font_does(self):
+        """Every `kittymux upgrade` used to rewrite the font and bump its timestamp: the mascot vanished from every running kitty although nothing changed."""
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".ttf", delete=False) as f:
+            f.write(b"font-with-the-mascot")
+        os.utime(f.name, (1000, 1000))
+        start, remembered = 5000.0, {}                                      # the kitty started at 5000, after the install
+        self.assertTrue(A.glyph_font_loaded(f.name, start, remembered))     # first look: remembered
+        with open(f.name, "wb") as g:
+            g.write(b"font-with-the-mascot")                                 # re-installed, identical bytes…
+        os.utime(f.name, (9000, 9000))                                       # …and a newer timestamp
+        self.assertFalse(A.glyph_font_loaded(f.name, start))                 # the timestamp rule alone would say "not loaded"
+        self.assertTrue(A.glyph_font_loaded(f.name, start, remembered))      # the fingerprint says nothing changed
+        with open(f.name, "wb") as g:
+            g.write(b"font-with-a-NEW-glyph")
+        os.utime(f.name, (9500, 9500))
+        self.assertFalse(A.glyph_font_loaded(f.name, start, remembered))     # new glyphs: held back until this kitty restarts
+        # first sight AFTER the file changed (a kitty from before the fix): unknown, so hidden rather than a box
+        self.assertFalse(A.glyph_font_loaded(f.name, start, {}))
+        os.unlink(f.name)
+        self.assertFalse(A.glyph_font_loaded(f.name, start, remembered))     # missing file
+
+    def test_font_fingerprint(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(b"abc")
+        self.assertTrue(A.font_fingerprint(f.name).startswith("3:"))
+        self.assertIsNone(A.font_fingerprint(f.name + ".missing"))
+        os.unlink(f.name)
+
+
+class StateAgeTests(unittest.TestCase):
+    def test_compact_age(self):
+        self.assertEqual([A.compact_age(x) for x in (None, "x", 0, 59.9, 60, 300, 3599, 3600, 7300, 172799, 172800)], ["", "", "", "", "1m", "5m", "59m", "1h", "2h", "47h", "2d"])
+
+    def test_only_states_where_it_matters_and_only_after_a_minute(self):
+        age = lambda state, d: A.state_age(state, 100.0, 100.0 + d)          # noqa: E731
+        self.assertEqual([age("waiting", 30), age("waiting", 90), age("working", 3700), age("done", 200), age("limited", 86400 * 3)], ["", "1m", "1h", "3m", "3d"])
+        self.assertEqual([age("idle", 9999), age("", 9999)], ["", ""])
+        self.assertEqual([A.state_age("waiting", None, 5), A.state_age("waiting", "x", 5), A.state_age("waiting", 100.0, 50.0)], ["", "", ""])      # unknown / garbage / clock went backwards
+
 
 class IdentifyTests(unittest.TestCase):
     def test_agent_beats_tool_and_shell_is_neither(self):

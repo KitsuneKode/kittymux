@@ -419,6 +419,95 @@ def stat_mode(path):
     return os.stat(path).st_mode & 0o777
 
 
+class LauncherTargetTests(unittest.TestCase):
+    """A key inside a kitty acts on THAT kitty. (Once a test rig's key-launched spawn followed 'the focused kitty' into the author's real one.)"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def setUp(self):
+        self.env = mock.patch.dict(os.environ, {}, clear=False)
+        self.env.start()
+        for k in ("KITTYMUX_TARGET", "KITTY_LISTEN_ON", "KITTY_PID"):
+            os.environ.pop(k, None)
+        self.owned = mock.patch.object(self.m, "_owned_socket", lambda p: p in ("/run/u/mykitty-1", "/run/u/mykitty-2"))        # exactly these two exist
+        self.owned.start()
+        self.dirs = mock.patch.object(self.m, "_socket_dirs", lambda: ["/run/u"])
+        self.dirs.start()
+        self.socks = mock.patch.object(self.m, "_sockets", lambda: ["unix:/run/u/mykitty-1", "unix:/run/u/mykitty-2"])
+        self.socks.start()
+        self.ls = mock.patch.object(self.m, "_ls", lambda s: [{"is_focused": s.endswith("-2")}])        # kitty 2 is the focused one
+        self.ls.start()
+
+    def tearDown(self):
+        for p in (self.ls, self.socks, self.dirs, self.owned, self.env):
+            p.stop()
+
+    def test_started_inside_a_kitty_it_acts_on_that_kitty_even_when_another_has_focus(self):
+        os.environ["KITTY_LISTEN_ON"] = "unix:/run/u/mykitty-1"
+        self.assertEqual(self.m._focused_socket(), "unix:/run/u/mykitty-1")
+
+    def test_started_from_outside_every_kitty_it_follows_the_focus(self):
+        self.assertEqual(self.m._focused_socket(), "unix:/run/u/mykitty-2")
+
+    def test_an_explicit_target_always_wins(self):
+        os.environ["KITTYMUX_TARGET"] = "unix:/run/u/mykitty-1"
+        os.environ["KITTY_LISTEN_ON"] = "unix:/run/u/mykitty-2"
+        self.assertEqual(self.m._focused_socket(), "unix:/run/u/mykitty-1")
+
+    def test_a_foreign_socket_in_the_environment_is_not_trusted(self):
+        os.environ["KITTY_LISTEN_ON"] = "unix:/tmp/someone-elses"
+        self.assertEqual(self.m._focused_socket(), "unix:/run/u/mykitty-2")
+
+
+class PurgeGuardTests(unittest.TestCase):
+    """`uninstall --purge` deletes $KITTYMUX_STATE: a mistyped value must never take your home directory with it."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = os.path.join(self.tmp.name, "home")
+        os.makedirs(os.path.join(self.home, ".local", "state"))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def reason(self, path):
+        return self.m.unsafe_purge_reason(path, self.home)
+
+    def test_the_root_the_home_and_anything_above_it_are_refused(self):
+        self.assertIn("home directory", self.reason("/"))
+        self.assertIn("home directory", self.reason(self.home))
+        self.assertIn("home directory", self.reason(os.path.dirname(self.home)))
+        self.assertIn("home directory", self.reason(self.tmp.name))
+
+    def test_a_directory_that_is_not_ours_is_refused_and_ours_is_allowed(self):
+        other = os.path.join(self.home, "Documents")
+        os.makedirs(other)
+        open(os.path.join(other, "thesis.tex"), "w").close()
+        self.assertIn("does not look like a kittymux state directory", self.reason(other))
+        named = os.path.join(self.home, ".local", "state", "kittymux")
+        os.makedirs(named)
+        self.assertIsNone(self.reason(named))                                           # the default location
+        custom = os.path.join(self.home, "my-state")
+        os.makedirs(custom)
+        open(os.path.join(custom, "inbox.jsonl"), "w").close()
+        self.assertIsNone(self.reason(custom))                                          # a custom location that holds our files
+        self.assertIsNone(self.reason(os.path.join(self.home, "gone")))                 # nothing there
+
+    def test_a_symlink_is_never_followed_into_a_delete(self):
+        real = os.path.join(self.home, ".local", "state", "kittymux")
+        os.makedirs(real)
+        link = os.path.join(self.home, "state-link")
+        os.symlink(real, link)
+        self.assertIn("symlink", self.reason(link))
+
+
 class DimAndScreenshotTests(unittest.TestCase):
     """Never touch a real kitty from tests: no socket, no kitty subprocess."""
 

@@ -123,7 +123,7 @@ for ow in data:
             if msg:
                 label += "  — " + msg[:60]
             key = "%d:%014.3f" % (rank, ts)      # oldest first: longest-waiting on top
-            print("\t".join(re.sub(r"[\t\r\n]", " ", field) for field in
+            print("\t".join(re.sub(r"[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202e\u2066-\u2069]", " ", field) for field in
                             [label, str(w["id"]), str(oid), str(t["id"]),
                              sess, os_sess, key, SOCK, status_word]))
 ' "$STATE_DIR/panes-$pid.json" "$SOURCE_OS_WIN_ID" "$sock" "$SCRIPT_DIR/../python" || true

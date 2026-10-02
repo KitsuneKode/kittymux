@@ -7,7 +7,9 @@ arch=('any')
 url="https://github.com/KitsuneKode/kittymux"
 license=('MIT')
 depends=('kitty' 'jq' 'fzf' 'git' 'python' 'fontconfig')
-optdepends=('libnotify: desktop notification when an agent starts waiting'
+optdepends=('rofi: the global launcher — `kittymux pick --menu rofi` bound in your window manager'
+            'fzf: the launcher inside kitty (ctrl+alt+v)'
+            'libnotify: desktop notification when an agent starts waiting'
             'github-cli: PR numbers in the sidebar deck'
             'iproute2: listening ports in the sidebar deck'
             'ttf-nerd-fonts-symbols-mono: branch/folder glyphs')

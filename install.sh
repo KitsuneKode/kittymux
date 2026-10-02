@@ -115,9 +115,14 @@ ok "tab-bar include ready"
 # ── brand icon font (real provider logos via symbol_map) ─────────────────────
 FONT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/fonts"
 mkdir -p "$FONT_DIR"
-cp "$KITTYMUX_HOME/assets/kittymux-icons.ttf" "$FONT_DIR/"
-command -v fc-cache >/dev/null 2>&1 && fc-cache -f "$FONT_DIR" >/dev/null 2>&1
-ok "icon font → $FONT_DIR/kittymux-icons.ttf"
+# Copy only when the font actually differs. Rewriting an identical file bumps its timestamp, and a running kitty would then wonder whether it has loaded it.
+if cmp -s "$KITTYMUX_HOME/assets/kittymux-icons.ttf" "$FONT_DIR/kittymux-icons.ttf"; then
+    ok "icon font up to date → $FONT_DIR/kittymux-icons.ttf"
+else
+    cp "$KITTYMUX_HOME/assets/kittymux-icons.ttf" "$FONT_DIR/"
+    command -v fc-cache >/dev/null 2>&1 && fc-cache -f "$FONT_DIR" >/dev/null 2>&1
+    ok "icon font → $FONT_DIR/kittymux-icons.ttf (a kitty started before this needs a restart to draw new glyphs)"
+fi
 
 # ── include lines in kitty.conf (backup first, never overwrite) ─────────────
 touch "$KITTY_CONF"

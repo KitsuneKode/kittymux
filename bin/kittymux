@@ -9,7 +9,7 @@
                          layout width [+N|-N|N]   layout preset NAME   layout pick   layout show
                          layout default [clear]   (pin the current layout as the start for new windows; otherwise new kitties start with your last choice)
   kittymux inbox       everything that wants your attention (questions, permissions, usage limits, finished runs), newest first:
-                         inbox [--all] [--json] [--limit N]   inbox ack [ID… | --all]   inbox clear   inbox jump [ID]   inbox watch
+                         inbox [--all] [--json] [--limit N] [--waybar]   inbox ack [ID… | --all]   inbox clear   inbox jump [ID]   inbox watch
   kittymux sessions    save/restore sessions WITH the agents' conversations (claude --resume <id>, codex resume <id>, …) and make new ones from templates:
                          sessions [list] | save [NAME] [--all] [--direct] | restore [NAME|last] | autosave | new NAME [--template T] [--agent A] [--cwd DIR] | templates | check | prepare | rewrite FILE|--recent
                          sessions history [--since 7d] [--json]   sessions recover [NAME] [--since 6h]   (every agent session is journaled as it runs)
@@ -50,6 +50,7 @@ import kittymux_agents  # noqa: E402
 import kittymux_inbox  # noqa: E402
 import kittymux_journal  # noqa: E402
 import kittymux_launcher  # noqa: E402
+import kittymux_quiet  # noqa: E402
 import kittymux_resume  # noqa: E402
 import kittymux_layout  # noqa: E402
 import kittymux_theme  # noqa: E402
@@ -589,15 +590,9 @@ def _owned_socket(path: str) -> bool:
     return stat.S_ISSOCK(st.st_mode) and st.st_uid == os.getuid()
 
 
-def _target_socket() -> str | None:
-    """The kitty instance this command was launched from.
-
-    Order matters: an explicit KITTYMUX_TARGET; then our *actual parent process* (kitty
-    itself spawns key-bound commands, so its PID names the right socket even if the
-    environment is stale); only then environment hints; finally the newest socket we own."""
-    explicit = os.environ.get("KITTYMUX_TARGET", "")
-    if explicit.startswith("unix:") and _owned_socket(explicit[5:]):
-        return explicit
+def _own_kitty_socket() -> str | None:
+    """The kitty this process was started FROM (kitty spawns key-bound commands, so its pid names the socket even when the environment is stale; then the environment hints),
+    or None when we were not started inside a kitty at all (a window-manager bind, a plain terminal)."""
     ppid = str(os.getppid())
     for d in _socket_dirs():
         if _owned_socket(f"{d}/mykitty-{ppid}"):
@@ -610,6 +605,19 @@ def _target_socket() -> str | None:
         for d in _socket_dirs():
             if _owned_socket(f"{d}/mykitty-{pid}"):
                 return f"unix:{d}/mykitty-{pid}"
+    return None
+
+
+def _target_socket() -> str | None:
+    """The kitty instance this command was launched from.
+
+    Order matters: an explicit KITTYMUX_TARGET; then the kitty we were started from; finally the newest socket we own."""
+    explicit = os.environ.get("KITTYMUX_TARGET", "")
+    if explicit.startswith("unix:") and _owned_socket(explicit[5:]):
+        return explicit
+    own = _own_kitty_socket()
+    if own:
+        return own
     import glob
     socks = sorted((g for d in _socket_dirs() for g in glob.glob(os.path.join(d, "mykitty-*")) if _owned_socket(g)),
                    key=lambda g: os.stat(g).st_mtime, reverse=True)
@@ -770,6 +778,9 @@ def inbox(argv: list[str]) -> int:
             print("kittymux inbox: nothing to jump to", file=sys.stderr)
             return 1
         return inbox_jump(target)
+    if cmd == "waybar" or "--waybar" in argv:
+        print(json.dumps(kittymux_launcher.waybar_status(kittymux_inbox.load(sdir), now), ensure_ascii=False))
+        return 0
     if cmd == "watch":
         seen, last = set(e["id"] for e in kittymux_inbox.load(sdir)), 0.0
         try:
@@ -1405,10 +1416,15 @@ def _ls(sock: str) -> list | None:
 
 
 def _focused_socket() -> str | None:
-    """The kitty that has the keyboard focus right now. A picker started from the window manager runs outside every kitty, so 'the newest socket' would be a guess."""
+    """Which kitty a launcher acts on. An explicit KITTYMUX_TARGET, else the kitty this command was started FROM (a key inside kitty must act on that kitty, never on whichever one
+    happens to have focus — a second kitty, a scratch instance or a test rig must not be hijacked), else — started from outside every kitty, e.g. a window-manager bind — the one
+    that has the keyboard focus right now, else the newest."""
     explicit = os.environ.get("KITTYMUX_TARGET", "")
     if explicit.startswith("unix:") and _owned_socket(explicit[5:]):
         return explicit
+    own = _own_kitty_socket()
+    if own:
+        return own
     for sock in _sockets():
         data = _ls(sock)
         if data and any(o.get("is_focused") for o in data):
@@ -1499,7 +1515,7 @@ def reopen_entry(e: dict, sock: str) -> bool:
         print(f"{BAD} kittymux reopen: no safe way to reopen {e.get('agent')} (see `kittymux sessions check`)", file=sys.stderr)
         return False
     wrapper = prompt_wrapper() + ["--info", kittymux_resume.prompt_info(hit[0], mode, e.get("sid"), e["argv"], new)]
-    title = re.sub(r"[\r\n]+", " ", e.get("tab") or e["agent"])[:40]
+    title = kittymux_launcher.clean_text(e.get("tab") or e["agent"], 40) or e["agent"]
     def make(scratch):
         a = ["--type=tab"] + (["--match", "title:^!scratch and state:focused_os_window", "--location=before"] if scratch else [])
         return a + [f"--cwd={e['cwd']}", "--tab-title", title, "--title", e["agent"], f"--var=kittymux_agent={e['agent']}", "--", *wrapper]
@@ -1595,6 +1611,32 @@ def _do_row(row: dict, how: str, sock: str | None) -> int:
     return 1
 
 
+def _write_rofi_theme(sock: str | None) -> str | None:
+    """Our rofi theme for the live kitty colours, written 0600 into the state dir; None (→ the user's own rofi theme) when the colours cannot be read."""
+    if not sock:
+        return None
+    rc, out = _run(["kitty", "@", "--to", sock, "get-colors"], 4)
+    if rc != 0:
+        return None
+    p = kittymux_theme.from_colors(kittymux_theme.parse_kitty_colors(out))
+    hexc = lambda v: f"#{v:06x}"                                    # noqa: E731
+    colors = {k: hexc(getattr(p, k)) for k in ("bg", "bar", "surface", "surface_hi", "text", "muted", "faint", "accent", "waiting", "working", "alert")}
+    text = kittymux_launcher.rofi_theme(colors, os.path.join(HOME_DIR, "assets", "notify", "kittymux.png"))
+    if not text:
+        return None
+    path = os.path.join(kittymux_layout.state_dir(), "rofi-kittymux.rasi")
+    try:
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        tmp = f"{path}.{os.getpid()}.tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except OSError:
+        return None
+    return path
+
+
 def pick(argv: list[str]) -> int:
     """`kittymux pick [--menu rofi|fuzzel|fzf|auto] [--list|--json]` — one searchable list of everything that wants you, every running agent, every conversation you closed,
     and a new agent: type to filter, Enter goes there. Bind it in your window manager (`kittymux pick --menu rofi`) to reach any agent from anywhere."""
@@ -1621,7 +1663,12 @@ def pick(argv: list[str]) -> int:
         return 1
     n_need = sum(1 for r in rows if r["kind"] == "event")
     msg = f"{n_need} need you · alt+a marks read" if menu == "rofi" else ""
-    cmd, stdin = kittymux_launcher.menu_command(menu, rows, msg)
+    theme, notify_dir, mascot = None, None, None
+    if menu == "rofi" and "--no-theme" not in argv and os.environ.get("KITTYMUX_ROFI_THEME") != "user":
+        theme = _write_rofi_theme(focused)
+        if theme:
+            notify_dir, mascot = os.path.join(HOME_DIR, "assets", "notify"), os.path.join(HOME_DIR, "assets", "notify", "kittymux.png")
+    cmd, stdin = kittymux_launcher.menu_command(menu, rows, msg, theme, notify_dir, mascot)
     try:
         r = subprocess.run(cmd, input=stdin, stdout=subprocess.PIPE, text=True, timeout=600)
     except (OSError, subprocess.SubprocessError):
@@ -1642,16 +1689,9 @@ def parse_duration(text: str) -> float | None:
     return float(m.group(1)) * {"s": 1, "m": 60, "h": 3600, "d": 86400}[m.group(2)] if m else None
 
 
-def _mute_file() -> str:
-    return os.path.join(kittymux_layout.state_dir(), "notify-mute-until")
-
-
 def mute_remaining(now: float | None = None) -> float:
-    try:
-        with open(_mute_file(), encoding="utf-8") as f:
-            return max(0.0, float(f.read().strip()) - (now if now is not None else time.time()))
-    except (OSError, ValueError):
-        return 0.0
+    until = kittymux_quiet.mute_until(kittymux_layout.state_dir(), now)
+    return max(0.0, until - (now if now is not None else time.time())) if until else 0.0
 
 
 def notify_cmd(argv: list[str]) -> int:
@@ -1662,19 +1702,14 @@ def notify_cmd(argv: list[str]) -> int:
     flag = lambda name: os.path.join(sdir, name)            # noqa: E731
     if cmd == "mute":
         span = parse_duration(argv[1] if len(argv) > 1 else "1h")
-        if span is None or span <= 0 or span > 30 * 86400:
+        if span is None or span <= 0 or span > kittymux_quiet.MAX_SPAN_S:
             print("usage: kittymux notify mute [30m|1h|2d]   (up to 30 days)", file=sys.stderr)
             return 2
-        fd = os.open(_mute_file(), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(str(time.time() + span))
-        print(f"{OK} popups and bells muted until {time.strftime('%H:%M', time.localtime(time.time() + span))} — everything is still collected in `kittymux inbox`")
+        until = kittymux_quiet.set_mute(sdir, span)
+        print(f"{OK} popups and bells muted until {time.strftime('%H:%M', time.localtime(until))} — everything is still collected in `kittymux inbox`")
         return 0
     if cmd == "unmute":
-        try:
-            os.unlink(_mute_file())
-        except OSError:
-            pass
+        kittymux_quiet.clear_mute(sdir)
         print(f"{OK} unmuted")
         return 0
     if cmd in ("off", "on"):
@@ -1699,27 +1734,32 @@ def notify_cmd(argv: list[str]) -> int:
 
 
 def snooze(argv: list[str]) -> int:
-    """`kittymux snooze [1h] [--window ID] [--clear]` — no popups or bells for ONE agent window for a while (its events still reach the inbox)."""
+    """`kittymux snooze [1h] [--window ID] [--clear]` — no popups or bells for ONE agent window for a while (its events still reach the inbox). Stored in the private state dir
+    (kittymux_quiet), never as a window variable: a program in the window could set that itself and silence its own "needs you"."""
     clear = "--clear" in argv
     wid = next((argv[i + 1] for i, a in enumerate(argv[:-1]) if a == "--window"), os.environ.get("KITTY_WINDOW_ID", ""))
-    span_arg = next((a for a in argv if _DURATION.match(a)), "1h")
-    span = parse_duration(span_arg)
+    span = parse_duration(next((a for a in argv if _DURATION.match(a)), "1h"))
     if not str(wid).isdigit():
         print("usage: kittymux snooze [30m|1h|2d] [--window ID] [--clear]   (run it inside the window, or give --window)", file=sys.stderr)
         return 2
-    if span is None or span <= 0 or span > 30 * 86400:
+    if span is None or span <= 0 or span > kittymux_quiet.MAX_SPAN_S:
         print("kittymux snooze: a duration like 30m, 1h or 2d (up to 30 days)", file=sys.stderr)
         return 2
     sock = _target_socket()
-    if not sock:
+    pid = _socket_pid(sock) if sock else None
+    if not sock or pid is None:
         print("kittymux snooze: no kitty remote-control socket found", file=sys.stderr)
         return 1
-    value = "" if clear else str(int(time.time() + span))
-    rc, _ = _run(["kitty", "@", "--to", sock, "set-user-vars", "--match", f"id:{wid}", f"kittymux_snooze_until={value}"], 4)
-    if rc != 0:
+    if not any(str(w.get("id")) == str(wid) for o in (_ls(sock) or []) for t in o.get("tabs", []) for w in t.get("windows", [])):
         print(f"kittymux snooze: kitty has no window {wid}", file=sys.stderr)
         return 1
-    print(f"{OK} " + ("snooze cleared" if clear else f"window {wid} snoozed until {time.strftime('%H:%M', time.localtime(time.time() + span))}"))
+    sdir = kittymux_layout.state_dir()
+    if clear:
+        kittymux_quiet.clear_snooze(sdir, pid, wid)
+        print(f"{OK} snooze cleared")
+        return 0
+    until = kittymux_quiet.set_snooze(sdir, pid, wid, span)
+    print(f"{OK} window {wid} snoozed until {time.strftime('%H:%M', time.localtime(until))}")
     return 0
 
 
@@ -2089,6 +2129,27 @@ def apply_uninstall(plan: dict, cfg_dir: str, stamp: str) -> None:
             pass
 
 
+def unsafe_purge_reason(path: str, home: str | None = None) -> str | None:
+    """Why `uninstall --purge` must NOT delete `path` (it comes from $KITTYMUX_STATE, which can be mistyped): the root, your home or anything above it, a symlink, or a directory that
+    does not look like kittymux's own (named `kittymux`, or holding files only kittymux writes). None = safe."""
+    home = os.path.realpath(home or os.path.expanduser("~"))
+    try:
+        real = os.path.realpath(path)
+        if os.path.islink(path):
+            return f"{path} is a symlink"
+        if not os.path.isdir(real):
+            return None                                     # nothing there: nothing to delete
+        if real == "/" or real == home or home.startswith(real.rstrip("/") + "/"):
+            return f"{real} is your home directory or one above it"
+        ours = ("inbox.jsonl", "agent-sessions.json", "scan-", "panes-", "layout-", "decisions-", "notify-mute-until", "sessions")
+        names = os.listdir(real)
+        if os.path.basename(real) != "kittymux" and not any(n.startswith(ours) for n in names):
+            return f"{real} does not look like a kittymux state directory (set KITTYMUX_STATE to a directory named 'kittymux', or delete it yourself)"
+    except OSError as e:
+        return str(e)
+    return None
+
+
 def uninstall(argv: list[str]) -> int:
     """Take kittymux back out of kitty: the include lines, symlinks, generated files, icon font and
     Claude hooks. Dry run unless --yes; the state dir (layouts, caches) only goes with --purge."""
@@ -2112,7 +2173,11 @@ def uninstall(argv: list[str]) -> int:
     apply_uninstall(plan, CFG, time.strftime("%Y%m%d-%H%M%S"))
     hooks(["--remove"])
     if purge:
-        shutil.rmtree(STATE, ignore_errors=True)
+        why = unsafe_purge_reason(STATE)
+        if why:
+            print(f"{BAD} not deleting the state dir: {why}", file=sys.stderr)
+        else:
+            shutil.rmtree(STATE, ignore_errors=True)
     if shutil.which("fc-cache"):
         subprocess.run(["fc-cache", "-f", font_dir], capture_output=True)
     print(f"\n{OK} removed. Running kitties keep their loaded config until reloaded (ctrl+shift+alt+r) or restarted;")

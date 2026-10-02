@@ -23,7 +23,8 @@ SESSION_HISTORY_FILE="${SESSIONS_DIR}/.history"
 LIVE_HISTORY_PREFIX="${SESSIONS_DIR}/.live-history"
 
 ensure_sessions_dir() {
-    mkdir -p -m 700 "$SESSIONS_DIR"
+    # shellcheck disable=SC2174  # both arguments are named, so each gets the mode
+    mkdir -p -m 700 "$KITTYMUX_STATE" "$SESSIONS_DIR"      # -m only applies to the deepest directory of each argument: name the parent too, or it gets the default umask
 }
 
 trim_whitespace() {

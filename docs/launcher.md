@@ -48,6 +48,12 @@ bind = SUPER, A, exec, kittymux pick --menu rofi
 
 The focused kitty is decided *before* the menu opens (a menu takes the keyboard focus), so "new claude" starts in the directory you were just in. Runs in ~0.1 s; the menu itself is rofi's.
 
+### The rofi look
+
+`kittymux pick --menu rofi` wears kittymux: a header with the mascot, a search bar, one row per item with **its agent's icon** (the notification marks, which carry the mascot badge), an accent rail on the selected row
+(the same `▎` as the tab bar), needs-you rows in the *waiting* colour and working rows in the *working* colour. **Every colour is read from your live kitty theme** when the menu opens (nothing is hardcoded), so it
+follows theme switches; the theme is written 0600 to `~/.local/state/kittymux/rofi-kittymux.rasi`. `--no-theme` (or `KITTYMUX_ROFI_THEME=user`) leaves your own rofi theme in charge. Needs rofi 2.x (Wayland-native).
+
 ## Bring back what you closed: `kittymux reopen`
 
 `ctrl+alt+shift+u` (leader `y`) or `kittymux reopen` reopens the agent conversation closed last, in a new tab in its directory, through the same prompt as any restore. It reads the [journal](sessions.md), so it also works for
@@ -65,9 +71,34 @@ kittymux snooze 2h             # THIS agent window only (run inside it; or --win
 ```
 
 Muting quiets the **interruption**, never the news: every event still goes to the [inbox](inbox.md), shows in the bar and in `pick`, and `kittymux explain` says "muted"/"snoozed" for the ones that did not pop up.
-The snooze lives on the window (`kittymux_snooze_until`), so it ends with the window. State: `~/.local/state/kittymux/notify-mute-until` (0600).
+A snooze is stored in the private state dir (`snoozes-<kitty pid>.json`, 0600, capped at 30 days) — deliberately **not** a window variable: any program in a window can set its own variables with an escape
+sequence, so an agent could otherwise silence the very popup that says it wants something. The mute file is `notify-mute-until` (0600). A corrupt or absurd value never silences anything for good.
+
+## A status-bar badge: waybar (no Quickshell needed)
+
+```
+kittymux inbox --waybar        →  {"text": "◆ 2", "tooltip": "◆ claude api — Approve: run the tests? (12m)\n…", "class": "needs-you"}
+```
+
+```jsonc
+// ~/.config/waybar/config.jsonc — a custom module; add "custom/kittymux" to a modules list
+"custom/kittymux": { "exec": "kittymux inbox --waybar", "return-type": "json", "interval": 5, "on-click": "kittymux pick --menu rofi", "hide-empty-text": true }
+```
+
+Empty when nothing is unread (the module hides); `◆ N` when N agents need you (class `needs-you`, style it in waybar's CSS); `✓ N` for finished-unseen. Click opens the picker.
+
+## When would you want Quickshell?
+
+| You want… | Use |
+|---|---|
+| find / jump to / start / reopen an agent, instantly | **rofi** (`pick`) — already done; a transient menu is the right shape |
+| a glanceable count of what needs you, always visible | **waybar** module above (you already run waybar) |
+| a persistent panel or notification centre with live updates, inline actions (jump, mark read, mute 1h), animated popups that replace dunst, a dashboard of every agent on a second monitor | **Quickshell** — the only one of these that is a real UI toolkit |
+
+Start with rofi + waybar; add Quickshell when you catch yourself wanting a *panel that stays open* or *notifications that belong to kittymux*. On Arch it is in `extra`: `sudo pacman -S quickshell` (0.3.x; no AUR needed).
+`addons/quickshell` has a starting point that reads `inbox-snapshot.json` (untested until Quickshell is installed — the data contract is `kittymux pick --json` / `kittymux inbox --json`).
 
 ## What this is not (yet)
 
-- A GUI add-on beyond rofi/fuzzel: Quickshell is not installed on the author's machine, so the sample in `addons/quickshell` stays untested; `kittymux pick --json` is the contract a widget would use.
+- A persistent GUI: Quickshell is not installed on the author's machine, so the sample in `addons/quickshell` stays untested; `kittymux pick --json` is the contract a widget would use.
 - Pin / settle (auto-fold finished threads after N days) and per-turn diffs — see the roadmap notes in the changelog.

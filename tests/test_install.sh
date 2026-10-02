@@ -35,7 +35,11 @@ ok "kittymux command linked into ~/.local/bin and runs"
 ok "open-actions.conf rendered with this checkout's mux-open-ref"
 
 before=$(cat "$CONF/kitty.conf")
+FONT="$XDG_DATA_HOME/fonts/kittymux-icons.ttf"
+touch -d "2026-01-01 00:00:00" "$FONT"; font_before=$(stat -c %Y "$FONT")             # pretend it was installed long ago
 "$HOME_DIR/install.sh" --leader >/dev/null 2>&1 || fail "second install failed"
+[ "$(stat -c %Y "$FONT")" = "$font_before" ] || fail "a re-install rewrote an identical icon font (its newer timestamp hides the mascot in every running kitty)"
+ok "re-install leaves an identical icon font untouched (running kitties keep drawing the mascot)"
 [ "$before" = "$(cat "$CONF/kitty.conf")" ] || fail "a second install changed kitty.conf (it must be idempotent)"
 ok "second install is a no-op for kitty.conf"
 

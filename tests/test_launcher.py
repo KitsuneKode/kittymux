@@ -121,9 +121,15 @@ class RowTests(unittest.TestCase):
         self.assertIn("25h", [r for r in rows if r["kind"] == "closed"][0]["text"])
 
     def test_agents_that_are_not_installed_are_not_offered_and_the_closed_list_is_capped(self):
-        rows = self.rows(installed=["codex"], closed=[{"key": f"k{i}", "agent": "codex", "last": NOW - i} for i in range(20)])
+        rows = self.rows(installed=["codex"], closed=[{"key": f"k{i}", "agent": "codex", "cwd": f"/p/{i}", "last": NOW - i} for i in range(20)])
         self.assertEqual({r["action"]["agent"] for r in rows if r["kind"] == "new"}, {"codex"})
         self.assertEqual(self.kinds(rows).count("closed"), 8)
+
+    def test_near_duplicate_closed_conversations_are_one_row(self):
+        dup = lambda i, tab="api": {"key": f"k{i}", "agent": "claude", "tab": tab, "cwd": "/home/u/code/api", "last": NOW - i}          # noqa: E731
+        rows = self.rows(closed=[dup(1), dup(2), dup(3), dup(4, tab="other")])
+        closed = [r for r in rows if r["kind"] == "closed"]
+        self.assertEqual([r["action"]["key"] for r in closed], ["k1", "k4"])                                  # the newest of each distinct (agent, cwd, tab)
 
     def test_a_no_approvals_agent_is_marked_in_every_kind_of_row(self):
         risky = ["claude", "--dangerously-skip-permissions"]
@@ -142,9 +148,60 @@ class RowTests(unittest.TestCase):
             self.assertNotIn("\n", t)
         self.assertLess(max(len(t) for t in texts), 400)
 
+    def test_a_hostile_window_title_cannot_forge_rows_shift_indexes_or_spoof_text(self):
+        evil = "api\nFAKE ROW  ↺ claude  closed 1m ago\x00icon\x1finfo\x1b[2J\u202e gnp.exe\u200b\u2028x\ue000"
+        rows = self.rows(events=[ev("a", body=evil)], windows=[win(9, tab=evil, cwd="/x\ny\x00z", agent="co\nde\x00x")],
+                         closed=[{"key": "k", "agent": "claude", "tab": evil, "cwd": evil, "last": NOW - 5}])
+        for r in rows:
+            for bad in ("\n", "\r", "\x00", "\x1b", "\x1f", "\u202e", "\u200b", "\u2028", "\ue000"):
+                self.assertNotIn(bad, r["text"], repr(r["text"]))
+        for menu in ("rofi", "fuzzel", "fzf"):
+            _argv, stdin = L.menu_command(menu, rows)
+            self.assertEqual(stdin.count("\n"), len(rows), menu)        # one line per row: an answer's index is the row's index
+
+    def test_the_menu_boundary_refuses_a_row_that_slipped_through(self):
+        for bad in ("a\nb", "a\x00b", "a\u202eb"):
+            with self.assertRaises(ValueError):
+                L.menu_command("rofi", [{"kind": "x", "text": bad, "action": {}}])
+
+    def test_clean_text(self):
+        self.assertEqual(L.clean_text("  a\tb\n c  "), "a b c")
+        self.assertEqual(L.clean_text(None), "")
+        self.assertEqual(L.clean_text("x" * 500, 10), "x" * 10)
+        self.assertEqual(L.clean_text("日本語 ✓ ◆ ⎇"), "日本語 ✓ ◆ ⎇")             # ordinary unicode, symbols and CJK survive
+
     def test_nothing_at_all_still_offers_new_agents_and_an_empty_machine_does_not_crash(self):
         self.assertEqual(self.kinds(self.rows()), ["new"] * 4)
         self.assertEqual(self.rows(installed=[]), [])
+
+
+class WaybarTests(unittest.TestCase):
+    def test_nothing_unread_is_hidden_needs_you_is_a_diamond_and_finished_a_tick(self):
+        self.assertEqual(L.waybar_status([], NOW), {"text": "", "tooltip": "", "class": "idle"})
+        self.assertEqual(L.waybar_status([dict(ev("a"), status="read")], NOW)["class"], "idle")
+        w = L.waybar_status([ev("a", t=NOW - 600), ev("b", t=NOW - 60), ev("c", sev="info", t=NOW - 5)], NOW)
+        self.assertEqual((w["text"], w["class"]), ("◆ 2", "needs-you"))
+        self.assertTrue(w["tooltip"].splitlines()[0].startswith("◆ claude"))                       # longest-waiting first
+        self.assertIn("(10m)", w["tooltip"].splitlines()[0])
+        f = L.waybar_status([ev("c", sev="info")], NOW)
+        self.assertEqual((f["text"], f["class"]), ("✓ 1", "unread"))
+
+    def test_terminal_text_cannot_break_the_json_line_or_forge_tooltip_lines(self):
+        import json as _json
+        w = L.waybar_status([ev("a", body="x\ny\x1b[2J\u202e", tab="t\nFAKE")], NOW)
+        self.assertEqual(len(w["tooltip"].splitlines()), 1)
+        self.assertEqual(_json.loads(_json.dumps(w, ensure_ascii=False)), w)
+
+
+class ModeHintTests(unittest.TestCase):
+    def test_the_longest_variant_that_fits_and_nothing_when_none_does(self):
+        self.assertEqual(L.mode_hint("spawn"), "c x d u o a g  ⇧ split")
+        self.assertEqual(L.mode_hint("spawn", 22), "c x d u o a g  ⇧ split")
+        self.assertEqual(L.mode_hint("spawn", 21), "c x d u o a g ⇧")
+        self.assertEqual(L.mode_hint("spawn", 10), "cxduoag")
+        self.assertEqual(L.mode_hint("spawn", 3), "")
+        self.assertEqual(L.mode_hint("LEADER", 40), "hjkl cnp saw g ?")
+        self.assertEqual([L.mode_hint(m, 40) for m in ("", None, "mystery")], ["", "", ""])           # a mode we have no card for: just its name in the badge
 
 
 class MenuTests(unittest.TestCase):
@@ -182,6 +239,69 @@ class MenuTests(unittest.TestCase):
         self.assertEqual(p(0, "alt-a\n1\ttwo\n")[0]["text"], "two")
         for bad in ((130, ""), (0, ""), (0, "\n"), (0, "\nx\ty\n"), (0, "\n9\tz\n")):
             self.assertIsNone(p(*bad), bad)
+
+
+COLORS = {k: "#%06x" % (0x102030 + i * 0x0a0a0a) for i, k in enumerate(("bg", "bar", "surface", "surface_hi", "text", "muted", "faint", "accent", "waiting", "working", "alert"))}
+
+
+class LookTests(unittest.TestCase):
+    MASCOT = os.path.join(ROOT, "assets", "notify", "kittymux.png")
+
+    def test_the_theme_is_built_only_from_the_live_colours_it_is_given(self):
+        t = L.rofi_theme(COLORS, self.MASCOT)
+        self.assertEqual(t.count("{"), t.count("}"))
+        self.assertIn(f'filename: "{self.MASCOT}"', t)
+        for v in COLORS.values():
+            self.assertIn(v, t)
+        for old in ("str:", "imagebox"):                       # rofi 2.0 spells these `content:` and the Icon widget
+            self.assertNotIn(old, t)
+
+    def test_no_colour_literal_of_our_own_is_in_the_theme_source(self):
+        import inspect
+        src = inspect.getsource(L.rofi_theme)
+        body = src[src.index('return f"""'):]
+        self.assertEqual(__import__("re").findall(r"#[0-9a-fA-F]{6}", body), [])        # every colour is a parameter: nothing hardcoded (the palette follows the kitty theme)
+
+    def test_a_missing_or_malformed_colour_or_path_means_no_theme_so_the_users_own_stays(self):
+        self.assertEqual(L.rofi_theme({k: v for k, v in COLORS.items() if k != "accent"}, self.MASCOT), "")
+        self.assertEqual(L.rofi_theme(dict(COLORS, bg="red"), self.MASCOT), "")
+        self.assertEqual(L.rofi_theme(dict(COLORS, bg="#fff; } window { background: url(x)"), self.MASCOT), "")
+        for bad in ('/x"; } * { ', "/x\\y", "/x\ny", ""):
+            self.assertEqual(L.rofi_theme(COLORS, bad), "", bad)
+
+    def test_rofis_own_parser_accepts_the_theme(self):
+        import shutil
+        import subprocess
+        import tempfile
+        if not shutil.which("rofi"):
+            self.skipTest("rofi not installed")
+        with tempfile.NamedTemporaryFile("w", suffix=".rasi", delete=False) as f:
+            f.write(L.rofi_theme(COLORS, self.MASCOT))
+        r = subprocess.run(["rofi", "-theme", f.name, "-dump-theme"], capture_output=True, text=True, timeout=20)
+        os.unlink(f.name)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("error", r.stderr.lower())
+
+    def test_icons_come_from_our_directory_by_validated_name_only(self):
+        d = os.path.join(ROOT, "assets", "notify")
+        self.assertEqual(L.icon_for("claude", d, "FB"), os.path.join(d, "claude.png"))
+        self.assertEqual(L.icon_for("cursor", d, "FB"), os.path.join(d, "cursor-agent.png"))          # an alias
+        for bad in ("../../etc/passwd", "claude/../../x", "nosuchagent", "", None, "claude\0"):
+            self.assertEqual(L.icon_for(bad, d, "FB"), "FB", bad)
+
+    def test_rofi_rows_carry_icon_and_tone_after_the_text_and_other_menus_do_not(self):
+        rows = [{"kind": "event", "text": "needs", "agent": "claude", "tone": "urgent", "action": {}},
+                {"kind": "new", "text": "plain", "agent": "../x", "tone": "", "action": {}}]
+        d = os.path.join(ROOT, "assets", "notify")
+        argv, stdin = L.menu_command("rofi", rows, "2 need you", "/t/theme.rasi", d, "/m.png")
+        self.assertIn("-show-icons", argv)
+        self.assertEqual(argv[argv.index("-theme") + 1], "/t/theme.rasi")
+        lines = stdin.split("\n")[:-1]
+        self.assertEqual(lines[0], f"needs\0icon\x1f{d}/claude.png\x1furgent\x1ftrue")
+        self.assertEqual(lines[1], "plain\0icon\x1f/m.png")                                          # a hostile name falls back to the mascot
+        self.assertEqual(len(lines), len(rows))
+        for menu in ("fuzzel", "fzf"):
+            self.assertNotIn("\0", L.menu_command(menu, rows, "", "/t", d, "/m.png")[1])
 
 
 if __name__ == "__main__":

@@ -638,6 +638,52 @@ class AttentionTests(ScanBase):
         self.assertEqual(w.bells, 0)
 
 
+class AgeRefreshTests(ScanBase):
+    """A tab showing "waiting 5m" must be redrawn now and then, or the minutes never tick."""
+
+    def setUp(self):
+        super().setUp()
+        vars(KS._RT).pop("age_refresh", None)
+        self.redraws = []
+        self.tm = object()
+        self.p1 = mock.patch.object(KS, "_tab_manager", lambda w: self.tm)
+        self.p2 = mock.patch.object(KS, "refresh_bar", lambda tm: self.redraws.append(tm))
+        self.p1.start()
+        self.p2.start()
+
+    def tearDown(self):
+        self.p2.stop()
+        self.p1.stop()
+        super().tearDown()
+
+    def test_a_waiting_tab_is_redrawn_every_age_refresh_even_when_nothing_changed(self):
+        w = FakeWindow(1, "claude", IDLE)
+        self.add(w)
+        t = [1000.0]
+        with mock.patch.object(KS.time, "monotonic", lambda: t[0]):
+            KS.scan_all()
+            w.screen = PERMISSION
+            KS.scan_all()                                           # the change itself: a redraw
+            n = len(self.redraws)
+            t[0] += 5
+            KS.scan_all()
+            self.assertEqual(len(self.redraws), n)                  # quiet, inside the interval: no redraw
+            t[0] += KS.AGE_REFRESH
+            KS.scan_all()
+            self.assertEqual(len(self.redraws), n + 1)              # the interval passed: one redraw so "5m" can become "6m"
+
+    def test_an_idle_tab_never_triggers_age_redraws(self):
+        self.add(FakeWindow(1, "claude", IDLE))
+        t = [1000.0]
+        with mock.patch.object(KS.time, "monotonic", lambda: t[0]):
+            KS.scan_all()
+            n = len(self.redraws)
+            for _ in range(5):
+                t[0] += KS.AGE_REFRESH + 1
+                KS.scan_all()
+        self.assertEqual(len(self.redraws), n)
+
+
 class QuietTests(ScanBase):
     """`kittymux notify mute` and `kittymux snooze`: quiet the interruption, never lose the news."""
 
@@ -672,20 +718,17 @@ class QuietTests(ScanBase):
         self.assertEqual(KS._notify(self.w, "waiting", "q"), "sent")
 
     def test_a_snoozed_window_is_quiet_and_only_that_window(self):
-        self.w.user_vars = {"kittymux_snooze_until": str(time.time() + 600)}
+        import kittymux_quiet
+        kittymux_quiet.set_snooze(self.state, os.getpid(), 1, 600)
         other = FakeWindow(2, "claude", "")
-        other.user_vars = {}
         self.assertTrue(KS._notify(self.w, "waiting", "q").startswith("suppressed: this window is snoozed"))
         self.assertEqual(KS._notify(other, "waiting", "q"), "sent")
-        self.w.user_vars = {"kittymux_snooze_until": str(time.time() - 5)}              # over
+        kittymux_quiet.clear_snooze(self.state, os.getpid(), 1)
         self.assertEqual(KS._notify(self.w, "waiting", "q"), "sent")
 
-    def test_garbage_in_the_mute_file_or_the_variable_means_not_muted(self):
-        with open(os.path.join(self.state, "notify-mute-until"), "w") as f:
-            f.write("tomorrow-ish")
-        self.w.user_vars = {"kittymux_snooze_until": "never"}
-        self.assertIsNone(KS._quiet_reason(self.w))
-        self.assertIsNone(KS._quiet_reason(FakeWindow(3, "claude", "")))              # a window without user_vars at all
+    def test_the_windows_own_user_variable_is_not_a_snooze(self):
+        self.w.user_vars = {"kittymux_snooze_until": str(time.time() + 600)}          # any program can set this itself: it must not silence its own popup
+        self.assertEqual(KS._notify(self.w, "waiting", "q"), "sent")
 
     def test_the_bell_is_skipped_too(self):
         self.mute(600)

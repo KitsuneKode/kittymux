@@ -18,6 +18,7 @@ import re
 import shlex
 import subprocess
 import sys
+import types
 import time
 from pathlib import Path
 
@@ -37,6 +38,7 @@ import kittymux_agents  # noqa: E402
 import kittymux_barsize  # noqa: E402
 import kittymux_deck  # noqa: E402
 import kittymux_git  # noqa: E402
+import kittymux_launcher  # noqa: E402
 import kittymux_layout  # noqa: E402
 import kittymux_scan  # noqa: E402
 import kittymux_state  # noqa: E402
@@ -507,6 +509,27 @@ def _agent_waiting(tab_id: int) -> bool:
     return _agent_status(tab_id) in kittymux_agents.NEEDS_YOU
 
 
+_RISK: dict = {}
+
+
+def _risk_table() -> dict:
+    """Which flags switch each agent's approvals off (assets/agent-risk.json + the user's ~/.config/kittymux/risk.json), read once per config load."""
+    if "table" not in _RISK:
+        here = globals().get("__file__")
+        shipped = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(here))), "assets", "agent-risk.json") if here else ""
+        user = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "kittymux", "risk.json")
+        _RISK["table"] = kittymux_launcher.load_risk(shipped, user)
+    return _RISK["table"]
+
+
+def _runs_without_approvals(info, foreground: list) -> bool:
+    """True when the agent in this tab was started with one of its documented approval-bypass flags (a risk worth a glyph)."""
+    if not info:
+        return False
+    argv = next((c for c in foreground if kittymux_agents.agent_in(c) == info[2]), [])
+    return bool(kittymux_launcher.risk_of(_risk_table(), info[2], argv))
+
+
 _USAGE_CACHE = (Path(os.environ["KITTYMUX_STATE"])
     if os.environ.get("KITTYMUX_STATE") else
     Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state")))
@@ -882,7 +905,9 @@ def _mascot_ready() -> bool:
     """Draw the mascot glyph only if this kitty has loaded the font that has it (see glyph_font_loaded)."""
     if "ok" not in _MASCOT_OK:
         fonts = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
-        _MASCOT_OK["ok"] = kittymux_agents.glyph_font_loaded(os.path.join(fonts, "fonts", "kittymux-icons.ttf"), _process_start())
+        # the fingerprint of the font this kitty loaded lives in sys.modules: a config reload re-runs this file but must not forget it (see glyph_font_loaded)
+        store = sys.modules.setdefault("_kittymux_font_rt", types.SimpleNamespace(remembered={})).remembered
+        _MASCOT_OK["ok"] = kittymux_agents.glyph_font_loaded(os.path.join(fonts, "fonts", "kittymux-icons.ttf"), _process_start(), store)
     return _MASCOT_OK["ok"]
 
 
@@ -953,6 +978,10 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     state = _tab_state(tab)
     state_fg = _state_color(state, pal)
 
+    # insights beside the state glyph: how long it has been waiting / working / done-unseen (the scanner and this bar share one monotonic clock)
+    age = "" if compact else kittymux_agents.state_age(state, (_tab_verdict(tab.tab_id)[1] or {}).get("ts_state"), time.monotonic())
+    risky = (not compact) and _runs_without_approvals(info, foreground)
+
     branch = _git_anchor(cwd)[1] if cwd else ""
     subtitle: list[tuple[str, int]] = []
     if branch:
@@ -969,6 +998,8 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         subtitle = [p for p in subtitle if isinstance(p[0], _MiniMap) and cols >= 26] + [(msg, state_fg)]
     elif state in kittymux_agents.NEEDS_YOU:
         subtitle.append((state, state_fg))    # working needs no word — the spinner says it
+    if risky:
+        subtitle.insert(0, ("⚠", pal.alert))  # started with its approvals off: visible without opening anything
 
     header = hdr_rows > 0
     want_sub = lines_avail >= hdr_rows + 2 and bool(subtitle) and not compact
@@ -995,7 +1026,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         screen.cursor.bg = _rgb(pal.accent)
         badge = f" {mode.upper()} "
         x = _put(screen, 0, badge, _rgb(pal.bg), True)
-        _put(screen, x + 1, _fit("hjkl cnp saw g ?", max(0, cols - x - 2)), _rgb(pal.bg))
+        _put(screen, x + 1, kittymux_launcher.mode_hint(mode, max(0, cols - x - 2)), _rgb(pal.bg))
         y += hdr_rows
     elif header:
         _draw_header(screen, y, hdr_rows, cols, tab, pal, bar, compact)
@@ -1014,6 +1045,8 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     elif _tool_glyph(foreground):
         _put(screen, 1, _tool_glyph(foreground), _rgb(pal.muted if active else pal.faint))
     title_room = cols - 3 - 1 - sep_cols
+    if age and state_fg is not None and cols >= 6:
+        title_room -= _cells(age) + 1             # the age sits just left of the state glyph
     if compact:
         # the slim rail is icons only: the logo (or tool glyph), the tab number, the state mark — no title
         if not info and not _tool_glyph(foreground):
@@ -1024,6 +1057,9 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
                      title_room)
         _put(screen, 3, title,
              _rgb(pal.text) if active else _rgb(pal.muted), bold=active)
+    if age and state_fg is not None and cols >= 6:
+        _put(screen, cols - 1 - sep_cols - 1 - _cells(age), age, _rgb(state_fg if state in kittymux_agents.NEEDS_YOU else pal.faint),
+             bold=state in kittymux_agents.NEEDS_YOU)
     if state_fg is not None and cols >= 6:
         # full bar: state mark at the right edge; rail: tucked right after the number so the row reads as one cluster
         _put(screen, 5 if compact else cols - 1 - sep_cols, kittymux_agents.state_glyph(state), _rgb(state_fg),

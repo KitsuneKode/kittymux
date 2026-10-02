@@ -38,7 +38,7 @@ cat > "$T/bin/rofi" <<'SH'
 #!/usr/bin/env bash
 cat > "$ROFI_LOG"
 [ -n "${ROFI_PICK:-}" ] || exit 1
-i=$(grep -n -F -- "$ROFI_PICK" "$ROFI_LOG" | head -1 | cut -d: -f1)
+i=$(grep -a -n -F -- "$ROFI_PICK" "$ROFI_LOG" | head -1 | cut -d: -f1)
 [ -n "$i" ] || exit 1
 echo $((i - 1)); exit "${ROFI_RC:-0}"
 SH
@@ -57,6 +57,7 @@ focus_tab 0
 S
 export PATH="$T/bin:$PATH"
 env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_RUNTIME_DIR=$RUN KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
+  KITTYMUX_SOCKET_DIRS=$RUN \
   kitty -o linux_display_server=x11 --class kmx-spawn --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
 for _ in $(seq 80); do ls "$RUN"/mykitty-* >/dev/null 2>&1 && break; sleep 0.25; done; sleep 3
 SOCK=unix:$(ls "$RUN"/mykitty-* | head -1)
@@ -74,6 +75,9 @@ last_title() { ls_json | python3 -c 'import sys,json;print(json.load(sys.stdin)[
 ran() { for f in "$T"/ran/*; do [ -e "$f" ] && printf '%s: %s\n' "$(basename "$f" | cut -d. -f1)" "$(cat "$f")"; done; }
 wait_ran() { for _ in $(seq 40); do ran | grep -q -- "$1" && return 0; sleep 0.25; done; return 1; }
 base=$(ntabs)
+# tripwire: this rig must never touch any OTHER kitty (the person running it may be typing in one): count their windows now, compare at the end
+others() { for s in /tmp/mykitty-* "${REAL_RUNTIME:-/nonexistent}"/mykitty-*; do [ -S "$s" ] && [ "$s" != "${SOCK#unix:}" ] && kitty @ --to "unix:$s" ls 2>/dev/null | python3 -c 'import sys,json;print(sum(len(t["windows"]) for o in json.load(sys.stdin) for t in o["tabs"]))'; done | tr '\n' ' '; }
+OTHERS_BEFORE=$(others)
 
 # 1. spawn a tab: a new tab, the agent in the CURRENT directory, the scratch tab still last
 KMX spawn claude >/dev/null || fail "spawn claude failed"
@@ -177,11 +181,16 @@ KMX_NOTIFY=1 KMX notify status | grep -q "muted for another" || fail "status doe
 KMX notify mute banana >/dev/null 2>&1; [ $? = 2 ] || fail "a bad duration must be refused"
 KMX notify unmute >/dev/null; [ ! -e "$STATE/notify-mute-until" ] || fail "unmute left the file"
 KMX snooze 1h --window "$CLW" >/dev/null || fail "snooze failed"
+SF=$(ls "$STATE"/snoozes-*.json 2>/dev/null | head -1)
+[ -n "$SF" ] && [ "$(stat -c %a "$SF")" = 600 ] && grep -q "\"$CLW\"" "$SF" || { ls "$STATE"; fail "snooze did not write a private snooze file for window $CLW"; }
 ls_json | python3 -c 'import sys,json
 for t in json.load(sys.stdin)[0]["tabs"]:
     for w in t["windows"]:
-        if str(w["id"]) == sys.argv[1] and w["user_vars"].get("kittymux_snooze_until","").isdigit(): raise SystemExit(0)
-raise SystemExit(1)' "$CLW" || fail "snooze did not set the window variable"
+        if "kittymux_snooze_until" in w["user_vars"]: raise SystemExit(1)' || fail "snooze must not be a window variable (a program in the window could set it)"
+KMX snooze 1h --window 999999 >/dev/null 2>&1; [ $? = 1 ] || fail "snooze of a window that does not exist must be refused"
 KMX snooze --clear --window "$CLW" >/dev/null || fail "snooze --clear failed"
+grep -q "\"$CLW\"" "$SF" && fail "snooze --clear left the window in the file"
 echo "  ok   notify mute/unmute/status and snooze/--clear"
+[ "$(others)" = "$OTHERS_BEFORE" ] || fail "this rig changed the windows of ANOTHER kitty on this machine (before: $OTHERS_BEFORE after: $(others))"
+echo "  ok   no other kitty on this machine was touched"
 echo "PASS: spawn, pick, reopen, mute and snooze work in a real kitty (socket-only)"

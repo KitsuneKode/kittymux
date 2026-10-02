@@ -53,5 +53,5 @@ text="$(
 text="$(printf '%s\n' "$text" | head -1)"
 [[ -n "$text" ]] || exit 0
 
-kitty @ --to "unix:$sock" send-text --match "id:${wid}" "${text}\r" >/dev/null 2>&1 || true
+kitty @ --to "unix:$sock" send-text --match "id:${wid}" -- "${text}\r" >/dev/null 2>&1 || true
 notify_kitty "Sent to agent pane ${wid}"

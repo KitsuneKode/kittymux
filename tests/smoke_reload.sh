@@ -38,8 +38,8 @@ kill -0 "$XPID" 2>/dev/null || { echo "SKIP: Xvfb would not start"; XPID=""; exi
 # PREVIOUS release's copy (valid, just older), like a kitty that was started before `git pull`.
 # Against the current tab bar that old copy is missing newer names, so the tab bar logs errors until
 # the module is refreshed — which is exactly what a reload must do.
-for f in pane-state.py tab_bar.py kittymux_theme.py kittymux_deck.py kittymux_git.py kittymux_layout.py kittymux_barsize.py kittymux_state.py kittymux_scan.py; do
-  cp "$HOME_DIR/python/$f" "$CFG/$f"      # real copies: a module resolves its siblings from its OWN directory
+for f in "$HOME_DIR"/python/pane-state.py "$HOME_DIR"/python/tab_bar.py "$HOME_DIR"/python/kittymux_*.py; do
+  cp "$f" "$CFG/$(basename "$f")"         # real copies of EVERY helper (a module resolves its siblings from its OWN directory; a hand-kept list silently goes stale when tab_bar imports a new one)
 done
 OLD_REV=331a40f
 if ! git -C "$HOME_DIR" show "$OLD_REV:python/kittymux_agents.py" > "$CFG/kittymux_agents.py" 2>/dev/null; then

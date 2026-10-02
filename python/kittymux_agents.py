@@ -41,14 +41,60 @@ FALLBACK = Agent("⚡", 0x94e2d5)
 MASCOT_GLYPH = "\ue0f9"      # the kittymux mascot (assets/icons/kittymux.svg → the icon font)
 
 
-def glyph_font_loaded(font_path: str, process_start: float) -> bool:
-    """Has THIS kitty loaded the current icon font? kitty reads fonts once, at start, so a glyph added by a later
-    install (kittymux upgrade) draws as a box until that kitty restarts. True only when the installed font file is
-    not newer than the process — callers draw the newest glyphs only then."""
+def compact_age(seconds) -> str:
+    """"" under a minute, then 5m, 59m, 2h, 47h, 3d — short enough to sit beside a state glyph in a narrow bar."""
     try:
-        return os.stat(font_path).st_mtime <= process_start + 3.0       # /proc start time is only 1 s accurate
+        s = float(seconds)
+    except (TypeError, ValueError):
+        return ""
+    if s < 60:
+        return ""
+    return f"{int(s // 60)}m" if s < 3600 else f"{int(s // 3600)}h" if s < 172800 else f"{int(s // 86400)}d"
+
+
+_AGED_STATES = ("waiting", "limited", "done", "working")
+
+
+def state_age(state: str, ts_state, now: float, minimum: float = 60.0) -> str:
+    """How long the tab has been in its current state, as compact text — only for states where it matters (waiting / limited / done / working) and from `minimum` seconds on (a
+    reply that took 8 s is not news). `ts_state` and `now` are the same monotonic clock (the scanner runs inside the kitty that draws the bar)."""
+    if state not in _AGED_STATES:
+        return ""
+    try:
+        age = float(now) - float(ts_state)
+    except (TypeError, ValueError):
+        return ""
+    return compact_age(age) if age >= minimum else ""
+
+
+def font_fingerprint(font_path: str) -> str | None:
+    """size + content hash of the icon font: what a kitty loaded is identified by WHAT the file holds, not by when it was last written."""
+    import hashlib
+    try:
+        with open(font_path, "rb") as f:
+            data = f.read()
+    except OSError:
+        return None
+    return f"{len(data)}:{hashlib.sha256(data).hexdigest()[:20]}"
+
+
+def glyph_font_loaded(font_path: str, process_start: float, remembered: dict | None = None) -> bool:
+    """Has THIS kitty loaded the current icon font? kitty reads fonts once, at start, so a glyph added by a later install draws as a box until that kitty restarts.
+
+    Judged by content. `remembered` is a dict that lives as long as the kitty process: the first time it is asked, the file's fingerprint is stored — but only if the file is
+    not newer than the process (then it IS what kitty loaded; a newer file may hold glyphs kitty never saw, so nothing is remembered and the glyph stays hidden). Later calls
+    compare the file now with that fingerprint: a re-install of the SAME font (every `kittymux upgrade` used to rewrite the file and bump its timestamp, hiding the mascot in
+    every running kitty) changes nothing; a font with new glyphs differs, so the new glyph is held back until a restart. Without `remembered`, the timestamp rule alone applies."""
+    try:
+        newer_than_process = os.stat(font_path).st_mtime > process_start + 3.0       # /proc start time is only 1 s accurate
     except OSError:
         return False
+    if remembered is None:
+        return not newer_than_process
+    now = font_fingerprint(font_path)
+    if "fp" not in remembered:
+        remembered["fp"] = "" if newer_than_process else (now or "")
+    return bool(now) and now == remembered["fp"]
 
 
 # Short, common words: matched only as the command itself (`kilo`) or as the script a runtime/shell

@@ -40,6 +40,7 @@ _RT = sys.modules.setdefault("_kittymux_scan_rt", types.SimpleNamespace(
 SCAN_FAST, SCAN_IDLE = 0.5, 2.0
 SPIN_INTERVAL = 0.1
 HEARTBEAT = 3.0
+AGE_REFRESH = 20.0            # tabs that show "waiting 5m" / "done 2m" are redrawn this often, so the minutes tick (a working tab already redraws with its spinner)
 NOTIFY_EVERY = 10.0
 NOTIFY_DONE_MIN = 15.0        # a completion the AGENT announced (hook / its own notification) pops up after this much work: a quick reply is not news
 NOTIFY_DONE_LOW_MIN = 60.0    # …one inferred from the screen alone only after this much (it is shown in the inbox and the bar either way)
@@ -299,14 +300,16 @@ def scan_all(timer_id=None) -> None:
         boss = get_boss()
         now = time.monotonic()
         live, bars, n_agents, dirty = set(), {}, 0, False
+        age_due = now - vars(_RT).get("age_refresh", 0.0) >= AGE_REFRESH
         for w in list(boss.all_windows):
             live.add(str(w.id))
             try:
                 changed = scan_window(w, now)
                 dirty = dirty or changed
-                if (_RT.verdicts.get(str(w.id)) or {}).get("state"):
+                state = (_RT.verdicts.get(str(w.id)) or {}).get("state")
+                if state:
                     n_agents += 1
-                if changed:
+                if changed or (age_due and state in ("waiting", "limited", "done")):
                     tm = _tab_manager(w)
                     if tm is not None:
                         bars[id(tm)] = tm
@@ -316,6 +319,8 @@ def scan_all(timer_id=None) -> None:
             _RT.verdicts.pop(wid, None)
             _RT.book.pop(wid, None)
             dirty = True
+        if age_due:
+            vars(_RT)["age_refresh"] = now
         _maybe_autosave(now, live)
         _journal_tick(boss, live, time.time())
         for table in (_RT.notified, vars(_RT).get("alerted", {})):
@@ -689,22 +694,13 @@ def _notify_enabled(kind: str = "needs") -> bool:
 
 
 def _quiet_reason(window=None, wall: float | None = None) -> str | None:
-    """Why popups and bells are held back right now, or None: `kittymux notify mute` (a file with the end time) or `kittymux snooze` (a window user variable with the end
-    time). Events still go to the inbox either way — muting quiets the interruption, it never loses the news. Reasons are static text (no clocks)."""
-    wall = wall if wall is not None else time.time()
+    """Why popups and bells are held back right now (`kittymux notify mute`, `kittymux snooze`), or None — see kittymux_quiet. Events still go to the inbox either way."""
     try:
-        with open(os.path.join(state_dir(), "notify-mute-until"), encoding="utf-8") as f:
-            if float(f.read().strip()) > wall:
-                return "suppressed: muted (kittymux notify unmute); the event is in the inbox"
-    except (OSError, ValueError):
-        pass
-    try:
-        until = float((getattr(window, "user_vars", None) or {}).get("kittymux_snooze_until") or 0)
-        if until > wall:
-            return "suppressed: this window is snoozed (kittymux snooze --clear); the event is in the inbox"
-    except (TypeError, ValueError):
-        pass
-    return None
+        _ensure_path()
+        import kittymux_quiet
+        return kittymux_quiet.quiet_reason(state_dir(), os.getpid(), getattr(window, "id", ""), wall)
+    except Exception:
+        return None
 
 
 def _plain(text, limit: int) -> str:
