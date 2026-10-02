@@ -40,7 +40,7 @@ mk claude "printf ' Bash command\n   rm -rf node_modules\n Do you want to procee
 mk codex  "printf '╭──────────╮\n│ >        │\n╰──────────╯\n  ? for shortcuts\n'"
 mk opencode "printf ' Allow this command?\n ❯ 1. Yes\n   2. No\n'"      # lives in a split nobody is looking at
 
-for f in tab_bar.py kittymux_theme.py kittymux_deck.py kittymux_git.py kittymux_layout.py kittymux_barsize.py \
+for f in tab_bar.py kittymux_theme.py kittymux_deck.py kittymux_git.py kittymux_features.py kittymux_place.py kittymux_layout.py kittymux_barsize.py \
          kittymux_agents.py kittymux_state.py kittymux_scan.py; do
   ln -s "$HOME_DIR/python/$f" "$CFG/$f"
 done

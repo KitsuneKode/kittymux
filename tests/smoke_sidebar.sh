@@ -28,7 +28,7 @@ XPID=$!
 sleep 1
 kill -0 "$XPID" 2>/dev/null || { echo "SKIP: Xvfb would not start"; XPID=""; exit 0; }
 
-for f in tab_bar.py kittymux_theme.py kittymux_deck.py kittymux_git.py kittymux_layout.py kittymux_barsize.py \
+for f in tab_bar.py kittymux_theme.py kittymux_deck.py kittymux_git.py kittymux_features.py kittymux_place.py kittymux_layout.py kittymux_barsize.py \
          kittymux_agents.py kittymux_state.py kittymux_scan.py; do
   ln -s "$HOME_DIR/python/$f" "$CFG/$f"
 done

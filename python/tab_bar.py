@@ -38,9 +38,11 @@ import kittymux_agents  # noqa: E402
 import kittymux_barsize  # noqa: E402
 import kittymux_changes  # noqa: E402
 import kittymux_deck  # noqa: E402
+import kittymux_features  # noqa: E402
 import kittymux_git  # noqa: E402
 import kittymux_launcher  # noqa: E402
 import kittymux_layout  # noqa: E402
+import kittymux_place  # noqa: E402
 import kittymux_scan  # noqa: E402
 import kittymux_state  # noqa: E402
 import kittymux_theme  # noqa: E402
@@ -49,8 +51,8 @@ import kittymux_theme  # noqa: E402
 # for the life of the process — so after an upgrade a running kitty would keep serving
 # the OLD helpers to the NEW tab bar (AttributeError on any name added since). Reload
 # them every time this file runs.
-for _mod in (kittymux_theme, kittymux_agents, kittymux_git, kittymux_layout, kittymux_state, kittymux_scan,
-             kittymux_barsize, kittymux_deck):
+for _mod in (kittymux_theme, kittymux_agents, kittymux_git, kittymux_features, kittymux_place, kittymux_layout,
+             kittymux_state, kittymux_scan, kittymux_barsize, kittymux_deck):
     try:
         importlib.reload(_mod)
     except Exception:
@@ -171,6 +173,80 @@ def _kb_mode() -> str:
         return get_boss().mappings.current_keyboard_mode_name or ""
     except Exception:
         return ""
+
+
+@_per_pass
+def _features() -> dict:
+    """Which optional pieces are on (kittymux_features: env > flag file > default), resolved once per pass."""
+    try:
+        return kittymux_features.resolve_all()
+    except Exception:
+        return dict(kittymux_features.DEFAULTS)
+
+
+@_per_pass
+def _facts(cwd: str):
+    """Project / worktree / inner path / branch of a directory — once per pass and per directory (reads .git/HEAD only)."""
+    return kittymux_place.facts(cwd, kittymux_git.info(cwd))
+
+
+def _tab_hue(cwd: str, pal):
+    """The project's hue (cached per name by kittymux_theme), or None when hue is off or the tab has no directory."""
+    if not cwd or not _features()["hue"]:
+        return None
+    return kittymux_theme.project_hue(_facts(cwd).project, pal.accent, pal.surface_hi)
+
+
+@_per_pass
+def _title_keys(os_window_id: int) -> dict:
+    """tab id → the title that tab shows, for every tab of this OS window (once per pass)."""
+    out: dict = {}
+    try:
+        tm = get_boss().os_window_map.get(os_window_id)
+        for t in (tm.tabs if tm else []):
+            out[t.id] = _compact_title(types.SimpleNamespace(title=t.title or "", tab_id=t.id), 40)
+    except Exception:
+        pass
+    return out
+
+
+@_per_pass
+def _twins(os_window_id: int) -> frozenset:
+    """Tabs that show the same title as another tab of this OS window — their project name is emphasised."""
+    if not _features()["collide"]:
+        return frozenset()
+    return kittymux_place.colliding(_title_keys(os_window_id))
+
+
+class _Place:
+    """The folder line of a vertical tab. Laid out at DRAW time: the room left by the state word is only known there."""
+    __slots__ = ("facts", "hide", "style", "emphasised", "hue")
+
+    def __init__(self, facts, hide, style, emphasised, hue):
+        self.facts, self.hide, self.style, self.emphasised, self.hue = facts, hide, style, emphasised, hue
+
+
+def _place_piece(tab, cwd: str, pal, active: bool, os_window_id: int) -> "_Place":
+    f = _facts(cwd)
+    title = _title_keys(os_window_id).get(tab.tab_id, "")
+    hue = _tab_hue(cwd, pal)
+    emphasised = tab.tab_id in _twins(os_window_id)
+    return _Place(f, kittymux_place.redundant(title, f), kittymux_place.style(pal, active, hue, emphasised), emphasised, hue)
+
+
+_BAR_DUMP = os.environ.get("KITTYMUX_BAR_DUMP") == "1"      # test hook (tests/smoke_place.sh): what each tab's folder line drew
+_dump_rows: dict = {}
+
+
+def _dump_row(tab_id: int, **row) -> None:
+    if not _BAR_DUMP:
+        return
+    try:
+        _dump_rows[str(tab_id)] = row
+        with open(os.path.join(kittymux_features.state_dir(), "bar-dump.json"), "w") as f:
+            json.dump(_dump_rows, f)
+    except Exception:
+        pass
 
 
 def _mute(brand: int, pal) -> int:
@@ -999,12 +1075,17 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     age = "" if compact else kittymux_agents.state_age(state, (_tab_verdict(tab.tab_id)[1] or {}).get("ts_state"), time.monotonic())
     risky = (not compact) and _runs_without_approvals(info, foreground)
 
-    branch = _git_anchor(cwd)[1] if cwd else ""
-    subtitle: list[tuple[str, int]] = []
-    if branch:
-        subtitle.append((f"{_ICON_BRANCH} {branch}", pal.muted if active else pal.faint))
-    elif cwd:
-        subtitle.append((f"{_ICON_FOLDER} {_short_cwd(cwd, 24)}", pal.muted if active else pal.faint))
+    subtitle: list = []
+    if cwd and _features()["folder"]:
+        subtitle.append((_place_piece(tab, cwd, pal, active, draw_data.os_window_id), pal.faint))
+    else:                                                    # folder off: the line this bar always drew
+        branch = _git_anchor(cwd)[1] if cwd else ""
+        if branch:
+            subtitle.append((f"{_ICON_BRANCH} {branch}", pal.muted if active else pal.faint))
+        elif cwd:
+            subtitle.append((f"{_ICON_FOLDER} {_short_cwd(cwd, 24)}", pal.muted if active else pal.faint))
+        if subtitle and not extra_data.for_layout:
+            _dump_row(tab.tab_id, legacy=True, pieces=[[subtitle[0][0], "legacy"]])
     if tab.num_windows > 1:
         pane_map = _pane_map(tab.tab_id, pal, cols)
         chips = [] if pane_map else _pane_chips(tab.tab_id, pal, active)
@@ -1072,7 +1153,11 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         # the slim rail is icons only: the logo (or tool glyph), the tab number, the state mark — no title
         if not info and not _tool_glyph(foreground):
             _put(screen, 1, "›", _rgb(pal.faint))
-        _put(screen, 3, str(index), _rgb(pal.muted if active else pal.faint))
+        hue = _tab_hue(cwd, pal)
+        number = pal.muted if active else pal.faint
+        if hue is not None:                                  # the rail has no room for a name: the project's hue is its only cue
+            number = hue if active else kittymux_theme.blend(hue, pal.bar, 0.6)
+        _put(screen, 3, str(index), _rgb(number))
     elif title_room >= 3:
         title = _fit(kittymux_agents.strip_agent_prefix(_compact_title(tab, max(4, title_room)), info[2] if info else None),
                      title_room)
@@ -1115,6 +1200,18 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
                         screen.draw(ch)
                         x += 1
                     screen.cursor.bg = row_bg
+                continue
+            if isinstance(text, _Place):                     # the folder line: laid out to the room that is really left
+                runs = kittymux_place.layout(text.facts, avail - _cells(sep), icon=_ICON_FOLDER, branch_icon=_ICON_BRANCH,
+                                             hide_project=text.hide, cells=_cells)
+                if runs:
+                    x = _put(screen, x, sep, _rgb(color))
+                    for run, role in runs:
+                        fg, bold = text.style[role]
+                        x = _put(screen, x, run, _rgb(fg), bold)
+                    if not extra_data.for_layout:
+                        _dump_row(tab.tab_id, legacy=False, pieces=[[r, k] for r, k in runs], emphasised=text.emphasised,
+                                  hue=text.hue, hidden=text.hide)
                 continue
             if isinstance(text, list):                       # pane chips: coloured runs, drawn whole or not at all
                 if sum(_cells(t) for t, _c in text) <= avail:
