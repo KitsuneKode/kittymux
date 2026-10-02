@@ -210,6 +210,33 @@ resolver (limited › waiting › working › done › idle), "done" only while 
 `logo + state` chips under the tab. The tab itself shows the most important state of all its panes, and
 jumping to a tab that needs you lands on the pane that is asking. kitty rings a waiting split with its bell border.
 
+### Where is this tab?
+
+Under each tab the bar says **where it is**: `project[:worktree]/inner  branch`, the project name bright (in the project's own hue on the
+active tab), the path and branch stepped down. Two tabs that show the same title get their project emphasised so you can tell them apart;
+a tab whose title already says the project shows the branch or location instead of repeating it. The rail (slim bar) tints the tab number
+with the project's hue.
+
+### Pick what you want
+
+Every optional piece is its own switch — use all of it, some of it, or none:
+
+| Switch | What it does | Default |
+|---|---|---|
+| `folder` | the project/branch line under each tab (off: just the branch, as before) | on |
+| `hue` | a stable colour per project, derived from your theme's accent | on |
+| `collide` | emphasise the project of tabs that show the same title | on |
+| `sheet` | the side sheet (planned) | on |
+| `hover` | open the sheet on hover (planned; only where kitty delivers it) | off |
+| `panetitle` | folder + branch in pane title bars (planned) | off |
+
+```bash
+kittymux features                 # what is on, and where each setting comes from
+kittymux features off hue         # one piece off (flag file in ~/.local/state/kittymux)
+kittymux features preset minimal  # folder line only   (presets: minimal · default · full)
+KITTYMUX_HUE=off kitty            # or per process, by environment — the environment wins
+```
+
 ### When you are elsewhere
 
 Everything below only fires for an agent **you are not looking at**; focusing it clears it.

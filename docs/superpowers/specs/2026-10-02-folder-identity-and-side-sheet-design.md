@@ -50,7 +50,7 @@ real compositor — Xvfb has no layer-shell, so this one is **manual and documen
 - If the title already equals the project name (shell/editor tabs: `zsh` → folder), the subtitle skips the
   folder and shows `inner  branch` instead (no duplicate words).
 - Rendering in `tab_bar._draw_vertical`: `project` in `pal.text` (bold on the active tab, `pal.muted` on others),
-  `inner` in `pal.faint`, `branch` in `pal.done` hue as the horizontal bar does. Outside a repo: `short_path`
+  `inner` in `pal.faint`, `branch` in `pal.muted` (active) / `pal.faint`, as today's subtitle — one emphasis per row (3b) wins over matching the horizontal bar. Outside a repo: `short_path`
   as now. State words / pending question / `⚠` keep their current priority (reserve-room logic unchanged).
 - Rail (compact): tab number takes the project hue (see below); no extra text.
 
@@ -133,7 +133,7 @@ one off must leave the others working and today's behaviour intact.
   draw pass through `@_per_pass` — no per-tab file reads.
 - Presets for people who want little or lots: `minimal` (folder only), `default`, `full` (everything including hover).
   `kittymux features` lists the state; `kittymux features on|off <name>` and `kittymux features preset <name>` flip it;
-  `kittymux doctor` prints the same table. Changes apply on the next reload (no restart).
+  `kittymux doctor` prints the same table. Changes apply on the bar's next redraw (the CLI also reloads every kitty once); no restart.
 - Modules stay separable: `kittymux_place` (folder/collide), `kittymux_theme.project_hue`, `kittymux_sheet` +
   `sheet-kit.py`/`peek-kit.py`, `window_title_bar.py` have no import of each other; `tab_bar.py` is the only integrator.
   Someone who copies just `kittymux_place.py` into their own `tab_bar.py` gets the folder line and nothing else.
@@ -146,8 +146,7 @@ one off must leave the others working and today's behaviour intact.
 1. **Hue: on by default, restrained.** Premium here means quiet and consistent (the t3code lineage already used for the
    status hues): the hue colours only the folder glyph, the project name on the active tab / on a collision, and the rail
    number — never fills, borders or stripes. Hue steps are spaced so neighbours differ in more than colour: bold/dim,
-   position and the text itself carry the meaning, so it holds for colour-blind users and in a monochrome theme. The hue is
-   skipped (accent used as-is) when the theme leaves too little lightness range to reach 4.5:1. `hue` stays one switch away.
+   position and the text itself carry the meaning, so it holds for colour-blind users and in a monochrome theme. On a theme with no lightness room the hue degrades toward the text colour (`ensure_contrast`) rather than failing. `hue` stays one switch away.
 2. **Sheet: spawned on demand, placed once.** One `hyprctl clients -j` call when it opens (no polling), geometry cached for
    that open; the kitten redraws only when the card model's hash changes. Open-to-first-paint budget **≤ 150 ms** measured in
    P0 (probe d); if the cold kitten start misses it, a resident hidden panel (`--single-instance`) is evaluated and chosen only

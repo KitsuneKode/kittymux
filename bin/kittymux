@@ -495,6 +495,12 @@ launch bash -c 'printf "\\n  error[E0308]: mismatched types\\n    --> src/app.py
 new_tab scrollback
 cd {home}
 launch bash -c 'seq 1 500; exec bash'
+new_tab app
+cd {twins}/web/app
+launch
+new_tab app
+cd {twins}/api/app
+launch
 new_tab notes
 cd {home}
 launch
@@ -557,10 +563,15 @@ def demo(argv: list[str]) -> int:
     for rel, n in (("src/app.py", 60), ("src/util.py", 30), ("README.md", 10)):
         with open(os.path.join(project, rel), "w") as f:
             f.write("".join(f"line {i} of {rel}\n" for i in range(1, n + 1)))
+    twins = os.path.join(tmp, "twins")                         # two repos with an `app` folder each: same tab title, different projects
+    for repo in ("web", "api"):
+        os.makedirs(os.path.join(twins, repo, "app"))
+        if shutil.which("git"):
+            subprocess.run(["git", "init", "-q", "-b", "main", os.path.join(twins, repo)], capture_output=True)
     otpl = open(os.path.join(HOME_DIR, "open-actions.conf.tpl"), encoding="utf-8").read()
     open(os.path.join(cfg, "open-actions.conf"), "w").write(otpl.replace("@KITTYMUX_HOME@", HOME_DIR))
     session = os.path.join(tmp, "demo.kitty")
-    open(session, "w").write(DEMO_SESSION.format(home=os.path.expanduser("~"), project=project))
+    open(session, "w").write(DEMO_SESSION.format(home=os.path.expanduser("~"), project=project, twins=twins))
 
     banner()
     print(c("1", "kittymux demo") + " — an isolated window; your config is untouched.\n")
@@ -582,6 +593,7 @@ def demo(argv: list[str]) -> int:
     print(f"    {c('1', 'ctrl+alt+e')}       number every pane, press a digit    {c('1', 'ctrl+alt+shift+1..4')}  jump straight to pane N")
     print(f"    {c('1', 'ctrl+alt+d')}       turn the focused pane into its own tab    {c('1', 'ctrl+alt+shift+h')}  show pane title bars (drag them)")
     print(f"  in the {c('1', 'file-refs')} tab: {c('1', 'ctrl+shift+click')} src/app.py:42:7 — opens your editor at that line")
+    print(f"  in the two {c('1', 'app')} tabs: the same title, different projects — the bar says which (`kittymux features` turns pieces off)")
     print(f"  in the {c('1', 'scrollback')} tab: {c('1', 'ctrl+alt+PgUp / PgDn')} page · {c('1', 'ctrl+alt+Home / End')} oldest / live · {c('1', 'ctrl+alt+[')} {c('1', ']')} prompts")
     print(f"  the bar: drag its right edge to resize (try a fast flick) · click « to collapse · right-click a tab to peek")
     print(f"  from a pane here:  {c('1', 'kittymux dim on')} (needs shader-slang) · {c('1', 'kittymux screenshot')} · {c('1', 'kittymux layout pick')}")

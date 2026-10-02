@@ -5,6 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 ## [Unreleased]
 
 ### Added
+- **Every tab says where it is.** `project[:worktree]/inner  branch` under each vertical tab, the project name highlighted; a stable per-project hue from your theme's accent; tabs that look alike get their project emphasised. Each piece is its own switch — `kittymux features [on|off NAME | preset minimal|default|full]`.
 - **Sessions that come back with their conversations.** `kittymux sessions save|restore|list|new|check|history|recover`: kitty's own `save_as_session` plus the resume command of each agent window
   (`claude --resume <id>`, `codex resume <id>`, `devin -r <name>`, `opencode -s <id>`, `agy --conversation <id>`, `cursor-agent --resume <id>`, grok, droid), autosave, templates (`plain`, `agent`, `duo`, `review`).
   Each CLI's resume flags are probed against its own `--help`; ambiguous cases are restored as saved rather than opening one conversation twice. [docs/sessions.md](docs/sessions.md)

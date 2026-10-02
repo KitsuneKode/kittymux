@@ -22,7 +22,7 @@ for _ in $(seq 80); do SOCK=$(ls /tmp/mykitty-* 2>/dev/null | while read -r s; d
 sleep 3
 ls_() { kitty @ --to "unix:$SOCK" ls; }
 tabs=$(ls_ | python3 -c 'import sys,json;print(" ".join(t["title"] for t in json.load(sys.stdin)[0]["tabs"]))')
-for want in claude codex antigravity droid review panes file-refs scrollback notes; do
+for want in claude codex antigravity droid review panes file-refs scrollback notes app; do
   case " $tabs " in *" $want "*) ;; *) fail "demo tab '$want' is missing (tabs: $tabs)" ;; esac
 done
 n=$(ls_ | python3 -c 'import sys,json;print(sum(len(t["windows"]) for t in json.load(sys.stdin)[0]["tabs"] if t["title"]=="panes"))')
