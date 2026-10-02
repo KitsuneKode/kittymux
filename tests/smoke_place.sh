@@ -52,6 +52,7 @@ cd $T/work/wt
 launch sh
 focus_tab 0
 S
+REAL_RUNTIME=${XDG_RUNTIME_DIR:-/nonexistent}      # the README's recommended socket home: the tripwire must watch it too
 others() { for s in /tmp/mykitty-* "${REAL_RUNTIME:-/nonexistent}"/mykitty-*; do [ -S "$s" ] && [ "$s" != "${SOCK#unix:}" ] && kitty @ --to "unix:$s" ls 2>/dev/null | python3 -c 'import sys,json;print(sum(len(t["windows"]) for o in json.load(sys.stdin) for t in o["tabs"]))'; done | tr '\n' ' '; }
 OTHERS_BEFORE=$(others)
 env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP \

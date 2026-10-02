@@ -1171,16 +1171,16 @@ class FeaturesTests(unittest.TestCase):
     def setUpClass(cls):
         cls.m = load()
 
-    def run_cmd(self, *argv):
+    def run_cmd(self, *argv, nudged=1, extra_env=None):
         import contextlib
         import io
         import tempfile
         sdir = tempfile.mkdtemp()
-        env = {"KITTYMUX_STATE": sdir}
+        env = {"KITTYMUX_STATE": sdir, **(extra_env or {})}
         out, err = io.StringIO(), io.StringIO()
-        with mock.patch.dict(os.environ, env, clear=False), mock.patch.object(self.m, "_nudge_bars"), \
+        with mock.patch.dict(os.environ, env, clear=False), mock.patch.object(self.m, "_nudge_bars", return_value=nudged), \
                 contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            for k in [k for k in os.environ if k.startswith("KITTYMUX_") and k != "KITTYMUX_STATE"]:
+            for k in [k for k in os.environ if k.startswith("KITTYMUX_") and k not in env]:
                 os.environ.pop(k)
             rc = self.m.features_cmd(list(argv))
         return rc, out.getvalue(), err.getvalue(), sdir
@@ -1238,3 +1238,34 @@ class FeaturesTests(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(sdir, "sheet-off")))      # still saved, for when it exists
         rc, out, _e, _ = self.run_cmd("off", "hue")
         self.assertNotIn("not built yet", out)
+
+    def test_help_prints_usage_and_succeeds(self):
+        for flag in ("-h", "--help", "help"):
+            rc, out, err, _ = self.run_cmd(flag)
+            self.assertEqual(rc, 0, flag)
+            self.assertIn("usage: kittymux features", out)
+            self.assertEqual(err, "")
+
+    def test_features_is_in_the_help_the_cli_prints(self):
+        self.assertIn("kittymux features", self.m.__doc__)
+
+    def test_the_env_note_only_fires_for_a_value_that_actually_wins(self):
+        _rc, out, _e, _ = self.run_cmd("on", "hue", extra_env={"KITTYMUX_HUE": "banana"})
+        self.assertNotIn("KITTYMUX_HUE", out)                  # garbage is ignored by the resolver, so it does not "win"
+        _rc, out, _e, _ = self.run_cmd("on", "hue", extra_env={"KITTYMUX_HUE": "off"})
+        self.assertIn("KITTYMUX_HUE", out)
+
+    def test_an_unwritable_state_dir_is_a_message_not_a_traceback(self):
+        with mock.patch.object(self.m.kittymux_features, "set_feature", side_effect=PermissionError("denied")):
+            rc, out, err, _ = self.run_cmd("off", "hue")
+        self.assertEqual(rc, 1)
+        self.assertIn("denied", err)
+        self.assertNotIn("Traceback", err)
+
+    def test_it_says_how_many_kitties_it_reloaded(self):
+        _rc, out, _e, _ = self.run_cmd("off", "hue", nudged=2)
+        self.assertIn("reloaded 2 kitties", out)
+        _rc, out, _e, _ = self.run_cmd("off", "hue", nudged=1)
+        self.assertIn("reloaded 1 kitty", out)
+        _rc, out, _e, _ = self.run_cmd("off", "hue", nudged=0)
+        self.assertIn("no running kitty found", out)

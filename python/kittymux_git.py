@@ -96,11 +96,17 @@ def info(cwd: str) -> GitInfo | None:
     common = _common_dir(gitdir)
     is_linked_worktree = os.path.realpath(common) != os.path.realpath(gitdir) \
         and os.path.basename(os.path.dirname(gitdir)) == "worktrees"
-    main_top = os.path.dirname(common) if os.path.basename(common) == ".git" else top
+    if os.path.basename(common) == ".git":
+        project = os.path.basename(os.path.dirname(common))
+    elif is_linked_worktree:                               # a worktree of a BARE repo (shared.git): the bare repo is the project
+        bare = os.path.basename(common)
+        project = bare[:-4] if bare.endswith(".git") and len(bare) > 4 else bare
+    else:
+        project = ""
     result = GitInfo(
         top=top,
         branch=_branch(gitdir),
-        project=os.path.basename(main_top) or os.path.basename(top),
+        project=project or os.path.basename(top),
         worktree=(os.path.basename(top) or "worktree") if is_linked_worktree else "",
     )
     if len(_cache) >= _CACHE_MAX:

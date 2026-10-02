@@ -68,6 +68,16 @@ class RealRepoTests(unittest.TestCase):
         # and the main checkout is unaffected
         self.assertEqual(G.info(self.repo).worktree, "")
 
+    def test_worktree_of_a_bare_repo_is_named_after_the_bare_repo(self):
+        """A bare repo (`proj.git`) has no `.git` folder to take the project name from: it was reported as `wt:wt`."""
+        bare = os.path.join(self.root, "shared.git")
+        git(self.root, "clone", "-q", "--bare", self.repo, bare)
+        wt = os.path.join(self.root, "feature-x")
+        git(bare, "worktree", "add", "-q", "-b", "feat-x", wt)
+        gi = G.info(wt)
+        self.assertEqual((gi.project, gi.worktree, gi.branch), ("shared", "feature-x", "feat-x"))
+        self.assertEqual(G.label(wt)[0], "shared:feature-x")
+
     def test_submodule_uses_its_own_name(self):
         sub_src = os.path.join(self.root, "libsrc")
         os.makedirs(sub_src)
