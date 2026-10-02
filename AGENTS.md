@@ -29,6 +29,14 @@ remote work.
 - `python/kittymux_theme.py` / `kittymux_agents.py` / `kittymux_deck.py` — pure helper modules
   (no kitty imports; unit-tested in `tests/`). Theme tokens derive from live kitty colours; symlinked
   into the config dir by `install.sh`. Never hardcode a palette in `tab_bar.py`/`sidebar-kit.py`.
+- `python/kittymux_features.py` (pure) + `kittymux features [list | on|off NAME | preset minimal|default|full]` — the switchboard for the optional pieces of the bar: `folder`, `hue`, `collide` are live; `sheet`,
+  `hover`, `panetitle` are planned (saved, nothing reads them — the CLI says so). Precedence: env `KITTYMUX_<NAME>` > flag file `<name>-off|-on` in `$KITTYMUX_STATE` > default; the bar resolves it once per pass
+  (`tab_bar._features`). With `folder` off the bar draws the line it always drew — keep that path as it was.
+- `python/kittymux_place.py` (pure) — the folder line under a vertical tab: `facts` (project / worktree / inner / where / branch), `layout` (what fits: branch goes first, then the path, then the icon; the worktree outranks the
+  path; the project name is only ever middle-truncated), `place_room` (the room pieces drawn AFTER it keep), `style` (one bright element per row), and the title rules `redundant` / `worktree_named` / `colliding`.
+  `kittymux_theme.project_hue` is a stable, calm per-project tint (SHA-1 slots, never `hash()`), kept clear of the state colours and ≥ 4.5:1 on the row. The bar compares what is DRAWN — `tab.name or tab.title`
+  with the agent prefix stripped — never the raw window title. `KITTYMUX_BAR_DUMP=1` writes `$KITTYMUX_STATE/bar-dump.json` (a test hook for `tests/smoke_place.sh`).
+- `tests/shot_bar.sh` — a screenshot of the bar (dark|light, any width, rail) with synthetic repos; `tests/profile_bar.sh` — draw cost with N tabs (compare two trees; the folder line costs ~0.02 ms/draw at 23 tabs).
 - `assets/notify/` (built by `tools/build-notify-icons.py`) — one PNG per agent for notifications; `docs/brand/` — the mascot
   brief and image-model prompts (`tools/build-brand.py` derives sizes from `assets/brand/mascot.png`); `docs/notifications.md` — the
   notification flow, security model and limits. Icons are chosen from OUR table only, never from agent output.
@@ -151,6 +159,8 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   (it IS re-run on every config reload) and restarts: `kittymux_scan.restart()`, `kittymux_barsize.install()`.
 - Long-lived state (timer ids etc.) lives in `sys.modules["_kittymux_scan_rt"]`, never in plain module
   globals — a reload re-executes the file and would forget a live timer (→ stacked timers = leak).
+- **A look is verified by looking.** Before and after a visual change render the bar with `tests/shot_bar.sh` (dark AND light, the 30-column bar and the narrowest one) and read the PNG — unit tests did not catch a hue
+  palette of four near-identical greens that sat next to the "done" colour. A tint stays quieter than the state colours; the name is the one bright thing on a row.
 - **Redraw = three calls**: `tm.update_tab_bar_data()`, `tm.mark_tab_bar_dirty()`, then `mark_os_window_dirty(id)` +
   `wakeup_main_loop()`. The first two only update cells; without the last two kitty does not render until the
   cursor blinks (a 10 fps spinner ran at ~1 fps on an idle window). Use `kittymux_scan.refresh_bar`.
@@ -216,6 +226,7 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   `bash tests/smoke_native.sh` (kitty ≥ 0.49.2: the native divider's pixels, the real X cursor name over it, a native drag, the single-pane fallback),
   `bash tests/smoke_resize.sh` (a fast pointer burst: the bar edge reaches the pointer, every tab re-flows on release),
   `bash tests/smoke_panes.sh` (`ctrl+alt+shift+1..9` and the `ctrl+alt+e` overview agree on pane numbers; `ctrl+alt+PgUp/Home/End` scroll — real key events),
+  `bash tests/smoke_place.sh` (the folder line: twins, hidden duplicates, worktrees, a split's room, every switch on its own, all-off = the old line),
   `bash tests/smoke_demo.sh` (`kittymux demo` opens every showcase tab — the front door must stay healthy),
   `bash tests/smoke_keys.sh` (the keymap overlay: one Esc/q/the chord closes it, no stacking, typing filters),
   `bash tests/smoke_openref.sh` (ctrl+shift+click on `src/app.py:42:7` opens `$EDITOR +42`; kitty ≥ 0.49.2),

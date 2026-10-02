@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # A screenshot of the vertical bar, for looking at it (the look-and-feel review, the README): a private kitty with a dozen tabs in synthetic
 # repos — twins, a worktree, a split, a plain folder, two fake agents — drawn with a dark or a light theme.
-#   bash tests/shot_bar.sh dark|light OUT.png [WIDTH_STEP]      (WIDTH_STEP: kittymux layout width, default 22 → a 30-column bar)
+#   bash tests/shot_bar.sh dark|light OUT.png [WIDTH_STEP] [MODE]      (WIDTH_STEP: kittymux layout width, default 22 → a 30-column bar;
+#                                                                      MODE: full|compact — compact is the slim icon rail)
 # Switches go in the environment, e.g.  KITTYMUX_HUE=off bash tests/shot_bar.sh dark /tmp/a.png.  Needs Xvfb, xdotool, kitty, git, ImageMagick; else SKIP.
 set -u
 HOME_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-THEME=${1:-dark}; OUT=${2:-bar-$THEME.png}; WSTEP=${3:-22}
+THEME=${1:-dark}; OUT=${2:-bar-$THEME.png}; WSTEP=${3:-22}; MODE=${4:-full}
 for dep in Xvfb xdotool kitty git import convert python3; do command -v "$dep" >/dev/null 2>&1 || { echo "SKIP: $dep not installed"; exit 0; }; done
 T=$(mktemp -d "${TMPDIR:-/tmp}/kmx-shot.XXXXXX"); CFG=$T/cfg STATE=$T/state SOCK=unix:$T/sock
 mkdir -p "$CFG" "$STATE" "$T/data/fonts" && chmod 700 "$STATE"
@@ -118,7 +119,7 @@ for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 3
 X() { DISPLAY=$DISP xdotool "$@"; }
 WID=$(X search --class kmx-shot | head -1)
 X windowsize "$WID" 1390 890; sleep 0.4; X windowsize "$WID" 1400 900; sleep 1.2
-python3 -c "import sys;sys.path.insert(0,'$HOME_DIR/python');import kittymux_layout as L;L.save('$STATE',$KPID,L.Layout('left','full',$WSTEP))"
+python3 -c "import sys;sys.path.insert(0,'$HOME_DIR/python');import kittymux_layout as L;L.save('$STATE',$KPID,L.Layout('left','$MODE',$WSTEP))"
 kitty @ --to "$SOCK" load-config >/dev/null 2>&1; sleep 1; kitty @ --to "$SOCK" load-config >/dev/null 2>&1
 sleep 6                                                              # the scanner reads the fake agents' screens
 X mousemove 900 500; sleep 0.5

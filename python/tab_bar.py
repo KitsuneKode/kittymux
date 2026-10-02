@@ -199,19 +199,35 @@ def _tab_hue(cwd: str, pal):
                                       avoid=(pal.waiting, pal.alert, pal.working, pal.done))
 
 
+_TITLE_KEY_CACHE: dict = {}      # tab id → (what the title depends on, the key): derived data only, no timers — a reload simply empties it
+
+
 @_per_pass
 def _title_keys(os_window_id: int) -> dict:
-    """tab id → the title that tab shows, for every tab of this OS window (once per pass)."""
+    """tab id → the title that tab shows, for every tab of this OS window (once per pass). Computing one takes a title
+    clean-up and an agent lookup, ×N tabs ×10 redraws/s while a spinner runs — so a key is reused until something it
+    depends on changes (the name, the window title, the directory, the foreground process)."""
+    global _TITLE_KEY_CACHE
     out: dict = {}
+    fresh: dict = {}
     try:
         tm = get_boss().os_window_map.get(os_window_id)
         for t in (tm.tabs if tm else []):
-            # what kitty hands the bar as the tab's title (Tab.data_for_tab_bar): the name you gave it, else the window's title
-            title = _compact_title(types.SimpleNamespace(title=t.name or t.title or "", tab_id=t.id), 40)
-            info = _agent_info(t.id)                       # the row draws "web", not "Claude:web": compare what is DRAWN
-            out[t.id] = kittymux_agents.strip_agent_prefix(title, info[2] if info else None)
+            cwd, foreground, last_cmd = _active_window_info(t.id)
+            sig = (t.name, t.title, cwd, last_cmd, repr(foreground))
+            hit = _TITLE_KEY_CACHE.get(t.id)
+            if hit is not None and hit[0] == sig:
+                key = hit[1]
+            else:
+                # what kitty hands the bar as the tab's title (Tab.data_for_tab_bar): the name you gave it, else the window's title
+                title = _compact_title(types.SimpleNamespace(title=t.name or t.title or "", tab_id=t.id), 40)
+                info = _agent_from_fg(foreground)          # the row draws "web", not "Claude:web": compare what is DRAWN
+                key = kittymux_agents.strip_agent_prefix(title, info[2] if info else None)
+            fresh[t.id] = (sig, key)
+            out[t.id] = key
     except Exception:
         pass
+    _TITLE_KEY_CACHE = fresh                               # tabs that went away drop out here
     return out
 
 

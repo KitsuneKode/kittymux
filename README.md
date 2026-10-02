@@ -212,10 +212,18 @@ jumping to a tab that needs you lands on the pane that is asking. kitty rings a 
 
 ### Where is this tab?
 
-Under each tab the bar says **where it is**: `project[:worktree]/inner  branch`, the project name bright (in the project's own hue on the
-active tab), the path and branch stepped down. Two tabs that show the same title get their project emphasised so you can tell them apart;
-a tab whose title already says the project shows the branch or location instead of repeating it. The rail (slim bar) tints the tab number
-with the project's hue.
+![The bar says where each tab is, on a dark and a light theme: two tabs both titled "app", a worktree, a split, two agents](assets/where-is-this-tab.png)
+
+Under each tab the bar says **where it is**: `project[:worktree]/inner  branch`. The project name is the one bright thing on the line (in the
+project's own colour on the active tab); the path and branch step down. The colour is a calm tint turned from your theme's accent and kept
+clear of the state colours (needs you, running, done), so a project never looks like a state — and the name is always written, the colour is
+never the only cue.
+
+- Two tabs that show the same title (`app` and `app`) get their project emphasised, so you can tell them apart at a glance.
+- A tab whose title already says the project (a shell titled by its folder, an agent titled `Claude:web`) shows its branch, path or worktree
+  instead of repeating the name.
+- Narrow bar? The branch goes first, then the path; a long name is cut in the middle (`kit…ux:hue`), never dropped.
+- The slim rail has no room for a line, so it tints the tab number with the project's colour.
 
 ### Pick what you want
 
