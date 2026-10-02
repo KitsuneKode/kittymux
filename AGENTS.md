@@ -35,7 +35,9 @@ remote work.
 - `python/kittymux_place.py` (pure) — the folder line under a vertical tab: `facts` (project / worktree / inner / where / branch), `layout` (what fits: branch goes first, then the path, then the icon; the worktree outranks the
   path; the project name is only ever middle-truncated), `place_room` (the room pieces drawn AFTER it keep), `style` (one bright element per row), and the title rules `redundant` / `worktree_named` / `colliding`.
   `kittymux_theme.project_hue` is a stable, calm per-project tint (SHA-1 slots, never `hash()`), kept clear of the state colours and ≥ 4.5:1 on the row. The bar compares what is DRAWN — `tab.name or tab.title`
-  with the agent prefix stripped — never the raw window title. `KITTYMUX_BAR_DUMP=1` writes `$KITTYMUX_STATE/bar-dump.json` (a test hook for `tests/smoke_place.sh`).
+  with the agent prefix stripped — never the raw window title. `KITTYMUX_BAR_DUMP=1` writes `$KITTYMUX_STATE/bar-dump.json` — per tab: the folder line AND the title row as drawn (a test hook for `tests/smoke_place.sh`, `smoke_titles.sh`).
+  Text from a program or a directory name is `kittymux_place.clean`ed everywhere it is drawn (kitty's own title sanitiser lets ESC through). An agent whose window title is only its product name (`kittymux_agents.is_default_title`)
+  is shown as its project; `kittymux resume-prompt` titles its window while it asks and clears the title before the exec.
 - `python/kittymux_panetitle.py` + `python/window_title_bar.py` — the folder line in kitty's per-pane title bars (kitty ≥ 0.49.2). kitty loads `window_title_bar.py` ONCE per process, so it is a trampoline into
   `kittymux_panetitle.draw` (reloaded by tab_bar.py like the other helpers). `kittymux_layout.gated_conf` emits `window_title_template` with `{custom or title}`: an empty hook result (switch off, failure, no directory)
   falls back to kitty's own title, never a blank bar. Colours derive from the bar's REAL fg/bg (`window_title_bar_*` else the tab colours) and `kittymux_theme.ensure_contrast` turns the other way on mid-tone
@@ -232,6 +234,7 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   `bash tests/smoke_panes.sh` (`ctrl+alt+shift+1..9` and the `ctrl+alt+e` overview agree on pane numbers; `ctrl+alt+PgUp/Home/End` scroll — real key events),
   `bash tests/smoke_place.sh` (the folder line: twins, hidden duplicates, worktrees, a split's room, every switch on its own, all-off = the old line),
   `bash tests/smoke_panetitle.sh` (the folder line in pane title bars: bold on the focused pane, own title appended only when new, an empty title, tab renames, the switch),
+  `bash tests/smoke_titles.sh` (what a tab is CALLED: fresh shell, named/renamed/cleared tab, program titles, agents with and without a conversation title, a stale title, the resume prompt, hostile/long/blank/path titles),
   `bash tests/smoke_demo.sh` (`kittymux demo` opens every showcase tab — the front door must stay healthy),
   `bash tests/smoke_keys.sh` (the keymap overlay: one Esc/q/the chord closes it, no stacking, typing filters),
   `bash tests/smoke_openref.sh` (ctrl+shift+click on `src/app.py:42:7` opens `$EDITOR +42`; kitty ≥ 0.49.2),

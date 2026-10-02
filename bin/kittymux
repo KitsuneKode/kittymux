@@ -64,6 +64,7 @@ import kittymux_launcher  # noqa: E402
 import kittymux_quiet  # noqa: E402
 import kittymux_resume  # noqa: E402
 import kittymux_layout  # noqa: E402
+import kittymux_place  # noqa: E402
 import kittymux_theme  # noqa: E402
 
 VERSION = "0.2.0"
@@ -1302,6 +1303,9 @@ def _ask_on_tty(fd: int, info: dict) -> str:
     import tty as ttymod
     old = termios.tcgetattr(fd)
     out = lambda text: os.write(fd, text.encode())
+    # An unnamed tab would otherwise be called "python" (this very process) while it waits. The title is cleared again before the agent takes over:
+    # kitty keeps the last title a program set, and an agent that never sets one must not wear "resume?" for the rest of its life.
+    out(f"\x1b]2;↻ {kittymux_place.clean(str(info['agent']))} — resume?\x07")
     for line in resume_summary(info):
         out(c("1", line) + "\r\n" if line.startswith(info["agent"]) else c("2", line) + "\r\n")
     out("  " + c("1", "Enter") + " resume   " + c("1", "n") + " new conversation   " + c("1", "s") + " shell   " + c("1", "a") + " resume all   " + c("1", "i") + " commands\r\n")
@@ -1329,6 +1333,7 @@ def _ask_on_tty(fd: int, info: dict) -> str:
                 choice = action
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        out("\x1b]2;\x07")                          # an empty title: back to the process's own
     return choice
 
 

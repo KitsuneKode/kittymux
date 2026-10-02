@@ -276,7 +276,7 @@ def _dump_row(tab_id: int, **row) -> None:
     if not _BAR_DUMP:
         return
     try:
-        _dump_rows[str(tab_id)] = row
+        _dump_rows.setdefault(str(tab_id), {}).update(row)
         with open(os.path.join(kittymux_features.state_dir(), "bar-dump.json"), "w") as f:
             json.dump(_dump_rows, f)
     except Exception:
@@ -706,6 +706,9 @@ def _compact_title(tab: TabBarData, limit: int) -> str:
     title = _clean_visible_title(raw_title)
     cwd, foreground, last_cmd = _active_window_info(tab.tab_id)
     process_label = _best_process_label(foreground, last_cmd)
+    agent = _agent_from_fg(foreground)
+    if agent and kittymux_agents.is_default_title(title, agent[2]):
+        title = ""        # only the agent's own product name ("Claude Code" on a freshly resumed session): nothing about THIS conversation
 
     if process_label in _EDITOR_NAMES:
         cwd_name = _basename(cwd.rstrip("/")) if cwd else ""
@@ -725,7 +728,11 @@ def _compact_title(tab: TabBarData, limit: int) -> str:
             elif cwd:
                 title = _basename(cwd.rstrip("/"))
     if not title or title.lower() in _GENERIC_TITLES:
-        title = process_label or (_basename(cwd.rstrip("/")) if cwd else "~")
+        cwd_name = _basename(cwd.rstrip("/")) if cwd else ""
+        if agent and process_label and cwd_name:
+            title = f"{process_label}:{cwd_name}"          # the logo says which agent; the title says where (the draw strips the prefix)
+        else:
+            title = process_label or cwd_name or "~"
 
     if title.lower() in {"zsh", "bash", "fish", "sh"}:
         title = _basename(cwd.rstrip("/")) if cwd else "~"
@@ -1199,6 +1206,8 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
                      title_room)
         _put(screen, 3, title,
              _rgb(pal.text) if active else _rgb(pal.muted), bold=active)
+        if _BAR_DUMP and not extra_data.for_layout:
+            _dump_row(tab.tab_id, title=title)                    # test hook: the title row as drawn
     if age and state_fg is not None and cols >= 6:
         _put(screen, cols - 1 - sep_cols - 1 - _cells(age), age, _rgb(state_fg if state in kittymux_agents.NEEDS_YOU else pal.faint),
              bold=state in kittymux_agents.NEEDS_YOU)

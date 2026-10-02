@@ -261,6 +261,19 @@ def strip_agent_prefix(title: str, agent: str | None) -> str:
     m = re.match(r"^\s*(?:%s)\s*[:\-–—]\s*(.+)$" % "|".join(re.escape(n) for n in names), title, re.I)
     return m.group(1).strip() if m and m.group(1).strip() else title
 
+def is_default_title(title: str, agent: str | None) -> bool:
+    """True when a window title is only the agent's own product name ("Claude Code", "Codex CLI") — what a freshly resumed agent, or one that never
+    names its conversation, sets. It says nothing about THIS conversation, so the bar shows the project instead."""
+    if not agent or not title:
+        return False
+    t = re.sub(r"\s+", " ", title).strip().lower()
+    for name in _NAMES.get(agent, (agent,)):
+        n = name.lower()
+        if t in (n, n + " code", n + " cli", n + " agent"):
+            return True
+    return False
+
+
 STATE_GLYPH = {"working": SPINNER[0], "waiting": "!", "limited": "⊘", "done": "✓", "unread": "•"}
 SPINNER_FPS = 10.0
 

@@ -342,6 +342,15 @@ class AgentPrefixTests(unittest.TestCase):
                                  ("Factory Droid: New Session", "droid", "New Session")):
             self.assertEqual(A.strip_agent_prefix(raw, agent), want)
 
+    def test_a_title_that_is_only_the_agents_product_name_says_nothing_about_the_conversation(self):
+        """A freshly resumed (or title-less) agent sets its window title to its own name: ten of them would be ten tabs called "Claude Code"."""
+        for title, agent in (("Claude Code", "claude"), ("claude", "claude"), ("  CLAUDE   code ", "claude"), ("Codex", "codex"), ("Codex CLI", "codex"),
+                             ("devin", "devin"), ("Antigravity", "agy"), ("Cursor Agent", "cursor-agent"), ("Factory Droid", "droid"), ("OpenCode CLI", "opencode")):
+            self.assertTrue(A.is_default_title(title, agent), (title, agent))
+        for title, agent in (("Claude Code: refactor auth", "claude"), ("Fix login bug", "claude"), ("claude-notes", "claude"), ("", "claude"),
+                             ("Codex", "claude"), ("Claude Code", None), ("Claude Code review", "claude")):
+            self.assertFalse(A.is_default_title(title, agent), (title, agent))
+
     def test_left_alone_when_there_is_nothing_else_or_it_is_not_a_prefix(self):
         self.assertEqual(A.strip_agent_prefix("devin:", "devin"), "devin:")
         self.assertEqual(A.strip_agent_prefix("devin", "devin"), "devin")

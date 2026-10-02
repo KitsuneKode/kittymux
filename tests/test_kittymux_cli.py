@@ -1154,6 +1154,24 @@ class ResumePromptTests(unittest.TestCase):
         self.assertEqual(ran, "fakeshell")
         self.assertIn("--resume " + self.SID, screen)
 
+    def test_the_window_is_titled_while_it_asks_and_the_title_is_cleared_before_the_agent_takes_over(self):
+        """An unnamed restored tab showed "python" (the prompt's own process); and an agent that never sets a title must not be left with a stale one."""
+        asking = "\x1b]2;↻ claude — resume?\x07"
+        clear = "\x1b]2;\x07"
+        for keys in (b"\r", b"n", b"s", b"a"):
+            ran, screen = self.run_prompt(keys)
+            self.assertIn(asking, screen, keys)
+            self.assertGreater(screen.rindex(clear), screen.index(asking), keys)           # cleared AFTER it was set, i.e. before the exec
+
+    def test_a_hostile_agent_name_in_a_session_file_cannot_inject_into_the_title(self):
+        import sys
+        sys.path.insert(0, os.path.join(ROOT, "python"))
+        import kittymux_resume as R
+        info = R.prompt_info("claude", "exact", self.SID, ["claude"], ["claude", "--resume", self.SID])
+        hostile = info.replace('"agent": "claude"', '"agent": "cl\\u001b]0;pwned\\u0007aude"')
+        ran, screen = self.run_prompt(b"s", info=hostile)
+        self.assertNotIn("pwned\x07", screen.replace("\x1b]2;↻", ""))                  # whatever the validator did with it, no raw OSC from the name
+
     def test_an_invalid_record_opens_a_shell_instead_of_running_anything(self):
         ran, screen = self.run_prompt(None, info='{"agent":"claude","mode":"exact","sid":"","orig":["claude"],"resume":["rm","-rf","x"]}')
         self.assertEqual(ran, "fakeshell")
