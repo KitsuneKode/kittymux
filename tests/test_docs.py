@@ -331,6 +331,86 @@ class YamlTests(unittest.TestCase):
             self.assertTrue(i["question"].endswith("?"), i)
 
 
+def repo_source_text() -> str:
+    """Everything a doc can truthfully point at: the code, the config and the templates (not docs, not tests)."""
+    chunks = []
+    for sub_dir in ("bin", "python", "lib", "assets", "tools"):
+        for dirpath, _dirs, files in os.walk(os.path.join(ROOT, sub_dir)):
+            if "__pycache__" in dirpath:
+                continue
+            for name in files:
+                if name.endswith((".png", ".svg", ".ttf", ".otf", ".gif", ".pyc")):
+                    continue
+                try:
+                    chunks.append(read(os.path.join(dirpath, name)))
+                except (UnicodeDecodeError, OSError):
+                    pass
+    for name in ("kittymux.conf", "kittymux-keys.conf.tpl", "kittymux-leader.conf.tpl", "install.sh", "open-actions.conf.tpl"):
+        chunks.append(read(os.path.join(ROOT, name)))
+    return "\n".join(chunks)
+
+
+class FactTests(unittest.TestCase):
+    """The docs against the code, mechanically: a variable, command, flag file or path a page names must exist. They catch a typo today and a removed feature next year."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.src = repo_source_text()
+        cls.pages = {p: read(p) for p in page_paths()}
+
+    @staticmethod
+    def code_spans(text):
+        text = re.sub(r"```.*?```", lambda m: m.group(0), text, flags=re.S)
+        return re.findall(r"`([^`\n]+)`", text)
+
+    def test_every_environment_variable_named_exists_in_the_code(self):
+        sys.path.insert(0, os.path.join(ROOT, "python"))
+        import kittymux_features
+        dynamic = {f"KITTYMUX_{n.upper()}" for n in kittymux_features.FEATURES}          # read as f"KITTYMUX_{name.upper()}", so never a literal in the code
+        for p, text in self.pages.items():
+            for var in set(re.findall(r"\bKITTYMUX_[A-Z0-9_]+\b", text)):
+                if var.endswith("_") or var in dynamic:
+                    continue                                                                # `KITTYMUX_` alone is a prefix
+                self.assertIn(var, self.src, f"{p}: {var} is not read anywhere in the code")
+
+    def test_every_kittymux_command_in_code_exists(self):
+        cli = read(os.path.join(ROOT, "bin", "kittymux"))
+        known = set(re.findall(r'(?m)^    if cmd == "([\w-]+)"', cli))
+        for group in re.findall(r"cmd in \(([^)]*)\)", cli):
+            known |= set(re.findall(r'"([\w-]+)"', group))
+        self.assertGreater(len(known), 15)
+        for p, text in self.pages.items():
+            code = "\n".join(re.findall(r"```[\w]*\n(.*?)```", text, flags=re.S)) + "\n" + "\n".join(self.code_spans(re.sub(r"```.*?```", "", text, flags=re.S)))
+            code = "\n".join(re.sub(r"(^|\s)#.*$", "", line) for line in code.splitlines())              # shell comments are prose
+            for cmd in set(re.findall(r"\bkittymux ([a-z][a-z-]+)\b", code)):
+                self.assertIn(cmd, known, f"{p}: `kittymux {cmd}` is not a command")
+
+    def test_every_repository_path_named_exists(self):
+        for p, text in self.pages.items():
+            for span in self.code_spans(text):
+                m = re.match(r"^((?:python|bin|assets|tools|tests|lib|docs)/[\w./-]+?)(?::\d+)?$", span.strip())
+                if not m or any(c in span for c in "<>*{}$ "):
+                    continue
+                path = m.group(1)
+                self.assertTrue(os.path.exists(os.path.join(ROOT, path)), f"{p}: `{span}` is not in the repository")
+
+    def test_every_flag_file_named_is_a_switch_in_the_code(self):
+        for p, text in self.pages.items():
+            for span in self.code_spans(text):
+                for name in re.findall(r"(?<![\w/.-])([a-z]+(?:-[a-z]+)*-(?:off|on)|notify-private|attention-on|resume-auto)(?![\w-])", span):
+                    self.assertIn(name, self.src, f"{p}: the flag file `{name}` is not read anywhere in the code")
+
+    def test_every_key_the_picker_names_is_handled_by_its_kitten(self):
+        """tabs-and-panes documents the join list's keys; each must appear in join-kit.py's key handler."""
+        kit = read(os.path.join(ROOT, "python", "join-kit.py"))
+        for token in ('"ESCAPE"', '"ENTER"', '"DOWN"', '"UP"', '"TAB"', '"BACKSPACE"', '"PAGE_DOWN"', '"PAGE_UP"'):
+            self.assertIn(token, kit)
+        self.assertIn('ctrl and k == "T"', kit)                  # ctrl+t
+        self.assertIn('ctrl and k == "N"', kit)                  # ctrl+n
+        self.assertIn('ctrl and k == "P"', kit)                  # ctrl+p
+        self.assertIn('ctrl and k == "C"', kit)                  # ctrl+c
+
+
 class StatusTableTests(unittest.TestCase):
     def test_the_generated_status_tables_are_fresh(self):
         """docs/users/what-you-can-do.mdx shows docs/feature-status.yaml; `python3 tools/docs_status.py` rewrites it."""
