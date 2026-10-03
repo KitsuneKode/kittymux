@@ -55,6 +55,17 @@ def _cells(s: str) -> int:
     return max(0, wcswidth(s))
 
 
+def _find_join_kit() -> str:
+    """join-kit.py sits next to this file (kittens are run by path, not linked into the config dir)."""
+    for d in (os.path.dirname(os.path.realpath(sys.argv[0])) if sys.argv and sys.argv[0] else "", _CONFIG_DIR):
+        if d and os.path.exists(os.path.join(d, "join-kit.py")):
+            return os.path.join(d, "join-kit.py")
+    return os.path.join(_CONFIG_DIR, "join-kit.py")
+
+
+_JOIN_KIT = _find_join_kit()
+
+
 # Panel mode (bin/mux-panel): the deck lives in its own docked kitty instance and
 # talks to a *target* kitty over its socket; it stays open after a jump.
 _TARGET = os.environ.get("KITTYMUX_TARGET", "")
@@ -808,7 +819,9 @@ class Sidebar(Handler):
         ids, target = deck.absorb_plan(self.snap.rows, self.sel)
         if not ids:
             return
-        _rc("detach-window", "--match", " or ".join(f"id:{i}" for i in ids), "--target-tab", f"id:{target}")
+        # One `detach-window` for every window splits the same pane again and again (7-column slivers). The join kitten places each pane next to its
+        # old neighbour — the same mover `ctrl+alt+shift+j` uses, run from the selected tab's window so it moves THAT tab.
+        _rc("kitten", "--match", f"id:{ids[0]}", _JOIN_KIT, "--to", str(target), "--side", "auto")
         _rc("focus-window", "--match", f"id:{ids[0]}")
         if not _PANEL:
             self.quit_loop()

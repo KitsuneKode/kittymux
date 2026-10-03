@@ -28,6 +28,12 @@ class YourShortcutsAreLeftAloneTests(unittest.TestCase):
     def test_the_template_says_why_those_chords_are_missing(self):
         self.assertIn("ctrl+alt+shift+h / k / v / z / f / x are NOT ours", TPL)
 
+    def test_join_has_a_free_chord_and_closes_on_the_same_chord(self):
+        self.assertIn("python/join-kit.py", mapping("ctrl+alt+shift+j"))
+        self.assertIn("kitten", mapping("ctrl+alt+shift+j"))
+        # the chord stays bound while the picker has focus: without this it would stack a second picker (smoke_join_ui.sh)
+        self.assertRegex(TPL, r"(?m)^map --when-focus-on cmdline:join-kit\.py ctrl\+alt\+shift\+j close_window$")
+
     def test_new_tab_chords_of_the_original_set_are_untouched(self):
         self.assertIn("mux-newtab.sh", mapping("ctrl+alt+shift+t"))
 

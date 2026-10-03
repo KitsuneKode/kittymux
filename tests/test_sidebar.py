@@ -68,6 +68,33 @@ class SidebarTests(unittest.TestCase):
         s.snap = self.m.Snapshot([self.m.deck.RowData(1, 11), self.m.deck.RowData(2, 22)], "")
         return s
 
+    def test_absorb_keeps_the_shape_by_handing_over_to_the_join_kitten(self):
+        """`a` pulls the selected tab into the tab you are in. One `detach-window` for all its windows splits the same pane again and again
+        (slivers); the join kitten places each pane next to its old neighbour (tests/smoke_join.sh measures the result)."""
+        s = self.sidebar()
+        s.snap = self.m.Snapshot([self.m.deck.RowData(tab_id=1, win_id=10, win_ids=(10,), current=True),
+                                  self.m.deck.RowData(tab_id=2, win_id=20, win_ids=(20, 21))], "")
+        s.sel = 1
+        calls = []
+        with patch.object(self.m, "_rc", side_effect=lambda *a: calls.append(a) or ""), \
+             patch.object(s, "quit_loop", create=True), patch.object(s, "_request_refresh"):
+            s._absorb()
+        self.assertFalse(any(a[0] == "detach-window" for a in calls), calls)
+        kit = [a for a in calls if a[0] == "kitten"]
+        self.assertEqual(len(kit), 1, calls)
+        self.assertEqual(kit[0][1:3], ("--match", "id:20"))
+        self.assertTrue(kit[0][3].endswith("join-kit.py"))
+        self.assertEqual(kit[0][4:], ("--to", "1", "--side", "auto"))
+        self.assertIn(("focus-window", "--match", "id:20"), calls)
+
+    def test_absorb_with_nothing_to_pull_does_nothing(self):
+        s = self.sidebar()
+        s.sel = 0                                                   # the tab you are in
+        calls = []
+        with patch.object(self.m, "_rc", side_effect=lambda *a: calls.append(a) or ""), patch.object(s, "quit_loop", create=True):
+            s._absorb()
+        self.assertEqual(calls, [])
+
     def test_preview_single_flight_and_aba_rejects_old_completion(self):
         s = self.sidebar()
         entered, release = threading.Event(), threading.Event()

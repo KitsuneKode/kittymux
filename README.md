@@ -136,6 +136,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+\`` | flip to previously active tab (MRU) |
 | `ctrl+alt+h j k l` | pane nav (`shift+alt+arrows`) · `ctrl+alt+o` last pane |
 | `ctrl+alt+shift+1..9` | focus pane **N** of this tab straight away (the digit `ctrl+alt+e` draws on each pane) |
+| `ctrl+alt+shift+j` | **join**: move this tab's panes into another tab as splits, keeping their shape — you pick the tab in a list (its keys are in its footer; `kittymux join` from a shell) |
 | `ctrl+alt+e` · `ctrl+alt+shift+y` | number every pane on screen, press its digit to **focus** it · to **swap** with it (tmux's display-panes) |
 | `ctrl+alt+v` | **pick**: what needs you (longest-waiting first), every running agent, conversations you closed, a new agent — one searchable list (`kittymux pick --menu rofi` from your window manager) |
 | `ctrl+alt+shift+o` then `c` `x` `d` `u` `o` `a` `g` | **spawn** claude · codex · devin · cursor · opencode · agy · grok in a new tab (`shift` + letter: split right) in the current directory |
@@ -463,7 +464,7 @@ Kitty has native drag and drop; kittymux makes it work in the vertical bar:
 - **Tab ← split** — drag a pane's title bar onto **a tab in the bar** to move the split into that tab.
 - **Re-split** — drop it on another pane's edge to insert it there, or on that pane's title bar to swap.
 - **Keyboard** — `ctrl+alt+d` pane → new tab · `ctrl+alt+shift+d` pane → a tab you pick (a one-pane tab
-  moved this way *is* "tab → split") · `ctrl+alt+shift+←/→` or `↑/↓` move the tab itself.
+  moved this way *is* "tab → split") · `ctrl+alt+shift+j` this whole tab → a tab you pick, as splits, keeping its shape (type to filter, ↑/↓ or hover to choose, `⏎` or a click joins, `Tab` picks the side, `Ctrl+T` flips whole tab / only this pane, `Esc` clears the filter, then closes) · `ctrl+alt+shift+←/→` or `↑/↓` move the tab itself.
 
 - **Tab → split (pull it in)** — open the deck (`ctrl+alt+b`, or the docked panel), select a tab and press
   **`a`**: all of its panes become splits of the tab you are in, and the emptied tab closes. Undo with

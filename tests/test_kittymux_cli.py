@@ -1347,3 +1347,56 @@ class KeysCmdTests(unittest.TestCase):
         rc, _o, err = self.run_keys("frobnicate")
         self.assertEqual(rc, 2)
         self.assertIn("usage: kittymux keys", err)
+
+
+class JoinCmdTests(unittest.TestCase):
+    """`kittymux join`: the chord's twin for a shell. It only validates and hands over to python/join-kit.py in the kitty it was started inside."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def run_join(self, argv, sock="unix:/nonexistent/mykitty-1", win="7"):
+        import io
+        from contextlib import redirect_stderr
+        from unittest.mock import patch
+        err = io.StringIO()
+        calls = []
+        with patch.object(self.m, "_own_kitty_socket", return_value=sock), \
+                patch.dict(os.environ, {"KITTY_WINDOW_ID": win} if win else {}, clear=False), \
+                patch.object(self.m.subprocess, "run", side_effect=lambda cmd, **kw: calls.append(cmd) or type("R", (), {"returncode": 0})()), \
+                redirect_stderr(err):
+            if not win:
+                os.environ.pop("KITTY_WINDOW_ID", None)
+            rc = self.m.join_cmd(argv)
+        return rc, err.getvalue(), calls
+
+    def test_junk_arguments_are_refused_with_usage(self):
+        for argv in (["--to"], ["--to", "abc"], ["--to", "-3"], ["--side", "sideways"], ["--side"], ["nope"], ["--pane", "--what"]):
+            rc, err, calls = self.run_join(argv)
+            self.assertEqual(rc, 2, argv)
+            self.assertIn("usage: kittymux join", err)
+            self.assertEqual(calls, [], "nothing may run for bad input")
+
+    def test_outside_a_kitty_it_says_so_and_runs_nothing(self):
+        rc, err, calls = self.run_join([], sock=None)
+        self.assertEqual(rc, 1)
+        self.assertIn("run it from a pane", err)
+        self.assertEqual(calls, [])
+        rc, err, calls = self.run_join([], win="")
+        self.assertEqual(rc, 1)
+        self.assertEqual(calls, [])
+
+    def test_it_hands_over_to_the_kitten_in_this_kitty_for_this_pane(self):
+        rc, _err, calls = self.run_join(["--to", "12", "--side", "below", "--pane"])
+        self.assertEqual(rc, 0)
+        cmd = calls[0]
+        self.assertEqual(cmd[:6], ["kitty", "@", "--to", "unix:/nonexistent/mykitty-1", "kitten", "--match"])
+        self.assertEqual(cmd[6], "id:7")
+        self.assertTrue(cmd[7].endswith("python/join-kit.py"))
+        self.assertEqual(cmd[8:], ["--to", "12", "--side", "below", "--pane"])
+
+    def test_without_a_target_the_picker_opens(self):
+        rc, _err, calls = self.run_join([])
+        self.assertEqual(rc, 0)
+        self.assertEqual(calls[0][8:], [])

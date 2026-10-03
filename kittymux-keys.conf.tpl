@@ -92,6 +92,9 @@ map ctrl+alt+shift+8   nth_window 7
 map ctrl+alt+shift+9   nth_window 8
 # ctrl+alt+shift+y — number every pane, press a digit to swap the current pane with that one
 map ctrl+alt+shift+y     swap_with_window
+# ctrl+alt+shift+j — join this tab into another as splits: pick the tab (type to filter · ⏎ joins · tab = side · ctrl+t = whole tab / this pane)
+map ctrl+alt+shift+j     kitten @KITTYMUX_HOME@/python/join-kit.py
+map --when-focus-on cmdline:join-kit.py ctrl+alt+shift+j close_window
 # ctrl+alt+shift+c — show/hide pane title bars (captions): drag handles for moving a split to a tab, another tab, or elsewhere
 map ctrl+alt+shift+c     toggle_window_title_bars
 

@@ -31,6 +31,7 @@
                          explain [--window ID] [--last N] [--all] [--json]
   kittymux features    pick which optional pieces of the bar you want — the project/branch line under each tab, a colour per project, emphasis on look-alike tabs:
                          features [list] | on NAME | off NAME | preset minimal|default|full     (kittymux features -h)
+  kittymux join        move this tab's panes into another tab as splits: join [--to TAB_ID] [--side right|below|left|above|auto] [--pane]
   kittymux keys        chords your own kitty config and kittymux both define (kittymux's wins: it loads later): keys [conflicts]
   kittymux dim         dim the panes that are not focused (kitty ≥ 0.49.2): dim [on|off|toggle|show]
   kittymux screenshot  PNG of this kitty window (kitty's own renderer): screenshot [--tab|--window] [FILE]
@@ -2142,6 +2143,39 @@ def keys_cmd(argv: list[str]) -> int:
     return 0
 
 
+def join_cmd(argv: list[str]) -> int:
+    """`kittymux join [--to TAB] [--side right|below|left|above|auto] [--pane]` — move this tab's panes into another tab as splits, keeping their shape.
+    Without --to it opens the picker over this pane (what ctrl+alt+shift+j does). Acts on the kitty it was started inside and on THIS pane's tab."""
+    usage = "usage: kittymux join [--to TAB_ID] [--side right|below|left|above|auto] [--pane]"
+    args, it = [], iter(argv)
+    for a in it:
+        if a == "--to":
+            v = next(it, "")
+            if not v.isdigit():
+                print(usage, file=sys.stderr)
+                return 2
+            args += ["--to", v]
+        elif a == "--side":
+            v = next(it, "")
+            if v not in ("right", "below", "left", "above", "auto"):
+                print(usage, file=sys.stderr)
+                return 2
+            args += ["--side", v]
+        elif a == "--pane":
+            args.append("--pane")
+        else:
+            print(usage, file=sys.stderr)
+            return 2
+    sock, win = _own_kitty_socket(), os.environ.get("KITTY_WINDOW_ID", "")
+    if sock is None or not win.isdigit():
+        print("kittymux join: run it from a pane of the kitty whose tab you want to move "
+              "(needs allow_remote_control socket-only and listen_on unix:${XDG_RUNTIME_DIR}/mykitty)", file=sys.stderr)
+        return 1
+    kit = os.path.join(HOME_DIR, "python", "join-kit.py")
+    r = subprocess.run(["kitty", "@", "--to", sock, "kitten", "--match", f"id:{win}", kit, *args], stdin=subprocess.DEVNULL, check=False)
+    return r.returncode
+
+
 def snooze(argv: list[str]) -> int:
     """`kittymux snooze [1h] [--window ID] [--clear]` — no popups or bells for ONE agent window for a while (its events still reach the inbox). Stored in the private state dir
     (kittymux_quiet), never as a window variable: a program in the window could set that itself and silence its own "needs you"."""
@@ -2632,6 +2666,8 @@ def main(argv: list[str]) -> int:
         return features_cmd(argv[1:])
     if cmd == "keys":
         return keys_cmd(argv[1:])
+    if cmd == "join":
+        return join_cmd(argv[1:])
     if cmd == "fanout":
         return fanout(argv[1:])
     if cmd == "checkpoint":
