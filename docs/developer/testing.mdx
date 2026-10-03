@@ -1,0 +1,92 @@
+---
+title: Testing
+description: Run the unit tests and the real-kitty rigs without touching your own kitty, config or state, know what each rig proves, and see which edge cases still need a person.
+---
+
+Do not use your everyday configuration, socket, state directory or provider credentials as test fixtures. A green unit suite is not proof of compositor support or of current vendor response formats.
+
+## The fast gate
+
+```sh
+python3 -B -m unittest discover -s tests
+bash tests/test_mux_status.sh && bash tests/test_socket_lib.sh
+git diff --check
+```
+
+Also run `bash -n` and `shellcheck -S error` on changed shell files, and `python3 -m py_compile` on changed Python. Continuous integration must call each shell test explicitly: passing a script as an argument to another script does not run it.
+
+## The real-kitty rigs
+
+Each rig starts its own kitty, usually in a virtual display (Xvfb) with a private configuration, socket and state directory. They skip when a tool is missing. **`SKIP` is not a pass.** Record the reason and the kitty version.
+
+| Rig                         | What it proves                                                                                                         |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `test_install.sh`           | A fresh home installs, reinstalls, validates, passes doctor and uninstalls.                                            |
+| `smoke_state.sh`            | States come from screens, the spinner rate on an idle window and a spacer-row click.                                   |
+| `smoke_reload.sh`           | A kitty upgraded under itself draws cleanly after two reloads. `SMOKE_KEEP_STALE=1` must fail.                         |
+| `smoke_sidebar.sh`          | The collapse button, the right-click peek and an edge drag, with real mouse events.                                    |
+| `smoke_drag.sh`             | Tab drag-to-reorder with real pointer events.                                                                          |
+| `smoke_click.sh`            | Tab clicks with wobble and slowness. A middle-click spares an agent tab.                                               |
+| `smoke_native.sh`           | The native divider's pixels, the real X cursor name over it, a native drag and the single-pane fallback.               |
+| `smoke_resize.sh`           | A fast pointer burst: the bar edge reaches the pointer and every tab re-flows on release.                              |
+| `smoke_panes.sh`            | Pane numbers agree between `ctrl+alt+e` and `ctrl+alt+shift+1` to `9`. The scroll keys work.                           |
+| `smoke_place.sh`            | The folder line: twins, hidden duplicates, worktrees, a split's room, each switch alone, and all off equals the old line. |
+| `smoke_panetitle.sh`        | The folder line in pane title bars and the fallback when the switch is off.                                            |
+| `smoke_titles.sh`           | What a tab is called through renames, restores, resumes, stale and hostile titles.                                     |
+| `smoke_join.sh`             | A three-pane tab joins a two-pane tab: all panes present, the shape kept, no sliver, bad input harmless, other layouts, other OS windows and an overlay target. |
+| `smoke_join_ui.sh`          | The join list with real key and mouse events: the chord, one `esc`, no stacking, filter, side, scope, hover, `⏎`, left click and a right click that does nothing. |
+| `smoke_keys.sh`             | The keymap overlay closes on one `esc`, `q` or the chord, never stacks, and filters as you type.                       |
+| `smoke_resume.sh`           | Save then restore: the prompt, resume flags, ambiguity, autosave and pruning.                                          |
+| `smoke_spawn.sh`            | Spawn by CLI and by real keys, pick through a fake rofi, reopen, mute and snooze, with fake agents.                    |
+| `smoke_fanout.sh`           | One prompt to three fake agents in three real worktrees, then compare and clean. The main checkout is untouched.       |
+| `smoke_changes.sh`          | A fake agent edits a real repository: baseline, summary, exclusions, repository untouched.                             |
+| `smoke_socket.sh`           | `socket-only` refuses a printed escape sequence while `yes` obeys it, and the runtime directory socket is found.       |
+| `smoke_inbox.sh`            | Real OSC 99 notifications become typed inbox events, and focus acknowledges.                                           |
+| `smoke_workflows.sh`        | Two kitties with overlapping ids: scratch isolation, target pid checks and an attention jump.                          |
+| `smoke_demo.sh`             | `kittymux demo` opens every showcase tab.                                                                              |
+| `smoke_openref.sh`          | `ctrl+shift+click` on `src/app.py:42:7` opens the editor at line 42.                                                   |
+| `smoke_extras.sh`           | `kittymux screenshot`, and `kittymux dim` when `slangc` exists.                                                        |
+
+Run display-sharing rigs one after another. Use `SMOKE_SHOT=<absolute path prefix>` with `smoke_sidebar.sh` to keep screenshots. To look at a visual change, render the bar with `tests/shot_bar.sh` in dark and light and at the narrowest width, then read the picture. Unit tests did not catch a hue palette of four near-identical greens.
+
+### The rules a rig must follow
+
+- **Never touch another kitty on the machine.** The author is usually typing in a live kitty while tests run, and `kitty @ launch` follows focus. A rig once spawned fake agents, and through a different `PATH` the real `claude`, into the live kitty. Set `KITTYMUX_SOCKET_DIRS` to the rig's own directory and end with a tripwire that compares the window count of every other kitty.
+- **Run under `socket-only`.** Never write a rig or a doc that needs `allow_remote_control yes`.
+- **Use real events.** A perfect scripted click hides whole bug classes. Click with wobble.
+- **Keep modules as real copies in one configuration directory.** A rig that mixes repository and configuration directories hides real bugs.
+- **Remove only your own instances in cleanup.** Never kill processes by name.
+
+<Callout type="info" title="If your /tmp is full">
+  The rigs write a few hundred megabytes under `/tmp`. If your temporary directory has a quota that
+  is already used up, run them inside a private mount: `unshare -rm sh -c "mount -t tmpfs tmpfs /tmp
+  && bash tests/smoke_join.sh"`. Keep scripts and output elsewhere, such as `~/.cache`.
+</Callout>
+
+## The docs gate
+
+`python3 -m unittest tests.test_docs` checks the published pages: frontmatter, navigation, links and anchors, the feature status table, that every `ctrl+alt` chord a page names is really bound, and that the CLI reference covers every command. See [Docs maintenance](/docs/developer/docs-maintenance).
+
+## Edge cases
+
+| Boundary              | Automated checks                                                                                                       | Still needs a person                                                           |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Remote control        | In-band control refused under `socket-only`, with a positive control. Missing or foreign sockets fail closed.          | Custom runtime paths and restricted `/proc`.                                   |
+| Scratch tabs          | Overlapping instance ids, stale flags, the wrong OS window.                                                            | Concurrent scratch commands.                                                   |
+| Scanner and attention | Debounce, focus acknowledgement, hook-only completion, startup replay suppression, timer reload lifecycle.            | Agent wording changes. Verify a real screen before changing a pattern.         |
+| Previews and resize   | Single-flight work, reordered callbacks, shutdown, the final release past the throttle.                                | Real layer-shell panel resizing on each compositor.                            |
+| Usage HUD             | Provider failure, malformed responses, cooldown, exact counters, midnight and daylight-saving boundaries.              | Opt-in live responses from each vendor.                                        |
+| Restore prompt        | Hostile records, keys including a lone `esc`, no terminal, missing binary, through a real pty.                         | Each real agent's resume against a real conversation. Run `sessions check`.    |
+| Folder line           | Layout at every width, hue contrast on dark, light and grey themes, switch precedence, a real kitty drawing each case. | Panel placement on Hyprland (`tests/probe_panel.sh`), looks on your own theme and font. |
+| Join                  | Planner properties on random layouts, placement in a real kitty, and the list with real keys and mouse.                | Your own tab layouts, and a real Wayland pointer.                              |
+
+Tests use fake credentials, temporary state and synthetic provider responses. Never turn a mocked response or a virtual-display run into a claim of live-provider or compositor verification.
+
+## Before applying a tested branch
+
+1. Check `main` and the worktree for unrelated edits. Do not stash or overwrite another person's work.
+2. Bring new `main` commits into your branch, resolve conflicts there and repeat the gates.
+3. A local edit to a file the branch changes is a blocker. Have its owner reconcile it first.
+4. Record the OS window, tab and pane counts for every live kitty socket you own, without dumping pane text.
+5. After a clean fast-forward, run the main checkout's `bin/kittymux upgrade`. Never restart.
+6. Compare the counts and check `~/.local/state/kittymux/tab_bar-error.log`. If the counts differ, investigate. Do not close or recreate windows to make the numbers match.

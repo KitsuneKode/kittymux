@@ -1,0 +1,179 @@
+# Feature status for the docs — allowed: shipped | beta | planned
+# shipped = works today and is covered by a test; beta = works, with a stated gap; planned = not built (the docs must say so).
+features:
+  - id: tab-bar
+    label: Vertical tab bar
+    status: shipped
+    description: Rows with the agent logo, title, branch, pane count and one state glyph; colours come from your kitty theme.
+  - id: bar-layouts
+    label: Bar modes, edges and presets
+    status: shipped
+    description: Full, rail and hidden modes, four edges and named presets, set per kitty with kittymux layout.
+  - id: bar-resize
+    label: Drag to resize the bar
+    status: shipped
+    description: Drag the bar's inner edge; kitty 0.49.2 and later draws the divider itself and shows the native resize arrow in tabs with split panes.
+  - id: folder-line
+    label: Folder line under each tab
+    status: shipped
+    description: Project, worktree, folder and branch under every vertical tab, so tabs without a visible directory stay distinguishable.
+  - id: project-hue
+    label: Colour per project
+    status: shipped
+    description: A calm, stable tint per project derived from your theme and kept clear of the state colours.
+  - id: collide-emphasis
+    label: Emphasis on look-alike tabs
+    status: shipped
+    description: Tabs that show the same title get their project emphasised.
+  - id: features-switchboard
+    label: Feature switches
+    status: shipped
+    description: Turn each optional piece of the bar on or off with kittymux features, by flag file or environment.
+  - id: pane-title-bars
+    label: Pane title bars
+    status: shipped
+    description: The folder line in kitty's per-pane title bars, doubling as drag handles (kitty 0.49.2 and later).
+  - id: peek-card
+    label: Peek card
+    status: shipped
+    description: Right-click a tab for its state, question, branch, folder, panes and the tail of its screen.
+  - id: deck
+    label: Sidebar deck
+    status: shipped
+    description: Every tab across every session with live preview, search, hover and keyboard control.
+  - id: docked-panel
+    label: Docked panel
+    status: beta
+    description: The deck as an always-visible column on Wayland layer-shell compositors; placement is verified on Hyprland by hand only.
+  - id: join
+    label: Join a tab into another
+    status: shipped
+    description: Move all panes of a tab (or one pane) into another tab as splits, keeping their shape.
+  - id: pane-numbers-and-swap
+    label: Panes by number, swap and move
+    status: shipped
+    description: Number every pane, focus or swap by digit, turn a pane into a tab, drag title bars.
+  - id: agent-status
+    label: Agent status
+    status: shipped
+    description: One ordered state per agent (limited, waiting, working, done, idle) read from the screen and hooks, shown identically everywhere.
+  - id: agent-hooks
+    label: Agent hooks
+    status: shipped
+    description: Claude Code hooks installed and removed with kittymux hooks; other agents call mux-status.
+  - id: explain
+    label: Explain a state
+    status: shipped
+    description: kittymux explain says why each pane is in its state and why each notification was sent or held back.
+  - id: notifications
+    label: Desktop notifications
+    status: shipped
+    description: One notification per event with the agent's own mark and a Jump to it action; never moves your focus.
+  - id: inbox
+    label: Inbox
+    status: shipped
+    description: Every needs-you, limit and completion as one typed, de-duplicated event with a stable snapshot file for widgets.
+  - id: widget-samples
+    label: Quickshell and waybar samples
+    status: beta
+    description: The waybar module uses the tested CLI; the Quickshell sample follows the documented contract but is untested.
+  - id: spawn
+    label: Spawn agents
+    status: shipped
+    description: Start one or several agents in a new tab or split in the current directory.
+  - id: pick
+    label: Pick
+    status: shipped
+    description: One searchable list of what needs you, every running agent, closed conversations and new agents.
+  - id: reopen
+    label: Reopen a closed conversation
+    status: shipped
+    description: Bring back the agent conversation you closed last, asking before it resumes.
+  - id: pin-settle
+    label: Pin and settle
+    status: shipped
+    description: Keep a conversation at the top of pick, or fold closed ones away.
+  - id: mute-snooze
+    label: Mute and snooze
+    status: shipped
+    description: Quiet popups and bells for everything or one agent window; the inbox keeps every event.
+  - id: fanout
+    label: Fan-out
+    status: shipped
+    description: One prompt to several agents, each in its own worktree, branch and tab, then compare the results.
+  - id: changes
+    label: What an agent changed
+    status: shipped
+    description: Files and lines changed since a run started, without writing into your repository.
+  - id: sessions-resume
+    label: Sessions that resume conversations
+    status: shipped
+    description: Save and restore kitty sessions with each agent window coming back asking to resume its own conversation.
+  - id: session-journal
+    label: Agent journal
+    status: shipped
+    description: Every agent session recorded as it runs, for history and crash recovery.
+  - id: session-templates
+    label: Session templates
+    status: shipped
+    description: Ready project sessions - plain, agent, duo and review.
+  - id: leader-mode
+    label: Leader mode
+    status: shipped
+    description: Opt-in tmux-style prefix on kitty's modal mappings.
+  - id: usage-hud
+    label: Usage HUD
+    status: shipped
+    description: Local usage numbers per provider; live quotas only when you turn the network on.
+  - id: file-refs
+    label: Clickable file references
+    status: shipped
+    description: Ctrl+shift+click path/file.py:42:7 to open it in your editor at the line (kitty 0.49.2 and later).
+  - id: dim-inactive
+    label: Dim inactive panes
+    status: shipped
+    description: kittymux dim uses kitty's own shader; off by default and needs the shader-slang package.
+  - id: screenshot
+    label: Screenshot
+    status: shipped
+    description: A PNG rendered by kitty itself, written with mode 0600.
+  - id: keymap-overlay
+    label: Keymap overlay
+    status: shipped
+    description: Every key, mouse gesture and command in one searchable overlay, including your own kitty and Hyprland shortcuts.
+  - id: shortcut-clash-report
+    label: Shortcut clash report
+    status: shipped
+    description: kittymux keys and kittymux doctor list every chord both your config and kittymux define.
+  - id: side-sheet
+    label: Side sheet beside the bar
+    status: planned
+    description: A sheet with more about a tab. Not built; the peek card and the deck cover the need today.
+  - id: hover-sheet
+    label: Sheet that opens on hover
+    status: planned
+    description: Not possible from the bar itself, because kitty sends it no idle mouse motion; it can only live inside a sheet or the panel.
+  - id: peek-from-keyboard
+    label: Open the peek card from the keyboard
+    status: planned
+    description: Today the card opens on right-click; the deck is the keyboard route to the same preview.
+  - id: workspace-switcher
+    label: Workspace switcher
+    status: planned
+    description: A recent-first list of sessions with agent states, as one key.
+  - id: session-rename
+    label: Rename a session
+    status: planned
+    description: Rename a session and keep its tab titles, saved file and journal in step.
+  - id: broadcast-input
+    label: Type into several panes
+    status: planned
+    description: One keystroke stream into every pane of a tab, like tmux synchronize-panes.
+  - id: layout-keys
+    label: Layout cycle and rotate keys
+    status: planned
+    description: Keys to cycle layouts and rotate or swap panes.
+  - id: docs-site
+    label: Documentation site
+    status: planned
+    description: The docs in this folder rendered by a TanStack Start and Fumadocs app.

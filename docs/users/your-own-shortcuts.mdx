@@ -1,0 +1,92 @@
+---
+title: Your own shortcuts
+description: How kittymux treats the keys you already use - which chords it avoids, how the keymap overlay lists your shortcuts, how to find and resolve clashes, and how to rebind a kittymux key.
+---
+
+You probably have shortcuts you rely on: a floating scratch terminal that opens a configuration file in your editor, a font toggle, a screenshot key. kittymux is built so it does not take those from you silently.
+
+## How kitty decides
+
+kitty loads your configuration in order, and the last definition of a chord wins. `install.sh` adds kittymux's `include` lines at the end of `kitty.conf`, so kittymux's keys load after yours. If both files bind the same chord, kittymux's action runs and yours stops working, with no warning from kitty.
+
+Hyprland adds a second layer. A global chord that the window manager binds is handled before kitty sees it, so kitty never receives it. See [Platforms and compatibility](/docs/users/platforms).
+
+## What kittymux does about it
+
+- **It leaves common chords unbound.** The chords `ctrl+alt+shift+h`, `k`, `v`, `z`, `f` and `x` are unbound by kittymux, because setups like these often use them for scratchpad terminals that open your Hyprland, kitty, editor or shell configuration, for a font toggle or for a screenshot. kittymux's own pane title bars use `ctrl+alt+shift+c`, and pane swap uses `ctrl+alt+shift+y`.
+- **It lists your shortcuts.** The [keymap overlay](/docs/users/shortcuts#the-keymap-overlay), opened with `ctrl+alt+/`, shows two extra sections beside kittymux's own:
+  - **YOURS · KITTY** is every `map` in your own kitty configuration files, with the description from the comment above it when there is one. kittymux's generated files are skipped, and so are maps that only apply while a certain window has focus.
+  - **YOURS · HYPRLAND** is the Hyprland binds that open terminals or scratchpads, because Hyprland sees those chords first.
+  
+  A built-in row is dropped when one of your shortcuts takes its chord, so the overlay never lists something that does not run.
+- **It reports clashes.** `kittymux keys` lists every chord that both your files and kittymux define with different actions, naming your file, your action and kittymux's. `kittymux doctor` has the same check in its "your shortcuts" section.
+
+```sh
+kittymux keys
+```
+
+```
+! 2 chords are defined by both your kitty config and kittymux — kittymux's loads later, so ITS action is the one in effect:
+
+  ctrl+alt+t
+      yours (session-keybinds.conf): launch --type=background ~/.config/kitty/new-tab-before-scratch.sh --next
+      ours:  launch --type=background ~/kittymux/bin/mux-newtab.sh --next
+  ctrl+alt+shift+t
+      yours (session-keybinds.conf): launch --type=background ~/.config/kitty/new-tab-before-scratch.sh
+      ours:  launch --type=background ~/kittymux/bin/mux-newtab.sh
+```
+
+A clash is not always a problem. When kittymux's script replaces an older script of yours that does the same job, as in the example, the shared chord is intended.
+
+## Resolve a clash
+
+You have three choices, and you can mix them.
+
+<Steps>
+
+<Step>
+
+### Keep kittymux's action
+
+Do nothing. Delete your own `map` line later if you want the file tidy.
+
+</Step>
+
+<Step>
+
+### Keep yours
+
+Put your line after the kittymux `include` lines in `kitty.conf`, because the last definition wins:
+
+```conf
+include /home/you/kittymux/kittymux.conf
+map ctrl+alt+t launch --type=background ~/.config/kitty/new-tab-before-scratch.sh --next
+```
+
+To switch a kittymux chord off entirely, map it to nothing:
+
+```conf
+map ctrl+alt+t no_op
+```
+
+</Step>
+
+<Step>
+
+### Move kittymux's key
+
+Edit the chord in `kittymux-keys.conf.tpl` and run `install.sh` again. Never edit the generated `kittymux-keys.conf`, because the next install overwrites it. Then update the key tables in the README, which a test checks against the template.
+
+</Step>
+
+</Steps>
+
+## If you add a chord to kittymux
+
+Check it against all of these before you rely on it:
+
+1. The template, `kittymux.conf` and your own kitty configuration. Modifier order differs between files: `ctrl+shift+alt+r` is the same chord as `ctrl+alt+shift+r`.
+2. Your window manager. `kittymux doctor` checks every chord against `hyprctl binds -j`. Hyprland on HyDE's scrolling layout takes `ctrl+alt` plus `a`, `s`, `f`, `c`, `x`, `p`, `w`, `m`, the arrow keys, `=` and `-`.
+3. A real key press, not only a test of the mapping.
+
+`ctrl+alt+p` once shipped and was dead on arrival, because Hyprland took it first.

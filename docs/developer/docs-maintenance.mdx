@@ -1,0 +1,143 @@
+---
+title: Docs maintenance
+description: How the docs are structured, written and checked, how the status table is generated, and the plan for rendering this folder with TanStack Start and Fumadocs.
+---
+
+The published pages live in the repository's `docs/` folder as MDX: `docs/index.mdx`, `docs/users/` and `docs/developer/`. They are written to be rendered by a documentation site as they are, and the same folder reads fine on GitHub. The older flat notes in `docs/*.md` stay as the source documents the pages promote.
+
+<Callout type="info" title="The site is planned, not built">
+  Nothing in this folder needs a site to be correct. The tests in `tests/test_docs.py` already
+  check what the site would depend on, so the site can be added later without reworking a page.
+</Callout>
+
+## Add a page
+
+<Steps>
+
+<Step>
+
+### Write the page
+
+Add an `.mdx` file under `docs/users/` or `docs/developer/` with `title` and `description` frontmatter. Titles and descriptions must be unique, and a description is 60 to 220 characters.
+
+</Step>
+
+<Step>
+
+### Register it
+
+Add its slug to the nearest `meta.json`. Each section uses `index.mdx` as its first page. A page that is not listed, or a slug with no file, fails a test.
+
+</Step>
+
+<Step>
+
+### Link with docs routes
+
+Link with `/docs/users/<slug>` and a heading anchor, never a relative file path. Images are `![alt](/assets/<file>)` and must exist in the repository's `assets/` folder.
+
+</Step>
+
+<Step>
+
+### Run the gate
+
+```sh
+python3 -m unittest tests.test_docs
+python3 tools/docs_status.py --check
+```
+
+</Step>
+
+</Steps>
+
+## Content rules
+
+- Describe what a person sees and does before how it works inside.
+- Say whether a feature is shipped, beta or planned, and whether it needs a newer kitty, Wayland or a package.
+- Say what was tested and how. A virtual-display run is not a real-desktop run, and a mocked response is not a live one.
+- Keep security boundaries visible: nothing leaves the machine, state files are private, text from a terminal is untrusted.
+- Prefer a command you can copy over a paragraph that describes it.
+- Name a chord only if the template binds it. A test checks every `ctrl+alt` chord a page names.
+
+## Writing rules
+
+- Write to the reader: "you", not "the user". Prefer "Unable to save" over "We could not save".
+- Use plain words. Cut any word that does no work.
+- Use sentence case for headings and for labels.
+- Start a button, key or step label with a verb: "Join", "Save draft", "Run the gate".
+- Make a link say where it goes. "Read the billing docs", not "click here".
+- Describe settings by their on state: "Send read receipts", not "Don't send read receipts".
+- Explain a problem with how to fix it, beside where it happened. No blame and no jokes.
+- An empty state says what the place is, how to fill it and offers one next step.
+- Use one term for one thing. This product says **tab**, **pane**, **bar**, **deck**, **panel**, **peek card**, **rail**, **inbox** and **needs you**. The [glossary](/docs/users/glossary) is the list.
+
+`tests/test_docs.py` enforces the mechanical part: sentence-case headings, no exclamation marks in headings, no vague link text and no phrases that blame the reader.
+
+## What is the source of truth
+
+| Layer              | Source                                                          | Guard                                                                  |
+| ------------------ | --------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Behaviour          | The code: `bin/kittymux`, the key template, `assets/*.json`     | The unit tests and the rigs.                                           |
+| Product posture    | `docs/feature-status.yaml`                                      | Allowed values, and the generated table on the capability page.        |
+| Prose              | `docs/users/*.mdx`, `docs/developer/*.mdx`                      | `tests/test_docs.py`: links, anchors, chords, CLI coverage, voice.     |
+| Source notes       | `README.md`, `docs/*.md`, `AGENTS.md`, `SECURITY.md`            | `docs/promotion-manifest.yaml` maps each to the page that explains it. |
+| Release            | `CHANGELOG.md`                                                  | The release checklist.                                                 |
+
+**Code wins for behaviour. The YAML wins for product posture. Prose explains and does not duplicate a table that can be generated.**
+
+### The status table
+
+`docs/feature-status.yaml` lists every feature as `shipped`, `beta` or `planned`. The tables on [What you can do](/docs/users/what-you-can-do#status-at-a-glance) are generated from it:
+
+```sh
+python3 tools/docs_status.py            # rewrite the block between the markers
+python3 tools/docs_status.py --check    # exit 1 when the page is stale; the tests run this too
+```
+
+Edit the YAML, run the command, commit both. Never edit the generated block by hand.
+
+### Promotion and symptoms
+
+`docs/promotion-manifest.yaml` records, for each source note, the published page and the date it was last reconciled. When you change a source note, update the page and the date. `docs/troubleshooting-symptoms.yaml` lists each symptom with the exact heading it answers on the troubleshooting page, so a site can emit them as FAQ structured data. A test checks that every anchor is a real heading.
+
+## Hub pages
+
+| Route             | File                       | Purpose                                 |
+| ----------------- | -------------------------- | --------------------------------------- |
+| `/docs`           | `docs/index.mdx`           | The documentation home, with a goal table and reading order. |
+| `/docs/users`     | `docs/users/index.mdx`     | The user guides, grouped by task.       |
+| `/docs/developer` | `docs/developer/index.mdx` | The contributor entry.                  |
+
+## MDX you can use
+
+Only components that Fumadocs ships, so the site needs no custom ones:
+
+- `<Callout type="info" title="…">` with the types `info`, `warn`, `warning`, `error`, `success` and `idea`.
+- `<Cards>` and `<Card title href>`.
+- `<Steps>` and `<Step>`, with a blank line around the heading and the body inside each step. Without the blank lines MDX reads the heading as text.
+
+`Callout`, `Cards` and `Card` come with the default MDX components. `Steps` and `Step` do not, so the site must register them. `tests/test_docs.py` rejects braces, unknown tags and stray `<` outside code, because MDX would fail on them when the site is built.
+
+## The docs site
+
+This section is a plan. The site does not exist yet.
+
+**Stack.** TanStack Start with Fumadocs, which has a documented manual installation for TanStack Start. Fumadocs reads `title` and `description` frontmatter and `meta.json` navigation, which is what these pages use.
+
+**Layout.** An `apps/docs` package, like the one kitsunesnipe has. Its Fumadocs source points at the repository's `docs/` folder. The docs app must not become a dependency of packaging kittymux itself.
+
+**What the site must do with this folder.**
+
+1. Serve `docs/` as `/docs` using `meta.json` for the sidebar, with `users` and `developer` as root sections.
+2. Register `Steps` and `Step` next to the default MDX components.
+3. Serve the repository's `assets/` folder at `/assets/`, because pages reference images that way.
+4. Add search over every page.
+5. Emit FAQ structured data from `docs/troubleshooting-symptoms.yaml`.
+6. Run the checks in `tests/test_docs.py`, or their TypeScript equivalent, in continuous integration.
+
+**Generated pages worth adding later.** Both can be derived from code instead of written twice: the CLI reference from the `kittymux help` text, and the shortcuts tables from the `# key — description` comments in `kittymux-keys.conf.tpl`, which the keymap overlay already parses. Until then, the tests catch drift in both.
+
+## Build boundaries
+
+The docs gate runs with plain Python and needs no network. A change to the CLI, the key template, a provider or `docs/feature-status.yaml` needs a docs check in the same pull request.

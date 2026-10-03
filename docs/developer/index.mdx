@@ -1,0 +1,36 @@
+---
+title: Developer overview
+description: Where to start if you want to change kittymux - how it is built, how to test a change without risking your own sessions, how the docs are kept honest, and what to work on next.
+---
+
+kittymux is small on purpose: a configuration layer for kitty, not a daemon. Most of it is pure Python that can be tested without kitty, plus a few pieces that run inside kitty, a handful of kittens for the interfaces, and shell scripts for glue.
+
+<Cards>
+  <Card title="Architecture" href="/docs/developer/architecture">
+    The modules, the rules that keep state honest, and the kitty facts the code depends on.
+  </Card>
+  <Card title="Contribute" href="/docs/developer/contribute">
+    Set up a worktree, run the gates and open a pull request.
+  </Card>
+  <Card title="Testing" href="/docs/developer/testing">
+    Unit tests, real-kitty rigs and the edge cases that still need a person.
+  </Card>
+  <Card title="Docs maintenance" href="/docs/developer/docs-maintenance">
+    How these pages are structured, generated and checked, and the plan for the docs site.
+  </Card>
+  <Card title="Release checklist" href="/docs/developer/release-checklist">
+    What must be true before you announce a release, and what not to claim.
+  </Card>
+  <Card title="Roadmap" href="/docs/developer/roadmap">
+    What to work on next, in order, with what blocks each item.
+  </Card>
+</Cards>
+
+## The working contract
+
+`AGENTS.md` in the repository root is the contract for people and coding agents alike. Four rules shape everything.
+
+- **Never restart a live kitty.** Work in an isolated worktree, test with the rigs, merge, then reload only.
+- **A test must never touch another kitty on the machine.** Each rig runs its own kitty and ends by checking that no other kitty changed.
+- **A state needs positive evidence.** Silence is never "waiting", and a false "finished" is the worst class of bug.
+- **No credential in the repository**, real or credential-shaped, in tests, docs or commit messages.

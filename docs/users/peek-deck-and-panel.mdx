@@ -1,0 +1,83 @@
+---
+title: Peek, deck and panel
+description: Look at a tab you are not in without switching to it - a right-click peek card, the sidebar deck and the always-visible docked panel - with the mouse and the keyboard.
+---
+
+With a dozen tabs open you often want to know one thing about one of them: is the agent stuck, which branch is this, what is on its screen. kittymux gives you three ways to look without leaving the tab you are in.
+
+| | Peek card | Deck | Docked panel |
+| --- | --- | --- | --- |
+| Open it | Right-click a tab in the bar | `ctrl+alt+b` | `ctrl+alt+shift+b` toggles it |
+| Shows | One tab: its state, the question it is asking, branch, folder, panes and the tail of its screen | Every tab of every session, grouped, with a live preview of the selection | The same as the deck |
+| Stays open | No. It closes when you act or dismiss it. | No. It closes when you jump. | Yes. It is a column on your screen. |
+| Needs | The vertical bar | Nothing extra | A Wayland compositor with layer-shell |
+
+<Callout type="info" title="Is there a detail sheet on hover?">
+  Not yet. kitty sends the tab bar no idle mouse motion (in a real-pointer test, none of eight moves
+  arrived), so nothing can open when you merely hover a tab. The right-click peek card is the nearest
+  thing, and the deck and panel do get real hover. A sheet that lives inside the deck or panel is
+  [planned](/docs/developer/roadmap).
+</Callout>
+
+## Peek card
+
+The peek card is a small overlay over your active pane. It answers "what is going on in that tab" in one glance.
+
+**Open it.** Right-click a tab in the vertical bar.
+
+**It shows** the tab's state and, for an agent that needs you, the question it is asking, the branch and folder, each pane of the tab, and the tail of the screen. It refreshes about once a second while it is open.
+
+| To                                                    | Keyboard           | Mouse                  |
+| ----------------------------------------------------- | ------------------ | ---------------------- |
+| Open the card for a tab                               | Not yet. See below. | Right-click the tab.   |
+| Jump to the tab. If a pane is asking, land on that pane | `⏎`              |                        |
+| Close the card                                        | `esc` or `q`       | Click anywhere on it.  |
+
+The card never changes anything until you press `⏎`. It reads the same state as the bar, so the two never disagree.
+
+You can also open it by hand for a tab id from `kitty @ ls`:
+
+```sh
+kitten ~/kittymux/python/peek-kit.py 12
+```
+
+**Keyboard route today.** There is no chord that opens the peek card. To see the same information with the keyboard, open the deck, move to the tab and read the preview. Opening the card from the keyboard is on the [roadmap](/docs/developer/roadmap).
+
+## Deck
+
+Press `ctrl+alt+b`. The deck lists every tab across every session, grouped, each with its state, the agent's own message (such as "Approve: rm -rf node_modules?"), the pull request number and listening ports. A split tab lists each agent pane as an indented child line. The selection gets a live preview of its screen, beside the list in a wide deck and in a drawer under it in a narrow one.
+
+| To                                                  | Keyboard                                               | Mouse                                           |
+| --------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------- |
+| Move the selection                                  | `j` `k`, `↓` `↑` or `Tab`                              | Hover a tab or a pane line to preview it.       |
+| Jump between sessions                               | `J` and `K` (with `shift`)                             |                                                 |
+| Go to the top or the bottom                         | `g` and `G`                                            |                                                 |
+| Go to the selected tab or pane                      | `⏎`                                                    | Click it.                                       |
+| Search                                              | `/`, then type. It matches title, branch, folder, agent, state or message. | |
+| Clear the search, then close                        | `esc`. A finished search stays applied until you clear it. |                                             |
+| Close                                               | `q`                                                    |                                                 |
+| Pull the selected tab's panes into this tab         | `a`                                                    |                                                 |
+| Turn the hovered or focused pane into its own tab   | `t`                                                    |                                                 |
+
+`a` uses the same shape-keeping mover as [join](/docs/users/tabs-and-panes#join-a-tab-into-another), run from the selected tab. `t` is the keyboard twin of dragging a pane's title bar onto the bar.
+
+## Docked panel
+
+Press `ctrl+alt+shift+b`. The deck becomes a persistent column: the compositor reserves its width, so tiled windows sit beside it. It stays open after a jump and uses about one percent of a CPU when idle. Press the chord again to remove it.
+
+- Keys work as in the deck, except that `esc` does not close it. Press `q` to quit the panel.
+- Hover previews a tab or pane in a drawer under the list.
+- Drag the panel's inner edge to resize it. The pointer turns into a resize cursor there, and the width is remembered.
+
+The panel needs `wlr-layer-shell`, so it works on Hyprland, and should on sway, river and niri. It is not available on GNOME or on X11. Its placement beside the bar is verified by hand on Hyprland only. See [Platforms and compatibility](/docs/users/platforms).
+
+## Where is this pane?
+
+Separate from the cards above, `ctrl+alt+i` shows a small pill with the current folder and branch. Press it twice, or press `ctrl+alt+shift+i`, for a detail card that lets you copy the path or the branch.
+
+## Choosing between them
+
+- You are in the middle of something and want one fact about one tab: **peek**.
+- You are hunting across many tabs, or want to act on one by keyboard: **deck**.
+- You want agent states always in view on a wide screen: **panel**.
+- You want a list that sorts by what needs you, from anywhere on the desktop: [`kittymux pick`](/docs/users/launch-and-find-agents#find-an-agent-with-pick).

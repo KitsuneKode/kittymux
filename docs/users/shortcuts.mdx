@@ -1,0 +1,123 @@
+---
+title: Shortcuts
+description: Every kittymux key and mouse gesture in one place, grouped by task, plus leader mode and the keymap overlay that shows your own shortcuts beside kittymux's.
+---
+
+Press `ctrl+alt+/` at any time to open the keymap overlay. It reads your generated configuration, so it cannot drift from what is really bound. This page is the same information, grouped by what you want to do.
+
+<Callout type="info" title="Where kittymux's keys live">
+  `kittymux-keys.conf` is rendered from `kittymux-keys.conf.tpl`. To change a key, edit the template
+  and run `install.sh` again, or override a chord in your own `kitty.conf` below the kittymux
+  `include` lines. See [Your own shortcuts](/docs/users/your-own-shortcuts).
+</Callout>
+
+## Tabs and sessions
+
+| Keys                                    | Action                                                                              |
+| --------------------------------------- | ----------------------------------------------------------------------------------- |
+| `ctrl+shift+space`                      | Kitty Home: every session operation.                                                |
+| `ctrl+alt+,` and `ctrl+alt+.`           | Previous and next session.                                                          |
+| `ctrl+alt+shift+a`                      | Last session.                                                                       |
+| `ctrl+alt+t` and `ctrl+alt+shift+t`     | New tab beside this one, and at the end.                                            |
+| `shift+←` and `shift+→`                 | Previous and next tab, within the session.                                          |
+| `ctrl+alt+1` to `9`, and `alt+1` to `9` | Jump to tab N within the session.                                                   |
+| `` ctrl+alt+` ``                        | Flip to the previously active tab.                                                  |
+| `ctrl+alt+shift+←` `→` `↑` `↓`          | Move the tab. Arrows follow the bar: `←` `→` on a horizontal bar, `↑` `↓` on a vertical one. Both always work. |
+| `ctrl+alt+shift+s`                      | Save the session now.                                                               |
+
+## Panes
+
+| Keys                                    | Action                                                                              |
+| --------------------------------------- | ----------------------------------------------------------------------------------- |
+| `ctrl+alt+h` `j` `k` `l`                | Focus the pane to the left, below, above and right. `shift+alt+` an arrow does the same. |
+| `ctrl+alt+o`                            | The last pane.                                                                      |
+| `ctrl+alt+e`                            | Number every pane, then press its digit to focus it.                                |
+| `ctrl+alt+shift+1` to `9`               | Focus pane N directly, using those numbers.                                         |
+| `ctrl+alt+shift+y`                      | Number every pane, then press a digit to swap with it.                              |
+| `ctrl+alt+enter` and `ctrl+shift+enter` | Split below, and split to the right.                                                |
+| `ctrl+alt+z` and `ctrl+alt+0`           | Zoom a pane, and equalize.                                                          |
+| `alt+shift+h` `j` `k` `l`               | Resize a pane.                                                                      |
+| `ctrl+alt+q`                            | Close the pane. It asks if a process is running.                                    |
+| `ctrl+alt+d`                            | Turn the pane into its own tab.                                                     |
+| `ctrl+alt+shift+d`                      | Send the pane to a tab you choose.                                                  |
+| `ctrl+alt+shift+j`                      | Join this whole tab into another as splits. See [Tabs and panes](/docs/users/tabs-and-panes#join-a-tab-into-another). |
+| `ctrl+alt+shift+c`                      | Show or hide pane title bars.                                                       |
+
+## Agents
+
+| Keys                                    | Action                                                                              |
+| --------------------------------------- | ----------------------------------------------------------------------------------- |
+| `ctrl+alt+y`                            | Jump to the next agent waiting on you, longest-waiting first.                       |
+| `ctrl+alt+v`                            | Pick: what needs you, every agent, closed conversations and a new agent, in one list. |
+| `ctrl+alt+g`                            | Agent picker: every agent pane, with a live preview, status and message.            |
+| `ctrl+alt+shift+o`, then a letter       | Spawn `c` claude, `x` codex, `d` devin, `u` cursor, `o` opencode, `a` agy, `g` grok. With `shift`, a split on the right. |
+| `ctrl+alt+shift+u`                      | Reopen the agent conversation you closed last. It asks before resuming.             |
+| `ctrl+alt+shift+g`                      | A new agent in its own git worktree and tab.                                        |
+| `ctrl+alt+;`                            | Send a prompt to a background agent pane without switching to it.                   |
+| `ctrl+alt+u`                            | Usage HUD.                                                                          |
+
+## Bar, deck and panel
+
+| Keys                                    | Action                                                                              |
+| --------------------------------------- | ----------------------------------------------------------------------------------- |
+| `ctrl+alt+b`                            | The deck. See [Peek, deck and panel](/docs/users/peek-deck-and-panel).              |
+| `ctrl+alt+shift+b`                      | Toggle the docked panel (Wayland).                                                  |
+| `ctrl+alt+\`                            | Bar mode: full, slim rail, hidden.                                                  |
+| `ctrl+alt+shift+e`                      | Move the bar: left, bottom, top, right. Applies to this kitty only.                 |
+| `ctrl+alt+shift+[` and `ctrl+alt+shift+]` | Narrower and wider sidebar.                                                       |
+| `ctrl+alt+shift+l`                      | Pick a layout preset: sidebar, rail, right-sidebar, bottom, top, zen.                       |
+| `ctrl+alt+i` and `ctrl+alt+shift+i`     | Location pill, and its detail card.                                                 |
+
+## Scrollback and output
+
+| Keys                                    | Action                                                                              |
+| --------------------------------------- | ----------------------------------------------------------------------------------- |
+| `ctrl+alt+PgUp` and `ctrl+alt+PgDn`     | Scroll a page back and forward.                                                     |
+| `ctrl+alt+Home` and `ctrl+alt+End`      | Go to the oldest output, and back to the live screen.                               |
+| `ctrl+alt+[` and `ctrl+alt+]`           | Jump between shell prompts in the scrollback.                                       |
+| `ctrl+alt+shift+/`                      | Show the last command's output in a pager.                                          |
+| `ctrl+alt+/`                            | The keymap overlay.                                                                 |
+
+kitty's own keys stay on. A few worth knowing: `ctrl+shift+h` opens the scrollback in a pager where `/` searches, `ctrl+shift+g` shows the last command's output, `ctrl+shift+e` opens a URL by letter, `ctrl+shift+p` then `n` picks a `file:line`, and `ctrl+shift+f3` opens kitty's command palette, which searches every action.
+
+When tmux has focus, only the keys tmux really binds pass through: `shift+←`, `shift+→`, `ctrl+alt+←`, `ctrl+alt+→` and `ctrl+alt+z`. Everything else stays kitty's.
+
+## Mouse
+
+| Gesture                                          | Result                                                                         |
+| ------------------------------------------------ | ------------------------------------------------------------------------------ |
+| Click a tab                                      | Activate it. A click still counts if your hand drifts up to about 14 pixels or you hold the button up to 1.5 seconds. |
+| Right-click a tab                                | Open its peek card.                                                            |
+| Double-click a tab                               | Rename it (kitty's own).                                                       |
+| Middle-click a tab                               | Close a plain tab. A tab running an agent ignores it.                          |
+| Drag a tab                                       | Reorder.                                                                       |
+| Drag the bar's inner edge                        | Resize the bar.                                                                |
+| Click `«` or `»` in the header                   | Collapse to the rail, or expand.                                               |
+| Drag a pane's title bar                          | Move a split to a tab, to the bar's empty space, or onto another pane.         |
+| `ctrl+shift+click` on `src/app.py:42:7`          | Open the file in your editor at that line.                                     |
+| Hover a deck or panel row                        | Preview that tab or pane. Click to go there.                                   |
+
+## Leader mode
+
+Leader mode is optional. Install with `install.sh --leader`, or `--leader=ctrl+a` for another prefix. Tap the leader, then one key. An unmapped key or two seconds of silence cancels it, and the bar shows a LEADER badge while it is armed. The default leader is `ctrl+space`.
+
+| After the leader        | Action                                                                  |
+| ----------------------- | ----------------------------------------------------------------------- |
+| `h` `j` `k` `l`, `o`    | Focus a pane, last pane.                                                |
+| `\`, `-`, `z`, `=`, `x`, `d` | Split right, split down, zoom, equalize, close pane, pane to tab.  |
+| `c` `n` `p` `1`…`9` `r` `X` | New, next, previous and Nth tab, rename, close tab.                 |
+| `s`, `P`                | Kitty Home, project picker.                                             |
+| `a` `w` `g` `;`         | Agent picker, next waiting agent, new worktree agent, send prompt.      |
+| `b` `B` `u` `i` `e`     | Deck, docked panel, usage HUD, location pill, bar edge.                 |
+| `?`                     | The full card, generated from your leader configuration.                |
+
+## The keymap overlay
+
+`ctrl+alt+/` shows every key, mouse gesture and `kittymux` command, in one, two or three columns depending on width.
+
+- **Type to search.** All words must match, in any of section, key or description.
+- **Scroll** with `↑` `↓`, `j` `k` or the wheel. `PgUp` `PgDn`, `space` and `b` page. `g` and `G` go to the ends.
+- **Close** with `esc`, `q` or the same chord again. The first `esc` clears a search and the next closes.
+- Your own shortcuts appear under **YOURS** sections. See [Your own shortcuts](/docs/users/your-own-shortcuts).
+
+kitty can bind a chord but never a held modifier, so there is no "hold ctrl and alt to show it". The overlay is one chord away.

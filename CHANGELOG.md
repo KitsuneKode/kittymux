@@ -28,7 +28,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 
 - **Fan-out** (`kittymux fanout "PROMPT" claude,codex,devin`): the same task to several agents at once, each in its own git worktree + branch + tab, with the prompt given in each CLI's own (verified) form; `fanout compare` shows what each did relative to the base, `fanout clean` tidies up.
 
+- **Join a tab into another** (`ctrl+alt+shift+j`, `kittymux join`): all panes of a tab (or one pane) become splits of a tab you pick, keeping their shape. A list takes the keyboard and the mouse (type to filter, hover or arrows to choose, `⏎` or a click to join, `Tab` for the side, `ctrl+t` for tab or pane). The deck's `a` (pull a tab in) uses the same mover, which fixes panes arriving as 7-column slivers. [docs](docs/users/tabs-and-panes.mdx)
+- **Your own shortcuts are left alone.** `ctrl+alt+shift+h k v z f x` stay unbound; the keymap overlay (`ctrl+alt+/`) lists your own kitty maps (**YOURS · KITTY**) and Hyprland's terminal and scratchpad binds (**YOURS · HYPRLAND**); `kittymux keys` and `kittymux doctor` report any chord both your config and kittymux define. Pane title bars are on `ctrl+alt+shift+c` and pane swap on `ctrl+alt+shift+y`. [docs](docs/users/your-own-shortcuts.mdx)
+- **Docs tree for a docs site** (`docs/index.mdx`, `docs/users/`, `docs/developer/`, `meta.json`, `feature-status.yaml`, `promotion-manifest.yaml`, `troubleshooting-symptoms.yaml`) with drift tests (`tests/test_docs.py`) and a generated status table (`tools/docs_status.py`).
+
 ### Changed
+- `ctrl+alt+enter` splits below and `ctrl+shift+enter` to the right; the README says so (it used to say "+shift").
 - Recommended kitty setup is now `allow_remote_control socket-only` + `listen_on unix:${XDG_RUNTIME_DIR}/mykitty`; `kittymux doctor` warns about `yes` and a `/tmp` socket. Every smoke test runs under `socket-only`.
 - A completion notifies only with a known duration ≥ 15 s after a 5 s settle; a hook-announced turn ends only with the agent's own `Stop`. Screen-only completions need ≥ 60 s of work to pop up.
 - Bar redraw 6.0 → 2.1 ms with 23 tabs; the spinner ticks unfocused windows at half rate; resize touches only the visible tab per event.

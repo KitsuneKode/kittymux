@@ -1,0 +1,80 @@
+---
+title: Customization
+description: Choose which pieces of kittymux you use, set colours, layout and behaviour with switches, environment variables and flag files, and add your own agents and usage collectors.
+---
+
+kittymux is built so you can use all of it, some of it or none. Most settings are a switch you can flip from a shell or an environment variable, never a file you must hand-edit.
+
+## How a setting is decided
+
+For anything with a switch, the first of these wins:
+
+1. An environment variable, such as `KITTYMUX_HUE=off`.
+2. A flag file in the state directory, such as `~/.local/state/kittymux/hue-off`.
+3. The default.
+
+The state directory is `$KITTYMUX_STATE` if set, otherwise `${XDG_STATE_HOME}/kittymux`, which is `~/.local/state/kittymux` by default. Its mode is `0700` and the files in it are `0600`.
+
+## Choose the pieces of the bar
+
+```sh
+kittymux features                  # what is on, and where each setting comes from
+kittymux features off hue
+kittymux features on folder
+kittymux features preset minimal   # minimal, default or full
+kittymux features -h               # help
+```
+
+`folder`, `hue`, `collide` and `panetitle` are live. `sheet` and `hover` are planned: the switch is saved and the command says so, but nothing reads it yet. See [The tab bar](/docs/users/the-tab-bar#choose-which-pieces-you-want).
+
+## Layout
+
+`kittymux layout` changes the bar of one kitty instance on the fly. See [The tab bar](/docs/users/the-tab-bar#modes-edges-and-presets). `kittymux layout default` pins the current layout as the start for new windows.
+
+## Colours
+
+Every colour comes from your live kitty theme. To pin the accent, set `KITTYMUX_ACCENT=#rrggbb`. The default is your theme's `active_border_color`.
+
+## Switches and variables
+
+| Variable                       | Flag file in the state directory | Effect                                                              |
+| ------------------------------ | -------------------------------- | ------------------------------------------------------------------- |
+| `KITTYMUX_NOTIFY=0`            | `notify-off`                     | No desktop notifications.                                           |
+| `KITTYMUX_NOTIFY_DONE=0`       | `notify-done-off`                | No "finished" notifications.                                        |
+| `KITTYMUX_BELL=0`              | `bell-off`                       | No window manager urgency request.                                  |
+| `KITTYMUX_NOTIFY_PRIVATE=1`    | `notify-private`                 | Notifications say "agent needs you" and nothing from your screen.   |
+| `KITTYMUX_ATTENTION=1`         | `attention-on`                   | Keep window attention requests on even where they would move focus. |
+| `KITTYMUX_RESUME=auto`         | `resume-auto`                    | A restored agent resumes without asking.                            |
+| `KITTYMUX_AUTOSAVE=0`          | `autosave-off`                   | No automatic session saves.                                         |
+| `KITTYMUX_JOURNAL=0`           | `journal-off`                    | Do not record agent sessions.                                       |
+| `KITTYMUX_CHANGES=0`           | `changes-off`                    | Do not track what agents changed.                                   |
+| `KITTYMUX_SETTLE_DAYS=N`       |                                  | Days before a closed conversation settles, 1 to 365. The default is 3. |
+| `KITTYMUX_FOLDER`, `_HUE`, `_COLLIDE`, `_PANETITLE` | `<name>-off`, `<name>-on` | The bar features above.                          |
+| `KITTYMUX_ACCENT=#rrggbb`      |                                  | Pin the accent colour.                                              |
+| `KITTYMUX_ROFI_THEME=user`     |                                  | Leave your own rofi theme in charge of `pick`.                      |
+| `KITTYMUX_PROJECTS`            |                                  | The root the project picker lists.                                  |
+| `KITTYMUX_USAGE_LIVE=1`        |                                  | Let usage collectors fetch live quotas over the network.            |
+| `KITTYMUX_DEBUG=1`             |                                  | Log bar drag errors to `barsize-debug.log`.                         |
+| `KITTYMUX_STATE`               |                                  | Use another state directory.                                        |
+
+## Optional looks
+
+These need kitty 0.49.2 or later, and are never written to an older kitty's configuration.
+
+- **Clickable `file:line`.** On by default when your kitty supports it. `install.sh` links `open-actions.conf` only if you have none; otherwise it prints the two lines to add.
+- **Dim the inactive pane.** `kittymux dim on`, `off`, `toggle` or `show`. It is off by default and needs the `shader-slang` package, because kitty compiles shaders with `slangc`. Without it, the command says so instead of failing on every reload.
+- **Screenshot.** `kittymux screenshot [--tab|--window] [FILE]` writes a PNG that kitty renders itself, by default to `~/Pictures/kittymux-<time>.png` with mode `0600`, because it can show anything that was on screen.
+
+## Usage HUD
+
+Press `ctrl+alt+u` for local numbers per provider. Each provider is one file in `python/collectors/`, found automatically. Codex reads its rollout rate-limit snapshots, Claude shows a reconstructed five-hour window and weekly burn, Cursor shows its plan and share of AI lines, and Devin shows session and token activity. Real local numbers or "unavailable", never made-up ones. The overlay paints at once with placeholders, then each provider fills in as it finishes.
+
+The local five-hour Claude bar is elapsed time, not quota consumed. Daily token charts use exact, dated Claude log counters, and old rolling-week totals are left out rather than relabelled as daily burn. Devin's local activity is the cumulative total for sessions modified today, so it is not recorded in the daily chart.
+
+With `KITTYMUX_USAGE_LIVE=1`, collectors that offer a live call also fetch real quotas, cached for at least five minutes: Claude through its OAuth usage endpoint, Cursor through its dashboard service and Devin through its seat management service. The network is strictly opt-in, and everything works offline. A failed request backs off for five minutes while the previous rows stay visible with a stale note. Credentials are sent through curl's standard input, never its arguments.
+
+To add a provider, drop a file in `python/collectors/` with two functions: `collect()` for pure local reads that spawn nothing, and optionally `live(cached)` for the network call. A broken collector can never take down the HUD.
+
+## Agents you add
+
+Resume and prompt forms are data, not code. See [Add an agent](/docs/users/sessions-and-restore#add-an-agent) for resume, and [Launch and find agents](/docs/users/launch-and-find-agents#fan-one-task-out-to-several-agents) for fan-out prompts.

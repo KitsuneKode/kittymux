@@ -1,0 +1,27 @@
+{
+  "title": "User guides",
+  "description": "Install kittymux, read the tab bar, move panes, keep track of agents and restore sessions.",
+  "icon": "BookOpen",
+  "root": true,
+  "pages": [
+    "index",
+    "getting-started",
+    "install-and-update",
+    "platforms",
+    "what-you-can-do",
+    "tabs-and-panes",
+    "the-tab-bar",
+    "peek-deck-and-panel",
+    "agent-status",
+    "notifications-and-inbox",
+    "launch-and-find-agents",
+    "sessions-and-restore",
+    "shortcuts",
+    "your-own-shortcuts",
+    "customization",
+    "troubleshooting",
+    "privacy-and-security",
+    "cli-reference",
+    "glossary"
+  ]
+}

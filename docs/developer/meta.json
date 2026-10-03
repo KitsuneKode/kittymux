@@ -1,0 +1,7 @@
+{
+  "title": "Developer",
+  "description": "How kittymux is built, how to test a change safely, and what to work on next.",
+  "icon": "Wrench",
+  "root": true,
+  "pages": ["index", "architecture", "contribute", "testing", "docs-maintenance", "release-checklist", "roadmap"]
+}

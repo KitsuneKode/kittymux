@@ -1,0 +1,84 @@
+---
+title: Roadmap
+description: What to work on next, in order, with why each item matters, what blocks it and what done looks like - verification on a real desktop, the docs site, a workspace switcher and more.
+---
+
+This list is ordered by value to someone who lives in kittymux all day. Each item says what blocks it and how you know it is done. Nothing here is promised for a date. The [feature status list](/docs/users/what-you-can-do#status-at-a-glance) shows what is planned.
+
+## 1. Check the panel and the pointer on a real desktop
+
+**Why.** Two things have only been tested in a virtual display, which cannot show a compositor's behaviour: the docked panel's placement beside the bar, and the native resize pointer. Until a person checks, the panel stays beta.
+
+**Blocked by.** A person on the real compositor. `tests/probe_panel.sh` is written and has not been run.
+
+**What to look at.**
+
+- Does the docked panel sit flush beside the bar, and how long does it take to start?
+- Over the bar's edge in a tab with split panes, is the pointer the macOS theme's resize arrow, centred on the divider? The cursor file itself is healthy: the `macOS` theme has `sb_h_double_arrow`, `ew-resize` and `col-resize`, with 24-pixel images and a centred hotspot. If the arrow still looks wrong, note exactly what you see: a hand, a text cursor, a plain arrow, the wrong resize icon, an offset or a blank.
+- In a single-pane tab the pointer is a hand by design. See [The pointer is a hand over the bar edge](/docs/users/troubleshooting#the-pointer-is-a-hand-over-the-bar-edge).
+
+**Done when.** The result is recorded in [Platforms and compatibility](/docs/users/platforms), and the panel's status in `docs/feature-status.yaml` is updated.
+
+## 2. Build the docs site
+
+**Why.** The pages are written and checked. A site makes them searchable and linkable.
+
+**Blocked by.** Nothing. See [Docs maintenance](/docs/developer/docs-maintenance#the-docs-site) for the contract.
+
+**Done when.** `/docs` renders every page with working navigation, search and images, `Steps` renders correctly, and the docs checks run in continuous integration.
+
+## 3. Workspace switcher
+
+**Why.** A recent-first list of sessions with their agent states, as one key, is what tmux's choose-tree and cmux's workspace list give you. Today Kitty Home does the operations, but it does not show which session has an agent waiting.
+
+**Design notes.** A kitten like the join list: filter by typing, hover and click, `⏎` to switch, needs-you sessions first. It reads the same merged state as the bar. It must not move focus on its own.
+
+**Blocked by.** A decision on the key. Few chords that use ctrl, alt and shift are still free, so check `kittymux keys`, the template and `hyprctl binds -j` first.
+
+**Done when.** A rig drives it with real keys and mouse like `tests/smoke_join_ui.sh`, and the keymap overlay lists it.
+
+## 4. Rename a session safely
+
+**Why.** Renaming a session today leaves the tab titles, the saved file and the journal out of step, and a resumed or renamed title can show the wrong thing.
+
+**Design notes.** One command that updates the tab group, the saved session file and the journal together, validated through kitty's own parser. Kitty persists only titles you set, so a rename must set them.
+
+**Done when.** A rig renames a session, saves, restores in a second kitty, and checks the titles and the journal.
+
+## 5. Open the peek card from the keyboard
+
+**Why.** The card opens only on right-click, so a keyboard user has to use the deck for the same information.
+
+**Design notes.** A chord that opens the card for the tab you pick, or a key in the deck. `peek-kit.py` already takes a tab id.
+
+**Done when.** The card opens from the keyboard in a rig, with the same close behaviour: one `esc`, one `q` or the chord again.
+
+## 6. Type into several panes
+
+**Why.** tmux's synchronize-panes is the one multiplexer feature people ask for that kittymux lacks.
+
+**Design notes.** kitty has `broadcast`. The work is a clear on and off state in the bar, so you cannot type into the wrong panes without seeing it.
+
+**Done when.** A rig shows one keystroke reaching every pane of the tab and none of any other.
+
+## 7. Layout keys
+
+**Why.** Cycle layouts, rotate and swap panes without reaching for the mouse.
+
+**Design notes.** Mostly kitty's own layout actions behind a few chords. The `splits` layout is the one join keeps the shape in, so cycling should not leave it by surprise.
+
+**Done when.** The keys are in the template, the README table and the overlay, and a rig presses them.
+
+## 8. Release
+
+See the [release checklist](/docs/developer/release-checklist): a passing continuous integration run on the release commit, a tag and changelog, a checked `PKGBUILD`, recordings in more than one theme.
+
+## 9. Wider verification
+
+- Screen markers for Gemini, Cursor, OpenCode, Amp and Antigravity against live sessions.
+- A second Wayland compositor, and X11 with a real window manager.
+- macOS, which needs agent detection without `/proc`.
+
+## What will not work, and why
+
+**A sheet that opens when you hover a tab.** kitty sends the tab bar no idle mouse motion and chooses the pointer shape in C over the bar. A sheet can live inside the deck or the docked panel, where hover is real. That is the planned shape of the side sheet. The right-click peek card is the nearest thing that works today.

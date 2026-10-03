@@ -1,0 +1,127 @@
+---
+title: What you can do
+description: A map of everything kittymux adds to kitty, grouped by task, with what is shipped, in beta or planned. Start here when you wonder whether it can do something.
+---
+
+kittymux is a set of small pieces on top of kitty. Each section below names a task and points to the page that covers it.
+
+## Know where each tab is
+
+- A vertical bar with one row per tab: the agent's logo, the title, the branch, the pane count and one state glyph. Colours come from your own theme. See [The tab bar](/docs/users/the-tab-bar).
+- A folder line under each tab, so tabs without a visible directory stay distinguishable. A stable colour per project, and extra emphasis on tabs that look alike.
+- A slim rail, a hidden mode, four edges and named presets. Drag the edge to resize.
+
+## Look at a tab without switching to it
+
+- Right-click a tab for a **peek card**: its state, the question it is asking, branch, folder, panes and the tail of its screen.
+- Press `ctrl+alt+b` for the **deck**: every tab across every session, with live preview, search, hover and keys.
+- Press `ctrl+alt+shift+b` for the **docked panel**: the deck as an always-visible column on Wayland.
+
+See [Peek, deck and panel](/docs/users/peek-deck-and-panel).
+
+## Rearrange panes and tabs
+
+- Join all the panes of a tab into another tab as splits, keeping their shape.
+- Turn a pane into its own tab, move it to a tab you pick, swap panes, number them and jump by digit.
+- Drag a pane's title bar onto a tab, the bar or another pane.
+
+See [Tabs and panes](/docs/users/tabs-and-panes).
+
+## Keep agents in view
+
+- Five states, decided from the screen and hooks and shown the same way everywhere. See [Agent status](/docs/users/agent-status).
+- One desktop notification per event, an inbox for everything, and a key that jumps to the agent that has waited longest. See [Notifications and inbox](/docs/users/notifications-and-inbox).
+- Spawn agents, pick any of them from one list, reopen one you closed, fan one prompt out to several in separate worktrees and see what each changed. See [Launch and find agents](/docs/users/launch-and-find-agents).
+
+## Get your work back
+
+- Save a workspace and restore it with each agent window asking to resume its own conversation. A journal records every agent session as it runs. See [Sessions and restore](/docs/users/sessions-and-restore).
+
+## Make it yours
+
+- Turn each optional piece on or off, pick a layout and keep your own shortcuts. See [Customization](/docs/users/customization) and [Your own shortcuts](/docs/users/your-own-shortcuts).
+
+## Status at a glance
+
+This list is generated from `docs/feature-status.yaml`. Planned means not built.
+
+{/* kittymux:status-table:start */}
+
+### Planned
+
+Not built. The docs say so wherever they mention it.
+
+| Feature | What it does |
+| --- | --- |
+| Side sheet beside the bar | A sheet with more about a tab. Not built; the peek card and the deck cover the need today. |
+| Sheet that opens on hover | Not possible from the bar itself, because kitty sends it no idle mouse motion; it can only live inside a sheet or the panel. |
+| Open the peek card from the keyboard | Today the card opens on right-click; the deck is the keyboard route to the same preview. |
+| Workspace switcher | A recent-first list of sessions with agent states, as one key. |
+| Rename a session | Rename a session and keep its tab titles, saved file and journal in step. |
+| Type into several panes | One keystroke stream into every pane of a tab, like tmux synchronize-panes. |
+| Layout cycle and rotate keys | Keys to cycle layouts and rotate or swap panes. |
+| Documentation site | The docs in this folder rendered by a TanStack Start and Fumadocs app. |
+
+### Beta
+
+Works, with a stated gap.
+
+| Feature | What it does |
+| --- | --- |
+| Docked panel | The deck as an always-visible column on Wayland layer-shell compositors; placement is verified on Hyprland by hand only. |
+| Quickshell and waybar samples | The waybar module uses the tested CLI; the Quickshell sample follows the documented contract but is untested. |
+
+### Shipped
+
+Works today and is covered by a test.
+
+| Feature | What it does |
+| --- | --- |
+| Vertical tab bar | Rows with the agent logo, title, branch, pane count and one state glyph; colours come from your kitty theme. |
+| Bar modes, edges and presets | Full, rail and hidden modes, four edges and named presets, set per kitty with kittymux layout. |
+| Drag to resize the bar | Drag the bar's inner edge; kitty 0.49.2 and later draws the divider itself and shows the native resize arrow in tabs with split panes. |
+| Folder line under each tab | Project, worktree, folder and branch under every vertical tab, so tabs without a visible directory stay distinguishable. |
+| Colour per project | A calm, stable tint per project derived from your theme and kept clear of the state colours. |
+| Emphasis on look-alike tabs | Tabs that show the same title get their project emphasised. |
+| Feature switches | Turn each optional piece of the bar on or off with kittymux features, by flag file or environment. |
+| Pane title bars | The folder line in kitty's per-pane title bars, doubling as drag handles (kitty 0.49.2 and later). |
+| Peek card | Right-click a tab for its state, question, branch, folder, panes and the tail of its screen. |
+| Sidebar deck | Every tab across every session with live preview, search, hover and keyboard control. |
+| Join a tab into another | Move all panes of a tab (or one pane) into another tab as splits, keeping their shape. |
+| Panes by number, swap and move | Number every pane, focus or swap by digit, turn a pane into a tab, drag title bars. |
+| Agent status | One ordered state per agent (limited, waiting, working, done, idle) read from the screen and hooks, shown identically everywhere. |
+| Agent hooks | Claude Code hooks installed and removed with kittymux hooks; other agents call mux-status. |
+| Explain a state | kittymux explain says why each pane is in its state and why each notification was sent or held back. |
+| Desktop notifications | One notification per event with the agent's own mark and a Jump to it action; never moves your focus. |
+| Inbox | Every needs-you, limit and completion as one typed, de-duplicated event with a stable snapshot file for widgets. |
+| Spawn agents | Start one or several agents in a new tab or split in the current directory. |
+| Pick | One searchable list of what needs you, every running agent, closed conversations and new agents. |
+| Reopen a closed conversation | Bring back the agent conversation you closed last, asking before it resumes. |
+| Pin and settle | Keep a conversation at the top of pick, or fold closed ones away. |
+| Mute and snooze | Quiet popups and bells for everything or one agent window; the inbox keeps every event. |
+| Fan-out | One prompt to several agents, each in its own worktree, branch and tab, then compare the results. |
+| What an agent changed | Files and lines changed since a run started, without writing into your repository. |
+| Sessions that resume conversations | Save and restore kitty sessions with each agent window coming back asking to resume its own conversation. |
+| Agent journal | Every agent session recorded as it runs, for history and crash recovery. |
+| Session templates | Ready project sessions - plain, agent, duo and review. |
+| Leader mode | Opt-in tmux-style prefix on kitty's modal mappings. |
+| Usage HUD | Local usage numbers per provider; live quotas only when you turn the network on. |
+| Clickable file references | Ctrl+shift+click path/file.py:42:7 to open it in your editor at the line (kitty 0.49.2 and later). |
+| Dim inactive panes | kittymux dim uses kitty's own shader; off by default and needs the shader-slang package. |
+| Screenshot | A PNG rendered by kitty itself, written with mode 0600. |
+| Keymap overlay | Every key, mouse gesture and command in one searchable overlay, including your own kitty and Hyprland shortcuts. |
+| Shortcut clash report | kittymux keys and kittymux doctor list every chord both your config and kittymux define. |
+
+{/* kittymux:status-table:end */}
+
+## How kittymux compares
+
+|                 | kittymux                         | [cmux](https://github.com/manaflow-ai/cmux) | [herdr](https://terminaltrove.com/herdr/) |
+| --------------- | -------------------------------- | ------------------------------------------- | ----------------------------------------- |
+| What it is      | A configuration layer for kitty  | Its own macOS terminal, based on Ghostty    | A multiplexer that runs inside a terminal |
+| Platform        | Linux (Wayland and X11)          | macOS                                       | Cross-platform                            |
+| Your terminal   | Stays kitty                      | Replaces it                                 | Any                                       |
+| Background daemon | None                           | An app                                      | One binary                                |
+| Agent state     | Hooks, plus the screen           | Notifications and hooks                     | Process detection                         |
+
+Choose kittymux if you already live in kitty and do not want a second multiplexer between you and your terminal. tmux stays the right tool for remote work.

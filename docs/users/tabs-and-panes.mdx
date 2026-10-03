@@ -1,0 +1,100 @@
+---
+title: Tabs and panes
+description: Move panes and tabs around - join a whole tab into another as splits, turn a pane into a tab, swap panes, jump by number and drag title bars - with the keyboard or the mouse.
+---
+
+kitty calls a tab a **tab** and a split inside it a **pane** (kitty's own docs say "window"). This page covers moving them: pane to tab, tab to panes, and pane to pane.
+
+## Join a tab into another
+
+Press `ctrl+alt+shift+j` in the tab you want to move. A list of your other tabs opens over the pane. Choose one and every pane of your tab becomes a split of that tab, keeping the arrangement it had. The emptied tab closes itself.
+
+You can also run it from a shell inside the tab:
+
+```sh
+kittymux join                          # open the list
+kittymux join --to 12 --side below     # no list: join into tab id 12, below its active pane
+kittymux join --pane                   # move only this pane, not the whole tab
+```
+
+Find a tab id with `kitty @ ls`. The command acts on the kitty it is started in, and on the pane it is started from.
+
+### Controls
+
+The list takes the keyboard and the mouse, and you can mix them.
+
+| To                                      | Keyboard                                              | Mouse                    |
+| --------------------------------------- | ----------------------------------------------------- | ------------------------ |
+| Open the list                           | `ctrl+alt+shift+j`                                    |                          |
+| Narrow the list                         | Type. Words match the title, folder or state, in any order. `Backspace` deletes. |                          |
+| Choose a tab                            | `↑` `↓`, or `ctrl+n` `ctrl+p`. `PgUp` `PgDn` move five rows. | Hover a row.         |
+| Join                                    | `⏎`                                                   | Left click a row.        |
+| Pick where the first pane goes          | `Tab` cycles **auto**, **to the right**, **below**.   |                          |
+| Move the whole tab or only this pane    | `ctrl+t` toggles between them.                        |                          |
+| Clear the filter, then close            | `Esc`. The first press clears a filter, the next closes. | Right click does nothing. |
+| Close at once                           | `ctrl+c`, or press `ctrl+alt+shift+j` again.          |                          |
+
+The header always names what moves, for example `Join “api” (3 panes) into…`, and the footer lists these keys. A tab that needs you comes first. A row shows the tab's state glyph, title, folder line and pane count, and says **other window** when the tab lives in another OS window.
+
+### What "keeping the shape" means
+
+Moving panes one by one splits the same pane again and again. In our test a three-pane tab joining a two-pane tab arrived as panes only 7 columns wide. Join does it differently:
+
+1. It reads where each pane sits in the tab being moved, before moving anything.
+2. The first pane goes to a whole side of the target tab, on the side you chose.
+3. Every other pane goes next to the pane it was beside before, on the same side of it.
+
+So a big pane with a stack of two beside it arrives as a big pane with a stack, taking one side of the target tab. **Auto** picks the right side when the target's active pane is wider than tall, and below when it is taller.
+
+### Limits
+
+- The shape-keeping placement needs the target tab to use kitty's **splits** layout, which is kittymux's default. In another layout, such as `tall`, `grid` or `stack`, kitty places the panes itself. They all arrive, but not in their old arrangement.
+- You cannot join a tab into itself, so it is never listed.
+- There is no single undo. Press `ctrl+alt+d` on a pane to give it its own tab again, or `ctrl+alt+shift+d` to send it to a tab you choose.
+- The list opens over the active pane. In a narrow pane it drops the pane count, then the folder line, before it shortens a title.
+
+### Pull a tab in instead
+
+The same mover also runs from the deck. Open it with `ctrl+alt+b`, select a tab and press `a`: that tab's panes become splits of the tab you are in. See [Peek, deck and panel](/docs/users/peek-deck-and-panel).
+
+## Turn a pane into a tab
+
+| To                                         | Keys                                                    |
+| ------------------------------------------ | ------------------------------------------------------- |
+| Give the focused pane its own tab          | `ctrl+alt+d`                                            |
+| Send it to a tab you choose                | `ctrl+alt+shift+d`                                      |
+| Do the same from the deck                  | Open the deck, select or hover the pane and press `t`.  |
+| Do the same with the mouse                 | Show title bars and drag the pane onto the bar's empty space or its **+**. |
+
+## Number, focus and swap panes
+
+kittymux follows tmux's `display-panes`: press a key and every pane shows a digit.
+
+| To                                          | Keys                                                                 |
+| ------------------------------------------- | -------------------------------------------------------------------- |
+| Show digits, then focus a pane              | `ctrl+alt+e`, then the digit. With two panes it jumps straight over. |
+| Focus pane N directly                       | `ctrl+alt+shift+1` to `9`, using the same numbers.                   |
+| Show digits, then swap with a pane          | `ctrl+alt+shift+y`, then the digit.                                  |
+| Move focus to a neighbour                   | `ctrl+alt+h` `j` `k` `l`, or `shift+alt+` an arrow key.              |
+| Go to the last pane                         | `ctrl+alt+o`                                                         |
+| Split below, and split to the right         | `ctrl+alt+enter` and `ctrl+shift+enter`.                             |
+| Zoom a pane, then equalize                  | `ctrl+alt+z`, `ctrl+alt+0`                                           |
+| Resize a pane                               | `alt+shift+h` `j` `k` `l`                                            |
+
+If you prefer letters to digits, set `visual_window_select_characters asdfghjkl` in your `kitty.conf`. The direct keys stay numeric.
+
+## Pane title bars and drag and drop
+
+Press `ctrl+alt+shift+c` to show a thin title bar on every pane. Press it again to hide them. The bars carry the same folder line as the tab bar and double as drag handles. They need kitty 0.49.2 or later.
+
+| Drag                                                    | Result                                                              |
+| ------------------------------------------------------- | ------------------------------------------------------------------- |
+| A tab in the bar                                        | Reorders tabs. A tab swaps once you pass the middle of the one you cross. |
+| A pane's title bar onto a tab in the bar                | Moves the pane into that tab.                                       |
+| A pane's title bar onto the **+** or empty bar space    | Turns the split into its own tab.                                   |
+| A pane's title bar onto another pane's edge             | Inserts it there.                                                   |
+| A pane's title bar onto another pane's title bar        | Swaps the two.                                                      |
+
+kitty has no gesture for dropping a whole tab onto a pane. Use [join](#join-a-tab-into-another) for that.
+
+To move a tab with the keyboard, use `ctrl+alt+shift+←` and `ctrl+alt+shift+→` on a horizontal bar, or `ctrl+alt+shift+↑` and `ctrl+alt+shift+↓` on a vertical one. Both always work.

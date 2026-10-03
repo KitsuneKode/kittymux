@@ -60,7 +60,8 @@ remote work.
   already-placed pane it goes next to (from the source tab's real pixel geometry); the kitten moves them with kitty's own `Tab.detach_window` → `attach_windows(next_to=, horizontal=, after=)` (what its drag-and-drop uses; `detach-window
   --target-tab` pane by pane splits ONE pane again and again: 15/7/7-column slivers) and pushes the first pane to the tab's edge (`move_to_screen_edge`) so the block gets a whole side. Splits layout only: another layout places windows
   itself. The picker (hover/click/keys, side, tab-or-pane) runs in the kitten's own process; the move runs in kitty (`handle_result`). Row widths come from `row_budget` (title, then folder, the pane count goes first).
-- `docs/` — `compatibility.md` (which agent markers are verified), `audit-*.md`, `launch-checklist.md`
+- `docs/index.mdx` + `docs/users/` + `docs/developer/` (+ `meta.json`, `feature-status.yaml`, `promotion-manifest.yaml`, `troubleshooting-symptoms.yaml`) — the published docs, written for a TanStack Start + Fumadocs site (frontmatter `title`/`description`, `/docs/...` links, `/assets/...` images, only Fumadocs components). The status tables on `users/what-you-can-do.mdx` are GENERATED from `feature-status.yaml` by `tools/docs_status.py` (`--check` in the tests). `tests/test_docs.py` guards frontmatter, navigation, links and anchors, MDX safety, every `ctrl+alt` chord a page names being bound, and the CLI reference covering every command. A change to a command, a key or the feature YAML updates the docs in the same commit.
+- `docs/` (flat `*.md`) — `compatibility.md` (which agent markers are verified), `audit-*.md`, `launch-checklist.md`; the source notes `promotion-manifest.yaml` maps to published pages
 - `bin/mux-status` — agent hooks → `kittymux_status` window user var → recorded by `pane-state.py`
 - `python/sidebar-kit.py` — `kitten` overlay: sidebar with real hover/click
   + live pane preview (bound `ctrl+alt+b`)
@@ -241,6 +242,7 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   `bash tests/smoke_titles.sh` (what a tab is CALLED: fresh shell, named/renamed/cleared tab, program titles, agents with and without a conversation title, a stale title, the resume prompt, hostile/long/blank/path titles),
   `bash tests/smoke_join.sh` (a three-pane tab joins a two-pane tab: all panes present, the big-pane + stack shape kept, no pane narrower than 18 columns, same-tab/missing-tab/bad input change nothing, a tall-layout target works) and
   `bash tests/smoke_join_ui.sh` (the picker with real key and mouse events: chord, one Esc, no stacking, filter, side, tab/pane, hover, Enter, left click joins, right click does not),
+  `python3 -m unittest tests.test_docs` (the published docs: links, chords, CLI coverage, status table, voice) and
   `bash tests/smoke_demo.sh` (`kittymux demo` opens every showcase tab — the front door must stay healthy),
   `bash tests/smoke_keys.sh` (the keymap overlay: one Esc/q/the chord closes it, no stacking, typing filters),
   `bash tests/smoke_openref.sh` (ctrl+shift+click on `src/app.py:42:7` opens `$EDITOR +42`; kitty ≥ 0.49.2),

@@ -1,0 +1,51 @@
+---
+title: Privacy and security
+description: What kittymux reads, what it stores and where, what never leaves your machine, the trust boundaries it defends and how to report a vulnerability privately.
+---
+
+kittymux is a configuration layer for kitty. It runs as you, inside your kitty process, plus a few helper scripts. There is no server, no network listener and no always-on daemon. It reads pane text and agent state locally and never transmits it.
+
+The optional usage collectors call each provider's own API with credentials you already have, and only when you turn them on with `KITTYMUX_USAGE_LIVE=1`.
+
+Anything it shows or stores that came from a terminal is treated as untrusted text. An agent, a file you `cat` or a web page's output can write whatever it likes to a pane.
+
+## What is read and stored
+
+| What                                    | Where                                   | Notes                                                                                   |
+| --------------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------- |
+| Agent state and one short reason line   | `scan-<pid>.json`                       | Only the matched marker and one line of context, at most 100 characters, with control characters removed. |
+| Notification text                       | The desktop notification                | Contains a line of your screen unless private mode is on.                               |
+| Inbox events                            | `inbox.jsonl`, `inbox-snapshot.json`    | Bounded. The body is empty in private mode. Screen text beyond the bounded body is never stored. |
+| Decision log                            | `decisions-<pid>.jsonl`                 | Reason codes and window ids, never screen text.                                         |
+| Agent journal                           | `agent-sessions.json`                   | Directory, tab title, command with its flags, session id, counts. Bounded to 300 records and 90 days. |
+| Saved sessions                          | `sessions/*.kitty-session`              | Directories, commands, titles and session ids. No conversation content.                 |
+| What an agent changed                   | `changes-<pid>.json`, `changes-objects/` | A private object store. Your repository is never written to.                           |
+| Screenshots                             | `~/Pictures/kittymux-<time>.png`        | Mode `0600`, because they can show anything that was on screen.                         |
+
+The state directory is `~/.local/state/kittymux` with mode `0700`, and every file kittymux writes is `0600` from creation, replaced atomically. Nothing leaves your machine.
+
+To reduce what notifications and the inbox hold, turn on private mode with `touch ~/.local/state/kittymux/notify-private`.
+
+## Trust boundaries
+
+| Boundary                         | Risk                                                               | Control                                                                                                              |
+| -------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| Program output to kitty          | An escape sequence in output controls kitty.                       | Use `allow_remote_control socket-only`. A real-kitty test shows `yes` obeys a printed escape sequence and `socket-only` refuses it. |
+| The control socket               | A squatted or world-reachable socket in `/tmp`.                    | Use `listen_on unix:${XDG_RUNTIME_DIR}/mykitty`. kittymux only talks to sockets you own.                             |
+| Terminal text to bar and notifications | Control characters, markup injection, option injection.      | Stripped, bounded and markup-escaped. `notify-send` is called with `--`. Icons come only from kittymux's own table, never from agent output. |
+| Window titles to menus           | A title with a newline, NUL, ESC or bidi override forges rows.     | Every field shown in `pick` is cleaned, and a row with a control character is refused at the menu boundary.          |
+| Window variables to quiet        | A program snoozes its own "needs you" popup.                       | A snooze lives in a private file, never a window variable, and ends are capped at 30 days.                           |
+| Agent output to what we run      | An agent causing a command to run.                                 | kittymux never executes text from a pane. Resume commands are rebuilt as arguments from validated pieces, never through a shell. |
+| Session files                    | An edited file running something unexpected.                       | A restored agent asks first, and its record is validated. Anything else opens a shell.                               |
+| Output that leaves the machine   | A pasted `sessions list --json` leaking a token passed as a flag.  | Secret-looking flag values are redacted from printed output. The private journal keeps the real command so recovery works. |
+| Fan-out prompts                  | A prompt becoming a shell command or an option.                    | One argument, never through a shell. Refused if it starts with `-`, contains NUL or is over 8000 characters.         |
+| Running git in your repositories | A hostile repository's config, hooks or filters run in the background. | A detached, low-priority helper with the file-system monitor, external diff and textconv off, no terminal and `safe.directory` honoured. |
+| Destructive commands             | `uninstall --purge` deleting a mistyped state directory.           | Refused unless the directory is recognisably kittymux's. It never follows a symlink.                                 |
+
+## Notification safety
+
+Notification text can come from the agent's screen. It is stripped of control characters, limited in length (60 for the title, 120 for the body) and escaped for markup, because many daemons render Pango markup. Every subprocess is started with an argument list, and the helper checks its own arguments, because it takes arguments from anyone who can run it. Each helper lives at most 30 seconds in its own session.
+
+## Report a vulnerability
+
+Report it privately through [GitHub's private vulnerability reporting](https://github.com/KitsuneKode/kittymux/security/advisories/new). Do not open a public issue for something exploitable. Include what you saw, the kitty and kittymux versions (`kitty --version`, `kittymux version`) and a minimal way to reproduce it. A reply comes within about a week, and a fix and an advisory follow once it is confirmed. Only the latest release and `main` are supported.

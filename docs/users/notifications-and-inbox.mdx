@@ -1,0 +1,124 @@
+---
+title: Notifications and inbox
+description: What reaches you and when - one desktop notification per event, a bell that never moves your focus, an inbox for everything, and the switches that quiet it without losing anything.
+---
+
+kittymux tells you about an agent only when you are not looking at it. Focusing the agent clears the cue.
+
+## Cues when you are elsewhere
+
+| Cue                                  | When                                                                                          | Turn it off                                                    |
+| ------------------------------------ | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Tab glyph and a stripe on the rail   | Any tab and any pane of it. A question in a split you are not in still lights the tab.        | Not switchable.                                                |
+| Header badges `! 2  ✓ 1`             | Agents that need you or finished unseen, across every tab of the window.                      | Not switchable.                                                |
+| Desktop notification: needs you or limit | An agent starts waiting or hits its limit. It shows the question.                         | `kittymux notify off`, or `KITTYMUX_NOTIFY=0`.                 |
+| Desktop notification: finished       | A run of 15 seconds or more ends unseen. Quick replies stay quiet.                            | `kittymux notify done off`, or `KITTYMUX_NOTIFY_DONE=0`.       |
+| Window manager urgency               | An agent starts waiting or hits its limit. This is kitty's own bell path.                     | `touch ~/.local/state/kittymux/bell-off`, or `KITTYMUX_BELL=0`. |
+| `ctrl+alt+y`                         | Jumps to the next agent that needs you, longest-waiting first.                                | Not switchable.                                                |
+
+A window seen for the first time never notifies, so restarting kittymux does not replay old completions.
+
+## Who sends what
+
+| Source                                                       | Shown by kittymux?                                                                          |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| kittymux: needs you, hit a limit, finished                   | Yes. This is the one notification per event.                                                |
+| The agent itself, through an OSC 9, 99 or 777 escape         | Dropped from the desktop by a `filter_notification` rule in `kittymux.conf`, but recorded in the inbox. |
+| kitty's own, such as command finished or config reload       | Untouched.                                                                                  |
+| Any other program in a terminal                              | Untouched, unless its title starts with an agent name.                                      |
+
+Before kittymux filtered anything, an event could notify twice: once from the agent through kitty and once from kittymux. Now each event notifies once. Delete the `filter_notification` line in `kittymux.conf` to let the agents' own notifications through again, and expect doubles.
+
+Every notification wears its agent's own mark, with the kitty icon as the fallback. Notifications are rate limited: one per window every 10 seconds and five in total every 10 seconds. The sixth inside 10 seconds is not shown, though the bar still shows the state.
+
+### Jump to it
+
+Notifications carry a **Jump to it** action. It focuses that window through kitty's remote control, then `hyprctl` on Hyprland, and lands on the pane that is asking. With dunst, use middle-click or `dunstctl action`. With mako or swaync, click. A daemon without actions still shows the text.
+
+### A notification never takes your focus
+
+A bell in an unfocused window makes kitty ask the window manager for attention. Some compositors answer by focusing that window and switching workspace, for example Hyprland with `misc:focus_on_activate` on. Then every bell becomes a forced focus change.
+
+kittymux reads that option when kitty loads its configuration. When the compositor would do this, it turns the bell request off and does not ring its own bell. `kittymux doctor` says so, and `kittymux explain` records each skipped bell. The only things that move focus are things you do: a click, `kittymux inbox jump`, `ctrl+alt+y` or a notification's Jump to it action.
+
+To keep attention requests on anyway, `touch ~/.local/state/kittymux/attention-on`. Other compositors are not inspected. If a bell steals focus on sway, KDE or GNOME, set `window_alert_on_bell no` in your `kitty.conf`.
+
+## Quiet things down
+
+Muting quiets the interruption, never the news. Every event still goes to the inbox, the bar and `kittymux pick`.
+
+```sh
+kittymux notify mute 1h        # no popups and no bells for an hour (up to 30 days)
+kittymux notify status         # on, muted for another 42m, or off; bells; unread in the inbox
+kittymux notify unmute
+kittymux notify off            # everything off; "on" turns it back on
+kittymux notify done off       # only the finished popups; "done on" restores them
+kittymux snooze 2h             # this agent window only; --window ID, or --clear to end it
+```
+
+A snooze is stored in a private file, not in a window variable. Any program in a window can set its own window variables with an escape sequence, so an agent could otherwise silence the very popup that says it wants something. Snoozes and mutes are capped at 30 days, and a corrupt value never silences anything for good.
+
+### Private mode
+
+A notification shows a line of your screen, such as "Approve: rm -rf x?". Some daemons keep a history or show notifications on the lock screen. To reduce every notification to "agent needs you", run `touch ~/.local/state/kittymux/notify-private` or set `KITTYMUX_NOTIFY_PRIVATE=1`. In private mode the inbox keeps no message body either.
+
+## The inbox
+
+Everything that wants your attention is a typed event in one private store, from the most authoritative source available, and de-duplicated: the same occurrence reported by several sources inside 45 seconds is one event and one popup.
+
+| Source   | What it is                                                                                                           | Confidence                          |
+| -------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `agent`  | What the agent announced itself: its own notification, captured natively from kitty, or its hook.                    | High                                |
+| `hook`   | The agent's hooks through `mux-status`.                                                                              | High                                |
+| `screen` | Positive evidence on the pane's screen: a permission prompt, usage-limit text, or a busy marker that went quiet.     | Low for a completion, high otherwise |
+
+| Kind         | Meaning                                                              | Pops up?                                                                                            |
+| ------------ | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `permission` | An approval prompt.                                                  | Yes.                                                                                                |
+| `question`   | The agent asks you something.                                        | Yes.                                                                                                |
+| `limit`      | A usage or rate limit. The reset time is parsed when it is shown.    | Yes, once per agent per reset.                                                                      |
+| `done`       | A run finished.                                                      | Only if the agent said so itself after 15 seconds of work, or if inferred from a quiet screen after 60 seconds. |
+| `error`      | The agent reported a failure.                                        | Inbox only.                                                                                         |
+| `info`       | Anything else the agent said.                                        | Inbox only.                                                                                         |
+
+Text from an agent is classified conservatively. What is not recognised is `info`, never guessed into a completion. "Waiting for your input" is an idle notice, not a new completion.
+
+```sh
+kittymux inbox                  # unread, newest first. --all shows read ones too; --json prints the snapshot
+kittymux inbox ack ID           # mark read. "ack --all" marks everything
+kittymux inbox clear            # dismiss unread; "clear --all" dismisses everything
+kittymux inbox jump             # focus the one that needs you most; marks it read
+kittymux inbox watch            # one JSON line per new event, for scripts
+```
+
+Focusing a window acknowledges everything it reported.
+
+### For widgets
+
+`~/.local/state/kittymux/inbox-snapshot.json` is the stable file a shell panel watches. It is rewritten atomically after every change.
+
+```json
+{"version": 1, "updated": 1790000000.0, "unread": 2, "needs_you": 1,
+ "events": [ {"id": "18f3a-4321-7", "t": 1790000000.0, "pid": 4321, "w": "77", "kind": "permission", "severity": "needs-you",
+              "agent": "claude", "tab": "api", "title": "claude needs permission", "body": "Claude needs your permission to use Bash",
+              "sources": ["agent", "screen"], "confidence": "high", "status": "unread", "count": 2} ] }
+```
+
+`events` is newest first, at most 60. `pid` and `w` identify the kitty process and the window. New fields may be added, so consumers must ignore fields they do not know. The version changes only for breaking changes.
+
+A panel needs only to watch that file, render `events`, and run `kittymux inbox jump ID` or `ack ID` on click. For a status bar, `kittymux inbox --waybar` prints a ready module:
+
+```jsonc
+// ~/.config/waybar/config.jsonc
+"custom/kittymux": { "exec": "kittymux inbox --waybar", "return-type": "json", "interval": 5, "on-click": "kittymux pick --menu rofi", "hide-empty-text": true }
+```
+
+It is empty when nothing is unread, shows `◆ N` when N agents need you and `✓ N` for finished-unseen. A Quickshell starting point lives in `addons/quickshell`. It follows this contract and is untested, because Quickshell is not installed on the author's machine.
+
+## Known limits
+
+- **The filter works on titles.** kitty's `filter_notification` cannot see which window sent a notification, so a program that titles its own notification "Claude" or "Codex" is dropped too.
+- **Events the screen scanner cannot see are lost.** If an agent notifies about something kittymux cannot detect, nobody shows it. Remove the `filter_notification` line to get the agents' own notifications back.
+- **Notification text is screen text.** Private mode is opt-in.
+- **Daemons differ.** Tested with dunst on Hyprland. Mako, swaync, KDE and GNOME are untested.
+- **The jump action uses kitty's socket.** If it lives in world-writable `/tmp`, other local users could squat the name. `kittymux doctor` warns about this.

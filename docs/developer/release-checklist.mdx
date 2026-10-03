@@ -1,0 +1,78 @@
+---
+title: Release checklist
+description: What must be true before you announce a release, what is still open, and the claims to avoid - early-adopter ready is the honest state today, not ready for every terminal.
+---
+
+The honest state today is early-adopter ready, not ready for every terminal. Tick these before announcing. An unchecked item is not done.
+
+## Must: a stranger can install it and it works
+
+- [x] `install.sh` is idempotent, backs up `kitty.conf` and never overwrites your keys.
+- [x] `kittymux doctor` explains every failure with the fix.
+- [x] `kittymux demo` shows everything in an isolated window.
+- [x] `kittymux upgrade` and `kittymux hooks --remove` give a clean path in and out.
+- [x] Unit and shell suites, `shellcheck -S error` and a continuous integration workflow.
+- [x] A fresh-home install, reinstall, validation and uninstall test.
+- [x] Real-kitty rigs for states, clicks, drags, resize, the native divider, titles, join and the keymap overlay.
+- [x] The README explains the states, privacy, keys, drag and drop, layout and upgrading.
+- [x] The docs tree, with drift tests for links, chords and the CLI reference.
+- [ ] A first passing GitHub continuous integration run recorded on the release commit.
+- [ ] Screenshots or a recording for more than one theme. The demo ships one theme, and some images predate the status redesign.
+- [ ] A tagged release and changelog, with `packaging/PKGBUILD` checked against the tag.
+
+## Should
+
+- [ ] Verify screen markers against live Gemini, Cursor, OpenCode, Amp and Antigravity sessions.
+- [ ] Test on a second compositor, such as sway or niri, and on X11 with a real window manager.
+- [ ] Run `tests/probe_panel.sh` by hand on Hyprland, to move the docked panel from beta to shipped.
+- [ ] Decide the story for macOS, which needs a foreground-process read that does not use `/proc`.
+- [ ] Record a 60-second screen capture: the spinner, `!` with its question, a `⊘` limit, and dragging a split into a tab.
+- [ ] Build the docs site. See [Docs maintenance](/docs/developer/docs-maintenance#the-docs-site).
+
+## Before each release
+
+<Steps>
+
+<Step>
+
+### Run the gates
+
+Run the unit suite, the shell tests and every rig you can. Record each `SKIP` with its reason and the kitty version.
+
+</Step>
+
+<Step>
+
+### Check the docs
+
+Run `python3 -m unittest tests.test_docs` and `python3 tools/docs_status.py --check`. Update `docs/promotion-manifest.yaml` dates for pages you reconciled.
+
+</Step>
+
+<Step>
+
+### Write the changelog line
+
+Add a line under *Unreleased* in `CHANGELOG.md` for each user-visible change, then move them under the new version.
+
+</Step>
+
+<Step>
+
+### Apply it to your own kitties by reload only
+
+Record window, tab and pane counts for every live kitty, run `kittymux upgrade`, and compare. Never restart a live kitty to apply a change.
+
+</Step>
+
+</Steps>
+
+## Do not claim
+
+- **"Works everywhere."** See [Platforms and compatibility](/docs/users/platforms).
+- **"Zero overhead."** The bar draw measured about 0.09 ms per tab, and the scan tick is 0.5 seconds. That is low, not zero.
+- **"Zero background processes."** There is no always-on daemon, but overlays, collectors and notifications use bounded workers and processes.
+- **"All bugs fixed"** or **"guaranteed viral."** Keep test evidence and honest compatibility limits instead.
+- **Live-provider or compositor verification** from a mocked response or a virtual-display run. Keep continuous integration results, release tags, live-provider checks and compositor checks separate from local test results.
+
+A demo should use synthetic panes and private state. Redact project paths, prompts and account details.

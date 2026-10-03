@@ -1,0 +1,116 @@
+---
+title: Troubleshooting
+description: Symptoms, likely causes and fixes - shortcuts that do nothing, an old-looking bar, missing logos, wrong notifications, early finishes, focus jumps, the resize pointer and join placement.
+---
+
+Start with the health check. It lists what is off and how to fix it, and it covers most of the cases below.
+
+```sh
+kittymux doctor
+```
+
+## A shortcut does nothing
+
+**Cause.** The chord never reached kitty, or another binding replaced it.
+
+1. **The window manager took it.** Hyprland handles a global chord before kitty. `kittymux doctor` lists chords Hyprland binds that kittymux also uses. Check one yourself with `hyprctl binds -j`.
+2. **Another binding replaced it.** kitty uses the last definition of a chord, and kittymux's keys load after yours. Run `kittymux keys` to list every chord both define. See [Your own shortcuts](/docs/users/your-own-shortcuts).
+3. **It is not bound.** Press `ctrl+alt+/` and search for it. If it is missing, run `kittymux upgrade`.
+4. **tmux has focus.** Only the keys tmux really binds pass through to it; everything else stays kitty's.
+
+**Fix.** Rebind the chord in the template, or put your own `map` below the kittymux `include` lines. See [Resolve a clash](/docs/users/your-own-shortcuts#resolve-a-clash).
+
+## kittymux is not found
+
+**Cause.** `~/.local/bin` is not on your `PATH`.
+
+**Fix.** Add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile and open a new shell. Until then, run `~/kittymux/bin/kittymux`. The installer prints this when it is needed.
+
+## The bar looks old after an upgrade
+
+**Cause.** kitty caches `tab_bar.py` for the life of a running instance.
+
+**Fix.** Run `git pull && kittymux upgrade`. It refreshes the links and reloads every running kitty twice. A new kitty window picks up the new bar at once. If `doctor` says a kitty was updated while it was running, save with `ctrl+alt+shift+s`, quit that kitty and start it again.
+
+## Logos are missing or show as boxes
+
+**Cause.** The bundled icon font loads only when kitty starts. A glyph added to the font reaches a running kitty only after a restart.
+
+**Fix.** Restart kitty once after the first install, and after an upgrade that adds a logo. Until then kittymux leaves the logo out instead of drawing a box. Your sessions come back through `ctrl+alt+shift+s`.
+
+## Notifications are doubled or missing
+
+**Doubled.** You removed the `filter_notification` line in `kittymux.conf`, or a program titles its own notification with an agent's name. Put the line back to have kittymux own agent notifications.
+
+**Missing.** Check these in order:
+
+1. `kittymux notify status` says whether notifications are off, or muted and for how long.
+2. `kittymux snooze` may be active for that window. Run it inside the window with `--clear`.
+3. You were looking at the agent, so nothing fires. Focusing an agent clears its cues.
+4. The run was shorter than 15 seconds, or kittymux did not know how long it ran. Finished notifications need 15 seconds of known work.
+5. You hit the rate limit: one per window every 10 seconds and five in total.
+6. Your notification daemon is not running or has no icon support.
+
+`kittymux explain` shows, for every notification, whether it was sent or why it was held back.
+
+## An agent shows as finished too early
+
+**Cause.** Without hooks, a quiet screen is the only evidence, so a pause between tool calls can look like the end.
+
+**Fix.** Run `kittymux hooks --install`. With the `Stop` hook, only the agent's own word ends a turn. `kittymux doctor` says when a hook event is missing. Then run `kittymux explain` to see which evidence ended the turn. See [When is something "done"?](/docs/users/agent-status#when-is-something-done).
+
+## A bell moves my focus
+
+**Cause.** A bell in an unfocused window makes kitty request attention, and some compositors answer by focusing that window and switching workspace. Hyprland does this when `misc:focus_on_activate` is on.
+
+**Fix.** kittymux reads that option and turns the bell request off, so this should not happen. `kittymux doctor` reports it. On sway, KDE or GNOME, which kittymux does not inspect, set `window_alert_on_bell no` in your `kitty.conf`. To keep attention requests on anyway, `touch ~/.local/state/kittymux/attention-on`. See [A notification never takes your focus](/docs/users/notifications-and-inbox#a-notification-never-takes-your-focus).
+
+## The pointer is a hand over the bar edge
+
+**Cause.** This is how kitty works, not a fault.
+
+- Over the tab bar kitty always shows a hand, and ignores shape requests there.
+- kitty hit-tests split borders only in a tab with two or more panes. In a single-pane tab nothing under the pointer is a border, so there is no resize arrow.
+
+**What you get.** In a tab with split panes, the native resize arrow appears over the divider. In a single-pane tab, the bar's last two columns are the grab zone, and the pointer stays a hand. The docked panel shows a resize cursor on its edge everywhere.
+
+If the arrow in a split tab looks wrong, such as the wrong shape, offset or missing, the cursor comes from your compositor's cursor theme. Check that the theme has the `sb_h_double_arrow` cursor and the aliases `ew-resize` and `col-resize`.
+
+## Join does not place panes as expected
+
+- **The target is not in the splits layout.** Placement that keeps the old shape needs kitty's `splits` layout. In `tall`, `grid`, `stack` or another layout, kitty places the panes itself. See [Limits](/docs/users/tabs-and-panes#limits).
+- **The list says there is no other tab.** Join lists every tab but the one being moved. Open another tab first.
+- **A tab you expected is missing.** Tabs in other OS windows are listed with **other window**. Clear the filter if you typed one.
+- **The command says to run it from a pane.** `kittymux join` acts on the kitty and pane it is started from. Run it inside a kitty with `allow_remote_control socket-only` and a `listen_on` socket.
+- **The panes arrived narrow.** Every pane has to fit in the target tab, so joining several panes into a small or already split tab leaves each little room. Press `ctrl+alt+0` to equalize the panes, or join into a wider tab.
+
+## Doctor warns about the remote control socket
+
+**Cause.** The recommended settings are `allow_remote_control socket-only` and `listen_on unix:${XDG_RUNTIME_DIR}/mykitty`. `doctor` warns when you use `allow_remote_control yes` or a socket in `/tmp`.
+
+**Why it matters.** With `yes`, a program in a terminal can control kitty with an escape sequence, such as an agent's tool output or a file you `cat`. A socket in the world-writable `/tmp` can be created ahead of you by another local user. kittymux only talks to sockets you own.
+
+**Fix.** Use the recommended lines. See [Install and update](/docs/users/install-and-update#recommended-remote-control-settings).
+
+## A restored agent asks before it resumes
+
+**Cause.** This is on purpose. A restored agent window never silently re-enters a conversation.
+
+**What to press.** `⏎` resumes, `n` starts a new conversation, `s` opens a shell and `a` resumes this and every other waiting prompt for two minutes. To skip the question, set `KITTYMUX_RESUME=auto`. See [The restore prompt](/docs/users/sessions-and-restore#the-restore-prompt).
+
+## Collect evidence
+
+When something is still wrong, these show what kittymux sees:
+
+```sh
+kittymux version
+kitty --version
+kittymux doctor
+kittymux explain --last 20
+```
+
+For bar drag problems, start kitty with `KITTYMUX_DEBUG=1`. Errors go to `~/.local/state/kittymux/barsize-debug.log`. Tab bar errors go to `tab_bar-error.log` in the same directory.
+
+## Report a problem
+
+Open an issue on GitHub with the output above, your window manager and what you expected. Report a vulnerability privately instead. See [Privacy and security](/docs/users/privacy-and-security#report-a-vulnerability).

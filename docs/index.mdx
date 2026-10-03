@@ -1,0 +1,81 @@
+---
+title: Documentation
+description: Run coding agents in kitty and always know which one needs you. Install kittymux, learn the tab bar and deck, move panes, and recover when something looks wrong.
+---
+
+kittymux turns [kitty](https://sw.kovidgoyal.net/kitty/) into a workspace for several coding agents at once. It adds a vertical tab bar that says where each tab is and what its agent is doing, a deck for jumping around, and a few keys that move panes and tabs without leaving the keyboard.
+
+It is a configuration layer, not a daemon. There is no server and nothing listens on a network port. Everything it shows is read locally from your own terminal, and nothing leaves your machine unless you turn on the optional usage quotas.
+
+<Callout type="info" title="What these docs promise">
+  Each page says what works today, what is planned, and what has only been tested in a virtual
+  display rather than on a real desktop. The [feature status
+  list](/docs/users/what-you-can-do#status-at-a-glance) is the short version.
+</Callout>
+
+## I want to…
+
+| Goal                                         | Start here                                                      |
+| -------------------------------------------- | --------------------------------------------------------------- |
+| Try it without touching my config            | [Getting started](/docs/users/getting-started)                  |
+| Install it                                   | [Install and update](/docs/users/install-and-update)            |
+| See everything it can do                     | [What you can do](/docs/users/what-you-can-do)                  |
+| Move a tab or a pane somewhere else          | [Tabs and panes](/docs/users/tabs-and-panes)                    |
+| Tell tabs apart when I have many             | [The tab bar](/docs/users/the-tab-bar)                          |
+| Look at one tab without switching to it      | [Peek, deck and panel](/docs/users/peek-deck-and-panel)         |
+| Know which agent needs me                    | [Agent status](/docs/users/agent-status)                        |
+| Start, find or reopen an agent               | [Launch and find agents](/docs/users/launch-and-find-agents)    |
+| Get my sessions and conversations back       | [Sessions and restore](/docs/users/sessions-and-restore)        |
+| Look up a key                                | [Shortcuts](/docs/users/shortcuts)                              |
+| Keep my own shortcuts working                | [Your own shortcuts](/docs/users/your-own-shortcuts)            |
+| Fix something that looks wrong               | [Troubleshooting](/docs/users/troubleshooting)                  |
+| Change the code or the docs                  | [Contribute](/docs/developer/contribute)                        |
+
+## Recommended reading order
+
+<Steps>
+
+<Step>
+
+### Try it first
+
+Run `kittymux demo` from [Getting started](/docs/users/getting-started). It opens an isolated window with its own configuration, so your own kitty setup is never touched.
+
+</Step>
+
+<Step>
+
+### Install and check
+
+Follow [Install and update](/docs/users/install-and-update), then run `kittymux doctor`. It lists anything that is off and how to fix it.
+
+</Step>
+
+<Step>
+
+### Learn the bar and the deck
+
+[The tab bar](/docs/users/the-tab-bar) explains what each row says. [Peek, deck and panel](/docs/users/peek-deck-and-panel) covers the ways to look at a tab you are not in, with the mouse and the keyboard.
+
+</Step>
+
+<Step>
+
+### Work with agents
+
+[Agent status](/docs/users/agent-status), [Notifications and inbox](/docs/users/notifications-and-inbox) and [Launch and find agents](/docs/users/launch-and-find-agents) cover the daily loop: start, watch, answer, come back.
+
+</Step>
+
+</Steps>
+
+## Browse by section
+
+<Cards>
+  <Card title="User guides" href="/docs/users">
+    Install, daily use, shortcuts, sessions and troubleshooting.
+  </Card>
+  <Card title="Developer" href="/docs/developer">
+    Architecture, testing, contributing and the roadmap.
+  </Card>
+</Cards>

@@ -1,0 +1,221 @@
+---
+title: CLI reference
+description: Every kittymux command with its options and an example, from the health check and layout switches to sessions, pick, fan-out, inbox, features, join and keys.
+---
+
+Run `kittymux help` for the same list in your terminal. Commands that act on a kitty use the kitty they were started inside. Outside kitty, they use the newest socket you own.
+
+## `kittymux doctor`
+
+Checks your install and tells you how to fix what is off: dependencies, the remote control socket, chords that clash with your window manager or with your own configuration, missing hook events, installed agents without a resume definition, and a kitty that was updated while it ran.
+
+```sh
+kittymux doctor
+```
+
+## `kittymux demo`
+
+Opens an isolated kitty with a sample session, fake agents in different states and the real key bindings. Your configuration is never touched. Close the window when you are done.
+
+## `kittymux hooks`
+
+Prints the Claude Code hook configuration.
+
+```sh
+kittymux hooks              # print the snippet
+kittymux hooks --install    # merge it into ~/.claude/settings.json, after a backup
+kittymux hooks --remove     # remove exactly those entries, after a backup
+```
+
+## `kittymux layout`
+
+Switches this kitty's bar on the fly. See [The tab bar](/docs/users/the-tab-bar#modes-edges-and-presets).
+
+```sh
+kittymux layout mode full|compact|hidden|cycle
+kittymux layout edge left|right|bottom|top|cycle
+kittymux layout width 30        # or +N and -N
+kittymux layout preset NAME     # sidebar, rail, right-sidebar, bottom, top, zen
+kittymux layout pick            # an fzf list of presets
+kittymux layout show
+kittymux layout default         # pin this layout for new windows. "default clear" follows your last choice again
+```
+
+## `kittymux inbox`
+
+Everything that wants your attention, newest first. See [Notifications and inbox](/docs/users/notifications-and-inbox#the-inbox).
+
+```sh
+kittymux inbox [--all] [--json] [--limit N] [--waybar]
+kittymux inbox ack ID… | --all
+kittymux inbox clear [--all]
+kittymux inbox jump [ID]
+kittymux inbox watch
+```
+
+## `kittymux sessions`
+
+Saves and restores sessions with each agent's conversation. See [Sessions and restore](/docs/users/sessions-and-restore).
+
+```sh
+kittymux sessions [list]
+kittymux sessions save [NAME] [--all] [--direct]
+kittymux sessions restore [NAME|last] [--new-window]
+kittymux sessions new NAME [--template T] [--agent A] [--agent2 B] [--cwd DIR] [--force]
+kittymux sessions templates
+kittymux sessions check
+kittymux sessions history [--since 7d] [--json]
+kittymux sessions recover [NAME] [--since 6h]
+kittymux sessions autosave
+kittymux sessions prepare
+kittymux sessions rewrite FILE | --recent
+```
+
+Restored agent windows ask before resuming. `KITTYMUX_RESUME=auto` skips the question.
+
+## `kittymux spawn`
+
+Starts agents straight into a new tab or split of the focused kitty, in the current directory. See [Launch and find agents](/docs/users/launch-and-find-agents#start-an-agent-with-spawn).
+
+```sh
+kittymux spawn claude
+kittymux spawn claude,codex,devin [--tab|--hsplit|--vsplit] [--cwd DIR]
+kittymux spawn c x d u o a g
+```
+
+## `kittymux pick`
+
+One searchable list: what needs you, every running agent, conversations you closed and a new agent.
+
+```sh
+kittymux pick [--menu rofi|fuzzel|fzf] [--list|--json] [--all] [--no-theme]
+```
+
+## `kittymux pin`
+
+Keeps a conversation at the top of `pick` and out of the age limits. Also `unpin`, `settle` and `unsettle`.
+
+```sh
+kittymux pin [KEY | --window ID]
+kittymux unpin
+kittymux settle KEY
+```
+
+`alt+p` and `alt+s` in the picker do the same on the selected row.
+
+## `kittymux fanout`
+
+Sends one task to several agents, each in its own git worktree, branch and tab.
+
+```sh
+kittymux fanout "fix the login bug" claude,codex,devin [--name N] [--base REF]
+kittymux fanout list
+kittymux fanout compare NAME
+kittymux fanout clean NAME [--yes] [--force]
+```
+
+## `kittymux changes`
+
+What the agent in a window changed since its run started. It never writes into your repository.
+
+```sh
+kittymux changes [--window ID] [--files] [--json] [--all]
+```
+
+## `kittymux reopen`
+
+Reopens the most recently closed agent conversation in a new tab. It asks before resuming.
+
+## `kittymux notify`
+
+Quiets popups and bells. Everything still lands in the inbox.
+
+```sh
+kittymux notify status
+kittymux notify mute [1h]
+kittymux notify unmute
+kittymux notify off
+kittymux notify on
+kittymux notify done off|on
+```
+
+## `kittymux snooze`
+
+No popups for one agent window for a while.
+
+```sh
+kittymux snooze [1h] [--window ID] [--clear]
+```
+
+## `kittymux explain`
+
+Why each agent pane is in its state, and every recent decision: state changes and notifications sent or held back.
+
+```sh
+kittymux explain [--window ID] [--last N] [--all] [--json]
+```
+
+## `kittymux features`
+
+Chooses which optional pieces of the bar you use. See [The tab bar](/docs/users/the-tab-bar#choose-which-pieces-you-want).
+
+```sh
+kittymux features [list]
+kittymux features on NAME
+kittymux features off NAME
+kittymux features preset minimal|default|full
+kittymux features -h
+```
+
+## `kittymux join`
+
+Moves this tab's panes into another tab as splits, keeping their shape. See [Tabs and panes](/docs/users/tabs-and-panes#join-a-tab-into-another).
+
+```sh
+kittymux join                                     # open the list of tabs
+kittymux join --to TAB_ID [--side right|below|left|above|auto] [--pane]
+```
+
+Exit status is 2 for an unknown option or a bad value, and 1 when it is not started from a pane of a kitty with a socket.
+
+## `kittymux keys`
+
+Lists the chords that both your own kitty configuration and kittymux define. kittymux's file loads later, so its action is the one in effect. See [Your own shortcuts](/docs/users/your-own-shortcuts).
+
+```sh
+kittymux keys [conflicts]
+```
+
+## `kittymux dim`
+
+Dims the panes that are not focused, using kitty's own shader. It needs kitty 0.49.2 and the `shader-slang` package.
+
+```sh
+kittymux dim [on|off|toggle|show]
+```
+
+## `kittymux screenshot`
+
+A PNG of this kitty window, rendered by kitty.
+
+```sh
+kittymux screenshot [--tab|--window] [FILE]
+```
+
+## `kittymux upgrade`
+
+After a `git pull`: refreshes the links, reloads every running kitty twice and runs `doctor`.
+
+## `kittymux uninstall`
+
+Shows what `install.sh` added. It is a dry run until you add `--yes`.
+
+```sh
+kittymux uninstall
+kittymux uninstall --yes
+kittymux uninstall --yes --purge     # also deletes the state directory
+```
+
+## `kittymux version`
+
+Prints the kittymux version.

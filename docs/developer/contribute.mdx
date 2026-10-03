@@ -1,0 +1,81 @@
+---
+title: Contribute
+description: Set up an isolated worktree, run the test gates, follow the pull request checklist, and add an agent, a key or a page without breaking anyone's live sessions.
+---
+
+kittymux is small on purpose. Read `AGENTS.md` first. It is the working contract: the rules, the invariants, how state is decided and the kitty internals the code depends on.
+
+## Set up
+
+```sh
+git clone https://github.com/KitsuneKode/kittymux && cd kittymux
+git worktree add .worktrees/my-change -b my-change main    # work in a worktree; never edit what your kitty loads
+cd .worktrees/my-change
+python3 -m unittest discover -s tests && bash tests/test_mux_status.sh && bash tests/test_socket_lib.sh
+```
+
+`.worktrees/` is ignored by git, and editors and agents scoped to the folder can still see it. The checkout your kitty configuration links to is `main`. Never leave it half-edited, because your live kitties load it.
+
+## Before you open a pull request
+
+- One concern per pull request, with a plain-language, conventional-style title such as `fix(bar): …` or `feat(sessions): …`.
+- Add tests for the behaviour you changed. For anything a person can feel, such as clicks, drags and keys, use the real-kitty rigs with real events. A perfect scripted click hides whole bug classes.
+- Run `python3 -m py_compile` on touched Python, `bash -n` and `shellcheck -S error` on touched shell, and `git diff --check`.
+- Update the page a user would read, in the README or `docs/`. Add one line under *Unreleased* in `CHANGELOG.md`, not a paragraph.
+- Never claim more than you verified. A mocked provider response or a run in a virtual display is not live-provider or compositor verification. Say which you did.
+- Run the rigs your change touches. `SKIP` is not a pass.
+
+<Callout type="warn" title="No credentials in the repository">
+  Not real ones, and not ones that only look like keys. Build sample secrets at run time from
+  filler, such as `"sbp_" + "x" * 24`, and use clearly synthetic ids. Never copy a value out of
+  tool output, `ps`, `env` or logs into a file. `tests/test_no_secrets.py` and the continuous
+  integration job enforce it.
+</Callout>
+
+## Add an agent
+
+<Steps>
+
+<Step>
+
+### Status markers
+
+Check a real screen: `kitty @ get-text --match id:N`, then run it through `kittymux_state.classify_screen`. Add the marker and a test, and record it in the compatibility table.
+
+</Step>
+
+<Step>
+
+### Resume
+
+Add an entry to `assets/resume-agents.json` from what the CLI's own `--help` shows. Never add a flag you did not read there. See [Add an agent](/docs/users/sessions-and-restore#add-an-agent).
+
+</Step>
+
+<Step>
+
+### Icon
+
+Add a real brand mark as an SVG in `assets/icons/`, then run `tools/build-icons.py`. Codepoints are append-only.
+
+</Step>
+
+</Steps>
+
+## Add or change a key
+
+Every new chord is checked against all of these:
+
+1. `kittymux-keys.conf.tpl`, `kittymux.conf` and your own kitty configuration. Modifier order differs: `ctrl+shift+alt+r` is `ctrl+alt+shift+r`.
+2. Your window manager, with `hyprctl binds -j`. `kittymux doctor` checks every chord.
+3. A real key press, in a rig such as `tests/smoke_spawn.sh`.
+
+Then update `kittymux-keys.conf.tpl` and the README key table in the same commit. A test compares the two. If an overlay opens on a chord, give it a title and add `map --when-focus-on title:<name> <same chord> close_window`, or the chord stacks another overlay on top. See [Your own shortcuts](/docs/users/your-own-shortcuts) for what you must not take from a user.
+
+## Add a page to the docs
+
+See [Docs maintenance](/docs/developer/docs-maintenance).
+
+## Security
+
+Changes that touch what kittymux reads from terminals, files it writes, sockets, or anything it executes need a test with hostile input. Report a vulnerability privately. See [Privacy and security](/docs/users/privacy-and-security#report-a-vulnerability).

@@ -1,0 +1,119 @@
+---
+title: Launch and find agents
+description: Start agents in a tab or split, find any of them from one searchable list, reopen a conversation you closed, fan a prompt out to several agents and see what each one changed.
+---
+
+A tab is a thread of work, so starting one, finding the one that needs you, bringing back one you closed and quieting the noise should each take one keystroke.
+
+## Start an agent with spawn
+
+```sh
+kittymux spawn claude                    # a new tab, in the current directory
+kittymux spawn codex --vsplit            # a split next to this pane (--hsplit: below)
+kittymux spawn claude,codex,devin        # several at once, one tab each
+kittymux spawn c x d u o a g             # one-letter names
+```
+
+The agent starts in the focused pane's directory. A new tab goes before the `!scratch` tab, so scratch stays last. The window is marked so a later save restores the agent with its conversation. Only known, installed agents start; the name is never treated as a path or an option, and anything else is refused with the reason.
+
+From the keyboard, press `ctrl+alt+shift+o` and then a letter:
+
+| Letter | Agent     |
+| ------ | --------- |
+| `c`    | claude    |
+| `x`    | codex     |
+| `d`    | devin     |
+| `u`    | cursor    |
+| `o`    | opencode  |
+| `a`    | agy       |
+| `g`    | grok      |
+
+Hold `shift` with the letter to open a split on the right instead of a new tab. Any other key cancels, and so does three seconds of silence. For an agent in its own git worktree, press `ctrl+alt+shift+g` and name a branch. kittymux creates `.worktrees/<branch>`, opens a tab and starts the agent there.
+
+## Find an agent with pick
+
+One searchable list, most pressing first.
+
+| Row                                                       | Meaning                                                                   | `⏎` does                                       |
+| --------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------- |
+| `◆ claude  api — Approve: run the tests?   12m`           | Something needs you, longest-waiting first.                               | Jumps there and marks it read.                 |
+| `✓ …`                                                     | Finished, unseen.                                                         | Jumps there.                                   |
+| `◐ devin  …   working`, `· codex …`                       | Every running agent in every kitty, needs-you states first.               | Jumps there.                                   |
+| `↺ claude  api   ~/code/api   closed 3h ago · 7 runs`     | A conversation that was running and is not, from the journal.             | Reopens it in a new tab. It asks before resuming. |
+| `+ new claude   tab · ~/code/api`                         | Start an agent.                                                           | Spawns it.                                     |
+
+An agent started without approvals, with a flag such as `--dangerously-skip-permissions` or `--yolo`, carries `⚠ no approvals`. Only flags each CLI documents are recognised.
+
+```sh
+kittymux pick                      # in kitty: fzf in an overlay (ctrl+alt+v). Uses rofi or fuzzel when fzf is missing
+kittymux pick --menu rofi          # from anywhere: a rofi window. alt+a marks the selected event read without jumping
+kittymux pick --menu fuzzel
+kittymux pick --list               # the rows as text. --json prints them as data, each with its action
+```
+
+Press `ctrl+alt+v` inside kitty. To reach any agent from anywhere on the desktop, bind it in your window manager. On Hyprland, check the chord is free first with `hyprctl binds -j`:
+
+```
+bind = SUPER, A, exec, kittymux pick --menu rofi
+```
+
+The focused kitty is decided before the menu opens, because a menu takes the keyboard focus. So "new claude" starts in the directory you were just in. The rofi menu wears kittymux: the mascot, a search bar, each agent's icon and an accent rail on the selected row. Every colour is read from your live kitty theme when it opens. `--no-theme`, or `KITTYMUX_ROFI_THEME=user`, leaves your own rofi theme in charge. It needs rofi 2.x.
+
+### Pin and settle
+
+Two flags on a conversation's journal record, so they outlive the tab.
+
+- **Pin** with `alt+p` in the list, or `kittymux pin [KEY | --window ID]`. The conversation stays at the top with a `★`, running or closed, and is never aged out of the journal. `alt+p` again, or `kittymux unpin`, undoes it.
+- **Settle** with `alt+s`, or `kittymux settle KEY`. A settled conversation folds away behind one row, `⋯ 4 settled conversations — show`. A closed conversation also settles itself after three days untouched (`KITTYMUX_SETTLE_DAYS`, 1 to 365). `kittymux pick --all` shows settled ones. Nothing is deleted. `alt+s` on a settled row brings it back.
+
+Pinning does not reorder the tab bar, because kitty has no pinned tabs. It changes what `pick` offers you.
+
+## Reopen what you closed
+
+Press `ctrl+alt+shift+u`, or run `kittymux reopen`. It reopens the agent conversation you closed last, in a new tab in its directory, through the same prompt as any restore. It reads the journal, so it also works after a crash or a closed kitty. `kittymux pick` lists the last eight.
+
+## See what an agent changed
+
+When an agent's run starts, kittymux remembers the state of the repository around that window. When the run ends or needs you, it compares again and reports, for example, `7 files +142 −30`, with the biggest files.
+
+```sh
+kittymux changes                 # this window: files and lines changed since its run started
+kittymux changes --files --json  # every file, machine-readable
+kittymux changes --all           # the cached summary of every window in this kitty
+```
+
+The summary also shows on a finished tab in the bar and on that agent's row in `pick`, so you see what a long run did before you jump to it.
+
+- **Only the agent's work counts.** The baseline is taken when the run starts, so a file that was already dirty is not counted. Ignored files are not counted. New untracked files are.
+- **Your repository is never written to.** The snapshot uses a temporary index and a private object directory under `~/.local/state/kittymux/changes-objects/`, with your repository's objects read as alternates. There are no new objects in `.git`, no index change, no refs and no locks.
+- **Git runs carefully.** It runs with no terminal, with the file-system monitor and external diff programs off, a 25 second timeout and low priority, in a detached helper and never on kitty's main thread. A repository git itself distrusts (`safe.directory`) is skipped.
+- **Limits.** The baseline is taken on the next scanner tick, up to two seconds after the run starts. If kittymux was not watching when the run began, the summary compares with `HEAD` and says so. A directory that is not a git repository shows nothing. On a very large repository, the cost is one `git add -A` at each run start and end.
+
+Switch it off with `KITTYMUX_CHANGES=0` or `touch ~/.local/state/kittymux/changes-off`.
+
+## Fan one task out to several agents
+
+```sh
+cd ~/code/api
+kittymux fanout "fix the login redirect bug; keep the tests green" claude,codex,devin --name login
+kittymux fanout compare login     # what each did, relative to the same base commit
+kittymux fanout clean login --yes # tidy up. Keeps a worktree with uncommitted work unless you add --force
+```
+
+Each agent gets its own git worktree and branch (`<repo>/.worktrees/login-claude`, branch `login-claude`, all from one base commit, set with `--base REF` and defaulting to `HEAD`) and its own tab titled `claude · login`, with the prompt already given. They cannot overwrite each other, and you compare real results.
+
+`compare` diffs each worktree against the base whether or not the agent committed, new untracked files included: `claude 7 files +142 −30 · codex 3 files +40 −2 · devin no changes`. It only reads, so your main checkout is never touched. `kittymux fanout list` shows past fan-outs.
+
+How the prompt is given differs per CLI and is read from each CLI's own `--help`. Claude, Codex, Cursor, grok and droid take it as the last argument, Devin after `--`, opencode as `--prompt` and agy as `--prompt-interactive`. An agent with no verified form is refused, never guessed. Add yours in `~/.config/kittymux/prompt.json`.
+
+The prompt is one argument that no shell sees, so quotes and `$()` are only text. It can be at most 8000 characters and cannot start with `-`.
+
+<Callout type="warn" title="Do not put secrets in a prompt">
+  A prompt on a command line is visible to other local users in `ps` for as long as the agent runs.
+</Callout>
+
+fanout refuses to run outside a git repository, with an existing name, branch or path (it never reuses someone's work), or without a kitty to open the tabs in. It creates all the worktrees or none: a failure partway removes what it made.
+
+## Quiet the noise
+
+`kittymux notify mute 1h` and `kittymux snooze` quiet popups and bells without losing anything. See [Notifications and inbox](/docs/users/notifications-and-inbox#quiet-things-down).

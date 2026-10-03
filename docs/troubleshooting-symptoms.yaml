@@ -1,0 +1,36 @@
+# Symptoms the troubleshooting page answers. `anchor` is the exact heading on docs/users/troubleshooting.mdx;
+# a docs site can emit these as FAQPage structured data.
+symptoms:
+  - id: shortcut-does-nothing
+    question: Why does a shortcut do nothing?
+    anchor: a shortcut does nothing
+  - id: command-not-found
+    question: Why does the shell say kittymux is not found?
+    anchor: kittymux is not found
+  - id: bar-looks-old
+    question: Why does the tab bar look old after an upgrade?
+    anchor: the bar looks old after an upgrade
+  - id: logos-missing
+    question: Why are logos missing or shown as boxes?
+    anchor: logos are missing or show as boxes
+  - id: notifications-wrong
+    question: Why are notifications doubled or missing?
+    anchor: notifications are doubled or missing
+  - id: finished-too-early
+    question: Why does an agent show as finished too early?
+    anchor: an agent shows as finished too early
+  - id: bell-moves-focus
+    question: Why does a bell move my focus?
+    anchor: a bell moves my focus
+  - id: pointer-is-a-hand
+    question: Why is the pointer a hand over the bar edge?
+    anchor: the pointer is a hand over the bar edge
+  - id: join-placement
+    question: Why does join not place panes as I expected?
+    anchor: join does not place panes as expected
+  - id: socket-warning
+    question: Why does doctor warn about the remote control socket?
+    anchor: doctor warns about the remote control socket
+  - id: restore-asks
+    question: Why does a restored agent ask before it resumes?
+    anchor: a restored agent asks before it resumes

@@ -1,0 +1,99 @@
+---
+title: Install and update
+description: Requirements, what the installer adds to your kitty configuration, the remote control settings kittymux recommends, and how to upgrade or remove it cleanly.
+---
+
+## Requirements
+
+| Needed             | Why                                                                    |
+| ------------------ | ---------------------------------------------------------------------- |
+| kitty 0.48 or later | The vertical tab bar. `kittymux doctor` refuses anything older.        |
+| `python3`, `jq`, `fzf`, `git` | Helper scripts, pickers and the branch and worktree line.   |
+
+kitty 0.49.2 or later unlocks the pieces that need newer kitty: clickable `file:line` references, the native resize divider, pane title bars and `kittymux dim`. On an older kitty these options are never written to your configuration, so an older kitty never reports a config error.
+
+Used when present:
+
+| Tool                  | What it adds                                                          |
+| --------------------- | --------------------------------------------------------------------- |
+| `notify-send` and a notification daemon | Desktop notifications. A daemon with action support adds the Jump to it action. |
+| `rofi` or `fuzzel`    | `kittymux pick --menu rofi`, a picker from your window manager.       |
+| `hyprctl`             | Focusing the right window on Hyprland when you jump.                  |
+| `gh`                  | Pull request numbers in the deck.                                     |
+| `ss`                  | Listening ports (`:3000`) in the deck.                                |
+| `shader-slang`        | `kittymux dim`, which kitty compiles with `slangc`.                   |
+
+## Install
+
+```sh
+git clone https://github.com/KitsuneKode/kittymux ~/kittymux
+~/kittymux/install.sh
+kittymux doctor
+```
+
+If the shell says `kittymux` is not found, add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile. The installer prints this when it is needed.
+
+### What the installer changes
+
+The installer touches only the lines and links it creates. Running it again is safe.
+
+- Checks `kitty`, `jq`, `python3`, `fzf` and `git`.
+- Backs up `kitty.conf` as `kitty.conf.bak.<time>` and appends `include` lines at the end, so kittymux's files load after yours.
+- Links `tab_bar.py` and the `kittymux_*.py` helper modules into your kitty configuration directory.
+- Renders `kittymux-keys.conf` from the template, with the install path filled in.
+- Links the `kittymux` command into `~/.local/bin`.
+- Creates the state directory (`~/.local/state/kittymux`, mode `0700`).
+- Installs the icon font to `~/.local/share/fonts`.
+- Links `open-actions.conf` for clickable file references only when you have none of your own. Otherwise it prints the two lines to add.
+
+<Callout type="info" title="Restart kitty once after the first install">
+  kitty loads fonts only when it starts. Until you restart, the logos in the bar are missing. A
+  configuration reload is enough for everything else.
+</Callout>
+
+### Recommended remote control settings
+
+Add these to `kitty.conf` if you do not have them:
+
+```conf
+allow_remote_control socket-only
+listen_on unix:${XDG_RUNTIME_DIR}/mykitty
+```
+
+`socket-only` stops programs inside a terminal, such as an agent's tool output or a file you `cat`, from controlling kitty with an escape sequence. Plain `yes` allows that. The runtime directory is private to you, unlike `/tmp`. kittymux works fully with this setting, and `kittymux doctor` warns about `yes` and about a socket in `/tmp`.
+
+### Leader mode
+
+`install.sh --leader` adds a tmux-style prefix: tap `ctrl+space`, then one key. Pass `--leader=ctrl+a` to use another prefix, for example if your editor binds `ctrl+space`. See [Shortcuts](/docs/users/shortcuts#leader-mode).
+
+## Update
+
+```sh
+cd ~/kittymux && git pull
+kittymux upgrade
+```
+
+`upgrade` refreshes the links, reloads every running kitty twice and runs `doctor`. Reloading is enough for the tab bar, the scanner and the helpers. Your sessions and processes are untouched.
+
+<Callout type="warn" title="A kitty that was updated while it ran">
+  A running kitty keeps its old binary even after the package is updated, but it loads Python files
+  from the new install. That mixed state is unsupported. `kittymux doctor` warns when a running
+  kitty's binary was replaced. Save your sessions with `ctrl+alt+shift+s`, quit that kitty and start
+  it again.
+</Callout>
+
+Options that only exist in newer kitty are enabled from the version of the kitty process that asks, not the installed one. A running 0.49.1 keeps working without the 0.49.2 extras, and picks them up after a restart.
+
+## Remove
+
+```sh
+kittymux uninstall            # dry run: lists exactly what the installer added
+kittymux uninstall --yes      # removes the include lines, links, generated files, icon font and the Claude Code hooks
+kittymux uninstall --yes --purge   # also deletes the state directory (saved layouts and caches)
+```
+
+`kitty.conf` is backed up first. `--purge` refuses a state directory that does not look like kittymux's, so a mistyped path cannot delete your home directory. Running kitties keep working until you reload or restart them.
+
+## Packaging
+
+On Arch Linux, `packaging/PKGBUILD` builds `kittymux-git`.

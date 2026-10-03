@@ -1,0 +1,62 @@
+---
+title: Glossary
+description: The words kittymux uses, defined in one place - tab, pane, session, bar, rail, deck, panel, peek card, scanner, hook, inbox, journal, worktree and more.
+---
+
+Terms are listed alphabetically.
+
+**Agent.** A coding assistant that runs in a terminal pane, such as Claude Code, Codex or Devin.
+
+**Bar.** The vertical tab bar kittymux draws in place of kitty's tab strip. It can also sit at the bottom, top or right.
+
+**Deck.** The sidebar overlay opened with `ctrl+alt+b`: every tab of every session, grouped, with live preview. See [Peek, deck and panel](/docs/users/peek-deck-and-panel).
+
+**Done.** An agent state: it finished while you were looking elsewhere. It clears when you focus it.
+
+**Folder line.** The line under a tab's title that says where the tab is: `project[:worktree]/inner  branch`.
+
+**Hook.** A command an agent runs at a lifecycle event, such as when it stops. kittymux's hooks call `mux-status`.
+
+**Inbox.** The private store of typed events for everything that wants your attention. See [Notifications and inbox](/docs/users/notifications-and-inbox#the-inbox).
+
+**Join.** Moving a tab's panes into another tab as splits, keeping their arrangement. See [Tabs and panes](/docs/users/tabs-and-panes#join-a-tab-into-another).
+
+**Journal.** The record of every agent session, kept as it runs, used for history and recovery.
+
+**Kitten.** A small program that runs inside kitty. The deck, the peek card and the join list are kittens.
+
+**Kitty Home.** The picker opened with `ctrl+shift+space` for every session operation.
+
+**Leader mode.** An optional tmux-style prefix: tap `ctrl+space`, then one key.
+
+**Limited.** An agent state: a usage limit or quota is exhausted.
+
+**Needs you.** The attention state for a pane that is waiting on you or limited. In the bar it shows as `!` or `⊘`.
+
+**Pane.** A split inside a tab. kitty's own documentation calls it a window.
+
+**Panel.** The deck docked as an always-visible column, on Wayland compositors with layer-shell.
+
+**Peek card.** The small overlay you get by right-clicking a tab, showing its state, panes and the tail of its screen.
+
+**Rail.** The slim nine-column form of the bar, showing only logos, numbers and state marks.
+
+**Remote control.** kitty's way for programs to control it. kittymux recommends the `socket-only` setting.
+
+**Scanner.** The in-kitty timer that reads each agent pane's screen twice a second and publishes its state.
+
+**Session.** A named group of tabs for one project. Switching sessions parks the current one.
+
+**Settle.** To fold a closed conversation away from `pick`. It happens by hand or after three days.
+
+**Spawn.** To start an agent in a new tab or split.
+
+**State.** What an agent is doing: limited, waiting, working, done or idle.
+
+**Tab.** A kitty tab: a group of panes.
+
+**Waiting.** An agent state: it is asking you something, such as a permission prompt or a question.
+
+**Working.** An agent state: it is busy.
+
+**Worktree.** A git feature that checks out another branch in a separate folder. kittymux gives each fanned-out agent its own, so they cannot overwrite each other.

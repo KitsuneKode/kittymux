@@ -28,7 +28,7 @@ config is never touched) with a sample session and a couple of fake agents in
 different states. Press `ctrl+alt+b` for the deck, `ctrl+alt+y` to jump to the waiting agent,
 `ctrl+space` then `?` for leader mode. Close the window and it is gone.
 
-More to try (panes by number, clickable `file:line`, scrollback keys, the keymap overlay, resize) and what needs a restart: [docs/try-it.md](docs/try-it.md).
+More to try (panes by number, clickable `file:line`, scrollback keys, the keymap overlay, resize) and what needs a restart: [docs/try-it.md](docs/try-it.md). The full guides — every key, the tab bar, agents, sessions, troubleshooting — start at [docs/index.mdx](docs/index.mdx).
 
 Like it? Install:
 
@@ -141,7 +141,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+v` | **pick**: what needs you (longest-waiting first), every running agent, conversations you closed, a new agent — one searchable list (`kittymux pick --menu rofi` from your window manager) |
 | `ctrl+alt+shift+o` then `c` `x` `d` `u` `o` `a` `g` | **spawn** claude · codex · devin · cursor · opencode · agy · grok in a new tab (`shift` + letter: split right) in the current directory |
 | `ctrl+alt+shift+u` | reopen the agent conversation you closed last (it asks before resuming) |
-| `ctrl+alt+enter` | split horizontal · `+shift` vertical |
+| `ctrl+alt+enter` · `ctrl+shift+enter` | split below · split to the right |
 | `ctrl+alt+d` / `+shift` | pane → new tab / chooser · `ctrl+alt+shift+c` shows/hides pane title bars (the drag handles) |
 | `ctrl+alt+z` / `0` | zoom pane / equalize |
 | `ctrl+alt+i` (×2) | cwd pill → detail card (copy path/branch) |
@@ -155,7 +155,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+shift+e` | move the tab bar: left → bottom → top → right (this kitty only) |
 | `ctrl+alt+\` | bar mode: full → slim rail → hidden ("zen") |
 | `ctrl+alt+shift+[` / `]` | narrower / wider sidebar |
-| `ctrl+alt+shift+l` | pick a layout preset (sidebar, rail, right, bottom, top, zen) |
+| `ctrl+alt+shift+l` | pick a layout preset (sidebar, rail, right-sidebar, bottom, top, zen) |
 | *drag the bar's inner edge* | resize the vertical bar with the mouse |
 | `ctrl+alt+/` | keymap overlay — this table, parsed live from your conf |
 | `ctrl+alt+shift+/` | last command output in pager |

@@ -1,0 +1,39 @@
+# Maps the source documents in the repository to the published pages that explain them.
+# lastReviewed: ISO date when the published page was last reconciled with its source.
+promotions:
+  - agentPath: README.md
+    publishedPath: docs/users/what-you-can-do.mdx
+    lastReviewed: "2026-10-03"
+  - agentPath: docs/try-it.md
+    publishedPath: docs/users/getting-started.mdx
+    lastReviewed: "2026-10-03"
+  - agentPath: docs/compatibility.md
+    publishedPath: docs/users/platforms.mdx
+    lastReviewed: "2026-10-03"
+  - agentPath: docs/launcher.md
+    publishedPath: docs/users/launch-and-find-agents.mdx
+    lastReviewed: "2026-10-03"
+  - agentPath: docs/sessions.md
+    publishedPath: docs/users/sessions-and-restore.mdx
+    lastReviewed: "2026-10-03"
+  - agentPath: docs/inbox.md
+    publishedPath: docs/users/notifications-and-inbox.mdx
+    lastReviewed: "2026-10-03"
+  - agentPath: docs/notifications.md
+    publishedPath: docs/users/notifications-and-inbox.mdx
+    lastReviewed: "2026-10-03"
+  - agentPath: SECURITY.md
+    publishedPath: docs/users/privacy-and-security.mdx
+    lastReviewed: "2026-10-03"
+  - agentPath: AGENTS.md
+    publishedPath: docs/developer/architecture.mdx
+    lastReviewed: "2026-10-03"
+  - agentPath: CONTRIBUTING.md
+    publishedPath: docs/developer/contribute.mdx
+    lastReviewed: "2026-10-03"
+  - agentPath: docs/testing.md
+    publishedPath: docs/developer/testing.mdx
+    lastReviewed: "2026-10-03"
+  - agentPath: docs/launch-checklist.md
+    publishedPath: docs/developer/release-checklist.mdx
+    lastReviewed: "2026-10-03"

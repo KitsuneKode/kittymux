@@ -1,0 +1,124 @@
+---
+title: Sessions and restore
+description: Save a workspace and get it back with each agent window asking to resume its own conversation, plus autosave, templates, the journal and what does and does not come back.
+---
+
+kitty already has excellent session support, and kittymux builds on it. It adds the one thing kitty cannot know: which conversation each agent window was in.
+
+## Sessions as workspaces
+
+A **session** is a named group of tabs for one project. Switching sessions parks the current one: its tabs and processes stay alive, hidden, and the session is checkpointed to disk if it was saved before. The bar shows only the tabs of the visible session.
+
+| To                                  | Keys                                                  |
+| ----------------------------------- | ----------------------------------------------------- |
+| Open Kitty Home: jump, restore, create, rename or delete a session | `ctrl+shift+space` |
+| Go to the previous or next session  | `ctrl+alt+,` and `ctrl+alt+.`                         |
+| Go to the last session              | `ctrl+alt+shift+a`                                    |
+| Save now                            | `ctrl+alt+shift+s`                                    |
+
+## What kitty does, and kittymux uses as it is
+
+kitty's `save_as_session --use-foreground-process` saves tabs, windows, the exact split layout, titles, each tab's directory and the foreground command of every window. It is the one saver. kittymux never reimplements it. kitty alone restores an agent window as a fresh `claude` or `codex`: the layout and directory come back, the conversation does not.
+
+## What kittymux adds
+
+1. **Resume.** Before kitty saves, kittymux marks each agent window with its agent and, when known, its session id. After kitty writes the file, each agent's saved command becomes its resume command, keeping every flag it was started with. For example `claude --dangerously-skip-permissions --model opus` becomes the same command plus `--resume <id>`.
+2. **A prompt before resuming.** A restored agent window never silently re-enters a conversation. It shows what it would resume and waits for one key.
+3. **Autosave.** The scanner saves each kitty when its set of windows changes and has settled for 20 seconds, at most once a minute and at least every 15 minutes. The newest five are kept.
+4. **Templates.** A ready project session in one command.
+5. **A journal.** Every agent session is recorded as it runs, so nothing is lost between saves.
+
+### The restore prompt
+
+```
+claude was running here — resume session 0a1b2c3d?
+  ~/code/api
+  last active 12m ago · 7 runs finished · 1h20m of work · tab “api work”
+  Enter resume   n new conversation   s shell   a resume all   i commands
+```
+
+| Key           | Result                                                                        |
+| ------------- | ----------------------------------------------------------------------------- |
+| `⏎` or `r`    | Resume, with every flag you started the agent with.                           |
+| `n`           | A new conversation, with the original command.                                |
+| `s` or `esc`  | A plain shell.                                                                |
+| `a`           | Resume this one and every other waiting prompt for the next two minutes.      |
+| `i`           | Show both commands.                                                           |
+
+The prompt then replaces itself with your answer, so the agent is the window's foreground process exactly as if you had typed it. A lone `esc` is a shell, not a pause.
+
+To skip the question, set `KITTYMUX_RESUME=auto`, or `touch ~/.local/state/kittymux/resume-auto`, or save with `kittymux sessions save --direct`.
+
+A session file is editable, so the record is validated before anything runs. Only string commands whose program matches are accepted, and the session id must be a plain token. Anything else opens a shell. With no terminal to ask, the original command runs. A missing agent binary opens a shell.
+
+## Commands
+
+```sh
+kittymux sessions list                      # each agent window: exact, latest or new, the command it would resume with, and why
+kittymux sessions save mytest               # save the focused OS window (--all for every one); agents come back asking
+kittymux sessions restore mytest            # goto_session inside kitty; a new kitty otherwise. "restore last" is the newest autosave
+kittymux sessions new api --template agent --agent claude --cwd ~/code/api
+kittymux sessions templates                 # plain, agent, duo, review
+kittymux sessions check                     # probe each installed agent CLI's --help for the flags kittymux uses
+kittymux sessions history --since 7d        # every agent session recorded: runs, work time, running or closed
+kittymux sessions recover --since 6h        # a session with a tab per recently active conversation that is no longer running
+```
+
+Templates: `plain`, `agent` (an agent with a shell beside it), `duo` (two agents and a shell) and `review` (an agent, the working-tree diff and a shell). A file in `~/.config/kittymux/templates/<name>.kitty-session` wins over a shipped one.
+
+After a crash or a reboot, run `kittymux sessions restore last`, or `kittymux sessions recover` to rebuild from the journal.
+
+## How the session id is found
+
+| Agent                | Exact id                                                                                       | Resume command                    |
+| -------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------- |
+| Claude Code          | Yes. Claude's own session registry, checked against the process start time.                    | `claude … --resume <id>`          |
+| Codex                | When the process holds its rollout file open.                                                  | `codex [flags] resume <id>`       |
+| Devin                | Yes. The session's name is its id; a running window holds a lock file for it.                  | `devin -r <id>`                   |
+| opencode             | From `-s <id>` on its command line, or the directory's newest session touched since the process started. | `opencode -s <id>`        |
+| cursor-agent         | From `--resume <id>`, or the directory's newest chat touched since the process started.        | `cursor-agent --resume <id>`      |
+| Antigravity (`agy`)  | From `--conversation <id>`, or the directory's last conversation if touched since start.       | `agy --conversation <id>`         |
+| grok, droid          | Not exposed. Falls back to the most recent session for the directory.                          | `grok … --resume`, `droid -r`     |
+
+The rules that keep this safe:
+
+- **Exact beats latest.** An agent started on an id keeps it. "Latest" is used only where it cannot attach the wrong conversation: when the agent's help says latest is per directory and it is the only window of that agent there, or when it is the single window of that agent.
+- **Never one conversation twice.** Two windows of one agent in one directory with no exposed ids are restored as saved, a new conversation each, not both as "continue".
+- **Ids are validated.** They are plain tokens, never an option, and the saved line is rebuilt as separate arguments, never through a shell.
+- **Flags are kept.** The agent's old resume flags are removed first so none is doubled. A prompt argument is never replayed.
+- **Each CLI is probed.** `kittymux sessions check` reads the installed CLI's own `--help`. An agent whose help does not show the flags is not rewritten. The result is cached for 12 hours.
+
+## What does not come back
+
+The agent process restarts, so its in-flight tool calls, its scrollback and its shell state are gone. The conversation comes back.
+
+## Add an agent
+
+Definitions are data: `assets/resume-agents.json` ships with kittymux, and `~/.config/kittymux/resume.json` is yours. An entry in yours replaces the shipped one. For a CLI whose `--help` shows `--resume <id>` and `--continue`:
+
+```json
+{ "myagent": {
+    "latest_scope": "unstated",
+    "exact": ["--resume", "{id}"], "latest": ["--continue"],
+    "strip_with_value": ["--resume"], "strip": ["--continue"],
+    "helpers": ["mcp", "login"],
+    "probe": { "args": ["--help"], "expect": ["--resume", "--continue"] } } }
+```
+
+Then run `kittymux sessions check`. It confirms the flags exist in the installed CLI before anything is rewritten. `kittymux doctor` lists installed agents that still have no definition. Never add a flag you did not read in that CLI's own help.
+
+## The journal
+
+The scanner keeps `agent-sessions.json`: one record per agent session, with the agent, session id when exposed, directory, tab title, the command with its flags, first and last seen, last state, runs finished, time spent working and whether it is open. It is updated on every state change and at least once a minute while the agent runs. It is merged under a lock so several kitties share it, bounded to 300 records and 90 days, and private (mode `0600`).
+
+Switch it off with `KITTYMUX_JOURNAL=0` or `touch ~/.local/state/kittymux/journal-off`. Switch autosave off with `KITTYMUX_AUTOSAVE=0` or `touch ~/.local/state/kittymux/autosave-off`.
+
+<Callout type="warn" title="Do not pass secrets as flags">
+  The journal records a command with its flags, exactly as `/proc` already shows it to your other
+  processes. Use the agent's own configuration or the environment for secrets. Printed output from
+  `sessions list` and `sessions history --json` redacts secret-looking flag values.
+</Callout>
+
+## Files
+
+Everything lives under `~/.local/state/kittymux/` (directories `0700`, files `0600`): `sessions/*.kitty-session`, `resume-check.json`, `agent-sessions.json` and `resume-all-until`. A session file holds directories, commands, titles and session ids, not conversation content. The conversations stay where each agent keeps them.

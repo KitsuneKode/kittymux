@@ -1,0 +1,59 @@
+---
+title: Platforms and compatibility
+description: What has actually been run - kitty versions, desktops and agent CLIs - and what is only expected to work. Tested means exercised by a person or a test in the repository.
+---
+
+This page separates what has been run from what is only expected to work. A guess is labelled as one.
+
+## kitty, desktops and systems
+
+| Area                                | Status                                                                                                                                                              |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| kitty 0.49.2                        | Tested. All the real-kitty smoke tests pass. Continuous integration runs 0.49.1 and 0.49.2.                                                                          |
+| kitty 0.49.1                        | Tested. kittymux patches 0.49.1's tab drag so the dragged tab does not jump or cascade, and does not enable the 0.49.2-only options.                                 |
+| kitty 0.48.x                        | Untested. The vertical bar exists; native drag and drop for splits and tabs is newer and may be missing.                                                            |
+| Arch Linux with Hyprland (Wayland)  | Tested. This is the daily driver, including the docked panel.                                                                                                        |
+| Other Wayland compositors           | The docked panel needs `wlr-layer-shell`. sway, river and niri should work and are untested. GNOME has no layer-shell, so there is no docked panel; the rest works. |
+| X11                                 | The tab bar, scanner and deck are tested in a virtual display (Xvfb). The docked panel is not available.                                                             |
+| macOS                               | Untested. Agent detection reads `/proc`, which is Linux-only, so it will not work as written.                                                                        |
+| Windows                             | Not supported. kitty has no Windows build.                                                                                                                          |
+
+### Window manager keys
+
+Hyprland, as configured by HyDE's scrolling layout, takes `ctrl+alt` plus `a`, `s`, `f`, `c`, `x`, `p`, `w`, `m`, the arrow keys, `=` and `-`. kittymux avoids those chords, and a unit test pins the list. `kittymux doctor` checks your live Hyprland binds. Hyprland sees a global chord before kitty does, so a chord it owns never reaches kitty. See [Your own shortcuts](/docs/users/your-own-shortcuts).
+
+## What kitty does and does not send
+
+These were measured on kitty 0.49.2, and they shape what kittymux can offer.
+
+| Question                                                  | Answer                                                                                                                                                  |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Does idle mouse motion over the tab bar reach Python?     | No. In a real-pointer test, none of eight idle moves arrived; only press and release did. Hover cannot open anything from the bar itself.               |
+| Can the pointer over the bar be something other than a hand? | No. kitty chooses the shape in C for the whole bar and ignores shape requests there.                                                                |
+| Does kitty hit-test split borders in a single-pane tab?   | No. The native resize arrow only appears in tabs with two or more panes.                                                                                |
+
+The first row is why the right-click [peek card](/docs/users/peek-deck-and-panel) exists, and why a sheet that opens on hover is [planned](/docs/developer/roadmap) only in a form that lives inside the sheet or the panel.
+
+## Agent CLIs
+
+Status is read from each agent's screen, so it depends on what the interface prints. Markers were checked against real sessions on the author's machine. Versions drift, and a tool that rewords its prompts needs a one-line change.
+
+| Agent                                       | Screen markers                                                                                                                       | Hooks                                |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| Claude Code                                 | Tested: working, permission prompt and usage limit.                                                                                  | `kittymux hooks --install`           |
+| Codex CLI                                   | Tested: working and usage limit. Some status lines match by shape and have not been seen live.                                       | `notify`, calling `mux-status`       |
+| Devin                                       | Tested: working, idle prompt. Whether subagent footers mean running subagents is unverified.                                         | None                                 |
+| OpenCode                                    | The idle screen was checked live. The working marker follows the documented hint.                                                    | None                                 |
+| Gemini CLI, Cursor Agent, Amp, Antigravity | Patterns follow each tool's documented hints. Not verified against live sessions.                                                    | None                                 |
+| Factory `droid`                             | "No active subscription found" reads as limited (seen live). Working and permission markers are not verified.                         | None                                 |
+| grok, qwen, kimi, goose, kilo, vibe, junie, auggie | Logo plus hooks or title activity only.                                                                                       | Optional                             |
+| aider, crush                                | No readable markers, so hooks or title activity only.                                                                                | Optional                             |
+
+To add or check an agent, see [Contribute](/docs/developer/contribute#add-an-agent).
+
+## Things that depend on your environment
+
+- **Remote control socket.** The pickers and the CLI need `allow_remote_control` and `listen_on`. kittymux only talks to sockets you own. See [Install and update](/docs/users/install-and-update#recommended-remote-control-settings).
+- **Fonts.** Brand logos live in a bundled icon font. kitty loads fonts only at start, so restart once after the first install.
+- **Notification daemons.** Tested with dunst on Hyprland. Mako, swaync, KDE and GNOME are untested. The Jump to it action needs a daemon with action support.
+- **The Quickshell sample.** It follows the documented inbox contract and is untested, because Quickshell is not installed on the author's machine.

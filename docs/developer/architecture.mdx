@@ -1,0 +1,70 @@
+---
+title: Architecture
+description: How kittymux is put together - pure modules, in-kitty pieces, kittens and scripts - the invariants that keep agent state honest, and the kitty behaviours the code depends on.
+---
+
+This page is the short version of `AGENTS.md`. When the two differ, `AGENTS.md` and the code win.
+
+## Four kinds of code
+
+| Kind            | What it is                                                                                  | Examples                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Pure modules    | No kitty imports. Unit-tested in `tests/`.                                                  | `kittymux_state`, `kittymux_agents`, `kittymux_theme`, `kittymux_place`, `kittymux_join`, `kittymux_inbox`, `kittymux_resume`, `kittymux_keymap` |
+| In-kitty pieces | Run inside the kitty process. Reloaded by `tab_bar.py` on every configuration load.         | `tab_bar.py`, `kittymux_scan`, `kittymux_barsize`, `kittymux_panetitle`                          |
+| Kittens         | Overlay interfaces, run by path.                                                            | `sidebar-kit.py` (deck and panel), `peek-kit.py` (peek card), `join-kit.py` (join list) |
+| Scripts         | Shell and CLI glue.                                                                         | `bin/kittymux`, `bin/mux-*` (including the keymap overlay, `mux-keys.py`), `lib/mux.sh`               |
+
+Python files run under kitty's bundled interpreter, so `kitty.*` and `kittens.*` are importable there and not under the system Python. Kittens are executed, not imported: there is no `__file__`, so they find their directory through `KITTY_CONFIG_DIRECTORY` and `sys.argv`.
+
+## One answer for status
+
+`kittymux_state` (pure) and `kittymux_scan` (in kitty) are the only place agent state is decided. Twice a second the scanner reads the bottom of each agent pane's screen, combines it with hook state and publishes `scan-<pid>.json`. Every consumer reads that merged view through `kittymux_agents.load_panes`, `merge_scan` and `resolve_status`. The order is limited, waiting, working, done, idle.
+
+Rules that keep it honest:
+
+- **A state needs positive evidence.** Silence is never waiting.
+- **Who decides "done".** A turn a hook announced ends only with the agent's own `Stop` hook. A quiet screen, a repaint or an interrupt is never "finished". A completion notifies only with a known duration of at least 15 seconds and after a five-second settle.
+- **Every answer says why.** `kittymux_state.resolve` records a static, human reason at each return. The scanner publishes it and writes every state change and notification outcome to the decision log, which `kittymux explain` reads. A new state or suppression rule must set a reason. A reason is static text, because a clock or counter in it would change the published verdict every tick.
+- **One event model.** Every needs-you, limit and completion is a typed event in `inbox.jsonl`. `kittymux_scan._announce` is the one place that decides popup or inbox only.
+- **Restore asks.** A restored agent never auto-resumes without the user's switch. The prompt validates its record and replaces itself with the answer.
+
+## Rules that touch the user
+
+- **Never move the user's focus unasked.** Only a click, `inbox jump`, `ctrl+alt+y` or a notification action may do it. A bell can become a focus change on some compositors, so kittymux turns the request off there.
+- **Options that exist only in newer kitty never go in `kittymux.conf`.** They are emitted by `kittymux_layout.gated_conf`, keyed on the version of the kitty process asking.
+- **No hardcoded palette.** Theme tokens derive from kitty's live colours.
+- **A glyph added to the icon font reaches a running kitty only after a restart.** Draw a new glyph only when the kitty started after the installed font.
+- **Never run git on kitty's main thread, and never write into the user's repository.**
+- **Text from a terminal is untrusted.** Everything drawn from a program or a directory name goes through `kittymux_place.clean`, because kitty's own title sanitiser lets ESC through.
+
+## What kitty does that shapes the code
+
+- **kitty caches a watcher module per path for the life of the process.** `pane-state.py` runs once. Anything that must pick up an upgrade lives in a helper module that `tab_bar.py` reloads and restarts.
+- **Long-lived state lives in `sys.modules`.** A reload re-executes a file and would forget a live timer, stacking timers. The scanner and the bar-resize code keep their state in `sys.modules["_kittymux_scan_rt"]` and `sys.modules["_kittymux_barsize_rt"]`.
+- **Redraw takes three calls.** `tm.update_tab_bar_data()`, `tm.mark_tab_bar_dirty()`, then `mark_os_window_dirty(id)` and `wakeup_main_loop()`. Without the last two, kitty does not render until the cursor blinks. Use `kittymux_scan.refresh_bar`.
+- **The bar is redrawn tab by tab, about ten times a second while an agent works.** Shared lookups are memoised per pass. Do not add a per-tab file read or subprocess to the draw path.
+- **kitty sends the tab bar no idle mouse motion, and shows a hand over it.** That is why the peek card is a right-click, and why the native resize arrow exists only in tabs with split panes.
+- **Tab clicks.** A press only arms a drag. The tab activates on release, and only if the press and release were under 5 pixels apart. Real mice wobble, so kittymux activates the tab under a rule that matches the drag threshold. Smoke tests must click with wobble.
+- **Moving windows.** `detach-window --target-tab` for each window splits the same pane again and again. `kittymux_join` plans placement and `join-kit.py` uses `Tab.detach_window` and `Tab.attach_windows(next_to=, horizontal=, after=)`, the calls kitty's own drag and drop uses. It then pushes the first pane to the tab's edge so the block takes a whole side.
+- **kitty 0.49.2 reorders dragged tabs by insertion.** The 0.49.1 drag patches stand down there. Never touch `TabBeingDropped` without checking its fields.
+
+## Where things live
+
+```
+kittymux.conf                  options, path-free
+kittymux-keys.conf.tpl         keybinds; install.sh renders the output. Edit the template, never the output
+bin/kittymux                   the CLI
+bin/mux-*                      scripts: sessionizer, navigation, status hook, notifications
+lib/mux.sh, lib/socket.sh      session model and remote control plumbing
+python/                        modules, kittens and collectors
+assets/                        icons, notification marks, agent definitions as data
+docs/                          the published docs and the source notes they promote
+tests/                         unit tests, shell tests and real-kitty rigs
+tools/                         icon, brand and docs generators
+```
+
+State lives in `$KITTYMUX_STATE`, otherwise `${XDG_STATE_HOME}/kittymux`. Panes and usage caches are per kitty process: `panes-<pid>.json`.
+
+## Data, not code
+
+Agent behaviour is data, so adding one does not need new logic: `assets/resume-agents.json` and `~/.config/kittymux/resume.json` for resume, `assets/agent-prompt.json` for fan-out prompts and `assets/agent-risk.json` for approval flags. Each entry is checked against the installed CLI's own `--help`. Never add a flag you did not read there.
