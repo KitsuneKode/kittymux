@@ -31,6 +31,7 @@
                          explain [--window ID] [--last N] [--all] [--json]
   kittymux features    pick which optional pieces of the bar you want — the project/branch line under each tab, a colour per project, emphasis on look-alike tabs:
                          features [list] | on NAME | off NAME | preset minimal|default|full     (kittymux features -h)
+  kittymux keys        chords your own kitty config and kittymux both define (kittymux's wins: it loads later): keys [conflicts]
   kittymux dim         dim the panes that are not focused (kitty ≥ 0.49.2): dim [on|off|toggle|show]
   kittymux screenshot  PNG of this kitty window (kitty's own renderer): screenshot [--tab|--window] [FILE]
   kittymux upgrade     after a git pull: refresh links, reload every running kitty twice, run doctor
@@ -60,6 +61,7 @@ import kittymux_fanout  # noqa: E402
 import kittymux_features  # noqa: E402
 import kittymux_inbox  # noqa: E402
 import kittymux_journal  # noqa: E402
+import kittymux_keymap  # noqa: E402
 import kittymux_launcher  # noqa: E402
 import kittymux_quiet  # noqa: E402
 import kittymux_resume  # noqa: E402
@@ -401,6 +403,15 @@ def doctor() -> int:
     except Exception as e:                                   # a status line must never break doctor
         r.warning(f"could not read the feature switches: {e}")
 
+    print("\nyour shortcuts (kittymux keys)")
+    clashes = _key_clashes()
+    if not clashes:
+        r.ok("no chord is defined by both your kitty config and kittymux")
+    else:
+        shown = ", ".join(cl[0] for cl in clashes[:6]) + (" …" if len(clashes) > 6 else "")
+        r.warning(f"{len(clashes)} chords are defined by both your kitty config and kittymux — kittymux's wins (it loads later): {shown}",
+                  "`kittymux keys` lists them with both actions; most are kittymux's scripts replacing your older ones — rebind ours or remove yours for the rest")
+
     print("\nlauncher (kittymux pick)")
     menus = [m for m in ("rofi", "fuzzel", "fzf") if shutil.which(m)]
     gui = [m for m in menus if m != "fzf"]
@@ -595,7 +606,7 @@ def demo(argv: list[str]) -> int:
     print(f"    {c('1', 'ctrl+space')} then {c('1', '?')}   leader mode card")
     print(f"  in the {c('1', 'panes')} tab:")
     print(f"    {c('1', 'ctrl+alt+e')}       number every pane, press a digit    {c('1', 'ctrl+alt+shift+1..4')}  jump straight to pane N")
-    print(f"    {c('1', 'ctrl+alt+d')}       turn the focused pane into its own tab    {c('1', 'ctrl+alt+shift+h')}  show pane title bars (drag them)")
+    print(f"    {c('1', 'ctrl+alt+d')}       turn the focused pane into its own tab    {c('1', 'ctrl+alt+shift+c')}  show pane title bars (drag them)")
     print(f"  in the {c('1', 'file-refs')} tab: {c('1', 'ctrl+shift+click')} src/app.py:42:7 — opens your editor at that line")
     print(f"  in the two {c('1', 'app')} tabs: the same title, different projects — the bar says which (`kittymux features` turns pieces off)")
     print(f"  in the {c('1', 'scrollback')} tab: {c('1', 'ctrl+alt+PgUp / PgDn')} page · {c('1', 'ctrl+alt+Home / End')} oldest / live · {c('1', 'ctrl+alt+[')} {c('1', ']')} prompts")
@@ -2042,7 +2053,7 @@ FEATURE_HELP = {
     "collide": "emphasise the project of tabs that show the same title",
     "sheet": "(planned — not built yet) the side sheet for a tab",
     "hover": "(planned — not built yet) open the sheet on hover, inside the sheet only: kitty sends the bar no idle motion",
-    "panetitle": "the same line in each pane's title bar, plus the pane's own title (ctrl+alt+shift+h shows the bars; kitty ≥ 0.49.2)",
+    "panetitle": "the same line in each pane's title bar, plus the pane's own title (ctrl+alt+shift+c shows the bars; kitty ≥ 0.49.2)",
 }
 
 
@@ -2099,6 +2110,36 @@ def features_cmd(argv: list[str]) -> int:
         return 1
     print(usage, file=sys.stderr)
     return 2
+
+
+def _key_clashes() -> list:
+    """Chords both YOUR kitty config and kittymux's rendered keys file define with different actions. Never raises."""
+    try:
+        with open(os.path.join(CFG, "kittymux-keys.conf"), encoding="utf-8") as f:
+            ours = f.read()
+        return kittymux_keymap.conflicts(ours, kittymux_keymap.user_map_sources(CFG))
+    except Exception:
+        return []
+
+
+def keys_cmd(argv: list[str]) -> int:
+    """`kittymux keys [conflicts]` — the chords your own kitty config and kittymux both define. kitty reads kittymux-keys.conf AFTER your files and the
+    last definition wins, so for each of these kittymux's action is the one in effect and yours is switched off. (Most are intended: kittymux's scripts
+    replace your older ones. Anything else: rebind ours in the template, or remove yours.)"""
+    if argv and argv[0] not in ("conflicts",):
+        print("usage: kittymux keys [conflicts]", file=sys.stderr)
+        return 2
+    clashes = _key_clashes()
+    if not clashes:
+        print(f"{OK} no chord is defined by both your kitty config and kittymux")
+        return 0
+    print(f"{WARN} {len(clashes)} chords are defined by both your kitty config and kittymux — kittymux's loads later, so ITS action is the one in effect:\n")
+    short = lambda s: s if len(s) <= 96 else s[:95] + "…"        # noqa: E731
+    for chord, source, yours, ours in clashes:
+        print(f"  {c('1', chord)}")
+        print(f"      yours ({source}): {short(yours)}")
+        print(f"      ours:  {short(ours)}")
+    return 0
 
 
 def snooze(argv: list[str]) -> int:
@@ -2589,6 +2630,8 @@ def main(argv: list[str]) -> int:
         return snooze(argv[1:])
     if cmd == "features":
         return features_cmd(argv[1:])
+    if cmd == "keys":
+        return keys_cmd(argv[1:])
     if cmd == "fanout":
         return fanout(argv[1:])
     if cmd == "checkpoint":

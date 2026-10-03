@@ -17,6 +17,7 @@ import tty
 # ── palette: derived from the live kitty theme ─────────────────────────────
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "python"))
+import kittymux_keymap  # noqa: E402
 import kittymux_theme  # noqa: E402
 
 _P = kittymux_theme.palette_from_kitty()
@@ -335,7 +336,7 @@ def extra_groups() -> list[tuple[str, list[tuple[str, str]]]]:
             ("click a tab", "switch to it"),
             ("right-click a tab", "peek card: its panes and live screen"),
             ("drag a tab", "reorder"),
-            ("drag a pane title onto a tab", "move that split into the tab (ctrl+alt+shift+h shows the titles)"),
+            ("drag a pane title onto a tab", "move that split into the tab (ctrl+alt+shift+c shows the titles)"),
             ("drag a pane title onto the bar", "turn the split into its own tab"),
             ("drag the bar's edge", "resize the sidebar"),
             ("click « / »", "collapse to the rail / expand"),
@@ -388,6 +389,24 @@ def extra_groups() -> list[tuple[str, list[tuple[str, str]]]]:
             ("drag a split border", "resize panes"),
         ]),
     ]
+
+
+# ── your own shortcuts: read-only, shown beside ours ────────────────────────
+# kittymux never edits your kitty or Hyprland config (python/kittymux_keymap.py reads them). The overlay lists the maps you wrote and the Hyprland binds
+# that open terminals and scratchpads, so one list answers "what does this chord do here?" — and a clash with ours is visible, not a surprise.
+
+def load_yours(cfg_dir: str) -> list:
+    """Your kitty maps and Hyprland terminal/scratchpad binds, or [] when there is nothing to read. Never raises, never writes."""
+    import json
+    import subprocess
+    kitty_rows = kittymux_keymap.user_kitty_maps(cfg_dir)
+    binds = None
+    try:
+        out = subprocess.run(["hyprctl", "binds", "-j"], capture_output=True, text=True, timeout=2)
+        binds = json.loads(out.stdout) if out.returncode == 0 else None
+    except Exception:
+        pass
+    return kittymux_keymap.yours_groups(kitty_rows, kittymux_keymap.hypr_rows(binds))
 
 
 # ── search / layout (pure) ──────────────────────────────────────────────────
@@ -614,14 +633,17 @@ def frame(st: State, sections, rows: int, cols: int) -> list[str]:
     return out
 
 
-def sections_for(conf: str, leader: bool) -> list:
+def sections_for(conf: str, leader: bool, yours: list | None = None) -> list:
     if leader:
         key, groups = parse_leader(conf)
         if not groups:
             groups = [[("—", "leader mode is not installed — run install.sh --leader")]]
         return [((f"LEADER · {key} then a key" if i == 0 else ""), g) for i, g in enumerate(groups)]
     ordered = sorted(parse_conf(conf), key=lambda sr: _SECTION_ORDER.get(sr[0].upper(), 99))
-    return ordered + extra_groups()
+    extras = extra_groups()
+    if yours:
+        extras = kittymux_keymap.drop_overridden(extras, {k for _title, rows in yours for k, _d in rows})
+    return ordered + (yours or []) + extras
 
 
 def main() -> int:
@@ -630,7 +652,7 @@ def main() -> int:
     cfg_dir = os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.join(
         os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "kitty")
     conf = args[0] if args else os.path.join(cfg_dir, "kittymux-leader.conf" if leader else "kittymux-keys.conf")
-    sections = sections_for(conf, leader)
+    sections = sections_for(conf, leader, None if leader else load_yours(cfg_dir))
     st = State()
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)

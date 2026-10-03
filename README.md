@@ -136,12 +136,12 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+\`` | flip to previously active tab (MRU) |
 | `ctrl+alt+h j k l` | pane nav (`shift+alt+arrows`) · `ctrl+alt+o` last pane |
 | `ctrl+alt+shift+1..9` | focus pane **N** of this tab straight away (the digit `ctrl+alt+e` draws on each pane) |
-| `ctrl+alt+e` · `ctrl+alt+shift+x` | number every pane on screen, press its digit to **focus** it · to **swap** with it (tmux's display-panes) |
+| `ctrl+alt+e` · `ctrl+alt+shift+y` | number every pane on screen, press its digit to **focus** it · to **swap** with it (tmux's display-panes) |
 | `ctrl+alt+v` | **pick**: what needs you (longest-waiting first), every running agent, conversations you closed, a new agent — one searchable list (`kittymux pick --menu rofi` from your window manager) |
 | `ctrl+alt+shift+o` then `c` `x` `d` `u` `o` `a` `g` | **spawn** claude · codex · devin · cursor · opencode · agy · grok in a new tab (`shift` + letter: split right) in the current directory |
 | `ctrl+alt+shift+u` | reopen the agent conversation you closed last (it asks before resuming) |
 | `ctrl+alt+enter` | split horizontal · `+shift` vertical |
-| `ctrl+alt+d` / `+shift` | pane → new tab / chooser · `ctrl+alt+shift+h` shows/hides pane title bars (the drag handles) |
+| `ctrl+alt+d` / `+shift` | pane → new tab / chooser · `ctrl+alt+shift+c` shows/hides pane title bars (the drag handles) |
 | `ctrl+alt+z` / `0` | zoom pane / equalize |
 | `ctrl+alt+i` (×2) | cwd pill → detail card (copy path/branch) |
 | `ctrl+alt+u` | agent usage HUD |
@@ -224,7 +224,7 @@ never the only cue.
   instead of repeating the name.
 - Narrow bar? The branch goes first, then the path; a long name is cut in the middle (`kit…ux:hue`), never dropped.
 - The slim rail has no room for a line, so it tints the tab number with the project's colour.
-- **Pane title bars** (`ctrl+alt+shift+h` shows them on every pane of a split tab) carry the same line — `alpha/src/ui  ⑂ main  ·  nvim README.md` — in colours
+- **Pane title bars** (`ctrl+alt+shift+c` shows them on every pane of a split tab) carry the same line — `alpha/src/ui  ⑂ main  ·  nvim README.md` — in colours
   derived from the bar's own, so they read on any theme: the focused pane's project is bold, an empty or repeated pane title is left out, and
   `kittymux features off panetitle` hands the bars back to kitty's own title. Renaming a tab never changes them (a tab name and a pane title are different things).
 
@@ -239,7 +239,7 @@ Every optional piece is its own switch — use all of it, some of it, or none (t
 | `collide` | emphasise the project of tabs that show the same title | on |
 | `sheet` | the side sheet — **planned, no effect yet** | planned |
 | `hover` | open the sheet on hover — **planned, no effect yet**; kitty sends the bar no idle mouse motion, so it can only live inside the sheet | planned |
-| `panetitle` | the same line in each pane's title bar, then the pane's own title (`ctrl+alt+shift+h` shows the bars; kitty ≥ 0.49.2) | on |
+| `panetitle` | the same line in each pane's title bar, then the pane's own title (`ctrl+alt+shift+c` shows the bars; kitty ≥ 0.49.2) | on |
 
 ```bash
 kittymux features                 # what is on, and where each setting comes from
@@ -457,7 +457,7 @@ Kitty has native drag and drop; kittymux makes it work in the vertical bar:
 - **Reorder tabs** — press and drag a tab in the bar. A tab swaps once you pass the middle of the one you're crossing, so the order follows your hand instead of jumping (kitty's own drag teleported the grabbed tab to the top and cascaded swaps between tabs of different heights; both are fixed and covered by a real-pointer test). (Kitty used to treat the blank line between
   vertical tabs as "no tab", so dragging over it threw the tab to the end of the list; the gap now
   belongs to the nearer tab, and clicking it selects that tab.)
-- **Split → tab** — fastest: `ctrl+alt+d` (focused pane → new tab), or `t` in the deck. By mouse: press `ctrl+alt+shift+h` to show a thin title bar on every pane (they are hidden
+- **Split → tab** — fastest: `ctrl+alt+d` (focused pane → new tab), or `t` in the deck. By mouse: press `ctrl+alt+shift+c` to show a thin title bar on every pane (they are hidden
   otherwise, so splits stay clean), drag one onto **"+"** or empty bar space to turn that split into its
   own tab, then press the key again to hide the bars.
 - **Tab ← split** — drag a pane's title bar onto **a tab in the bar** to move the split into that tab.

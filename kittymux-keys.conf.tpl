@@ -90,10 +90,10 @@ map ctrl+alt+shift+6   nth_window 5
 map ctrl+alt+shift+7   nth_window 6
 map ctrl+alt+shift+8   nth_window 7
 map ctrl+alt+shift+9   nth_window 8
-# ctrl+alt+shift+x — number every pane, press a digit to swap the current pane with that one
-map ctrl+alt+shift+x     swap_with_window
-# ctrl+alt+shift+h — show/hide pane title bars: drag handles for moving a split to a tab, another tab, or elsewhere
-map ctrl+alt+shift+h     toggle_window_title_bars
+# ctrl+alt+shift+y — number every pane, press a digit to swap the current pane with that one
+map ctrl+alt+shift+y     swap_with_window
+# ctrl+alt+shift+c — show/hide pane title bars (captions): drag handles for moving a split to a tab, another tab, or elsewhere
+map ctrl+alt+shift+c     toggle_window_title_bars
 
 # ============================================
 # HUDS — location, agent usage, agent jump
@@ -203,7 +203,11 @@ map ctrl+alt+period      launch --type=background @KITTYMUX_HOME@/bin/mux-cycle.
 # PROJECT PICKER + SCRATCH CONFIG TAB
 # ============================================
 map ctrl+alt+shift+p     launch --type=overlay @KITTYMUX_HOME@/bin/mux-projects.sh
-map ctrl+alt+shift+k     launch --type=background @KITTYMUX_HOME@/bin/mux-scratch.sh --cwd @KITTYMUX_HOME@ -- nvim
+
+# ctrl+alt+shift+h / k / v / z / f / x are NOT ours: if your own kitty config maps them (quick config edits for Hyprland, kitty, nvim and zsh; a font toggle;
+# a screenshot) they keep working exactly as you wrote them. kitty reads this file AFTER yours and the last definition wins, so mapping one of them here would
+# silently switch yours off. kittymux took its pane-title-bar toggle to ctrl+alt+shift+c and its pane swap to ctrl+alt+shift+y for that reason;
+# `kittymux doctor` lists any chord that both configs define.
 
 # ============================================
 # OTHER

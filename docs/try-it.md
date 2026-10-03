@@ -14,9 +14,9 @@ It opens ten tabs. What to do in each:
 |---|---|---|
 | **panes** (4 panes) | `ctrl+alt+e` | a digit drawn on every pane; press one and that pane takes focus |
 | | `ctrl+alt+shift+1` … `4` | focus jumps straight to pane N (same numbers as the overlay) |
-| | `ctrl+alt+shift+x`, then a digit | swap the focused pane with that one |
+| | `ctrl+alt+shift+y`, then a digit | swap the focused pane with that one |
 | | `ctrl+alt+d` | the focused pane becomes its own tab |
-| | `ctrl+alt+shift+h`, then drag a pane's title bar onto the bar | the split moves into that tab (or onto empty space → its own tab); press the key again to hide titles |
+| | `ctrl+alt+shift+c`, then drag a pane's title bar onto the bar | the split moves into that tab (or onto empty space → its own tab); press the key again to hide titles |
 | **file-refs** | `ctrl+shift+click` on `src/app.py:42:7` | your editor opens at line 42 (`$VISUAL`/`$EDITOR`); a made-up path opens nothing |
 | **scrollback** (500 lines) | `ctrl+alt+PgUp` / `PgDn` | the view moves a page back / forward |
 | | `ctrl+alt+Home` / `End` | oldest output / back to the live screen |

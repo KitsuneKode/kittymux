@@ -1,4 +1,4 @@
-# kittymux pane titles — the folder line in kitty's per-pane title bars (ctrl+alt+shift+h shows them).
+# kittymux pane titles — the folder line in kitty's per-pane title bars (ctrl+alt+shift+c shows them).
 #
 # kitty draws a one-row title bar above each pane when `window_title_bar_min_windows` says so; its text is `window_title_template`, and `{custom}` in
 # that template is what `draw_window_title(data)` of the config dir's `window_title_bar.py` returns. kitty loads that file ONCE per process, so it is a

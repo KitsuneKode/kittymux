@@ -1287,3 +1287,63 @@ class FeaturesTests(unittest.TestCase):
         self.assertIn("reloaded 1 kitty", out)
         _rc, out, _e, _ = self.run_cmd("off", "hue", nudged=0)
         self.assertIn("no running kitty found", out)
+
+
+class KeysCmdTests(unittest.TestCase):
+    """`kittymux keys`: chords that BOTH your kitty config and kittymux define. kitty reads kittymux-keys.conf after your files and the last
+    definition wins — a clash silently switches your own shortcut off."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        d = self.tmp.name
+        with open(os.path.join(d, "kitty.conf"), "w") as f:
+            f.write("include userprefs.conf\ninclude %s/kittymux-keys.conf\n" % d)
+        with open(os.path.join(d, "userprefs.conf"), "w") as f:
+            f.write("map ctrl+alt+shift+h launch --type=background /x/scratch-tab.sh --cwd /home/u/.config/hypr -- nvim\n"
+                    "map ctrl+alt+q close_window_with_confirmation\n")
+        with open(os.path.join(d, "kittymux-keys.conf"), "w") as f:
+            f.write("map ctrl+alt+shift+h toggle_window_title_bars\nmap ctrl+alt+q close_window_with_confirmation\nmap ctrl+alt+z layout_action maximize\n")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_keys(self, *argv):
+        import contextlib
+        import io
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(self.m, "CFG", self.tmp.name), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = self.m.keys_cmd(list(argv))
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_it_lists_a_chord_both_define_with_different_actions_and_who_wins(self):
+        rc, out, _e = self.run_keys()
+        self.assertEqual(rc, 0)
+        self.assertIn("ctrl+alt+shift+h", out)
+        self.assertIn("userprefs.conf", out)
+        self.assertIn("scratch-tab.sh", out)
+        self.assertIn("toggle_window_title_bars", out)
+        self.assertNotIn("ctrl+alt+q", out)                           # same action in both: not a clash
+        self.assertIn("kittymux", out.split("ctrl+alt+shift+h")[0])   # the header says kittymux's wins
+
+    def test_it_says_so_when_nothing_clashes(self):
+        with open(os.path.join(self.tmp.name, "userprefs.conf"), "w") as f:
+            f.write("map ctrl+alt+x launch htop\n")
+        rc, out, _e = self.run_keys("conflicts")
+        self.assertEqual(rc, 0)
+        self.assertIn("no chord is defined by both", out)
+
+    def test_a_missing_kittymux_file_or_config_is_not_an_error(self):
+        os.unlink(os.path.join(self.tmp.name, "kittymux-keys.conf"))
+        rc, out, _e = self.run_keys()
+        self.assertEqual(rc, 0)
+        self.assertIn("no chord is defined by both", out)
+
+    def test_junk_arguments_get_usage(self):
+        rc, _o, err = self.run_keys("frobnicate")
+        self.assertEqual(rc, 2)
+        self.assertIn("usage: kittymux keys", err)
