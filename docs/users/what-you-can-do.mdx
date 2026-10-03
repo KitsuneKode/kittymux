@@ -55,11 +55,10 @@ Not built. The docs say so wherever they mention it.
 | --- | --- |
 | Side sheet beside the bar | A sheet with more about a tab. Not built; the peek card and the deck cover the need today. |
 | Sheet that opens on hover | Not possible from the bar itself, because kitty sends it no idle mouse motion; it can only live inside a sheet or the panel. |
-| Open the peek card from the keyboard | Today the card opens on right-click; the deck is the keyboard route to the same preview. |
-| Workspace switcher | A recent-first list of sessions with agent states, as one key. |
+| Workspace switcher | A recent-first list of sessions and OS windows with their agent states, as one key. The deck and pick already list every tab of every OS window. |
 | Rename a session | Rename a session and keep its tab titles, saved file and journal in step. |
 | Type into several panes | One keystroke stream into every pane of a tab, like tmux synchronize-panes. |
-| Layout cycle and rotate keys | Keys to cycle layouts and rotate or swap panes. |
+| Layout cycle and rotate keys | Keys to rotate panes and move a pane in a direction. ctrl+alt+space already cycles layouts. |
 | Documentation site | The docs in this folder rendered by a TanStack Start and Fumadocs app. |
 
 ### Beta
@@ -86,6 +85,7 @@ Works today and is covered by a test.
 | Feature switches | Turn each optional piece of the bar on or off with kittymux features, by flag file or environment. |
 | Pane title bars | The folder line in kitty's per-pane title bars, doubling as drag handles (kitty 0.49.2 and later). |
 | Peek card | Right-click a tab for its state, question, branch, folder, panes and the tail of its screen. |
+| Quick look from the keyboard | ctrl+alt+shift+q opens the peek card of the agent that has waited longest, and kittymux peek opens it for any tab of this kitty. |
 | Sidebar deck | Every tab across every session with live preview, search, hover and keyboard control. |
 | Join a tab into another | Move all panes of a tab (or one pane) into another tab as splits, keeping their shape. |
 | Panes by number, swap and move | Number every pane, focus or swap by digit, turn a pane into a tab, drag title bars. |

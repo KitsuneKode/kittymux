@@ -7,7 +7,7 @@ With a dozen tabs open you often want to know one thing about one of them: is th
 
 | | Peek card | Deck | Docked panel |
 | --- | --- | --- | --- |
-| Open it | Right-click a tab in the bar | `ctrl+alt+b` | `ctrl+alt+shift+b` toggles it |
+| Open it | Right-click a tab in the bar, or press `ctrl+alt+shift+q` | `ctrl+alt+b` | `ctrl+alt+shift+b` toggles it |
 | Shows | One tab: its state, the question it is asking, branch, folder, panes and the tail of its screen | Every tab of every session, grouped, with a live preview of the selection | The same as the deck |
 | Stays open | No. It closes when you act or dismiss it. | No. It closes when you jump. | Yes. It is a column on your screen. |
 | Needs | The vertical bar | Nothing extra | A Wayland compositor with layer-shell |
@@ -15,7 +15,7 @@ With a dozen tabs open you often want to know one thing about one of them: is th
 <Callout type="info" title="Is there a detail sheet on hover?">
   Not yet. kitty sends the tab bar no idle mouse motion (in a real-pointer test, none of eight moves
   arrived), so nothing can open when you merely hover a tab. The right-click peek card is the nearest
-  thing, and the deck and panel do get real hover. A sheet that lives inside the deck or panel is
+  thing (right-click, or `ctrl+alt+shift+q` from the keyboard), and the deck and panel do get real hover. A sheet that lives inside the deck or panel is
   [planned](/docs/developer/roadmap).
 </Callout>
 
@@ -23,13 +23,13 @@ With a dozen tabs open you often want to know one thing about one of them: is th
 
 The peek card is a small overlay over your active pane. It answers "what is going on in that tab" in one glance.
 
-**Open it.** Right-click a tab in the vertical bar.
+**Open it.** Right-click a tab in the vertical bar, or press `ctrl+alt+shift+q` for a quick look at the agent that has waited on you longest.
 
 **It shows** the tab's state and, for an agent that needs you, the question it is asking, the branch and folder, each pane of the tab, and the tail of the screen. It refreshes about once a second while it is open.
 
 | To                                                    | Keyboard           | Mouse                  |
 | ----------------------------------------------------- | ------------------ | ---------------------- |
-| Open the card for a tab                               | Not yet. See below. | Right-click the tab.   |
+| Open the card                                         | `ctrl+alt+shift+q` for the agent that has waited longest. `kittymux peek 12` for tab id 12. | Right-click the tab.   |
 | Jump to the tab. If a pane is asking, land on that pane | `⏎`              |                        |
 | Close the card                                        | `esc` or `q`       | Click anywhere on it.  |
 
@@ -41,7 +41,21 @@ You can also open it by hand for a tab id from `kitty @ ls`:
 kitten ~/kittymux/python/peek-kit.py 12
 ```
 
-**Keyboard route today.** There is no chord that opens the peek card. To see the same information with the keyboard, open the deck, move to the tab and read the preview. Opening the card from the keyboard is on the [roadmap](/docs/developer/roadmap).
+### Quick look from the keyboard
+
+Press `ctrl+alt+shift+q`. The card opens over the pane you are in, about the agent in this kitty that has waited on you longest: the same order as [`kittymux pick`](/docs/users/launch-and-find-agents#find-an-agent-with-pick) and `ctrl+alt+y`. Read its question, then press `⏎` to go there or `esc` to stay where you are. Press the chord again to close the card. If nothing in this kitty needs you, it opens nothing and shows a short desktop notification.
+
+For any other tab, run `kittymux peek` from a shell:
+
+```sh
+kittymux peek                # the tab of this pane
+kittymux peek 12             # tab id 12 of this kitty (see kitty @ ls)
+kittymux peek --waiting      # the agent that has waited longest, what the chord runs
+```
+
+The card can only show windows of the kitty it runs in, so `--waiting` looks at this kitty only. Use `kittymux pick` to find an agent in another kitty.
+
+To look at a tab by choosing it from a list, open the deck instead. It previews whatever you select.
 
 ## Deck
 

@@ -219,6 +219,43 @@ class RowTests(unittest.TestCase):
         self.assertEqual(self.rows(installed=[]), [])
 
 
+class NeedsYouTargetTests(unittest.TestCase):
+    """`kittymux peek --waiting`: which window of THIS kitty to look at — the same order `pick` uses, so the quick look and the list agree."""
+
+    def row(self, pid, w, tone="urgent", op="jump", kind="event"):
+        return {"kind": kind, "tone": tone, "action": {"op": op, "pid": pid, "w": w}}
+
+    def test_the_first_urgent_row_of_this_kitty_wins(self):
+        rows = [self.row(100, 5), self.row(200, 7), self.row(200, 9)]
+        self.assertEqual(L.needs_you_target(rows, 200), "7")
+
+    def test_rows_that_do_not_need_you_are_skipped(self):
+        rows = [self.row(200, 3, tone="active", kind="running"), self.row(200, 4, tone=""), self.row(200, 8)]
+        self.assertEqual(L.needs_you_target(rows, "200"), "8")                    # pid compares as text: ids come from files and sockets
+
+    def test_other_kitties_and_other_operations_are_not_offered(self):
+        rows = [self.row(100, 5), self.row(200, 6, op="spawn")]
+        self.assertIsNone(L.needs_you_target(rows, 200))
+
+    def test_a_row_without_a_usable_window_id_is_skipped(self):
+        rows = [self.row(200, ""), self.row(200, None), self.row(200, "7; rm -rf"), self.row(200, "12")]
+        self.assertEqual(L.needs_you_target(rows, 200), "12")
+
+    def test_nothing_needs_you(self):
+        self.assertIsNone(L.needs_you_target([], 200))
+        self.assertIsNone(L.needs_you_target([{"kind": "closed", "action": {"op": "reopen"}}], 200))
+
+    def test_it_agrees_with_the_picker_order_for_real_rows(self):
+        now = 1_800_000_000.0
+        events = [{"id": "a", "pid": 200, "w": 21, "severity": "needs-you", "t": now - 60, "agent": "claude", "body": "Approve?"},
+                  {"id": "b", "pid": 200, "w": 22, "severity": "needs-you", "t": now - 600, "agent": "codex", "body": "Allow?"}]
+        windows = [{"pid": 200, "w": 23, "agent": "devin", "state": "waiting", "tab": "x", "cwd": "/w", "argv": []}]
+        rows = L.build_rows(events, windows, [], [], now)
+        self.assertEqual(L.needs_you_target(rows, 200), "22")                      # the longest-waiting event, not the newest
+        rows = L.build_rows([], windows, [], [], now)
+        self.assertEqual(L.needs_you_target(rows, 200), "23")                      # a waiting agent with no event yet is still found
+
+
 class WaybarTests(unittest.TestCase):
     def test_nothing_unread_is_hidden_needs_you_is_a_diamond_and_finished_a_tick(self):
         self.assertEqual(L.waybar_status([], NOW), {"text": "", "tooltip": "", "class": "idle"})

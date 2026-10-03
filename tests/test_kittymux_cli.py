@@ -1400,3 +1400,94 @@ class JoinCmdTests(unittest.TestCase):
         rc, _err, calls = self.run_join([])
         self.assertEqual(rc, 0)
         self.assertEqual(calls[0][8:], [])
+
+
+class PeekCmdTests(unittest.TestCase):
+    """`kittymux peek [TAB_ID | --waiting]`: opens the peek card (python/peek-kit.py) over the pane it is run from, for this tab, a given tab or the agent that needs you most."""
+    LS = [{"id": 1, "tabs": [{"id": 10, "windows": [{"id": 7}, {"id": 8, "is_focused": True}]}, {"id": 11, "windows": [{"id": 9}]}]}]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def run_peek(self, argv, sock="unix:/nonexistent/mykitty-200", win="7", rows_target=None, ls=None):
+        import io
+        from contextlib import redirect_stderr
+        from unittest.mock import patch
+        err, calls, notes = io.StringIO(), [], []
+        with patch.object(self.m, "_own_kitty_socket", return_value=sock), \
+                patch.object(self.m, "_ls", return_value=self.LS if ls is None else ls), \
+                patch.object(self.m, "_pick_data", return_value=([], [], [], [])), \
+                patch.object(self.m.kittymux_launcher, "build_rows", return_value=[]), \
+                patch.object(self.m.kittymux_launcher, "needs_you_target", return_value=rows_target), \
+                patch.object(self.m, "_notify", side_effect=notes.append), \
+                patch.dict(os.environ, {"KITTY_WINDOW_ID": win} if win else {}, clear=False), \
+                patch.object(self.m.subprocess, "run", side_effect=lambda cmd, **kw: calls.append(cmd) or type("R", (), {"returncode": 0})()), \
+                redirect_stderr(err):
+            if not win:
+                os.environ.pop("KITTY_WINDOW_ID", None)
+            rc = self.m.peek_cmd(argv)
+        return rc, err.getvalue(), calls, notes
+
+    def test_junk_arguments_are_refused_with_usage(self):
+        for argv in (["abc"], ["-3"], ["--tab"], ["12", "13"], ["--waiting", "12"], ["--what"]):
+            rc, err, calls, _ = self.run_peek(argv)
+            self.assertEqual(rc, 2, argv)
+            self.assertIn("usage: kittymux peek", err)
+            self.assertEqual(calls, [])
+
+    def test_outside_a_kitty_it_says_so_and_runs_nothing(self):
+        rc, err, calls, _ = self.run_peek([], sock=None)
+        self.assertEqual(rc, 1)
+        self.assertIn("run it from a pane", err)
+        self.assertEqual(calls, [])
+
+    def test_a_key_bound_launch_uses_the_focused_pane_not_its_own_hidden_window(self):
+        """`launch --type=background` runs us in a hidden window with its own id (KITTY_WINDOW_ID): that is not a pane of any tab and `--match id:` finds nothing."""
+        rc, _err, calls, _ = self.run_peek([], win="5")                     # 5 is not in `ls`; window 8 is the focused one (tab 10)
+        self.assertEqual(rc, 0)
+        self.assertEqual((calls[0][6], calls[0][8:]), ("id:8", ["10"]))
+        rc, _err, calls, _ = self.run_peek([], win="")                      # no id at all
+        self.assertEqual((rc, calls[0][6]), (0, "id:8"))
+
+    def test_with_no_pane_to_show_the_card_over_it_says_so(self):
+        ls = [{"id": 1, "tabs": [{"id": 10, "windows": [{"id": 7}]}]}]       # nothing focused
+        rc, err, calls, _ = self.run_peek([], win="5", ls=ls)
+        self.assertEqual(rc, 1)
+        self.assertEqual(calls, [])
+        self.assertIn("focused", err)
+
+    def test_with_no_argument_it_peeks_at_this_panes_tab(self):
+        rc, _err, calls, _ = self.run_peek([], win="9")
+        self.assertEqual(rc, 0)
+        cmd = calls[0]
+        self.assertEqual(cmd[:6], ["kitty", "@", "--to", "unix:/nonexistent/mykitty-200", "kitten", "--match"])
+        self.assertEqual(cmd[6], "id:9")
+        self.assertTrue(cmd[7].endswith("python/peek-kit.py"))
+        self.assertEqual(cmd[8:], ["11"])                                   # window 9 lives in tab 11
+
+    def test_a_tab_id_is_passed_through_when_this_kitty_has_it(self):
+        rc, _err, calls, _ = self.run_peek(["10"])
+        self.assertEqual((rc, calls[0][8:]), (0, ["10"]))
+
+    def test_a_tab_this_kitty_does_not_have_is_refused(self):
+        rc, err, calls, _ = self.run_peek(["99"])
+        self.assertEqual(rc, 1)
+        self.assertIn("no tab 99", err)
+        self.assertEqual(calls, [])
+
+    def test_waiting_peeks_at_the_tab_of_the_agent_that_needs_you(self):
+        rc, _err, calls, _ = self.run_peek(["--waiting"], win="7", rows_target="9")
+        self.assertEqual((rc, calls[0][6], calls[0][8:]), (0, "id:7", ["11"]))          # shown over THIS pane (7), about the tab of window 9
+
+    def test_waiting_with_nothing_waiting_says_so_without_opening_anything(self):
+        rc, err, calls, notes = self.run_peek(["--waiting"], rows_target=None)
+        self.assertEqual(rc, 1)
+        self.assertIn("needs you", err)
+        self.assertEqual(calls, [])
+        self.assertEqual(len(notes), 1)                                   # a key-bound command has no terminal: the message must reach the desktop
+
+    def test_waiting_whose_window_is_gone_is_refused(self):
+        rc, err, calls, _ = self.run_peek(["--waiting"], rows_target="555")
+        self.assertEqual(rc, 1)
+        self.assertEqual(calls, [])

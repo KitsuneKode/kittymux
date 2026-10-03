@@ -31,6 +31,7 @@
                          explain [--window ID] [--last N] [--all] [--json]
   kittymux features    pick which optional pieces of the bar you want — the project/branch line under each tab, a colour per project, emphasis on look-alike tabs:
                          features [list] | on NAME | off NAME | preset minimal|default|full     (kittymux features -h)
+  kittymux peek        the peek card (a right-click on a tab) from the keyboard: peek [TAB_ID | --waiting]  (--waiting: the agent that needs you longest)
   kittymux join        move this tab's panes into another tab as splits: join [--to TAB_ID] [--side right|below|left|above|auto] [--pane]
   kittymux keys        chords your own kitty config and kittymux both define (kittymux's wins: it loads later): keys [conflicts]
   kittymux dim         dim the panes that are not focused (kitty ≥ 0.49.2): dim [on|off|toggle|show]
@@ -2143,6 +2144,56 @@ def keys_cmd(argv: list[str]) -> int:
     return 0
 
 
+def peek_cmd(argv: list[str]) -> int:
+    """`kittymux peek [TAB_ID | --waiting]` — open the peek card (what a right-click on a tab opens) over this pane: for this tab, for a tab of this kitty, or for the agent that
+    has waited on you longest (`--waiting`, what ctrl+alt+shift+q does). The card shows the tab's state, the question, branch, folder, panes and the tail of its screen;
+    ⏎ jumps there, esc closes. It acts on the kitty it was started inside, because the card can only show windows of the kitty it runs in."""
+    usage = "usage: kittymux peek [TAB_ID | --waiting]"
+    if len(argv) > 1 or (argv and not (argv[0] == "--waiting" or argv[0].isdigit())):
+        print(usage, file=sys.stderr)
+        return 2
+    sock = _own_kitty_socket()
+    if sock is None:
+        print("kittymux peek: run it from a pane of the kitty you want to look at "
+              "(needs allow_remote_control socket-only and listen_on unix:${XDG_RUNTIME_DIR}/mykitty)", file=sys.stderr)
+        return 1
+    data = _ls(sock) or []
+    panes = [w for o in data for t in o.get("tabs", []) for w in t.get("windows", [])]
+    mine = os.environ.get("KITTY_WINDOW_ID", "")
+    # $KITTY_WINDOW_ID is the pane you ran it from in a shell; a key-bound `launch --type=background` gets the id of its own hidden window instead, which is no pane of any tab
+    win = mine if mine.isdigit() and any(w.get("id") == int(mine) for w in panes) else next((str(w["id"]) for w in panes if w.get("is_focused")), "")
+    if not win:
+        print("kittymux peek: no focused pane in this kitty to show the card over", file=sys.stderr)
+        return 1
+
+    def tab_of_window(window_id: int):
+        return next((t["id"] for o in data for t in o.get("tabs", []) for w in t.get("windows", []) if w.get("id") == window_id), None)
+
+    if argv and argv[0] == "--waiting":
+        now = time.time()
+        events, windows, closed, installed = _pick_data(now)
+        rows = kittymux_launcher.build_rows(events, windows, closed, installed, now, home=os.path.expanduser("~"))
+        target = kittymux_launcher.needs_you_target(rows, _socket_pid(sock))
+        if target is None:
+            print("kittymux peek: no agent in this kitty needs you (`kittymux pick` also lists other kitties)", file=sys.stderr)
+            _notify("nothing needs you")
+            return 1
+        tab = tab_of_window(int(target))
+    elif argv:
+        tab = int(argv[0]) if any(t.get("id") == int(argv[0]) for o in data for t in o.get("tabs", [])) else None
+        if tab is None:
+            print(f"kittymux peek: no tab {argv[0]} in this kitty (see `kitty @ ls`)", file=sys.stderr)
+            return 1
+    else:
+        tab = tab_of_window(int(win))
+    if tab is None:
+        print("kittymux peek: that tab is gone", file=sys.stderr)
+        return 1
+    kit = os.path.join(HOME_DIR, "python", "peek-kit.py")
+    r = subprocess.run(["kitty", "@", "--to", sock, "kitten", "--match", f"id:{win}", kit, str(tab)], stdin=subprocess.DEVNULL, check=False)
+    return r.returncode
+
+
 def join_cmd(argv: list[str]) -> int:
     """`kittymux join [--to TAB] [--side right|below|left|above|auto] [--pane]` — move this tab's panes into another tab as splits, keeping their shape.
     Without --to it opens the picker over this pane (what ctrl+alt+shift+j does). Acts on the kitty it was started inside and on THIS pane's tab."""
@@ -2668,6 +2719,8 @@ def main(argv: list[str]) -> int:
         return keys_cmd(argv[1:])
     if cmd == "join":
         return join_cmd(argv[1:])
+    if cmd == "peek":
+        return peek_cmd(argv[1:])
     if cmd == "fanout":
         return fanout(argv[1:])
     if cmd == "checkpoint":

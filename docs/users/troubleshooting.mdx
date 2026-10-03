@@ -67,14 +67,20 @@ kittymux doctor
 
 ## The pointer is a hand over the bar edge
 
-**Cause.** This is how kitty works, not a fault.
+**Cause.** This is how kitty works, not a fault. It affects tabs with a single pane.
 
 - Over the tab bar kitty always shows a hand, and ignores shape requests there.
-- kitty hit-tests split borders only in a tab with two or more panes. In a single-pane tab nothing under the pointer is a border, so there is no resize arrow.
+- kitty hit-tests split borders, which is what produces the resize arrow, only in a tab with two or more panes. In a single-pane tab nothing under the pointer is a border.
 
-**What you get.** In a tab with split panes, the native resize arrow appears over the divider. In a single-pane tab, the bar's last two columns are the grab zone, and the pointer stays a hand. The docked panel shows a resize cursor on its edge everywhere.
+**What you get.** In a tab with split panes, the pointer over the bar's divider is the native resize arrow, the same one you see over a divider between two panes. In a single-pane tab, the bar's last two columns are the grab zone and the pointer stays a hand. Dragging still resizes the bar.
 
-If the arrow in a split tab looks wrong, such as the wrong shape, offset or missing, the cursor comes from your compositor's cursor theme. Check that the theme has the `sb_h_double_arrow` cursor and the aliases `ew-resize` and `col-resize`.
+**What to do.**
+
+- Use the docked panel (`ctrl+alt+shift+b`). It is its own window and shows the resize cursor on its edge in every tab.
+- Resize from the keyboard with `ctrl+alt+shift+[` and `ctrl+alt+shift+]`, or collapse to the rail with the `«` button.
+- If the arrow in a **split** tab looks wrong, such as the wrong shape, offset or missing, the picture comes from your cursor theme. Check that the theme has `sb_h_double_arrow` and the aliases `ew-resize` and `col-resize`.
+
+kittymux cannot change this from Python. The roadmap explains what would fix it in kitty: [The resize arrow on the bar edge of a single-pane tab](/docs/developer/roadmap#the-resize-arrow-on-the-bar-edge-of-a-single-pane-tab).
 
 ## Join does not place panes as expected
 

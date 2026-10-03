@@ -148,6 +148,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+u` | agent usage HUD |
 | `ctrl+alt+g` | agent picker — every agent pane, live preview + status + message |
 | `ctrl+alt+y` | jump to the next agent waiting on you (round-robin, longest-waiting first) |
+| `ctrl+alt+shift+q` | **quick look**: the peek card of the agent that has waited longest, without leaving this tab (`⏎` goes there, `esc` stays; `kittymux peek [TAB_ID]` for any tab) |
 | `ctrl+alt+shift+g` | new agent in its own git worktree + tab |
 | `ctrl+alt+b` | sidebar deck — tabs grouped by session, hover/click, live pane preview (`J`/`K` jump sessions · `/` search by title, branch, folder, agent, state or message · `a` pulls the selected tab's panes into this tab · `t` turns the hovered/focused pane into its own tab) |
 | `ctrl+alt+shift+b` | **docked sidebar panel** — the deck as an always-visible left column that reserves screen space (Wayland/Hyprland) |

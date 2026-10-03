@@ -37,6 +37,10 @@ features:
     label: Peek card
     status: shipped
     description: Right-click a tab for its state, question, branch, folder, panes and the tail of its screen.
+  - id: quick-look
+    label: Quick look from the keyboard
+    status: shipped
+    description: ctrl+alt+shift+q opens the peek card of the agent that has waited longest, and kittymux peek opens it for any tab of this kitty.
   - id: deck
     label: Sidebar deck
     status: shipped
@@ -153,14 +157,10 @@ features:
     label: Sheet that opens on hover
     status: planned
     description: Not possible from the bar itself, because kitty sends it no idle mouse motion; it can only live inside a sheet or the panel.
-  - id: peek-from-keyboard
-    label: Open the peek card from the keyboard
-    status: planned
-    description: Today the card opens on right-click; the deck is the keyboard route to the same preview.
   - id: workspace-switcher
     label: Workspace switcher
     status: planned
-    description: A recent-first list of sessions with agent states, as one key.
+    description: A recent-first list of sessions and OS windows with their agent states, as one key. The deck and pick already list every tab of every OS window.
   - id: session-rename
     label: Rename a session
     status: planned
@@ -172,7 +172,7 @@ features:
   - id: layout-keys
     label: Layout cycle and rotate keys
     status: planned
-    description: Keys to cycle layouts and rotate or swap panes.
+    description: Keys to rotate panes and move a pane in a direction. ctrl+alt+space already cycles layouts.
   - id: docs-site
     label: Documentation site
     status: planned

@@ -66,7 +66,8 @@ remote work.
 - `python/sidebar-kit.py` — `kitten` overlay: sidebar with real hover/click
   + live pane preview (bound `ctrl+alt+b`)
 - `python/peek-kit.py` — the right-click peek card for one tab (kitten over the active window, opened by
-  `kittymux_barsize._open_peek`; `kitty @ kitten --match id:W peek-kit.py <tab id>`)
+  `kittymux_barsize._open_peek`; `kitty @ kitten --match id:W peek-kit.py <tab id>`). `kittymux peek [TAB_ID | --waiting]` (`ctrl+alt+shift+q`) opens it from the keyboard: the pane to show it over is `$KITTY_WINDOW_ID` when that is a real pane
+  of this kitty, else the FOCUSED pane (a key-bound `launch --type=background` gets the id of its own hidden window, which no `--match id:` finds); `--waiting` = `kittymux_launcher.needs_you_target` over `build_rows` (the order `pick` uses), this kitty only
 - `python/collectors/` — per-provider usage collectors (claude/codex/cursor/devin)
 - `tools/build-icons.py` — builds the PUA icon font the glyphs live in
 - `install.sh` — symlinks/copies into `~/.config/kitty`, renders the tpl
@@ -242,6 +243,7 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   `bash tests/smoke_titles.sh` (what a tab is CALLED: fresh shell, named/renamed/cleared tab, program titles, agents with and without a conversation title, a stale title, the resume prompt, hostile/long/blank/path titles),
   `bash tests/smoke_join.sh` (a three-pane tab joins a two-pane tab: all panes present, the big-pane + stack shape kept, no pane narrower than 18 columns, same-tab/missing-tab/bad input change nothing, a tall-layout target works) and
   `bash tests/smoke_join_ui.sh` (the picker with real key and mouse events: chord, one Esc, no stacking, filter, side, tab/pane, hover, Enter, left click joins, right click does not),
+  `bash tests/smoke_peek.sh` (quick look with real keys: nothing waiting opens nothing, the card is about the longest-waiting agent's tab, the chord again closes it, one Esc stays, ⏎ jumps),
   `python3 -m unittest tests.test_docs` (the published docs: links, chords, CLI coverage, status table, voice) and
   `bash tests/smoke_demo.sh` (`kittymux demo` opens every showcase tab — the front door must stay healthy),
   `bash tests/smoke_keys.sh` (the keymap overlay: one Esc/q/the chord closes it, no stacking, typing filters),

@@ -233,6 +233,19 @@ def build_rows(events: list[dict], windows: list[dict], closed: list[dict], inst
 
 
 # ── look: icons and a rofi theme derived from the live kitty theme ────────────
+def needs_you_target(rows: list[dict], pid) -> str | None:
+    """The window of kitty `pid` that needs you most, from `build_rows` output (event rows first, longest-waiting first, then agents that are waiting or limited), as a
+    window-id string; None when nothing in that kitty does. The peek card can only show windows of the kitty it runs in, hence the pid."""
+    for r in rows:
+        if r.get("tone") != "urgent":
+            continue
+        a = r.get("action") or {}
+        w = str(a.get("w", ""))
+        if a.get("op") == "jump" and str(a.get("pid")) == str(pid) and w.isdigit():
+            return w
+    return None
+
+
 def icon_for(agent: str, notify_dir: str, fallback: str) -> str:
     """Path of the agent's mark (assets/notify/<agent>.png, which carries the mascot badge) — chosen from OUR directory by a validated name, never from output — else `fallback`."""
     name = ALIASES.get((agent or "").lower(), (agent or "").lower())

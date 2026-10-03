@@ -95,6 +95,9 @@ map ctrl+alt+shift+y     swap_with_window
 # ctrl+alt+shift+j — join this tab into another as splits: pick the tab (type to filter · ⏎ joins · tab = side · ctrl+t = whole tab / this pane)
 map ctrl+alt+shift+j     kitten @KITTYMUX_HOME@/python/join-kit.py
 map --when-focus-on cmdline:join-kit.py ctrl+alt+shift+j close_window
+# ctrl+alt+shift+q — quick look: the peek card of the agent that has waited on you longest, without leaving this tab (⏎ goes there · esc stays); kittymux peek [TAB_ID] for any tab
+map ctrl+alt+shift+q     launch --type=background @KITTYMUX_HOME@/bin/kittymux peek --waiting
+map --when-focus-on cmdline:peek-kit.py ctrl+alt+shift+q close_window
 # ctrl+alt+shift+c — show/hide pane title bars (captions): drag handles for moving a split to a tab, another tab, or elsewhere
 map ctrl+alt+shift+c     toggle_window_title_bars
 
