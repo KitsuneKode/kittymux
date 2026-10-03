@@ -56,11 +56,14 @@ def _cells(s: str) -> int:
 
 
 def _find_join_kit() -> str:
-    """join-kit.py sits next to this file (kittens are run by path, not linked into the config dir)."""
-    for d in (os.path.dirname(os.path.realpath(sys.argv[0])) if sys.argv and sys.argv[0] else "", _CONFIG_DIR):
+    """join-kit.py sits next to the kittymux modules. Kittens are run by path and are exec'd (no __file__; sys.argv[0] is not the script inside a running
+    kitten), so anchor on a module that WAS imported: kittymux_deck is linked into the config dir from the checkout, and its real path is that checkout's python/."""
+    here = os.path.dirname(os.path.realpath(deck.__file__)) if getattr(deck, "__file__", None) else ""
+    own = os.path.dirname(os.path.realpath(sys.argv[0])) if sys.argv and sys.argv[0] else ""
+    for d in (here, own, _CONFIG_DIR):
         if d and os.path.exists(os.path.join(d, "join-kit.py")):
             return os.path.join(d, "join-kit.py")
-    return os.path.join(_CONFIG_DIR, "join-kit.py")
+    return os.path.join(here or _CONFIG_DIR, "join-kit.py")
 
 
 _JOIN_KIT = _find_join_kit()

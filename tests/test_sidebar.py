@@ -14,7 +14,7 @@ PYTHON = Path(__file__).resolve().parents[1] / "python"
 sys.path.insert(0, str(PYTHON))
 
 
-def load_sidebar():
+def load_sidebar(cfg=None, argv0=None):
     modules = {}
     attrs = {
         "kittens.tui.handler": dict(Handler=type("Handler", (), {"atomic_update": staticmethod(lambda f: f)}),
@@ -34,8 +34,8 @@ def load_sidebar():
     spec = importlib.util.spec_from_file_location("sidebar_under_test", PYTHON / "sidebar-kit.py")
     mod = importlib.util.module_from_spec(spec)
     with patch.dict(sys.modules, modules), \
-         patch.dict(os.environ, KITTY_CONFIG_DIRECTORY=str(PYTHON)), \
-         patch.object(sys, "argv", [str(PYTHON / "sidebar-kit.py")]):
+         patch.dict(os.environ, KITTY_CONFIG_DIRECTORY=str(cfg or PYTHON)), \
+         patch.object(sys, "argv", [argv0 or str(PYTHON / "sidebar-kit.py")]):
         spec.loader.exec_module(mod)
     assert Path(mod.deck.__file__).resolve().parent == PYTHON
     return mod
@@ -86,6 +86,18 @@ class SidebarTests(unittest.TestCase):
         self.assertTrue(kit[0][3].endswith("join-kit.py"))
         self.assertEqual(kit[0][4:], ("--to", "1", "--side", "auto"))
         self.assertIn(("focus-window", "--match", "id:20"), calls)
+
+    def test_the_join_kitten_is_found_next_to_the_modules_not_in_the_config_dir(self):
+        """Inside a running kitten sys.argv[0] is not the script, and the config dir holds only links to the modules: join-kit.py must be found
+        beside the REAL path of an imported module (the regression: smoke_sidebar.sh 'absorb' did nothing because the path fell back to <config dir>/join-kit.py)."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as cfg:
+            for name in os.listdir(PYTHON):
+                if name.startswith("kittymux_") and name.endswith(".py"):
+                    os.symlink(PYTHON / name, os.path.join(cfg, name))
+            m = load_sidebar(cfg=cfg, argv0="kitten")
+        self.assertEqual(Path(m._JOIN_KIT).resolve(), (PYTHON / "join-kit.py").resolve())
+        self.assertTrue(os.path.exists(m._JOIN_KIT))
 
     def test_absorb_with_nothing_to_pull_does_nothing(self):
         s = self.sidebar()
