@@ -168,6 +168,14 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual([r["pct"] for r in result["rows"]], [0.5, 99])
         self.assertEqual(result["note"], "plus")
 
+    def test_the_usage_home_hook_points_the_collectors_at_another_home(self):
+        code = "import sys; sys.path.insert(0, %r); import _common; print(_common.HOME)" % str(ROOT / "python" / "collectors")
+        env = {k: v for k, v in os.environ.items() if k != "KITTYMUX_USAGE_HOME"}
+        mine = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True).stdout.strip()
+        other = subprocess.run([sys.executable, "-c", code], env=dict(env, KITTYMUX_USAGE_HOME=str(self.home)), capture_output=True, text=True).stdout.strip()
+        self.assertEqual(other, str(self.home))
+        self.assertEqual(mine, str(Path.home()))
+
     def test_codex_rows_carry_numeric_window_and_reset_for_the_panel(self):
         self.clock.return_value = 1_700_000_000.0
         self.write(".codex/sessions/rollout-2026-01.jsonl", json.dumps({

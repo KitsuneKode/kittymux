@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Screenshots of the REAL panel (Agents, Usage, Inbox) for looking at it: a private kitty under Xvfb runs sidebar-kit.py on a synthetic world
-# (tests/panel_fixture.py: a fake HOME the real collectors read, a week of history, inbox events) and is driven with real key events.
+# (tools/demo_world.py: a fake HOME the real collectors read, a week of history, inbox events) and is driven with real key events.
 # Each step also checks the text the view drew, so this doubles as a smoke test of the three views.
 #   bash tests/shot_panel.sh dark|light OUT_DIR [COLS] [LINES]       (default 38 x 44: a docked panel's size)
 # Writes OUT_DIR/{agents,usage-codex,usage-claude,usage-cursor,usage-devin,inbox,inbox-needs}.png.
@@ -17,7 +17,7 @@ cleanup() { [ -n "$KPID" ] && kill "$KPID" 2>/dev/null; [ -n "$XPID" ] && kill "
 trap cleanup EXIT
 fail() { echo "FAIL: $*"; [ -s "$T/k.log" ] && tail -15 "$T/k.log"; [ -s "$T/world/state/sidebar-kit-err.log" ] && tail -20 "$T/world/state/sidebar-kit-err.log"; exit 1; }
 
-python3 "$HOME_DIR/tests/panel_fixture.py" "$T/world" >/dev/null || fail "could not build the fixture"
+python3 "$HOME_DIR/tools/demo_world.py" "$T/world" >/dev/null || fail "could not build the fixture"
 STATE=$T/world/state
 cp "$HOME_DIR/assets/kittymux-icons.ttf" "$T/data/fonts/" 2>/dev/null
 
@@ -66,7 +66,7 @@ CONF
 printf 'new_tab shell\nlaunch sh\nnew_tab web\nlaunch sh\nnew_tab api\nlaunch sh\nfocus_tab 0\n' > "$T/session"
 
 env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_DATA_HOME=$T/data \
-  HOME=$T/world/home KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
+  KITTYMUX_USAGE_HOME=$T/world/home KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
   kitty -o linux_display_server=x11 --class kmx-panel --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
 for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done
 [ -S "$T/sock" ] || fail "kitty never opened its control socket"

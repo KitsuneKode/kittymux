@@ -530,6 +530,40 @@ focus_tab 1
 """
 
 
+def _demo_world(tmp: str, state: str) -> str | None:
+    """Build tools/demo_world.py's synthetic usage (a fake home the collectors read, a week of history) under `tmp`; returns the fake home, or None when it cannot."""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("kittymux_demo_world", os.path.join(HOME_DIR, "tools", "demo_world.py"))
+        dw = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(dw)
+        from pathlib import Path
+        home, now = Path(tmp) / "world" / "home", time.time()
+        for fn in (dw.codex, dw.claude, dw.cursor, dw.devin):
+            fn(home, now)
+        dw.history(Path(state), now)
+        return str(home)
+    except Exception:
+        return None
+
+
+def _demo_events(sock: str, pid: int, state: str) -> None:
+    """Two inbox events the demo's own agents do not produce by themselves (a limit and a finished run), bound to the demo's real windows so Jump works."""
+    rc, out = _run(["kitty", "@", "--to", sock, "ls"], 4)
+    if rc != 0:
+        return
+    try:
+        data = json.loads(out)
+    except ValueError:
+        return
+    win = {t.get("title"): (t.get("windows") or [{}])[0].get("id") for o in data for t in o.get("tabs", [])}
+    now = time.time()
+    for kind, agent, tab, title, age, extra in (("limit", "codex", "codex", "5h usage limit reached", 540, {"reset_at": now + 3 * 3600 + 50 * 60}),
+                                                  ("done", "agy", "antigravity", "Finished in 4m 12s", 250, {})):
+        if win.get(tab):
+            kittymux_inbox.add(state, kittymux_inbox.make_event(kind, agent, win[tab], "screen", now - age, pid=pid, tab=tab, title=title, **extra))
+
+
 def demo(argv: list[str]) -> int:
     edge = "bottom" if "--bottom" in argv else "left"
     if not shutil.which("kitty"):
@@ -549,6 +583,9 @@ def demo(argv: list[str]) -> int:
         ltpl.replace("@KITTYMUX_HOME@", HOME_DIR).replace("@KITTYMUX_LEADER@", "ctrl+space"))
     open(os.path.join(cfg, "theme.conf"), "w").write(DEMO_THEME)
     env = dict(os.environ, KITTY_CONFIG_DIRECTORY=cfg, KITTYMUX_STATE=state, KITTYMUX_NOTIFY="0")
+    world = _demo_world(tmp, state)                            # synthetic usage for the panel's Usage view: nothing of yours is read or shown
+    if world:
+        env["KITTYMUX_USAGE_HOME"] = world
     fam = _fc_families()
     font_conf = "font_size 12\n"
     for cand in ("JetBrainsMono Nerd Font Mono", "CaskaydiaCove Nerd Font Mono", "FiraCode Nerd Font Mono",
@@ -605,10 +642,13 @@ def demo(argv: list[str]) -> int:
             break
         time.sleep(0.1)
     time.sleep(1.5)
+    _demo_events(sock, proc.pid, state)
 
     print("  try:")
     print(f"    {c('1', 'ctrl+alt+b')}       sidebar deck — hover, click, live preview; / to search, t to promote a pane")
     print(f"    {c('1', 'ctrl+alt+y')}       jump to the agent that is waiting on you")
+    print(f"    {c('1', 'ctrl+alt+shift+space')}  command palette — type to find a tab, an agent that needs you, a conversation or an action; ⏎ does it")
+    print(f"    {c('1', 'ctrl+alt+b')} then {c('1', 'u')} usage (provider tiles, gauges with a pace tick, a week of tokens) · {c('1', 'i')} inbox (Jump, Dismiss) · {c('1', 'a')} back — made-up numbers")
     print(f"    {c('1', 'ctrl+alt+/')}       every key, gesture and command — just type to search, esc closes")
     print(f"    {c('1', 'ctrl+space')} then {c('1', '?')}   leader mode card")
     print(f"  in the {c('1', 'panes')} tab:")

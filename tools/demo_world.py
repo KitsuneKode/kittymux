@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """A synthetic world for the panel's Usage and Inbox views: a fake HOME the real collectors read, a week of usage history, inbox events.
 
-    python3 tests/panel_fixture.py OUT_DIR            writes OUT_DIR/home and OUT_DIR/state
+    python3 tools/demo_world.py OUT_DIR            writes OUT_DIR/home and OUT_DIR/state
 
-Run the panel with HOME=OUT_DIR/home KITTYMUX_STATE=OUT_DIR/state and it draws what the author's own panel looked like (Codex at 99 % of its 5 hour
-window, Claude with a closed window and a cap hit a week ago, Cursor on a plan, Devin with five sessions) without a byte of anyone's real data.
-Every number here is made up; nothing is credential-shaped."""
+Run the panel with KITTYMUX_USAGE_HOME=OUT_DIR/home KITTYMUX_STATE=OUT_DIR/state and it draws what the author's own panel looked like (Codex at 99 % of its 5 hour
+window, Claude with a closed window and a cap hit a week ago, Cursor on a plan, Devin with five sessions) without a byte of anyone's real data. `kittymux demo` and
+`tests/shot_panel.sh` use it. Every number here is made up; nothing is credential-shaped."""
 from __future__ import annotations
 
 import json
@@ -16,7 +16,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))      # tools/ sits next to python/
 import kittymux_inbox as I  # noqa: E402
 
 

@@ -43,7 +43,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-HOME = Path.home()
+# KITTYMUX_USAGE_HOME points the collectors at another home (the demo and the panel screenshots read tools/demo_world.py's synthetic one); unset, it is yours.
+HOME = Path(os.environ["KITTYMUX_USAGE_HOME"]) if os.environ.get("KITTYMUX_USAGE_HOME") else Path.home()
 # KITTYMUX_STATE is the state dir itself; otherwise derive under XDG state.
 STATE_DIR = Path(os.environ["KITTYMUX_STATE"]) \
     if os.environ.get("KITTYMUX_STATE") else \
