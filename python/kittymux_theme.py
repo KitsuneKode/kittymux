@@ -145,6 +145,10 @@ class Palette:
     border: int = 0   # the divider between sidebar and panes: kitty's own pane-border colour, so it reads as a split
     sep_700: int = 0  # the divider is two hairlines: this one (tone 700 of the theme's mid-grey) at the bar's inner edge…
     sep_950: int = 0  # …and this one (tone 950, nearly black) right next to it, towards the panes
+    card: int = 0       # a card on the bar: one step off it (lighter on a dark theme, whiter on a light one)
+    card_hi: int = 0    # a hovered / selected card
+    track: int = 0      # the empty part of a gauge or toggle
+    on_accent: int = 0  # text on a filled accent (an active tab, a primary button)
 
 
 def _parse_hex(value: str) -> int | None:
@@ -163,6 +167,17 @@ def parse_kitty_colors(text: str) -> dict[str, int]:
         if val is not None:
             out[parts[0]] = val
     return out
+
+
+def _surfaces(fg: int, bg: int, accent: int) -> dict[str, int]:
+    """The card layers. A dark theme steps up toward the foreground; a light one lifts cards toward white and lets the
+    track sit below the bar, so a card always reads as raised and a gauge always reads as a groove."""
+    if luminance(bg) < 0.4:
+        card, card_hi, track = blend(fg, bg, 0.10), blend(fg, bg, 0.16), blend(fg, bg, 0.22)
+    else:
+        card, card_hi, track = blend(0xFFFFFF, bg, 0.65), blend(fg, bg, 0.02), blend(fg, bg, 0.17)
+    on_accent = max((bg, fg, 0x111111, 0xF5F5F5), key=lambda c: contrast(c, accent))
+    return {"card": card, "card_hi": card_hi, "track": track, "on_accent": on_accent}
 
 
 def from_colors(c: dict[str, int]) -> Palette:
@@ -194,6 +209,7 @@ def from_colors(c: dict[str, int]) -> Palette:
         border=ensure_contrast(c.get("inactive_border_color", blend(fg, bg, 0.24)), bg, 1.5),
         sep_700=shade(blend(fg, bg, 0.5), 700),
         sep_950=shade(blend(fg, bg, 0.5), 950),
+        **_surfaces(fg, bg, ensure_contrast(accent, bg, 3.0)),
     )
 
 

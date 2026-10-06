@@ -103,6 +103,43 @@ class PaletteTests(unittest.TestCase):
         self.assertGreaterEqual(T.contrast(p.waiting, p.bg), 3.0)
 
 
+TOKYO = {"background": 0x1a1b26, "foreground": 0xc0caf5, "active_border_color": 0xbb9af7,
+         "color9": 0xf7768e, "color10": 0x9ece6a, "color11": 0xe0af68, "color12": 0x7aa2f7}
+LATTE = {"background": 0xeff1f5, "foreground": 0x4c4f69, "active_border_color": 0x1e66f5,
+         "color9": 0xd20f39, "color10": 0x40a02b, "color11": 0xdf8e1d, "color12": 0x1e66f5}
+
+
+class SurfaceTokenTests(unittest.TestCase):
+    """The card layers the panel views draw on: always derived from the live colours, never a fixed palette."""
+
+    def test_dark_layers_step_up_from_the_bar(self):
+        p = T.from_colors(TOKYO)
+        lum = [T.luminance(c) for c in (p.bar, p.card, p.card_hi, p.track)]
+        self.assertEqual(lum, sorted(lum))
+        self.assertEqual(len(set(lum)), 4)
+
+    def test_light_cards_lift_above_the_bar_and_the_track_sits_below_it(self):
+        p = T.from_colors(LATTE)
+        self.assertGreater(T.luminance(p.card), T.luminance(p.bar))
+        self.assertLess(T.luminance(p.track), T.luminance(p.bar))
+        self.assertNotEqual(p.card_hi, p.card)
+
+    def test_text_is_readable_on_a_card_in_both_themes(self):
+        for colors in (TOKYO, LATTE):
+            p = T.from_colors(colors)
+            self.assertGreaterEqual(T.contrast(p.text, p.card), 4.5)
+            self.assertGreaterEqual(T.contrast(p.on_accent, p.accent), 4.5, colors)
+
+    def test_tokens_follow_the_theme(self):
+        a, b = T.from_colors(TOKYO), T.from_colors(LATTE)
+        self.assertNotEqual((a.card, a.track, a.on_accent), (b.card, b.track, b.on_accent))
+
+    def test_empty_colours_still_give_every_token(self):
+        p = T.from_colors({})
+        for name in ("card", "card_hi", "track", "on_accent"):
+            self.assertIsInstance(getattr(p, name), int)
+
+
 class FzfTests(unittest.TestCase):
     def test_args_use_palette(self):
         p = T.from_colors(GRUVBOX)
