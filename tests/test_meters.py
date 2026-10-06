@@ -208,5 +208,33 @@ class SummaryTests(unittest.TestCase):
         self.assertIsNone(M.worst_provider(None))
 
 
+class HintTests(unittest.TestCase):
+    def test_the_worst_quota_is_the_hint(self):
+        p = {"name": "codex", "rows": [{"label": "5h", "pct": 99.0}, {"label": "wk", "pct": 63.0}]}
+        self.assertEqual(M.hint(p), "5h 99% used")
+        self.assertEqual(M.hint({"name": "codex", "rows": [{"label": "wk", "pct": 63.4}]}), "wk 63% used")
+
+    def test_an_exhausted_quota_says_so_and_when_it_resets(self):
+        self.assertEqual(M.hint({"rows": [{"label": "5h", "pct": 100.0, "reset": "resets in 3h 50m"}]}), "limit hit, resets 3h 50m")
+        self.assertEqual(M.hint({"rows": [{"label": "5h", "pct": 100.0}]}), "limit hit")
+
+    def test_no_measurable_limit_means_no_hint(self):
+        for p in (None, {}, {"rows": []}, {"rows": [{"label": "plan", "text": "pro · active"}]}, {"rows": [{"label": "5h", "pct": 40, "clock": True}]},
+                  {"rows": [{"label": "week", "text": "5M tok"}]}, "x", 5):
+            self.assertEqual(M.hint(p), "", p)
+
+    def test_hints_are_mapped_from_agent_names_to_providers(self):
+        providers = [{"name": "codex", "rows": [{"label": "5h", "pct": 99.0}]}, {"name": "cursor", "rows": [{"label": "mo", "pct": 41.0}]},
+                     {"name": "claude", "rows": [{"label": "5h", "text": "idle"}]}]
+        got = M.hints_for(providers, ["claude", "codex", "cursor-agent", "devin", "gemini"])
+        self.assertEqual(got, {"codex": "5h 99% used", "cursor-agent": "mo 41% used"})
+        self.assertEqual(M.hints_for(None, ["codex"]), {})
+        self.assertEqual(M.hints_for([None, 5, {"name": None}], ["codex"]), {})
+
+    def test_a_hostile_label_cannot_smuggle_controls_into_a_menu(self):
+        h = M.hint({"rows": [{"label": "5h\x1b[31m", "pct": 50.0}]})
+        self.assertNotIn("\x1b", h)
+
+
 if __name__ == "__main__":
     unittest.main()

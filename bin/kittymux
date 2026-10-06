@@ -67,6 +67,7 @@ import kittymux_inbox  # noqa: E402
 import kittymux_journal  # noqa: E402
 import kittymux_keymap  # noqa: E402
 import kittymux_launcher  # noqa: E402
+import kittymux_meters  # noqa: E402
 import kittymux_quiet  # noqa: E402
 import kittymux_resume  # noqa: E402
 import kittymux_layout  # noqa: E402
@@ -1446,6 +1447,21 @@ def _risk_table() -> dict:
     return kittymux_launcher.load_risk(os.path.join(HOME_DIR, "assets", "agent-risk.json"), user)
 
 
+def _headroom_hints(installed: list) -> dict:
+    """{agent: '5h 99% used'} from the usage cache the panel and the overlay keep (never a network call; a cache older than 12 h says nothing)."""
+    try:
+        path = os.path.join(kittymux_layout.state_dir(), "agent-usage.json")
+        if os.stat(path).st_size > 2 * 1024 * 1024:
+            return {}
+        with open(path) as f:
+            data = json.load(f)
+        if not isinstance(data, dict) or time.time() - float(data.get("ts") or 0) > 12 * 3600:
+            return {}
+        return kittymux_meters.hints_for(data.get("providers"), installed)
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
 _LS_MEMO: dict = {}
 
 
@@ -1749,7 +1765,7 @@ def pick(argv: list[str]) -> int:
         now = time.time()
         events, windows, closed, installed = _pick_data(now)
         rows = kittymux_launcher.build_rows(events, windows, closed, installed, now, home=os.path.expanduser("~"), cwd=_focus_cwd(focused), risk=_risk_table(),
-                                            include_settled=include_settled)
+                                            include_settled=include_settled, headroom=_headroom_hints(installed))
         rows.append({"kind": "utility", "agent": "", "tone": "", "action": {"op": "usage"},
                      "text": "≋  Usage   provider quotas · resets · local activity"})
         if "--json" in argv:

@@ -237,3 +237,42 @@ def worst_provider(providers) -> dict | None:
         if s["worst"] is not None and (best is None or s["worst"] > best["worst"]):
             best = s
     return best
+
+
+PROVIDER_OF = {"claude": "claude", "codex": "codex", "cursor-agent": "cursor", "cursor": "cursor", "devin": "devin"}   # agent CLI name -> usage provider
+
+
+def hint(provider) -> str:
+    """One short phrase about how much room a provider has, for a list where you CHOOSE an agent: the worst quota (`5h 99% used`), `limit hit`
+    when something is exhausted, nothing when there is no limit to measure. Plain text, safe to print."""
+    if not isinstance(provider, dict):
+        return ""
+    quotas = [m for m in meters(provider) if m["kind"] == "quota" and not m.get("clock")]
+    if not quotas:
+        return ""
+    worst = max(quotas, key=lambda m: m["pct"])
+    if worst["pct"] >= 100:
+        return "limit hit" + (f", resets {_span(worst['rem_s'])}" if worst.get("rem_s") else "")
+    label = worst["label"] or "quota"
+    return f"{label} {round(worst['pct'])}% used"
+
+
+def _span(seconds) -> str:
+    m = int((num(seconds) or 0) // 60)
+    d, rem = divmod(m, 1440)
+    h, mm = divmod(rem, 60)
+    return f"{d}d {h}h" if d and h else f"{d}d" if d else f"{h}h {mm}m" if h and mm else f"{h}h" if h else f"{max(m, 1)}m"
+
+
+def hints_for(providers, agents) -> dict:
+    """{agent name: hint} for the agents in `agents` whose provider is in `providers` (the usage cache's list) and has something to say."""
+    by_name = {}
+    for p in providers if isinstance(providers, list) else []:
+        if isinstance(p, dict):
+            by_name[_clean(p.get("name"), 20).lower()] = p
+    out = {}
+    for agent in agents:
+        h = hint(by_name.get(PROVIDER_OF.get(agent, "")))
+        if h:
+            out[agent] = h
+    return out

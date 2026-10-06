@@ -156,10 +156,11 @@ def _age(seconds: float) -> str:
 
 
 def build_rows(events: list[dict], windows: list[dict], closed: list[dict], installed: list[str], now: float, home: str = "", cwd: str = "",
-               risk: dict | None = None, max_closed: int = 8, include_settled: bool = False) -> list[dict]:
+               risk: dict | None = None, max_closed: int = 8, include_settled: bool = False, headroom: dict | None = None) -> list[dict]:
     """events: unread inbox events; windows: live agent windows [{pid, w, agent, state, tab, cwd, argv}]; closed: journal entries that are not running
     ([{key, agent, tab, cwd, last, turns, sid, argv, pinned, settled, lifecycle}]; lifecycle is pinned | recent | settled); installed: agent names on PATH. Pinned conversations come first
-    and always show; settled ones are folded behind one "show settled" row unless `include_settled`. Returns rows [{kind, text, action, jkey, pinned, settled}]."""
+    and always show; settled ones are folded behind one "show settled" row unless `include_settled`. `headroom` ({agent: "5h 99% used"}, from the usage cache) is shown beside
+    each NEW agent so you choose the one that still has room. Returns rows [{kind, text, action, jkey, pinned, settled}]."""
     risk = risk or {}
     rows: list[dict] = []
     evented: set = set()
@@ -221,8 +222,10 @@ def build_rows(events: list[dict], windows: list[dict], closed: list[dict], inst
                      "text": f"⋯  {hidden_settled} settled conversation{'s' if hidden_settled != 1 else ''} (older than a few days, or settled by you) — show"})
     here = _short(cwd, home) if cwd else "here"          # (clean_text'd inside _short)
     for name in [a for a in SPAWN_ORDER if a in installed]:
-        rows.append({"kind": "new", "agent": name, "tone": "", "action": {"op": "spawn", "agent": name, "where": "tab"}, "text": f"+  new {name}   tab · {here}"})
-        rows.append({"kind": "new", "agent": name, "tone": "", "action": {"op": "spawn", "agent": name, "where": "vsplit"}, "text": f"+  new {name}   split right · {here}"})
+        room = clean_text((headroom or {}).get(name, ""), 40)
+        room = f"   ◔ {room}" if room else ""
+        rows.append({"kind": "new", "agent": name, "tone": "", "action": {"op": "spawn", "agent": name, "where": "tab"}, "text": f"+  new {name}   tab · {here}{room}"})
+        rows.append({"kind": "new", "agent": name, "tone": "", "action": {"op": "spawn", "agent": name, "where": "vsplit"}, "text": f"+  new {name}   split right · {here}{room}"})
     seen: dict = {}
     for r in rows:                                               # menus that return the text (fuzzel) need it unique
         n = seen.get(r["text"], 0)

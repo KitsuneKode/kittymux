@@ -44,6 +44,8 @@ One searchable list, most pressing first.
 
 An agent started without approvals, with a flag such as `--dangerously-skip-permissions` or `--yolo`, carries `⚠ no approvals`. Only flags each CLI documents are recognised.
 
+Each **new agent** row also shows how much room its provider has, taken from the usage numbers the panel already keeps: `◔ 5h 99% used`, or `◔ limit hit, resets 3h 50m`. It lets you start the agent that still has room instead of the one you always start. Nothing is fetched for it, and providers with no limit to measure show nothing.
+
 ```sh
 kittymux pick                      # in kitty: fzf in an overlay (ctrl+alt+v). Uses rofi or fuzzel when fzf is missing
 kittymux pick --menu rofi          # from anywhere: a rofi window. alt+a marks the selected event read without jumping
