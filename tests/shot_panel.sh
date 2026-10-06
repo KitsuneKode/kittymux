@@ -132,7 +132,7 @@ wait_text "Needs" || true
 shot inbox-needs
 key Tab; key Tab; key Tab                                       # back to All
 key shift+g                                                     # the last card: the wait ledger shows under it
-wait_text "waited on you" || fail "Inbox: the wait ledger never showed under the last card"
+wait_text "waited" || fail "Inbox: the wait ledger never showed under the last card"
 screen | grep -q "median" || fail "Inbox: the ledger has no median"
 shot inbox-ledger
 

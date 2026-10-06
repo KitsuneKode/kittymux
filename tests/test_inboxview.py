@@ -258,6 +258,12 @@ class LedgerTests(unittest.TestCase):
                     for line in [v.header] + v.lines:
                         self.assertEqual(U.line_cells(line, k.cells), cols, cols)
 
+    def test_a_narrow_panel_shortens_the_label_but_keeps_the_median(self):
+        for cols in (26, 30):                                              # below 26 columns the two do not fit side by side
+            body = text(IV.view(self.waits(), "all", 0, cols, kit(), NOW))
+            self.assertIn("median", body, cols)
+        self.assertIn("waited on you", text(IV.view(self.waits(), "all", 0, 38, kit(), NOW)))
+
     def test_the_ledger_does_not_disturb_the_card_regions(self):
         v = IV.view(self.waits(), "all", 0, 38, kit(), NOW)
         self.assertEqual(len(v.cards), 2)

@@ -198,7 +198,8 @@ def _ledger(kit: U.Kit, events, cols: int, now: float) -> list:
     p, bg = kit.p, kit.p.card
     inner = kit.inner_width(cols)
     muted = kit.ink(p.muted, bg)
-    head = V._row(kit, kit.chip("waited on you", "muted", on=bg, strong=True), [U.S(f"median {LG.fmt_dur(summ['median_s'])} ", muted, bg)], inner, bg)
+    label = "waited on you" if inner >= 30 else "waited"                    # the number outlives its label
+    head = V._row(kit, kit.chip(label, "muted", on=bg, strong=True), [U.S(f"median {LG.fmt_dur(summ['median_s'])} ", muted, bg)], inner, bg)
     n = summ["count_today"]
     big = [U.S(LG.fmt_dur(summ["today_s"]) or "0s", kit.ink(p.text, bg), bg, bold=True), U.S(" today", muted, bg),
            U.S(f"  {n} wait{'s' if n != 1 else ''}", kit.ink(p.faint, bg, 3.0), bg)]
