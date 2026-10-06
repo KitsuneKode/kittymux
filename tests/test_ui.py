@@ -190,6 +190,26 @@ class TabsTests(unittest.TestCase):
         self.assertNotIn("4000", U.plain(kit.tabs([("I", "Inbox", False, 4000)], 30)))
 
 
+class TabRegionTests(unittest.TestCase):
+    ITEMS = [("A", "Agents", False, 0), ("U", "Usage", True, 0), ("I", "Inbox", False, 3)]
+
+    def test_regions_tile_the_strip_in_order_and_each_covers_its_own_text(self):
+        for kit in kits():
+            regions = kit.tab_regions(self.ITEMS)
+            self.assertEqual(len(regions), 3)
+            for (a0, a1), (b0, b1) in zip(regions, regions[1:]):
+                self.assertLessEqual(a1, b0)
+            line = U.plain(kit.tabs(self.ITEMS, 40))
+            self.assertIn("U", line[regions[1][0]:regions[1][1] + 1] if kit.cells is len else line)
+            self.assertIn("3", line[regions[2][0]:regions[2][1] + 1] if kit.cells is len else line)
+
+    def test_a_click_inside_a_region_maps_back_to_its_tab(self):
+        kit = U.Kit(T.from_colors(TOKYO))
+        regions = kit.tab_regions(self.ITEMS)
+        x = lambda i: (regions[i][0] + regions[i][1]) // 2
+        self.assertEqual([next(i for i, (a, b) in enumerate(regions) if a <= x(j) < b) for j in range(3)], [0, 1, 2])
+
+
 class ChartTests(unittest.TestCase):
     def test_a_day_with_any_use_never_rounds_to_an_empty_column(self):
         self.assertEqual(U.spark_level(0.0001, 1000), 1)

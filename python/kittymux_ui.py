@@ -163,25 +163,36 @@ class Kit:
             body.append(S(f"{kittymux_place.clean(str(key))} ", self.ink(fg, bg, 3.0), bg, dim=not primary))
         return [S(left, bg, on)] + body + [S(right, bg, on)]
 
-    def tabs(self, items: list, width: int, on: int | None = None) -> Line:
-        """items: [(icon, label, active, badge)]. The active pill shows its label on the accent; the others are an icon (and a count
-        when something waits there), so three views cost one short row instead of a sentence."""
+    def _tabs_spans(self, items: list, on: int):
         p = self.p
-        on = p.bar if on is None else on
         left, right = self._caps()
         out: Line = [S(left, p.card, on)]
+        regions, x = [], self.cells(left)
         for icon, label, active, badge in items:
             n = int(badge) if _num(badge) else 0
             icon = kittymux_place.clean(str(icon))
+            start = x
             if active:
                 body = f" {icon} {kittymux_place.clean(str(label))}" + (f" {min(n, 99)}" if n else "") + " "
-                out += [S(left, p.accent, p.card), S(body, p.on_accent, p.accent, bold=True), S(right, p.accent, p.card)]
+                piece = [S(left, p.accent, p.card), S(body, p.on_accent, p.accent, bold=True), S(right, p.accent, p.card)]
             else:
-                out.append(S(f" {icon}", self.ink(p.muted, p.card), p.card))
-                out.append(S(f"{min(n, 99)}" if n else "", self.ink(p.waiting, p.card), p.card, bold=True))
-                out.append(S(" ", None, p.card))
+                piece = [S(f" {icon}", self.ink(p.muted, p.card), p.card),
+                         S(f"{min(n, 99)}" if n else "", self.ink(p.waiting, p.card), p.card, bold=True), S(" ", None, p.card)]
+            out += piece
+            x += sum(self.cells(s.text) for s in piece)
+            regions.append((start, x))
         out.append(S(right, p.card, on))
-        return self.fit_line(out, width, on)
+        return out, regions
+
+    def tabs(self, items: list, width: int, on: int | None = None) -> Line:
+        """items: [(icon, label, active, badge)]. The active pill shows its label on the accent; the others are an icon (and a count
+        when something waits there), so three views cost one short row instead of a sentence."""
+        on = self.p.bar if on is None else on
+        return self.fit_line(self._tabs_spans(items, on)[0], width, on)
+
+    def tab_regions(self, items: list) -> list:
+        """[(x0, x1)] per tab, in cells from the left edge of the strip (for a click)."""
+        return self._tabs_spans(items, self.p.bar)[1]
 
     # ── gauges and charts ────────────────────────────────────────────────────
     def gauge(self, pct, width: int, on: int | None = None, tone: str | None = None, pace=None) -> Line:
