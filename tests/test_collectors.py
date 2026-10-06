@@ -168,6 +168,35 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual([r["pct"] for r in result["rows"]], [0.5, 99])
         self.assertEqual(result["note"], "plus")
 
+    def test_codex_rows_carry_numeric_window_and_reset_for_the_panel(self):
+        self.clock.return_value = 1_700_000_000.0
+        self.write(".codex/sessions/rollout-2026-01.jsonl", json.dumps({
+            "payload": {"rate_limits": {"primary": {"used_percent": 99, "resets_at": 1_700_000_000 + 13800},
+                                         "secondary": {"used_percent": 63}, "plan_type": "plus"}}}))
+        five, week = codex.collect()["rows"]
+        self.assertEqual((five["window_s"], week["window_s"]), (5 * 3600, 7 * 86400))
+        self.assertIn("rem_s", five)
+        self.assertNotIn("rem_s", week)                         # no reset time on record: nothing is invented
+
+    def test_claude_rows_carry_numeric_sidecars_next_to_the_text(self):
+        self.timezone("America/New_York")
+        self.clock.return_value = datetime.fromisoformat("2026-03-09T04:30:00+00:00").timestamp()
+        path = self.write(".claude/projects/demo/session.jsonl",
+                          self.event("2026-03-09T04:00:00Z", 400) + self.event("2026-03-09T04:10:00Z", 834))
+        os.utime(path, (self.clock.return_value, self.clock.return_value))
+        rows = {r["label"]: r for r in claude.collect()["rows"]}
+        self.assertEqual((rows["5h"]["window_s"], round(rows["5h"]["rem_s"])), (5 * 3600, 5 * 3600 - 30 * 60))
+        self.assertEqual((rows["win"]["tok"], rows["win"]["turns"], rows["win"]["cached"]), (1234, 2, 1998))
+        self.assertEqual((rows["week"]["tok"], rows["week"]["sess"]), (1234, 1))
+        self.assertIn("1k tok", rows["week"]["text"])           # the text the overlay prints is unchanged
+
+    def test_claude_closed_window_is_a_state(self):
+        self.timezone("America/New_York")
+        self.clock.return_value = datetime.fromisoformat("2026-03-09T12:30:00+00:00").timestamp()
+        path = self.write(".claude/projects/demo/session.jsonl", self.event("2026-03-09T04:00:00Z", 400))
+        os.utime(path, (self.clock.return_value, self.clock.return_value))
+        self.assertEqual(claude.collect()["rows"][0].get("state"), "closed")
+
     def test_malformed_credential_documents_fail_safely_without_network(self):
         self.write(".claude/.credentials.json", '{"claudeAiOauth": ["fake"]}')
         self.write(".config/cursor/auth.json", '["fake"]')

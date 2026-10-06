@@ -48,7 +48,7 @@ def collect() -> dict:
         # Transcript totals are cumulative across resumed sessions. Mtime is
         # activity evidence, not a timestamp for each token: never persist as daily burn.
         return {"name": "devin", "note": "session totals · modified today", "rows": [
-            {"label": "today", "text": f"{sess} sess · {fmt_tokens(toks)} tok"},
+            {"label": "today", "text": f"{sess} sess · {fmt_tokens(toks)} tok", "tok": toks, "sess": sess},
             *([{"label": "model", "text": model}] if model else [])]}
     try:
         ago = fmt_ago(files[0].stat().st_mtime)

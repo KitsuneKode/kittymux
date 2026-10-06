@@ -126,13 +126,18 @@ def _row_to_meters(row: dict) -> list[dict]:
     if label.lower() == "spend" or row.get("stack") is not None:
         stack = [v for v in (num(x) for x in (row.get("stack") or [])) if v is not None and v > 0] if isinstance(row.get("stack"), list) else []
         return [{"kind": "spend", "label": "spend", "amount": None, "parts": stack, "text": text}]
-    if label.lower() == "today" and "lines" in low:
+    if label.lower() == "today" and ("lines" in low or num(row.get("lines")) is not None):
         m = re.search(r"(\d+)\s*lines", text)
         ai = re.search(r"(\d+)\s*%\s*AI", text)
-        return [{"kind": "counter", "label": "today", "value": float(m.group(1)) if m else 0.0, "unit": "lines", "series": None,
-                 "chips": [f"{ai.group(1)}% AI"] if ai else []}]
-    if label.lower() == "plan" and "·" in text:
-        plan, _, status = (x.strip() for x in text.partition("·"))
+        lines = num(row.get("lines"))
+        ai_pct = num(row.get("ai_pct"))
+        chip = f"{round(ai_pct)}% AI" if ai_pct is not None else f"{ai.group(1)}% AI" if ai else ""
+        return [{"kind": "counter", "label": "today", "value": lines if lines is not None else float(m.group(1)) if m else 0.0,
+                 "unit": "lines", "series": None, "chips": [chip] if chip else []}]
+    if label.lower() == "plan" and ("·" in text or row.get("plan")):
+        plan, status = _clean(row.get("plan"), 20), _clean(row.get("status"), 20)
+        if not plan:
+            plan, _, status = (x.strip() for x in text.partition("·"))
         return [state("plan", plan or "?", "muted"), state("status", status or "?", "calm" if status.lower() in ("active", "trialing") else "warm")]
     if low.startswith("window closed") or low == "idle" or st == "closed":
         return [state(label or "5h", "closed" if low != "idle" else "idle", "muted")]
