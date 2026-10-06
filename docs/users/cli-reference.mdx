@@ -197,6 +197,16 @@ kittymux peek --waiting       # the agent that has waited on you longest (what c
 
 Exit status is 2 for an unknown option, and 1 when it is not started inside a kitty with a socket, when the tab does not exist or when nothing needs you.
 
+## `kittymux palette`
+
+Opens the command palette over this pane, what `ctrl+alt+shift+space` opens. See [the command palette](/docs/users/launch-and-find-agents#the-command-palette).
+
+```sh
+kittymux palette
+```
+
+Exit status is 2 for an argument, and 1 when it is not started inside a kitty with a socket or when no pane is focused. `kittymux act JSON` is what the palette runs after you choose. It is not meant to be typed: it refuses anything that is not one of the palette's own actions.
+
 ## `kittymux join`
 
 Moves this tab's panes into another tab as splits, keeping their shape. See [Tabs and panes](/docs/users/tabs-and-panes#join-a-tab-into-another).

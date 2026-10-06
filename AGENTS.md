@@ -37,6 +37,10 @@ remote work.
 - `python/kittymux_usageview.py` + `python/kittymux_inboxview.py` (pure) — the panel's Usage and Inbox views: lines plus click regions (`View.tiles`, `InboxView.chips/cards/buttons`); `sidebar-kit.py` places them (strip, header, footer keycaps, the
   resize handle) and owns keys, mouse and refresh. Narrow panels degrade in tiers (the share outlives the countdown; the filter chips go full words → glyphs → bare glyphs; buttons lose their key hints). The Inbox never types into an agent: Jump runs
   `kittymux inbox jump`, Dismiss only changes the event's status. `tests/shot_panel.sh` + `tests/panel_fixture.py` render and drive the real panel on synthetic data.
+- `python/kittymux_palette.py` (pure) + `python/palette-kit.py` + `kittymux palette|act` (`ctrl+alt+shift+space`) — the command palette: `build(tabs, pick rows)` → items in groups (Needs you, Inbox, Tabs, Agents, Actions; `extra` rows — new agents past the
+  first four, split variants — only show for a query), ranked by `score`, drawn with the shared kit. The kitten ONLY CHOOSES: `handle_result` runs `kittymux act JSON` from kitty (`boss.run_background_process`, so the CLI's parent is kitty and `_own_kitty_socket` works) AFTER
+  the overlay is gone (a focus change made while it was open would be undone when it closes). `act` re-validates with `kittymux_palette.validate_action` (ids are ints, journal keys match one shape, agents must be installed, `run` ids are a fixed whitelist
+  of kittymux argvs): never add an op there without extending the validator and `tests/test_palette.py`'s refusal list. `tests/smoke_palette.sh` drives it with real keys and mouse.
 - `python/kittymux_features.py` (pure) + `kittymux features [list | on|off NAME | preset minimal|default|full]` — the switchboard for the optional pieces of the bar: `folder`, `hue`, `collide`, `panetitle` are live; `sheet`,
   `hover` are planned (saved, nothing reads them — the CLI says so). Precedence: env `KITTYMUX_<NAME>` > flag file `<name>-off|-on` in `$KITTYMUX_STATE` > default; the bar resolves it once per pass
   (`tab_bar._features`). With `folder` off the bar draws the line it always drew — keep that path as it was.
@@ -251,6 +255,7 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   `bash tests/smoke_titles.sh` (what a tab is CALLED: fresh shell, named/renamed/cleared tab, program titles, agents with and without a conversation title, a stale title, the resume prompt, hostile/long/blank/path titles),
   `bash tests/smoke_join.sh` (a three-pane tab joins a two-pane tab: all panes present, the big-pane + stack shape kept, no pane narrower than 18 columns, same-tab/missing-tab/bad input change nothing, a tall-layout target works) and
   `bash tests/smoke_join_ui.sh` (the picker with real key and mouse events: chord, one Esc, no stacking, filter, side, tab/pane, hover, Enter, left click joins, right click does not),
+  `bash tests/smoke_palette.sh` (the command palette with real keys and mouse: chord opens/closes, typing filters, esc clears then closes, Enter/click focus a tab or jump to an event, fixed actions run, hostile `act` payloads are refused; tripwire on other kitties),
   `bash tests/smoke_peek.sh` (quick look with real keys: nothing waiting opens nothing, the card is about the longest-waiting agent's tab, the chord again closes it, one Esc stays, ⏎ jumps),
   `python3 -m unittest tests.test_docs` (the published docs: links, chords, CLI coverage, status table, voice) and
   `bash tests/smoke_demo.sh` (`kittymux demo` opens every showcase tab — the front door must stay healthy),

@@ -138,6 +138,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+\`` | flip to previously active tab (MRU) |
 | `ctrl+alt+h j k l` | pane nav (`shift+alt+arrows`) · `ctrl+alt+o` last pane |
 | `ctrl+alt+shift+1..9` | focus pane **N** of this tab straight away (the digit `ctrl+alt+e` draws on each pane) |
+| `ctrl+alt+shift+space` | **command palette**: one searchable list of what needs you, every tab, conversations to reopen, a new agent (with its provider's quota headroom) and a few actions — `⏎` does it, a click does it, `esc` clears the filter then closes (`kittymux palette` from a shell) |
 | `ctrl+alt+shift+j` | **join**: move this tab's panes into another tab as splits, keeping their shape — you pick the tab in a list (its keys are in its footer; `kittymux join` from a shell) |
 | `ctrl+alt+shift+semicolon` | pane controls: `h/j/k/l` swap neighbours · `r` rotate · `s` swap split sides · `e` equalize · `a` choose a pane; Escape cancels |
 | `ctrl+alt+e` · `ctrl+alt+shift+y` | number every pane on screen, press its digit to **focus** it · to **swap** with it (tmux's display-panes) |

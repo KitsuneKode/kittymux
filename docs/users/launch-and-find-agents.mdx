@@ -70,6 +70,21 @@ Two flags on a conversation's journal record, so they outlive the tab.
 
 Pinning does not reorder the tab bar, because kitty has no pinned tabs. It changes what `pick` offers you.
 
+## The command palette
+
+Press `ctrl+alt+shift+space` for one searchable list of everything you can go to or do, inside kitty. It is the same idea as `pick`, drawn in the kitty you are in, with your tabs and a few actions added.
+
+| Group | What is in it | `⏎` does |
+| --- | --- | --- |
+| Needs you, Inbox | Unread events from the [inbox](/docs/users/notifications-and-inbox), the ones that ask for you first. | Jumps to that agent and marks its events read. |
+| Tabs | Every tab of this kitty, with its state and folder. | Focuses the tab. |
+| Agents | Conversations you closed, and a new agent for the first four installed CLIs with the room its provider has left. Type another agent's name, or `split`, to find the rest. | Reopens it, or starts it. |
+| Actions | A short fixed list: join this tab, a quick look at who has waited longest, show or hide the panel, quiet popups for an hour, bring them back, save the session. | Does it. |
+
+Type to filter. Every word has to match somewhere, and a word that begins a title ranks above one in the middle. `↑` `↓` (or `ctrl+n` and `ctrl+p`) choose, a click does it, `esc` clears the filter and then closes. The chord pressed again closes it too.
+
+The palette only chooses. It hands the choice to `kittymux act`, which checks it again (a tab id, an agent that is installed, one of the fixed actions) before it does anything, and it acts after the overlay has closed so the focus change is not undone. It never types into an agent. kitty has its own command palette on `ctrl+shift+f3` that searches kitty's actions; this one searches your work.
+
 ## Reopen what you closed
 
 Press `ctrl+alt+shift+u`, or run `kittymux reopen`. It reopens the agent conversation you closed last, in a new tab in its directory, through the same prompt as any restore. It reads the journal, so it also works after a crash or a closed kitty. `kittymux pick` lists the last eight.

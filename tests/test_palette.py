@@ -89,6 +89,37 @@ class BuildTests(unittest.TestCase):
                     self.assertNotIn(ch, it[field])
 
 
+class LsTests(unittest.TestCase):
+    def ls(self):
+        return [{"id": 1, "tabs": [
+            {"id": 11, "title": "api", "is_focused": False, "active_window_history": [101], "windows": [
+                {"id": 101, "cwd": "/home/u/code/api", "title": "t", "cmdline": ["zsh"], "foreground_processes": []}]},
+            {"id": 12, "title": "", "windows": [
+                {"id": 102, "cwd": "/w", "title": "fallback title", "cmdline": ["zsh"]}, {"id": 103, "cwd": "/w", "title": "b", "cmdline": ["kitten", "x/palette-kit.py"]}]},
+            {"id": 13, "title": "ghost", "windows": [{"id": 104, "cwd": "/", "title": "x", "cmdline": ["kitty", "+runpy", "from kittens.runner import main"]}]}]},
+            {"id": 2, "tabs": [{"id": 21, "title": "other window", "windows": [{"id": 201, "cwd": "/o", "title": "o", "cmdline": ["sh"]}]}]}]
+
+    def test_every_tab_with_a_real_pane_is_listed_across_os_windows(self):
+        tabs = P.tabs_from_ls(self.ls(), {}, 103, 0.0)
+        self.assertEqual([(t["os"], t["id"]) for t in tabs], [(1, 11), (1, 12), (2, 21)])
+
+    def test_the_overlay_is_not_a_pane_and_marks_its_own_tab_current(self):
+        tabs = {t["id"]: t for t in P.tabs_from_ls(self.ls(), {}, 103, 0.0)}
+        self.assertEqual(tabs[12]["panes"], 1)
+        self.assertTrue(tabs[12]["current"])
+        self.assertFalse(tabs[11]["current"])
+        self.assertNotIn(13, tabs)                       # a tab that is only an overlay is not a destination
+
+    def test_title_falls_back_to_the_active_pane_and_is_cleaned(self):
+        tabs = {t["id"]: t for t in P.tabs_from_ls(self.ls(), {}, 0, 0.0)}
+        self.assertEqual(tabs[12]["title"], "fallback title")
+        self.assertEqual(tabs[11]["cwd"], "/home/u/code/api")
+
+    def test_junk_never_raises(self):
+        for data in (None, 5, [None, 1, {}, {"tabs": None}, {"id": 1, "tabs": [None, {}, {"id": "x", "windows": [{}]}, {"id": 3, "windows": [None, {"id": 1}]}]}]):
+            P.tabs_from_ls(data, None, 0, 0.0)
+
+
 class MatchTests(unittest.TestCase):
     def setUp(self):
         self.items = P.build(TABS, ROWS)
@@ -96,9 +127,24 @@ class MatchTests(unittest.TestCase):
     def titles(self, q):
         return [it["title"] for it in P.filter_items(self.items, q)]
 
-    def test_no_query_is_the_grouped_list_unchanged(self):
-        self.assertEqual(P.filter_items(self.items, ""), self.items)
-        self.assertEqual(P.filter_items(self.items, "   "), self.items)
+    def test_no_query_is_the_grouped_list_without_its_long_tail(self):
+        shown = [it for it in self.items if not it.get("extra")]
+        self.assertEqual(P.filter_items(self.items, ""), shown)
+        self.assertEqual(P.filter_items(self.items, "   "), shown)
+
+    def test_only_the_first_few_new_agents_show_by_default_and_a_query_finds_the_rest(self):
+        names = ["claude", "codex", "devin", "cursor-agent", "opencode", "agy", "grok"]
+        rows = []
+        for n in names:
+            for where in ("tab", "vsplit"):
+                rows.append({"kind": "new", "agent": n, "tone": "", "text": f"+  new {n}   {where}", "action": {"op": "spawn", "agent": n, "where": where}})
+        items = P.build([], rows)
+        default = [it["agent"] for it in P.filter_items(items, "") if it["action"].get("op") == "spawn"]
+        self.assertEqual(default, names[:P.NEW_VISIBLE])
+        self.assertTrue(all(it["action"]["where"] == "tab" for it in P.filter_items(items, "") if it["action"].get("op") == "spawn"))
+        found = [it["action"] for it in P.filter_items(items, "grok")]
+        self.assertEqual({a["where"] for a in found}, {"tab", "vsplit"})
+        self.assertEqual(len(P.filter_items(items, "split")), len(names))
 
     def test_every_word_must_match_somewhere(self):
         self.assertEqual(self.titles("api"), [t for t in self.titles("api")])

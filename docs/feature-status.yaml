@@ -49,6 +49,10 @@ features:
     label: Docked panel
     status: beta
     description: The deck as an always-visible column on Wayland layer-shell compositors; placement is verified on Hyprland by hand only.
+  - id: command-palette
+    label: Command palette
+    status: shipped
+    description: ctrl+alt+shift+space is one searchable list of what needs you, every tab, conversations to reopen, new agents with their quota headroom and a few actions.
   - id: panel-usage
     label: Usage view in the panel
     status: shipped
@@ -168,7 +172,7 @@ features:
   - id: workspace-switcher
     label: Workspace switcher
     status: planned
-    description: A recent-first list of sessions and OS windows with their agent states, as one key. The deck and pick already list every tab of every OS window.
+    description: A recent-first list of sessions with their agent states. The command palette and pick list every tab; kitty has its own goto_session list of sessions but no agent states.
   - id: session-rename
     label: Rename a session
     status: planned

@@ -34,6 +34,7 @@
   kittymux panel       persistent agent-and-usage panel: panel [toggle|start|stop|status|wider|narrower|width N]
   kittymux usage       provider quotas, resets and local usage: usage [--window] (Mod+N → Usage opens a separate window from any app)
   kittymux peek        the peek card (a right-click on a tab) from the keyboard: peek [TAB_ID | --waiting]  (--waiting: the agent that needs you longest)
+  kittymux palette     one searchable list of what needs you, every tab, agents to reopen or start, and a few actions (ctrl+alt+shift+space): palette
   kittymux join        move this tab's panes into another tab as splits: join [--to TAB_ID] [--side right|below|left|above|auto] [--pane]
   kittymux keys        chords your own kitty config and kittymux both define (kittymux's wins: it loads later): keys [conflicts]
   kittymux dim         dim the panes that are not focused (kitty ≥ 0.49.2): dim [on|off|toggle|show]
@@ -68,6 +69,7 @@ import kittymux_journal  # noqa: E402
 import kittymux_keymap  # noqa: E402
 import kittymux_launcher  # noqa: E402
 import kittymux_meters  # noqa: E402
+import kittymux_palette  # noqa: E402
 import kittymux_quiet  # noqa: E402
 import kittymux_resume  # noqa: E402
 import kittymux_layout  # noqa: E402
@@ -2216,6 +2218,68 @@ def peek_cmd(argv: list[str]) -> int:
     return r.returncode
 
 
+def _pane_to_cover(sock: str) -> str:
+    """The pane an overlay should open over: $KITTY_WINDOW_ID when it is a real pane of that kitty (a shell), else the focused pane (a key-bound background command gets the id
+    of its own hidden window, which is no pane of any tab)."""
+    panes = [w for o in (_ls(sock) or []) for t in o.get("tabs", []) for w in t.get("windows", [])]
+    mine = os.environ.get("KITTY_WINDOW_ID", "")
+    return mine if mine.isdigit() and any(w.get("id") == int(mine) for w in panes) else next((str(w["id"]) for w in panes if w.get("is_focused")), "")
+
+
+def palette_cmd(argv: list[str]) -> int:
+    """`kittymux palette` — the command palette over this pane (what ctrl+alt+shift+space opens): type to find a tab, an agent that needs you, a conversation to
+    reopen, a new agent or a fixed action; ⏎ does it. It acts on the kitty it was started inside."""
+    if argv:
+        print("usage: kittymux palette", file=sys.stderr)
+        return 2
+    sock = _own_kitty_socket()
+    if sock is None:
+        print("kittymux palette: run it from a pane of the kitty you want to use "
+              "(needs allow_remote_control socket-only and listen_on unix:${XDG_RUNTIME_DIR}/mykitty)", file=sys.stderr)
+        return 1
+    win = _pane_to_cover(sock)
+    if not win:
+        print("kittymux palette: no focused pane in this kitty to open it over", file=sys.stderr)
+        return 1
+    kit = os.path.join(HOME_DIR, "python", "palette-kit.py")
+    return subprocess.run(["kitty", "@", "--to", sock, "kitten", "--match", f"id:{win}", kit], stdin=subprocess.DEVNULL, check=False).returncode
+
+
+def act_cmd(argv: list[str]) -> int:
+    """`kittymux act JSON` — do ONE command-palette action. The palette's kitten calls it after it closes; it is not meant to be typed. The action is validated again (a tab id,
+    an agent that is installed, one of a few fixed ids): anything else is refused and nothing runs."""
+    if len(argv) != 1:
+        print("usage: kittymux act JSON   (what the command palette runs; see `kittymux palette`)", file=sys.stderr)
+        return 2
+    try:
+        obj = json.loads(argv[0])
+    except ValueError:
+        print("kittymux act: not JSON", file=sys.stderr)
+        return 2
+    a = kittymux_palette.validate_action(obj, known_agents=tuple(_installed_agents()))
+    if a is None:
+        print("kittymux act: not an action the palette can run", file=sys.stderr)
+        return 2
+    sock = _own_kitty_socket() or _focused_socket()
+    op = a["op"]
+    if op == "focus-tab":
+        if not sock:
+            print("kittymux act: no kitty to act on", file=sys.stderr)
+            return 1
+        rc, _ = _run(["kitty", "@", "--to", sock, "focus-tab", "--match", f"id:{a['tab']}"], 4)
+        if rc == 0:
+            _focus_wm(_socket_pid(sock))
+        return 0 if rc == 0 else 1
+    if op == "jump":
+        rc = inbox_jump({"pid": a["pid"], "w": a["w"]})
+        if rc == 0 and a.get("ack"):
+            kittymux_inbox.ack(kittymux_layout.state_dir(), time.time(), ids=[a["ack"]])
+        return rc
+    if op == "run":
+        return subprocess.run([os.path.join(HOME_DIR, "bin", "kittymux"), *kittymux_palette.ACTIONS[a["id"]][2]], check=False).returncode
+    return _do_row({"action": a}, "open", sock)               # reopen | spawn | usage: the same code `pick` runs
+
+
 def panel_cmd(argv: list[str]) -> int:
     action = argv[0] if argv else "toggle"
     if action not in {"toggle", "start", "stop", "status", "wider", "narrower", "width"} or (action == "width" and (len(argv) != 2 or not argv[1].isdigit())) or (action != "width" and len(argv) > 1):
@@ -2781,6 +2845,10 @@ def main(argv: list[str]) -> int:
         return usage_cmd(argv[1:])
     if cmd == "peek":
         return peek_cmd(argv[1:])
+    if cmd == "palette":
+        return palette_cmd(argv[1:])
+    if cmd == "act":
+        return act_cmd(argv[1:])
     if cmd == "fanout":
         return fanout(argv[1:])
     if cmd == "checkpoint":

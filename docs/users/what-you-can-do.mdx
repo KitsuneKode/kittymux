@@ -55,7 +55,7 @@ Not built. The docs say so wherever they mention it.
 | --- | --- |
 | Side sheet beside the bar | A sheet with more about a tab. Not built; the peek card and the deck cover the need today. |
 | Sheet that opens on hover | Not possible from the bar itself, because kitty sends it no idle mouse motion; it can only live inside a sheet or the panel. |
-| Workspace switcher | A recent-first list of sessions and OS windows with their agent states, as one key. The deck and pick already list every tab of every OS window. |
+| Workspace switcher | A recent-first list of sessions with their agent states. The command palette and pick list every tab; kitty has its own goto_session list of sessions but no agent states. |
 | Rename a session | Rename a session and keep its tab titles, saved file and journal in step. |
 | Type into several panes | One keystroke stream into every pane of a tab, like tmux synchronize-panes. |
 | Documentation site | The docs in this folder rendered by a TanStack Start and Fumadocs app. |
@@ -86,6 +86,7 @@ Works today and is covered by a test.
 | Peek card | Right-click a tab for its state, question, branch, folder, panes and the tail of its screen. |
 | Quick look from the keyboard | ctrl+alt+shift+q opens the peek card of the agent that has waited longest, and kittymux peek opens it for any tab of this kitty. |
 | Sidebar deck | Every tab across every session with live preview, search, hover and keyboard control. |
+| Command palette | ctrl+alt+shift+space is one searchable list of what needs you, every tab, conversations to reopen, new agents with their quota headroom and a few actions. |
 | Usage view in the panel | Provider tiles, limit gauges with a pace tick and a countdown, token counters with a week of bars, and state chips, drawn from one model for every provider. |
 | Inbox view in the panel | Every typed event as a card with Jump and Dismiss, and filters for what needs you, what finished and limits. |
 | Join a tab into another | Move all panes of a tab (or one pane) into another tab as splits, keeping their shape. |

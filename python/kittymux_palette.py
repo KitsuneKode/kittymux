@@ -22,6 +22,7 @@ import kittymux_usageview as V
 
 GROUPS = ("Needs you", "Inbox", "Tabs", "Agents", "Actions")
 TITLE_MAX = 160
+NEW_VISIBLE = 4                   # new-agent rows shown before you type (in a tab); the rest wait for a query
 
 # Fixed actions: id -> (title, hint, kittymux argv). `act` runs exactly these argvs and nothing else.
 ACTIONS = {
@@ -80,7 +81,11 @@ def from_rows(rows) -> list:
         elif kind == "closed":
             out.append(_item("Agents", body, "", ("↺", "muted"), agent, "reopen", dict(a)))
         elif kind == "new":
-            out.append(_item("Agents", body, "", ("+", "accent"), agent, "", dict(a)))
+            it = _item("Agents", body, "", ("+", "accent"), agent, "", dict(a))
+            seen_new = sum(1 for x in out if x["action"].get("op") == "spawn" and x["action"].get("where") == "tab")
+            # by default each of the first few agents once, in a tab; the others and the split variants appear when you type for them
+            it["extra"] = a.get("where") != "tab" or seen_new >= NEW_VISIBLE
+            out.append(it)
         elif kind == "utility" and a.get("op") == "usage":
             out.append(_item("Actions", "Open the usage overlay", "", ("◔", "muted"), "", "", dict(a)))
     return out
@@ -94,6 +99,32 @@ def build(tabs, rows) -> list:
     items = from_rows(rows) + from_tabs(tabs) + actions()
     order = {g: i for i, g in enumerate(GROUPS)}
     return sorted(items, key=lambda it: order[it["group"]])             # sorted() is stable: each group keeps its own order
+
+
+def tabs_from_ls(data, panes: dict, own_window: int, now: float, stale_after: float = 15.0) -> list:
+    """The `tabs` for `from_tabs`, from `kitty @ ls` output: every tab with a pane, its title with the agent prefix stripped, its folder, its pane count and its
+    rolled-up state. The palette's own overlay is not a pane. `panes`: kittymux_agents.load_panes(...)."""
+    out = []
+    for os_window in data if isinstance(data, list) else []:
+        if not isinstance(os_window, dict):
+            continue
+        for tab in os_window.get("tabs") or []:
+            if not isinstance(tab, dict):
+                continue
+            wins = [w for w in tab.get("windows") or [] if isinstance(w, dict) and "palette-kit" not in str(w.get("cmdline")) and "kittens.runner" not in str(w.get("cmdline"))]
+            if not wins or not isinstance(tab.get("id"), int):
+                continue
+            hist = [i for i in tab.get("active_window_history") or [] if any(w.get("id") == i for w in wins)]
+            aw = next((w for w in wins if w.get("id") == (hist[0] if hist else wins[0].get("id"))), wins[0])
+            try:
+                name, _tool = kittymux_agents.identify(aw)
+                state, _why = kittymux_agents.tab_verdict(panes or {}, [w.get("id") for w in wins], aw.get("id"), name is not None, now, stale_after)
+            except Exception:
+                state = ""
+            title = kittymux_place.clean(kittymux_agents.strip_title_prefix(str(tab.get("title") or aw.get("title") or "")))
+            out.append({"os": os_window.get("id"), "id": tab["id"], "title": title or "tab", "cwd": str(aw.get("cwd") or ""), "panes": len(wins), "state": state,
+                        "current": bool(tab.get("is_focused") or any(isinstance(w, dict) and w.get("id") == own_window for w in tab.get("windows") or []))})
+    return out
 
 
 # ── matching ──────────────────────────────────────────────────────────────────
@@ -125,10 +156,11 @@ def score(query: str, it: dict):
 
 
 def filter_items(items: list, query: str) -> list:
-    """No query: the grouped list as built. A query: one flat list, best match first (ties keep the grouped order)."""
+    """No query: the grouped list without its `extra` rows (the long tail of new agents and their split variants). A query: one flat list over EVERYTHING, best match first
+    (ties keep the grouped order)."""
     q = (query or "").strip()
     if not q:
-        return list(items)
+        return [it for it in items if not it.get("extra")]
     scored = [(s, i, it) for i, it in enumerate(items) if (s := score(q, it)) is not None]
     return [it for _s, _i, it in sorted(scored, key=lambda x: (x[0], x[1]))]
 
