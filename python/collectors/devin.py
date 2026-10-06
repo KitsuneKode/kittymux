@@ -15,7 +15,7 @@ import time
 import tomllib
 
 from _common import (HOME, LiveError, curl_json, fmt_ago, fmt_tokens, fmt_wait,
-                     live_failure, live_fresh, live_success, local_day)
+                     live_failure, live_fresh, live_success, local_day, safe_mtime)
 
 
 def collect() -> dict:
@@ -25,7 +25,7 @@ def collect() -> dict:
     now = time.time()
     _, midnight = local_day(now)
     files = sorted(transcripts.glob("*.json"),
-                   key=lambda p: p.stat().st_mtime, reverse=True)
+                   key=safe_mtime, reverse=True)
     if not files:
         return {"name": "devin", "rows": [], "note": "—"}
     toks, sess, model = 0, 0, ""

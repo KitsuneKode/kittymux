@@ -2,6 +2,8 @@
 # No kitty imports: unit-tested under system python3 (tests/test_deck.py).
 
 from dataclasses import dataclass
+from functools import lru_cache
+import kittymux_place
 from typing import Callable
 
 NO_SESSION = "(no session)"
@@ -20,6 +22,7 @@ class PaneData:
     state: str = ""         # working | waiting | limited | done | idle | "" (not an agent)
     title: str = ""
     active: bool = False    # the tab's focused pane
+    cwd: str = ""
 
 
 @dataclass
@@ -201,6 +204,60 @@ def layout_minimap(rects: list, cols: int, rows: int) -> list:
             line.append((_QUADRANT[mask], a, b))
         out.append(line)
     return out
+
+
+@lru_cache(maxsize=256)
+def cached_minimap(rects: tuple, cols: int, rows: int) -> tuple:
+    """Immutable, bounded geometry cache. Focus, state and palette are applied by callers."""
+    return tuple(tuple(line) for line in layout_minimap(rects, cols, rows))
+
+
+def complete_minimap(rects: tuple, cols: int, rows: int) -> tuple | None:
+    """None instead of a misleading picture when sampling loses a tiny/stacked pane."""
+    grid = cached_minimap(rects, cols, rows)
+    seen = {pid for line in grid for _ch, a, b in line for pid in (a, b)}
+    return grid if grid and seen == {r[0] for r in rects} else None
+
+
+def wrap_detail(text: str, width: int, cells=len) -> list[str]:
+    """Wrap full values without discarding their suffix; terminal controls are never drawn."""
+    text = kittymux_place.clean(text)
+    if width < 1:
+        return []
+    out, line = [], ""
+    for ch in text:
+        if cells(line + ch) > width:
+            out.append(line)
+            line = ""
+        if cells(ch) <= width:
+            line += ch
+    return out + ([line] if line else [])
+
+
+def numbered_layout(rects: tuple, cols: int, rows: int, active: int = 0) -> list[str]:
+    """Outline native pane rectangles and label them in kitty's window order. [] if too small."""
+    if not rects or cols < 6 or rows < 3:
+        return []
+    x0, y0 = min(r[1] for r in rects), min(r[2] for r in rects)
+    dx = max(1, max(r[3] for r in rects) - x0)
+    dy = max(1, max(r[4] for r in rects) - y0)
+    boxes = [(pid, round((l - x0) * (cols - 1) / dx), round((t - y0) * (rows - 1) / dy),
+              round((r - x0) * (cols - 1) / dx), round((b - y0) * (rows - 1) / dy)) for pid, l, t, r, b in rects]
+    labels = [f"[{i}]" if pid == active else str(i) for i, (pid, *_g) in enumerate(boxes, 1)]
+    if any(r - l < len(label) + 1 or b - t < 2 for (_pid, l, t, r, b), label in zip(boxes, labels)):
+        return []
+    grid = [[" "] * cols for _ in range(rows)]
+    for (_pid, l, t, r, b), label in zip(boxes, labels):
+        for x in range(l, r + 1):
+            grid[t][x] = grid[b][x] = "─"
+        for y in range(t, b + 1):
+            grid[y][l] = grid[y][r] = "│"
+        for x, y in ((l, t), (r, t), (l, b), (r, b)):
+            grid[y][x] = "┼"
+    for (_pid, l, t, r, b), label in zip(boxes, labels):
+        x, y = l + (r - l - len(label) + 1) // 2, (t + b) // 2
+        grid[y][x:x + len(label)] = label
+    return ["".join(line) for line in grid]
 
 
 def matches(row: RowData, tokens: list) -> bool:

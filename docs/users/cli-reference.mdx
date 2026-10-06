@@ -167,6 +167,24 @@ kittymux features preset minimal|default|full
 kittymux features -h
 ```
 
+## `kittymux panel`
+
+A persistent native kitty Wayland panel with Agents and Usage views. It stays open after actions. Bind its toggle in your window manager to reach it from any app.
+
+```sh
+kittymux panel [toggle|start|stop|status|wider|narrower]
+kittymux panel width 40
+```
+
+## `kittymux usage`
+
+Provider quotas, reset times and local activity. Inside kitty it opens an overlay in that kitty; outside kitty it opens a separate window. The pick menu includes a Usage entry. Live network quotas remain opt-in.
+
+```sh
+kittymux usage
+kittymux usage --window
+```
+
 ## `kittymux peek`
 
 Opens the peek card, what a right-click on a tab opens, over this pane. See [Peek, deck and panel](/docs/users/peek-deck-and-panel#quick-look-from-the-keyboard).

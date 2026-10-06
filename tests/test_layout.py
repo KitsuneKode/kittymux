@@ -108,6 +108,12 @@ class StorageTests(unittest.TestCase):
         self.assertIn(f"layout-{os.getpid()}.json", names)
         self.assertIn("layout-default.json", names)
 
+    def test_cleanup_keeps_instances_when_proc_is_unavailable(self):
+        L.save(self.dir, 424242, L.Layout())
+        with mock.patch.object(L.os.path, "isdir", return_value=False):
+            self.assertEqual(L.cleanup_stale(self.dir), 0)
+        self.assertTrue(os.path.isfile(os.path.join(self.dir, "layout-424242.json")))
+
     def test_main_prints_nothing_when_user_never_chose(self):
         patcher = mock.patch.object(L, "hypr_focus_on_activate", return_value=None)           # independent of the compositor running the tests
         patcher.start()

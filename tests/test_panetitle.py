@@ -32,6 +32,13 @@ def render(f, title, columns, active=True, **kw):
 
 
 class RenderTests(unittest.TestCase):
+    def test_agent_state_is_reserved_before_the_folder_at_narrow_widths(self):
+        f = P.facts("/work/kittymux/long/path", REPO, HOME)
+        for columns in (4, 8, 16, 40):
+            out = plain(render(f, "long title", columns, state_mark="!", state_rgb=0x999999))
+            self.assertTrue(out.startswith("! "), out)
+            self.assertLessEqual(len(out), columns)
+
     def test_the_folder_line_then_the_panes_own_title(self):
         f = P.facts("/work/kittymux/src/ui", REPO, HOME)
         self.assertEqual(plain(render(f, "nvim README.md", 80)), "F kittymux/src/ui  B main  ·  nvim README.md")

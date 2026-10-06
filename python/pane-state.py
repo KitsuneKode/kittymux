@@ -57,7 +57,9 @@ def _clean(text, limit: int = 120) -> str:
 
 
 def _cleanup_stale() -> None:
-    """Delete panes-<pid>.json left behind by kitty processes that no longer exist."""
+    """Delete stale state only when the process filesystem can establish liveness."""
+    if not os.path.isdir("/proc"):
+        return
     try:
         for name in os.listdir(_STATE_DIR):
             m = re.fullmatch(r"(?:panes|scan)-(\d+)\.json(?:\.tmp)?", name)

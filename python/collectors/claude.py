@@ -12,7 +12,7 @@ import json
 import time
 
 from _common import (HOME, LiveError, curl_json, fmt_ago, fmt_tokens, fmt_wait,
-                     iso_ts, live_failure, live_fresh, live_success, local_day)
+                     iso_ts, live_failure, live_fresh, live_success, local_day, safe_mtime)
 
 
 def collect() -> dict:
@@ -24,7 +24,7 @@ def collect() -> dict:
     daily_fresh = 0
     week_cut, scan_cut = now - 7 * 86400, now - 12 * 3600
 
-    files = sorted(root.rglob("*.jsonl"), key=lambda p: p.stat().st_mtime,
+    files = sorted(root.rglob("*.jsonl"), key=safe_mtime,
                    reverse=True)
     events: list[tuple[float, int, int]] = []  # (ts, fresh, cached)
     week_fresh, week_cached, week_sess = 0, 0, set()

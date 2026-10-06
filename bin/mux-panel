@@ -71,7 +71,7 @@ except Exception:
         --name kittymux-panel \
         --listen-on "unix:$SOCK" \
         -o allow_remote_control=socket-only -o confirm_os_window_close=0 -o background_opacity=1 \
-        kitten "$DECK" >"$STATE/panel.log" 2>&1 &
+        kitty +runpy 'from kittens.runner import main; main()' "${KITTY_CONFIG_DIRECTORY:-${XDG_CONFIG_HOME:-$HOME/.config}/kitty}" "$DECK" >"$STATE/panel.log" 2>&1 &
     echo $! > "$PIDFILE"
     echo "panel started → watching $target"
 }

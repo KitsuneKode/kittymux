@@ -74,6 +74,7 @@ kittymux follows tmux's `display-panes`: press a key and every pane shows a digi
 | ------------------------------------------- | -------------------------------------------------------------------- |
 | Show digits, then focus a pane              | `ctrl+alt+e`, then the digit. With two panes it jumps straight over. |
 | Focus pane N directly                       | `ctrl+alt+shift+1` to `9`, using the same numbers.                   |
+| Open native pane controls                  | `ctrl+alt+shift+semicolon` (the semicolon key).                        |
 | Show digits, then swap with a pane          | `ctrl+alt+shift+y`, then the digit.                                  |
 | Move focus to a neighbour                   | `ctrl+alt+h` `j` `k` `l`, or `shift+alt+` an arrow key.              |
 | Go to the last pane                         | `ctrl+alt+o`                                                         |
@@ -83,9 +84,11 @@ kittymux follows tmux's `display-panes`: press a key and every pane shows a digi
 
 If you prefer letters to digits, set `visual_window_select_characters asdfghjkl` in your `kitty.conf`. The direct keys stay numeric.
 
+Press the pane-controls chord, then `h/j/k/l` to swap with a neighbour, `r` to rotate the current split, `s` to exchange its sides, `e` to equalize or `a` to choose a swap target. These use kitty’s own actions, preserving processes and pane identity. Rotation and equalization apply to the splits layout; a nested split rotates its current group. Escape cancels; the opening chord also dismisses the picker.
+
 ## Pane title bars and drag and drop
 
-Press `ctrl+alt+shift+c` to show a thin title bar on every pane. Press it again to hide them. The bars carry the same folder line as the tab bar and double as drag handles. They need kitty 0.49.2 or later.
+Press `ctrl+alt+shift+c` to show a thin title bar on every pane. Press it again to hide them. The bars carry the folder line and the pane’s merged agent status, with the state mark reserved even in a narrow pane. They double as drag handles. They need kitty 0.49.2 or later.
 
 | Drag                                                    | Result                                                              |
 | ------------------------------------------------------- | ------------------------------------------------------------------- |
@@ -95,6 +98,13 @@ Press `ctrl+alt+shift+c` to show a thin title bar on every pane. Press it again 
 | A pane's title bar onto another pane's edge             | Inserts it there.                                                   |
 | A pane's title bar onto another pane's title bar        | Swaps the two.                                                      |
 
-kitty has no gesture for dropping a whole tab onto a pane. Use [join](#join-a-tab-into-another) for that.
+A single-pane tab can be dropped onto a pane as a split in kitty 0.49.2. To merge a whole multi-pane tab while preserving its shape, use [join](#join-a-tab-into-another).
 
 To move a tab with the keyboard, use `ctrl+alt+shift+←` and `ctrl+alt+shift+→` on a horizontal bar, or `ctrl+alt+shift+↑` and `ctrl+alt+shift+↓` on a vertical one. Both always work.
+
+
+### Drag out and merge
+
+Drag a pane title bar onto another tab to move that pane, or onto the empty tab-bar area / **+** to give it its own tab. A pane dropped outside the OS window becomes its own OS window when another pane remains. Dragging a whole tab out creates an OS window with that tab's panes; a single-pane tab dragged onto a pane can become a split. Kitty owns these operations and the platform drop result; cancelled drags change nothing. With a lone pane in a lone tab there is no remaining source window to split away from.
+
+For a whole multi-pane merge, use the join picker (`ctrl+alt+shift+j`) or the deck's `a`: kittymux preserves the source arrangement using kitty's native attach API. Native drag of a multi-pane tab reorders/moves the tab; it is not the shape-preserving multi-pane join. See [Join a tab into another](/docs/users/tabs-and-panes#join-a-tab-into-another).

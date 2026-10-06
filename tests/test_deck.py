@@ -14,6 +14,34 @@ def mk(n, session, **kw):
 
 
 class LatestWorkerTests(unittest.TestCase):
+    def test_numbered_layout_includes_middle_and_focused_pane(self):
+        rects = tuple((i + 1, 0, i * 100, 100, (i + 1) * 100) for i in range(3))
+        drawing = "\n".join(D.numbered_layout(rects, 24, 10, 2))
+        for label in ("1", "[2]", "3"):
+            self.assertIn(label, drawing)
+        self.assertTrue(all(len(line) <= 24 for line in drawing.splitlines()))
+
+    def test_wrapped_details_are_sanitized_and_preserve_long_values(self):
+        text = "long/path/" * 8
+        lines = D.wrap_detail(text + "\x1b[31m", 20)
+        self.assertTrue(all(len(line) <= 20 for line in lines))
+        self.assertNotIn("\x1b", "".join(lines))
+        self.assertIn(text, "".join(lines))
+
+    def test_overview_never_silently_omits_a_pane(self):
+        rects = tuple((i + 1, 0, i * 100, 100, (i + 1) * 100) for i in range(3))
+        self.assertIsNone(D.complete_minimap(rects, 8, 1))
+        self.assertIsNotNone(D.complete_minimap(rects, 8, 3))
+        tiny = ((1, 0, 0, 1, 100), (2, 1, 0, 100, 100))
+        self.assertIsNone(D.complete_minimap(tiny, 8, 1))
+
+    def test_cached_geometry_is_immutable_and_bounded(self):
+        rects = ((1, 0, 0, 50, 40), (2, 50, 0, 100, 40))
+        a = D.complete_minimap(rects, 8, 1)
+        self.assertIs(a, D.complete_minimap(rects, 8, 1))
+        self.assertIsInstance(a, tuple)
+        self.assertLessEqual(D.cached_minimap.cache_info().maxsize, 256)
+
     def test_blocked_worker_coalesces_and_generations_reject_aba(self):
         entered, release, finished = threading.Event(), threading.Event(), threading.Event()
         calls, results = [], []

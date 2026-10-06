@@ -104,14 +104,9 @@ for helper in "$KITTYMUX_HOME"/python/kittymux_*.py; do
 done
 ok "tab_bar.py, window_title_bar.py + helper modules → symlinks"
 
-# ── managed tab-edge file (mux-edge.sh rewrites it) ─────────────────────────
-[[ -f "$EDGE_FILE" ]] || printf '# managed by kittymux mux-edge.sh — do not edit\ntab_bar_edge bottom\n' > "$EDGE_FILE"
+# ── legacy tab-edge default (per-instance layout state now wins) ─────────────────────────
+[[ -f "$EDGE_FILE" ]] || printf '# kittymux legacy default — per-instance layout state overrides this\ntab_bar_edge bottom\n' > "$EDGE_FILE"
 ok "tab-edge include ready"
-
-# ── managed tab-bar-style file (mux-bar.sh rewrites it; hidden ⇄ custom) ────
-BAR_FILE="$KITTY_CONF_DIR/include-tab-bar.conf"
-[[ -f "$BAR_FILE" ]] || printf '# managed by kittymux mux-bar.sh — do not edit\ntab_bar_style custom\n' > "$BAR_FILE"
-ok "tab-bar include ready"
 
 # ── brand icon font (real provider logos via symbol_map) ─────────────────────
 FONT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/fonts"

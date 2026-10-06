@@ -11,8 +11,11 @@
 
 import json
 import os
+import sys
+import time
 import types
 
+import kittymux_agents
 import kittymux_features
 import kittymux_git
 import kittymux_place
@@ -49,15 +52,17 @@ def _fit(text: str, width: int, cells) -> str:
 
 
 def render(f, title: str, columns: int, style: dict, title_rgb: int, dot_rgb: int, *, active: bool,
-           icon: str = "", branch_icon: str = "", cells=len) -> str:
+           icon: str = "", branch_icon: str = "", cells=len, state_mark: str = "", state_rgb: int | None = None) -> str:
     """The title bar text for one pane: the folder line first (it gets the room it needs), the pane's own title in what is left.
     Visible width never exceeds the bar. `style` is kittymux_place.style's role → (rgb, bold)."""
     avail = max(columns, 4) - 1
+    prefix = kittymux_place.clean(state_mark)[:1] + " " if state_mark else ""
+    avail -= cells(prefix)
     pieces = kittymux_place.layout(f, avail, icon=icon, branch_icon=branch_icon, cells=cells)
     if not pieces:
-        return ""
+        return (_sgr_fg(state_rgb or title_rgb) + prefix + _RESET) if prefix else ""
     used = sum(cells(t) for t, _r in pieces)
-    out = []
+    out = [_sgr_fg(state_rgb if state_rgb is not None else title_rgb) + _BOLD + prefix + _NOBOLD] if prefix else []
     for text, role in pieces:
         rgb, bold = style[role]
         out.append(_sgr_fg(rgb) + (_BOLD if bold else "") + text + (_NOBOLD if bold else ""))
@@ -157,8 +162,16 @@ def draw(data) -> str:
         f = kittymux_place.facts(cwd, kittymux_git.info(cwd))
         style, title_rgb, dot_rgb = derive_colours(fg, bg, pal.accent, (pal.waiting, pal.alert, pal.working, pal.done),
                                                    f.project, bool(data.is_active))
+        rt = sys.modules.get("_kittymux_scan_rt")
+        entry = kittymux_agents.merge_scan(
+            {str(data.window_id): (getattr(rt, "panes", (None, {}))[1].get(str(data.window_id)) or {})},
+            {str(data.window_id): (getattr(rt, "verdicts", {}).get(str(data.window_id)) or {})}).get(str(data.window_id))
+        state = kittymux_agents.fresh_verdict(entry, time.monotonic())
+        mark = "◐" if state == "working" else kittymux_agents.state_glyph(state) if state and state != "idle" else ""
+        state_rgb = {"waiting": pal.waiting, "limited": pal.alert, "working": pal.working, "done": pal.done}.get(state, title_rgb)
+        state_rgb = kittymux_theme.ensure_contrast(state_rgb, bg, 4.5)
         out = render(f, data.title or "", int(window.screen.columns), style, title_rgb, dot_rgb, active=bool(data.is_active),
-                     icon=_ICON_FOLDER, branch_icon=_ICON_BRANCH, cells=cells)
+                     icon=_ICON_FOLDER, branch_icon=_ICON_BRANCH, cells=cells, state_mark=mark, state_rgb=state_rgb)
         _dump(data.window_id, out)
         return out
     except Exception:

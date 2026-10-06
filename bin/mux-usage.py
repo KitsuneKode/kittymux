@@ -375,9 +375,9 @@ _GLYPHS = {"claude": "\ue0d8", "codex": "\ue0d9",
 _BRAND = {"claude": "d97757", "codex": "10a37f", "cursor": "5b8ef4",
           "devin": "8b5cf6", "gemini": "4796e3", "opencode": "9ca3af",
           "amp": "f59e0b"}
-_TRACK = "313244"  # unfilled bar segment
-_ELAPSED = "585b70"  # window-elapsed fill (surface2)
-_SEGS = ("a6e3a1", "f9e2af", "cba6f7", "f38ba8")  # spend-stack colors
+_TRACK = _h(kittymux_theme.blend(_PAL.text, _PAL.bg, 0.12))  # unfilled bar segment
+_ELAPSED = _h(_PAL.muted)  # window-elapsed fill (surface2)
+_SEGS = tuple(_h(c) for c in (_PAL.done, _PAL.waiting, _PAL.accent, _PAL.alert))  # spend-stack colors
 
 
 def _rgb(h: str, p: int) -> str:
@@ -502,7 +502,8 @@ def build_summary(data: dict, sel: int, status: str = "",
     maxed = _maxed(data["providers"])
     badge = _rgb(C_BAD, 100) + f"✗ {'/'.join(maxed)} maxed " + "\033[0m" \
         if maxed else ""
-    rows = [(f" agent usage · {badge}{tag}{_live_tag(data)} ", C_NAME),
+    rows = [(" Usage", C_TXT),
+            (f" Provider limits  ·  {badge}{tag}{_live_tag(data)}", C_DIM),
             ("", C_DIM)]
     for i, p in enumerate(data["providers"]):
         mark = "▸" if i == sel else " "
@@ -542,9 +543,11 @@ def build_summary(data: dict, sel: int, status: str = "",
                 tail += f" · {s}"
         if p.get("live_error"):
             tail += " · " + p["live_error"]
-        fill = C_BAD if _sev(r0) == "maxed" else brand
-        rows.append((f" {mark} {name} {_bar(r0['pct'], 8, fill)} "
-                     f"{r0['pct']:>3.0f}% {tail}", color))
+        fill = C_BAD if _sev(r0) == "maxed" else C_WARN if _sev(r0) == "warn" else C_CLOCK
+        rows.append((f" {mark} {name} {_bar(r0['pct'], 12, fill)} "
+                     f"{r0['pct']:>3.0f}%", color))
+        rows.append((f"     {tail}", C_DIM))
+        rows.append(("", C_DIM))
     spark = _sparkline("burn")
     if spark:
         rows.append((f"   7d burn  {spark}", C_DIM))
@@ -652,7 +655,7 @@ def build_all(data: dict, status: str = "", spin: str = "◐") -> list[tuple[str
 _last_box = [0, 0, 0, 0]  # top, left, w, h of the previous frame
 
 
-def draw(rows: list[tuple[str, str]], p: int, cols: int, lines: int) -> None:
+def draw(rows: list[tuple[str, str]], p: int, cols: int, lines: int, scroll: int = 0) -> None:
     pt, pl, pw, ph = _last_box
     out = []
     if ph:
@@ -675,7 +678,11 @@ def draw(rows: list[tuple[str, str]], p: int, cols: int, lines: int) -> None:
     top = max((lines - n - 3) // 2, 0)
     b = _rgb(C_BORDER, p)
     out.append(f"\033[{top};{left}H{b}╭{'─' * w}╮")
-    for i, (text, fg) in enumerate(rows[:n]):
+    visible = rows
+    if len(rows) > n and n >= 2:
+        scroll = max(0, min(scroll, len(rows) - (n - 1)))
+        visible = rows[scroll:scroll + n - 1] + [(" ↑↓ scroll · " + rows[-1][0].strip(), C_DIM)]
+    for i, (text, fg) in enumerate(visible[:n]):
         out.append(f"\033[{top + 1 + i};{left}H{b}│{_rgb(fg, p)}"
                    f"{_pad(_trunc(text, w), w)}{b}│")
     out.append(f"\033[{top + 1 + n};{left}H{b}╰{'─' * w}╯")
@@ -729,7 +736,7 @@ def interactive() -> None:
         termios.tcsetattr(fd, termios.TCSANOW,
                           termios.tcgetattr(fd)[:3] + [termios.tcgetattr(fd)[3] & ~termios.ECHO & ~termios.ICANON] +
                           termios.tcgetattr(fd)[4:])
-        mode, sel = "summary", 0
+        mode, sel, scroll = "summary", 0, 0
         cols, lines = os.get_terminal_size()
         sys.stdout.write("\033[?25l")
         data, loader = _seed(C.LIVE, load_collectors())
@@ -762,7 +769,7 @@ def interactive() -> None:
                     break
                 if k == "esc":
                     if mode != "summary":
-                        mode = "summary"
+                        mode, scroll = "summary", 0
                     else:
                         break
                 elif k in ("up", "k") and mode == "summary":
@@ -770,11 +777,13 @@ def interactive() -> None:
                 elif k in ("dn", "j") and mode == "summary":
                     sel = min(len(data["providers"]) - 1, sel + 1)
                 elif k in ("\r", "\n", "rt", "l") and mode == "summary":
-                    mode = "detail"
+                    mode, scroll = "detail", 0
+                elif k in ("up", "k", "dn", "j"):
+                    scroll = max(0, scroll + (-1 if k in ("up", "k") else 1))
                 elif k in ("lt", "h") and mode == "detail":
-                    mode = "summary"
+                    mode, scroll = "summary", 0
                 elif k == "a":
-                    mode = "summary" if mode == "all" else "all"
+                    mode, scroll = ("summary" if mode == "all" else "all"), 0
                 elif k == "r" and not loader.alive():
                     loader = _respawn(loader, data)
             elif not loader.alive() and data.get("ts") \
@@ -790,7 +799,15 @@ def interactive() -> None:
             rows = (build_summary(data, sel, status, spin) if mode == "summary"
                     else build_detail(data["providers"][sel], spin)
                     if mode == "detail" else build_all(data, status, spin))
-            draw(rows, 100, cols, lines)
+            if mode == "summary":
+                selected = next((i for i, (text, _) in enumerate(rows) if text.startswith(" ▸")), 0)
+                page = max(1, lines - 5)
+                if selected < scroll:
+                    scroll = selected
+                elif selected + 2 >= scroll + page:
+                    scroll = max(0, selected + 3 - page)
+            scroll = min(scroll, max(0, len(rows) - max(1, lines - 5)))
+            draw(rows, 100, cols, lines, scroll)
     finally:
         signal.set_wakeup_fd(-1)
         try:

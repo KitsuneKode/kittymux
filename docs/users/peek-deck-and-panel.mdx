@@ -10,7 +10,7 @@ With a dozen tabs open you often want to know one thing about one of them: is th
 | Open it | Right-click a tab in the bar, or press `ctrl+alt+shift+q` | `ctrl+alt+b` | `ctrl+alt+shift+b` toggles it |
 | Shows | One tab: its state, the question it is asking, branch, folder, panes and the tail of its screen | Every tab of every session, grouped, with a live preview of the selection | The same as the deck |
 | Stays open | No. It closes when you act or dismiss it. | No. It closes when you jump. | Yes. It is a column on your screen. |
-| Needs | The vertical bar | Nothing extra | A Wayland compositor with layer-shell |
+| Needs | Kitty remote control; vertical bar for right-click | Nothing extra | A Wayland compositor with layer-shell |
 
 <Callout type="info" title="Is there a detail sheet on hover?">
   Not yet. kitty sends the tab bar no idle mouse motion (in a real-pointer test, none of eight moves
@@ -31,9 +31,11 @@ The peek card is a small overlay over your active pane. It answers "what is goin
 | ----------------------------------------------------- | ------------------ | ---------------------- |
 | Open the card                                         | `ctrl+alt+shift+q` for the agent that has waited longest. `kittymux peek 12` for tab id 12. | Right-click the tab.   |
 | Jump to the tab. If a pane is asking, land on that pane | `⏎`              |                        |
-| Close the card                                        | `esc` or `q`       | Click anywhere on it.  |
+| Preview a pane                                       | `1`–`9`           | Click its pane row. |
+| Scroll details                                       | `↑` `↓`, Page Up/Down | |
+| Close the card                                        | `esc` or `q`       | Click outside its pane rows. |
 
-The card never changes anything until you press `⏎`. It reads the same state as the bar, so the two never disagree.
+Selecting a pane changes its preview. The card moves focus only when you press `⏎`. It reads the same state as the bar, so the two never disagree.
 
 You can also open it by hand for a tab id from `kitty @ ls`:
 
@@ -95,3 +97,12 @@ Separate from the cards above, `ctrl+alt+i` shows a small pill with the current 
 - You are hunting across many tabs, or want to act on one by keyboard: **deck**.
 - You want agent states always in view on a wide screen: **panel**.
 - You want a list that sorts by what needs you, from anywhere on the desktop: [`kittymux pick`](/docs/users/launch-and-find-agents#find-an-agent-with-pick).
+
+
+## Agents and Usage in the persistent panel
+
+Bind `kittymux panel toggle` to Mod+N in your window manager to reach it from any app. The panel stays open when you jump, merge or detach. Click **Agents / Usage** or press `u` to switch views. Usage shows provider quotas, local numbers and reset times; `↑/↓` scroll and `r` refreshes. Escape returns to Agents; `q` or the global toggle closes it. Network requests remain [opt-in](/docs/users/customization#usage-hud).
+
+Hover a tab or its pane row for a preview. Requests wait briefly while the pointer crosses rows and stale results are discarded. The preview identifies its pane and shows a numbered layout from kitty's real geometry. In Peek, press a digit or click a pane row to change the preview without moving focus; Enter jumps to that pane. Long titles and paths wrap, and arrows / Page Up / Page Down scroll the card.
+
+Kitty 0.49.2's native tab bar receives no idle hover events. Right-click opens Peek there. Its native resize cursor also requires two visible panes; a single or zoomed pane uses the bar-side grab zone with a hand pointer. The docked panel can show its own resize cursor because it receives motion events.

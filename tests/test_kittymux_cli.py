@@ -1491,3 +1491,29 @@ class PeekCmdTests(unittest.TestCase):
         rc, err, calls, _ = self.run_peek(["--waiting"], rows_target="555")
         self.assertEqual(rc, 1)
         self.assertEqual(calls, [])
+
+
+class UsageLaunchTests(unittest.TestCase):
+    def setUp(self):
+        self.m = load()
+
+    def test_picker_usage_entry_is_available_without_any_agents(self):
+        with mock.patch.object(self.m, "_focused_socket", return_value=None), mock.patch.object(self.m, "_pick_data", return_value=([], [], [], [])), mock.patch.object(self.m, "_focus_cwd", return_value=""), mock.patch.object(self.m, "_risk_table", return_value={}), mock.patch("builtins.print") as out:
+            self.assertEqual(self.m.pick(["--json"]), 0)
+            rows = json.loads(out.call_args.args[0])
+        self.assertEqual(rows[0]["action"]["op"], "usage")
+
+    def test_global_usage_opens_separate_window_and_clears_parent_identity(self):
+        with mock.patch.dict(os.environ, KITTY_PID="7", KITTY_WINDOW_ID="8", KITTY_LISTEN_ON="unix:/synthetic", KITTYMUX_TARGET="unix:/synthetic"), mock.patch.object(self.m.subprocess, "Popen") as start:
+            self.assertEqual(self.m.usage_cmd(["--window"]), 0)
+        args, kw = start.call_args
+        self.assertIn("kittymux-usage", args[0])
+        self.assertTrue(kw["start_new_session"])
+        self.assertNotIn("KITTY_PID", kw["env"])
+        self.assertNotIn("KITTYMUX_TARGET", kw["env"])
+
+    def test_inside_kitty_usage_uses_own_socket(self):
+        with mock.patch.object(self.m, "_own_kitty_socket", return_value="unix:/own"), mock.patch.object(self.m.subprocess, "run", return_value=types.SimpleNamespace(returncode=0)) as rc, mock.patch.dict(os.environ, KITTY_WINDOW_ID="8"):
+            self.assertEqual(self.m.usage_cmd([]), 0)
+        self.assertIn("unix:/own", rc.call_args.args[0])
+        self.assertIn("--match", rc.call_args.args[0])

@@ -27,13 +27,22 @@ from kitty.typing_compat import BossType
 # Kittens are exec'd (no __file__): find the shared modules via the config dir
 # (the installer links them there) or next to this script if we can tell.
 _CONFIG_DIR = os.environ.get("KITTY_CONFIG_DIRECTORY", str(Path.home() / ".config" / "kitty"))
-for _d in (_CONFIG_DIR, os.path.dirname(os.path.realpath(sys.argv[0])) if sys.argv and sys.argv[0] else ""):
-    if _d and _d not in sys.path:
+def _source_dir():
+    # Kitty execs compiled source without __file__; argv[0] belongs to the runner.
+    return os.path.dirname(os.path.realpath(_source_dir.__code__.co_filename))
+
+
+for _d in (_CONFIG_DIR, _source_dir()):
+    if _d:
+        if _d in sys.path:
+            sys.path.remove(_d)
         sys.path.insert(0, _d)
 import kittymux_agents  # noqa: E402
 import kittymux_deck as deck  # noqa: E402
 import kittymux_git  # noqa: E402
 import kittymux_theme  # noqa: E402
+import kittymux_usageview  # noqa: E402
+import kittymux_place  # noqa: E402
 
 _STATE_DIR = Path(os.environ["KITTYMUX_STATE"]) if os.environ.get("KITTYMUX_STATE") else \
     Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))) / "kittymux"
@@ -207,7 +216,7 @@ class Collector:
         title = (w.get("title") or "").strip() or _short_home(w.get("cwd", ""))
         return deck.PaneData(win_id=w["id"], glyph=agent.glyph if agent else kittymux_agents.TOOLS.get(tool, ""),
                              agent=name or "", tool=bool(tool and not agent), state=state,
-                             title=kittymux_agents.strip_title_prefix(title), active=w["id"] == active_id)
+                             title=kittymux_agents.strip_title_prefix(title), active=w["id"] == active_id, cwd=w.get("cwd", ""))
 
     def collect(self) -> Snapshot | None:
         try:
@@ -274,6 +283,10 @@ class Sidebar(Handler):
         self.preview: list[str] = []
         self.preview_for = 0
         self._preview_inflight = False
+        self._view, self._usage_scroll, self._usage_data = "agents", 0, {}
+        self._usage_process, self._usage_last = None, 0.0
+        self._preview_timer = None
+        self._preview_rects = ()
         self._hover_pane = (-1, -1)             # (row, pane) of the child line under the pointer
         self.query, self.searching, self.full = "", False, None     # the `/` search
         self._alive = True
@@ -292,6 +305,9 @@ class Sidebar(Handler):
 
     def finalize(self) -> None:
         self._alive = False
+        if self._preview_timer is not None:
+            self._preview_timer.cancel()
+            self._preview_timer = None
         if hasattr(self, "_preview_worker"):
             self._preview_worker.close()
         if hasattr(self, "_resize_worker"):
@@ -309,6 +325,14 @@ class Sidebar(Handler):
             snap = None
             try:
                 snap = self._collector.collect()
+                usage = {}
+                try:
+                    path = _STATE_DIR / "agent-usage.json"
+                    if path.stat().st_size <= 2 * 1024 * 1024:
+                        usage = json.loads(path.read_text())
+                except (OSError, ValueError):
+                    pass
+                self._post(self._apply_usage, usage)
             except Exception:
                 _log_error()
             finally:
@@ -322,11 +346,57 @@ class Sidebar(Handler):
         except Exception:
             pass
 
+    def _apply_usage(self, data):
+        if self._alive and isinstance(data, dict):
+            self._usage_data = data
+            if getattr(self, "_view", "agents") == "usage":
+                self.draw_screen()
+
+    def _request_usage(self, force=False):
+        process = getattr(self, "_usage_process", None)
+        if process is not None and process.poll() is None:
+            return
+        now = time.monotonic()
+        if not force and now - getattr(self, "_usage_last", 0) < 60:
+            return
+        root = Path(deck.__file__).resolve().parent.parent
+        env = dict(os.environ, KITTYMUX_HOME=str(root))
+        try:
+            self._usage_process = subprocess.Popen(["python3", str(root / "bin/mux-usage.py"), "--collect-only"],
+                                                   env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                                   stderr=subprocess.DEVNULL, start_new_session=True)
+            self._usage_last = now
+        except OSError:
+            pass
+
+    def _set_view(self, view):
+        self._view = view
+        if view == "usage":
+            self._request_usage()
+        if view == "agents":
+            self._schedule_spin()
+        self.draw_screen()
+
+    def _draw_usage(self, cols, height):
+        p = self.pal
+        self.write(set_cursor_position(0, 0) + self._line([(" Usage", p.text, True)], cols, p.bar))
+        self.write(set_cursor_position(0, 1) + self._line([(" Agents [a]  Usage [u]", p.accent, True)], cols, p.surface))
+        rows = kittymux_usageview.rows(getattr(self, "_usage_data", {}), cols, _cells)
+        page = max(1, height - 3)
+        self._usage_scroll = max(0, min(getattr(self, "_usage_scroll", 0), max(0, len(rows) - page)))
+        visible = rows[self._usage_scroll:self._usage_scroll + page]
+        for y in range(page):
+            text, role = visible[y] if y < len(visible) else ("", "muted")
+            self.write(set_cursor_position(0, y + 2) + self._line([(text, getattr(p, role), role == "text")], cols, p.bar))
+        self.write(set_cursor_position(0, height - 1) + self._line([(" ↑↓ scroll · r refresh · a agents", p.faint, False)], cols, p.bar))
+        self.flush()
+
     def _apply(self, snap) -> None:
         self._collecting = False
         if not self._alive or snap is None:
             return
         keep = self.snap.rows[self.sel].tab_id if self.snap.rows else None
+        hovered = self.preview_for if self._hover_pane[0] == self.sel else 0
         self.full = snap                         # the unfiltered view; self.snap is what the `/` search leaves of it
         self.snap = snap.with_query(self.query) if self.query else snap
         snap = self.snap
@@ -342,6 +412,10 @@ class Sidebar(Handler):
             self.sel = next((i for i, r in enumerate(snap.rows) if r.tab_id == keep),
                             min(self.sel, len(snap.rows) - 1))
         self._clamp()
+        if hovered:
+            pane = next((i for i, p in enumerate(snap.rows[self.sel].pane_rows) if p.win_id == hovered), -1)
+            if pane >= 0:
+                self._hover_pane = (self.sel, pane)
         # A slow same-pane read must be allowed to finish before periodic refresh
         # invalidates it; actual selection changes still submit a new generation.
         self._request_preview(force=not self._preview_inflight)
@@ -350,7 +424,7 @@ class Sidebar(Handler):
 
     # ---- spinner: redraw at frame rate only while something is working ----
     def _schedule_spin(self) -> None:
-        if getattr(self, "_spin_pending", False) or not self._alive:
+        if getattr(self, "_spin_pending", False) or not self._alive or getattr(self, "_view", "agents") == "usage":
             return
         if any(r.status == "working" for r in self.snap.rows):
             self._spin_pending = True
@@ -358,14 +432,18 @@ class Sidebar(Handler):
 
     def _spin(self) -> None:
         self._spin_pending = False
-        if self._alive and any(r.status == "working" for r in self.snap.rows):
+        if self._alive and getattr(self, "_view", "agents") == "agents" and any(r.status == "working" for r in self.snap.rows):
             self.draw_screen()
             self._schedule_spin()
 
-    def _request_preview(self, force: bool = False) -> None:
+    def _request_preview(self, force: bool = False, delay: bool = False) -> None:
         if not self._alive:
             return
         if not self.snap.rows:
+            if self._preview_timer is not None:
+                self._preview_timer.cancel()
+                self._preview_timer = None
+            self._preview_rects = ()
             self._preview_worker.invalidate()
             self._preview_inflight = False
             self.preview_for = 0
@@ -376,25 +454,47 @@ class Sidebar(Handler):
         wid = r.pane_rows[pane].win_id if row == self.sel and 0 <= pane < len(r.pane_rows) else r.win_id
         if wid == self.preview_for and not force:
             return
+        if self._preview_timer is not None:
+            self._preview_timer.cancel()
+            self._preview_timer = None
         if wid != self.preview_for:
+            self._preview_worker.invalidate()
             self.preview = []
+            self._preview_rects = ()
         self.preview_for = wid
         self._preview_inflight = True
-        self._preview_worker.submit((wid, self.screen_size.rows))
+        request = (wid, self.screen_size.rows, r.tab_id, r.panes > 1)
+        if delay:
+            self._preview_timer = self.asyncio_loop.call_later(0.15, self._submit_preview, request)
+        else:
+            self._submit_preview(request)
+
+    def _submit_preview(self, request):
+        self._preview_timer = None
+        if self._alive and request[0] == self.preview_for:
+            self._preview_worker.submit(request)
 
     def _fetch_preview(self, request) -> list:
-        wid, rows_n = request
+        wid, rows_n, tab_id, split = request
         try:
             txt = _rc("get-text", "--extent", "screen", "--match", f"id:{wid}")
         except Exception:
             txt = ""
         lines = txt.rstrip().splitlines()
-        return lines[-max(4, rows_n - 4):] if lines else ["(empty pane)"]
+        lines = lines[-max(4, rows_n - 4):] if lines else ["(empty pane)"]
+        if split:
+            try:
+                snap = json.loads(_rc("kitten", str(Path(deck.__file__).resolve().parent / "pane-snapshot.py"), str(tab_id)))
+                return {"lines": lines, "rects": (snap or {}).get("rects", [])}
+            except (ValueError, TypeError):
+                pass
+        return lines
 
     def _apply_preview(self, generation: int, lines: list) -> None:
         if self._alive and self._preview_worker.is_current(generation):
             self._preview_inflight = False
-            self.preview = lines or ["(empty pane)"]
+            self._preview_rects = tuple(tuple(r) for r in lines.get("rects", [])) if isinstance(lines, dict) else ()
+            self.preview = (lines["lines"] if isinstance(lines, dict) else lines) or ["(empty pane)"]
             self.draw_screen()
 
     def _schedule(self) -> None:
@@ -404,6 +504,8 @@ class Sidebar(Handler):
     def _tick(self) -> None:
         if not self._alive:
             return
+        if getattr(self, "_view", "agents") == "usage":
+            self._request_usage()
         self._request_refresh()
         self._schedule()
 
@@ -434,7 +536,7 @@ class Sidebar(Handler):
 
     # ---- drawing ----------------------------------------------------------
     def _seg(self, text, fg=None, bg=None, bold=False, dim=False) -> str:
-        return styled(text, fg=_C(fg) if fg is not None else None,
+        return styled(kittymux_place.clean_line(text), fg=_C(fg) if fg is not None else None,
                       bg=_C(bg) if bg is not None else None, bold=bold, dim=dim)
 
     def _line(self, parts: list, width: int, bg: int) -> str:
@@ -484,8 +586,8 @@ class Sidebar(Handler):
         if r.panes > 1:
             parts.append((f"{r.panes} panes", p.faint))
         tail = [(r.status, state_fg)] if r.status in kittymux_agents.NEEDS_YOU else []
-        if r.msg:                                   # what it is waiting for beats everything
-            parts, tail = [(r.msg, state_fg)], []
+        if r.msg:
+            tail = [(r.status, state_fg)]
         reserve = sum(_cells(t) + 2 for t, _ in tail)
         cells, used = [], 0
         for i, (text, fg) in enumerate(parts):
@@ -528,6 +630,9 @@ class Sidebar(Handler):
     def draw_screen(self) -> None:
         cols, rows_n, bar_w = self._geom()
         p = self.pal
+        if getattr(self, "_view", "agents") == "usage":
+            self._draw_usage(cols, rows_n)
+            return
         w = self.write
         snap = self.snap
         # header: counts + hint
@@ -542,7 +647,7 @@ class Sidebar(Handler):
                     (f"   {len(snap.rows)}/{total}", p.faint, False)]
             w(set_cursor_position(0, 1) + self._line(line, bar_w, p.surface))
         else:
-            w(set_cursor_position(0, 1) + self._line([(" " + deck.hint(bar_w - 1), p.faint, False)], bar_w, p.bar))
+            w(set_cursor_position(0, 1) + self._line([(" Agents  |  Usage [u]  ·  / search", p.faint, False)], bar_w, p.bar))
         # list
         avail = self._avail()
         y = 2
@@ -581,9 +686,9 @@ class Sidebar(Handler):
             pd = r.pane_rows[pane] if row == self.sel and 0 <= pane < len(r.pane_rows) else None
             top = rows_n - dr
             w(set_cursor_position(0, top) + self._line([("─" * bar_w, p.line, False)], bar_w, p.bar))
-            who = (pd.agent or pd.title) if pd else (r.agent or "pane")
+            who = pd.title if pd else r.title
             w(set_cursor_position(0, top + 1) + self._line(
-                [(" " + deck.fit(f"{who} · {_short_home(r.cwd)}", bar_w - 2, _cells), p.faint, True)], bar_w, p.bar))
+                [(" " + deck.fit(f"{who} · {_short_home(pd.cwd if pd else r.cwd)}", bar_w - 2, _cells), p.faint, True)], bar_w, p.bar))
             body = [ln.strip() for ln in self.preview if ln.strip()][-(dr - 2):]
             for j in range(dr - 2):
                 text = body[j] if j < len(body) else ""
@@ -597,9 +702,14 @@ class Sidebar(Handler):
                 w(set_cursor_position(bar_w + 1, y2) + " " * (cols - bar_w - 1))
             if snap.rows:
                 r = snap.rows[self.sel]
+                row, pane = self._hover_pane
+                pd = r.pane_rows[pane] if row == self.sel and 0 <= pane < len(r.pane_rows) else None
+                who = pd.title if pd else r.title
                 w(set_cursor_position(px, 0) + self._seg(
-                    deck.fit(f"{r.agent or 'pane'} · {_short_home(r.cwd)}", pw, _cells), fg=p.faint))
-                for j, ln in enumerate(self.preview[:rows_n - 2]):
+                    deck.fit(f"{who or 'pane'} · {_short_home(pd.cwd if pd else r.cwd)}", pw, _cells), fg=p.faint))
+                drawing = deck.numbered_layout(self._preview_rects, min(32, pw), min(10, max(5, r.panes * 3 + 1)), self.preview_for) if {rect[0] for rect in self._preview_rects} == {child.win_id for child in r.pane_rows} else []
+                body = drawing + ([f"{r.panes} panes · [{next((i + 1 for i, child in enumerate(r.pane_rows) if child.win_id == self.preview_for), 1)}] preview"] if drawing else []) + self.preview
+                for j, ln in enumerate(body[:rows_n - 2]):
                     w(set_cursor_position(px, j + 2) + self._seg(deck.fit(ln, pw, _cells), fg=p.muted))
         if self._can_drag():                      # the drag handle: lights up on hover / while dragging
             hot = getattr(self, "_drag", False) or getattr(self, "_handle_hot", False)
@@ -661,6 +771,21 @@ class Sidebar(Handler):
         if key_event.type == EventType.RELEASE:   # press+release both arrive; act once
             return
         k = (key_event.key or "").upper()
+        if not self.searching and k == "U":
+            self._set_view("agents" if getattr(self, "_view", "agents") == "usage" else "usage")
+            return
+        if getattr(self, "_view", "agents") == "usage":
+            if k in ("A", "ESCAPE"):
+                self._set_view("agents")
+            elif k == "Q":
+                self.quit_loop()
+            elif k == "R":
+                self._request_usage(force=True)
+            elif k in ("J", "K", "UP", "DOWN", "PAGE_UP", "PAGE_DOWN"):
+                delta = (-1 if k in ("K", "UP", "PAGE_UP") else 1) * (max(1, self.screen_size.rows - 3) if k.startswith("PAGE") else 1)
+                self._usage_scroll = max(0, self._usage_scroll + delta)
+                self.draw_screen()
+            return
         if self.searching:
             ch = getattr(key_event, "text", "") or (key_event.key if len(key_event.key or "") == 1 and not (key_event.mods & ~1) else "")
             if ch and k not in ("ESCAPE", "ENTER", "BACKSPACE", "TAB"):
@@ -778,6 +903,8 @@ class Sidebar(Handler):
         return deck.pane_at(self.snap.items, self.scroll, self._avail(), y - 2)
 
     def on_mouse_move(self, mouse_event) -> None:
+        if getattr(self, "_view", "agents") == "usage":
+            return
         if mouse_event.cell_x >= self._geom()[2]:
             return
         idx = self._row_at(mouse_event.cell_y)
@@ -786,10 +913,15 @@ class Sidebar(Handler):
             idx = hover[0]
         if idx >= 0 and (idx != self.sel or hover != self._hover_pane):
             self.sel, self._hover_pane = idx, hover
-            self._request_preview()
+            self._request_preview(delay=True)
             self.draw_screen()
 
     def on_click(self, mouse_event) -> None:
+        if mouse_event.cell_y == 1 and not self.searching:
+            self._set_view("usage" if mouse_event.cell_x >= 12 else "agents")
+            return
+        if getattr(self, "_view", "agents") == "usage":
+            return
         if mouse_event.cell_x >= self._geom()[2]:
             return
         row, pane = self._pane_at(mouse_event.cell_y)

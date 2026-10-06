@@ -100,7 +100,8 @@ launch sh
 new_tab
 cd $W/docs
 launch sh
-launch --location=vsplit sh
+launch --location=hsplit sh
+launch --location=hsplit sh
 new_tab
 cd $W/web
 launch bash -c 'printf "· Pondering… (12s · ↓ 1.2k tokens)\n"; exec -a claude sleep 86400'

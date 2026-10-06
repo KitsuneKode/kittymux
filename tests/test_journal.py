@@ -214,6 +214,13 @@ class ReadBackTests(unittest.TestCase):
         self.assertEqual((ins["sessions"], ins["running"]), (2, 1))
         self.assertEqual([e["agent"] for e in J.recoverable(es)], ["codex"])  # claude is running; codex's kitty is gone
 
+    def test_missing_proc_is_unknown_and_keeps_positive_pid_running(self):
+        with tempfile.TemporaryDirectory() as d:
+            missing = os.path.join(d, "no-proc")
+            self.assertTrue(J._alive(424242, missing))
+            self.assertFalse(J._alive(0, missing))
+            self.assertFalse(J._alive(-1, missing))
+
     def test_spans(self):
         self.assertEqual(J.parse_span("90m", 0), 5400)
         self.assertEqual(J.parse_span("2d", 0), 172800)

@@ -5,6 +5,7 @@ import stat
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 
@@ -53,6 +54,14 @@ class HygieneTests(unittest.TestCase):
         self.assertNotIn(f"scan-{dead}.json", left)
         for name in (f"panes-{alive}.json", "agent-usage.json", "keep.txt", os.path.basename(keep)):
             self.assertIn(name, left)
+
+    def test_cleanup_keeps_instances_when_proc_is_unavailable(self):
+        os.makedirs(self.dir)
+        path = os.path.join(self.dir, "scan-424242.json")
+        open(path, "w").close()
+        with mock.patch.object(self.m.os.path, "isdir", return_value=False):
+            self.m._cleanup_stale()
+        self.assertTrue(os.path.isfile(path))
 
     def test_user_var_message_is_sanitized_on_arrival(self):
         class W:                                       # minimal stand-in for a kitty Window

@@ -26,10 +26,15 @@ _SPACES = re.compile(r"[\t\n\r\x0b\x0c]")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 
+def clean_line(text: str) -> str:
+    """Safe plain terminal line, preserving indentation and alignment spaces."""
+    return _CONTROL.sub("", _SPACES.sub(" ", text))
+
+
 def clean(text: str) -> str:
     """Text safe to draw: every control character gone (a directory can be NAMED with an escape sequence, and kitty's own title sanitiser lets ESC
     and 0x1a-0x1f through), tabs and newlines turned into spaces, runs of whitespace collapsed."""
-    return " ".join(_CONTROL.sub("", _SPACES.sub(" ", text)).split())
+    return " ".join(clean_line(text).split())
 
 
 def facts(cwd: str, info, home: str | None = None) -> Facts:

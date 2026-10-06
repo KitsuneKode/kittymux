@@ -211,7 +211,7 @@ def key_for_window(records: dict, kitty_pid: int, window_id) -> str | None:
 
 # ── reading it back ───────────────────────────────────────────────────────────
 def _alive(pid: int, proc: str = "/proc") -> bool:
-    return bool(pid) and os.path.isdir(f"{proc}/{pid}")
+    return isinstance(pid, int) and pid > 0 and (not os.path.isdir(proc) or os.path.isdir(f"{proc}/{pid}"))
 
 
 def is_running(rec: dict, proc: str = "/proc") -> bool:

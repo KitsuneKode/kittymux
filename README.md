@@ -137,6 +137,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+h j k l` | pane nav (`shift+alt+arrows`) · `ctrl+alt+o` last pane |
 | `ctrl+alt+shift+1..9` | focus pane **N** of this tab straight away (the digit `ctrl+alt+e` draws on each pane) |
 | `ctrl+alt+shift+j` | **join**: move this tab's panes into another tab as splits, keeping their shape — you pick the tab in a list (its keys are in its footer; `kittymux join` from a shell) |
+| `ctrl+alt+shift+semicolon` | pane controls: `h/j/k/l` swap neighbours · `r` rotate · `s` swap split sides · `e` equalize · `a` choose a pane; Escape cancels |
 | `ctrl+alt+e` · `ctrl+alt+shift+y` | number every pane on screen, press its digit to **focus** it · to **swap** with it (tmux's display-panes) |
 | `ctrl+alt+v` | **pick**: what needs you (longest-waiting first), every running agent, conversations you closed, a new agent — one searchable list (`kittymux pick --menu rofi` from your window manager) |
 | `ctrl+alt+shift+o` then `c` `x` `d` `u` `o` `a` `g` | **spawn** claude · codex · devin · cursor · opencode · agy · grok in a new tab (`shift` + letter: split right) in the current directory |
@@ -559,3 +560,14 @@ rest of the repo (`assets/brand/`; sizes and the 1280×640 social card are built
 badge by `tools/build-notify-icons.py`; how it was made is in [docs/brand/](docs/brand/mascot-prompts.md)).
 The logos of Claude, Codex, Devin, Droid, Antigravity, Gemini and the other agents are **trademarks of their owners**, shown only
 to identify those tools.
+
+
+### Persistent agents and usage
+
+`kittymux panel toggle` opens the native kitty Wayland panel from any app. Bind it to Mod+N in your window manager. It stays open after jumping, merging or detaching panes. Click **Agents / Usage** or press `u` to switch views; Usage shows provider limits, local activity and reset times, with `↑/↓` to scroll and `r` to refresh. Escape returns to Agents; `q` or the global toggle closes the panel. Its colours follow kitty's theme; quotas marked elapsed describe time, not consumed tokens. Live provider requests remain opt-in (`KITTYMUX_USAGE_LIVE=1`).
+
+`kittymux pick` keeps the searchable agent menu and adds a **Usage** entry. `kittymux usage` opens an overlay inside kitty, or its own window from another app; `--window` always opens a separate window.
+
+The bar keeps the folder line when an alert arrives and gives the alert its own row when the height cap permits. A split count survives narrow bars; the tiny layout map is drawn only when it represents every visible pane. Peek and the deck show a numbered native layout; digit/click selection in Peek changes the preview without focusing the target. Full titles and folders wrap in Peek; arrows scroll.
+
+Hover previews work in the deck and panel. Kitty 0.49.2 sends no idle motion to the native tab bar: right-click or the keyboard Peek is its detail gesture. Kitty's C mouse handler also requires **two visible windows** for native border hit-testing, so a single/zoomed pane uses the bar-side resize grip with the hand pointer; the docked panel has its own resize cursor. We do not modify kitty's C binary.

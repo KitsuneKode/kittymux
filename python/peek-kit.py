@@ -3,13 +3,12 @@
 # events, so a click is the nearest thing to a link-preview hover), or by hand:
 #   kitten python/peek-kit.py <tab id>
 # Enter jumps there (to the pane that is asking, if one is); Esc / q / a click closes the card.
-# All colours derive from the live kitty theme; data comes from `kitty @ ls` on a worker thread.
+# All colours derive from the live kitty theme; data comes from a native tab snapshot on a bounded worker.
 
 import json
 import os
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 
@@ -22,11 +21,19 @@ from kitty.rgb import Color
 from kitty.typing_compat import BossType
 
 _CONFIG_DIR = os.environ.get("KITTY_CONFIG_DIRECTORY", str(Path.home() / ".config" / "kitty"))
-for _d in (_CONFIG_DIR, os.path.dirname(os.path.realpath(sys.argv[0])) if sys.argv and sys.argv[0] else ""):
-    if _d and _d not in sys.path:
+def _source_dir():
+    # Kitty execs compiled source without __file__; argv[0] belongs to the runner.
+    return os.path.dirname(os.path.realpath(_source_dir.__code__.co_filename))
+
+
+for _d in (_CONFIG_DIR, _source_dir()):
+    if _d:
+        if _d in sys.path:
+            sys.path.remove(_d)
         sys.path.insert(0, _d)
 import kittymux_agents  # noqa: E402
 import kittymux_deck as deck  # noqa: E402
+import kittymux_place
 import kittymux_git  # noqa: E402
 import kittymux_theme  # noqa: E402
 
@@ -58,16 +65,15 @@ def _rc(*args: str) -> str:
     return p.stdout if p.returncode == 0 else ""
 
 
-def collect(tab_id: int) -> dict | None:
+def collect(tab_id: int, selected_id: int = 0) -> dict | None:
     """Everything the card shows, or None when the tab no longer exists."""
     try:
-        data = json.loads(_rc("ls"))
+        tab = json.loads(_rc("kitten", str(Path(deck.__file__).resolve().parent / "pane-snapshot.py"), str(tab_id)))
     except Exception:
         return None
-    tab = next((t for o in data for t in o.get("tabs", []) if t["id"] == tab_id), None)
     if tab is None:
         return None
-    wins = [w for w in tab.get("windows") or [] if "kittens.runner" not in str(w.get("cmdline"))]
+    wins = tab.get("windows") or []
     if not wins:
         return None
     hist = [i for i in tab.get("active_window_history") or [] if any(w["id"] == i for w in wins)]
@@ -78,17 +84,20 @@ def collect(tab_id: int) -> dict | None:
     state, deciding = kittymux_agents.tab_verdict(panes, [w["id"] for w in wins], aw["id"], name is not None,
                                                   now, _STALE_AFTER)
     focus_id = int(deciding) if deciding and state in kittymux_agents.NEEDS_YOU else aw["id"]
+    if any(w["id"] == selected_id for w in wins):
+        focus_id = selected_id
     shown = next((w for w in wins if w["id"] == focus_id), aw)
-    gi = kittymux_git.info(aw.get("cwd", "")) if aw.get("cwd") else None
+    gi = kittymux_git.info(shown.get("cwd", "")) if shown.get("cwd") else None
     text = _rc("get-text", "--extent", "screen", "--match", f"id:{shown['id']}")
     tail = [ln.rstrip() for ln in text.rstrip().splitlines() if ln.strip()][-_PREVIEW_LINES:]
     return {
         "title": kittymux_agents.strip_title_prefix(tab.get("title") or aw.get("title") or ""),
         "agent": name or "", "tool": tool or "", "state": state,
         "reason": kittymux_agents.resolve_msg(panes.get(str(deciding or aw["id"])), state) if state else "",
-        "cwd": aw.get("cwd", ""), "branch": "" if gi is None or gi.branch == "detached" else gi.branch,
+        "cwd": shown.get("cwd", ""), "branch": "" if gi is None or gi.branch == "detached" else gi.branch,
         "tab_id": tab_id, "focus_id": focus_id,
-        "panes": [{"agent": n or "", "glyph": (kittymux_agents.AGENTS[n].glyph if n else kittymux_agents.TOOLS.get(t or "", "")),
+        "rects": tab.get("rects") or [],
+        "panes": [{"id": w["id"], "agent": n or "", "glyph": (kittymux_agents.AGENTS[n].glyph if n else kittymux_agents.TOOLS.get(t or "", "")),
                    "state": kittymux_agents.fresh_verdict(panes.get(str(w["id"])), now) if w["id"] != aw["id"]
                    else kittymux_agents.resolve_status(panes.get(str(w["id"])), n is not None, now, _STALE_AFTER),
                    "title": kittymux_agents.strip_title_prefix(w.get("title") or ""), "active": w["id"] == aw["id"]}
@@ -103,6 +112,10 @@ class Peek(Handler):
     def __init__(self, tab_id: int):
         super().__init__()
         self.tab_id = tab_id
+        self._selected_id = 0
+        self.scroll = 0
+        self._pane_hits = {}
+        self._inflight = False
         self.card: dict | None = None
         self.gone = False
         self._alive = True
@@ -110,33 +123,35 @@ class Peek(Handler):
     def initialize(self) -> None:
         self.pal = kittymux_theme.from_colors(
             kittymux_theme.parse_kitty_colors(_rc("get-colors", "--configured")))
+        self._worker = deck.LatestWorker(
+            lambda request: collect(*request),
+            lambda generation, card: self.asyncio_loop.call_soon_threadsafe(self._apply, generation, card))
         self._refresh()
         self.draw_screen()
+        self.asyncio_loop.call_later(_REFRESH_EVERY, self._tick)
 
     def finalize(self) -> None:
         self._alive = False
+        if hasattr(self, "_worker"):
+            self._worker.close()
 
-    def _refresh(self) -> None:
-        def work() -> None:
-            card = None
-            try:
-                card = collect(self.tab_id)
-            except Exception:
-                pass
-            try:
-                self.asyncio_loop.call_soon_threadsafe(self._apply, card)
-            except Exception:
-                pass
-        threading.Thread(target=work, daemon=True).start()
+    def _refresh(self, force=False) -> None:
+        if self._alive and (force or not self._inflight):
+            self._inflight = True
+            self._worker.submit((self.tab_id, self._selected_id))
 
-    def _apply(self, card) -> None:
-        if not self._alive:
+    def _tick(self) -> None:
+        if self._alive:
+            self._refresh()
+            self.asyncio_loop.call_later(_REFRESH_EVERY, self._tick)
+
+    def _apply(self, generation, card) -> None:
+        if not self._alive or not self._worker.is_current(generation):
             return
+        self._inflight = False
         self.gone = card is None
-        if card is not None:
-            self.card = card
+        self.card = card
         self.draw_screen()
-        self.asyncio_loop.call_later(_REFRESH_EVERY, self._refresh)
 
     # ---- drawing ----------------------------------------------------------
     def _seg(self, text, fg=None, bg=None, bold=False) -> str:
@@ -149,13 +164,14 @@ class Peek(Handler):
             room = width - used
             if room <= 0:
                 break
-            t = deck.fit(text, room, _cells)
+            t = deck.fit(kittymux_place.clean_line(text), room, _cells)
             out += self._seg(t, fg=fg, bg=bg, bold=bold)
             used += _cells(t)
         return out + (self._seg(" " * (width - used), bg=bg) if used < width else "")
 
     @Handler.atomic_update
     def draw_screen(self) -> None:
+        self._pane_hits = {}
         cols, rows = self.screen_size.cols, self.screen_size.rows
         p = self.pal
         w = self.write
@@ -175,35 +191,51 @@ class Peek(Handler):
             head = [(" ", p.text, False), (glyph or " ", agent.brand if agent else p.muted, False), (" ", p.text, False),
                     (card["title"] or "—", p.text, True)]
             right = f"{kittymux_agents.state_glyph(st)} {st} " if state_fg is not None else ""
-            lines.append(self._line(head + [(" " * max(1, width - 4 - _cells(card["title"] or "—") - _cells(right)), p.text, False),
-                                            (right, state_fg, True)] if right else head, width, bg))
+            header_room = max(0, width - _cells(right))
+            lines.append(self._line(head, header_room, bg) + self._seg(right, fg=state_fg, bg=bg, bold=True))
+            for text in deck.wrap_detail(card["title"], width - 2, _cells):
+                lines.append(self._line([(" " + text, p.text, True)], width, bg))
             lines.append(self._line([("─" * width, p.line, False)], width, bg))
             if card["reason"]:
                 lines.append(self._line([(" " + card["reason"], state_fg or p.text, True)], width, bg))
-            meta = []
-            if card["branch"]:
-                meta.append((f" {_ICON_BRANCH} {card['branch']}", p.muted, False))
-            if card["cwd"]:
-                meta.append(((" " if not meta else "   ") + f"{_ICON_FOLDER} {_short_home(card['cwd'])}", p.faint, False))
-            if meta:
-                lines.append(self._line(meta, width, bg))
+            for value in (card["branch"], _short_home(card["cwd"])):
+                for text in deck.wrap_detail(value, width - 2, _cells):
+                    lines.append(self._line([(" " + text, p.faint, False)], width, bg))
+            panes_n = len(card["panes"])
+            self._pane_hits = {}
+            if panes_n:
+                lines.append(self._line([(f" {panes_n} panes · [number] = previewed pane", p.faint, False)], width, bg))
+                rects = tuple(tuple(r) for r in card.get("rects", []))
+                drawing = deck.numbered_layout(rects, min(32, width - 2), min(10, max(5, panes_n * 3 + 1)), card["focus_id"]) if {r[0] for r in rects} == {p["id"] for p in card["panes"]} else []
+                for text in drawing:
+                    lines.append(self._line([(" " + text, p.muted, False)], width, bg))
             for i, pane in enumerate(card["panes"]):
                 brand = kittymux_agents.AGENTS[pane["agent"]].brand if pane["agent"] in kittymux_agents.AGENTS else p.muted
                 pfg = {"waiting": p.waiting, "working": p.working, "limited": p.alert,
                        "done": kittymux_theme.blend(p.done, p.bg, 0.65)}.get(pane["state"])
                 mark = kittymux_agents.state_glyph(pane["state"]) if pfg is not None else " "
-                lines.append(self._line([
-                    ("  " + ("└" if i == len(card["panes"]) - 1 else "├") + " ", p.line, False),
-                    (pane["glyph"] or "·", brand, False), (" ", p.text, False),
-                    (pane["title"] or pane["agent"] or "shell", p.text if pane["active"] else p.muted, pane["active"]),
-                    ("  " + mark, pfg if pfg is not None else p.text, True)], width, bg))
+                label = f" {i + 1} " + (pane["glyph"] or "·") + " "
+                badge = "  " + mark
+                title_room = max(0, width - _cells(label) - _cells(badge))
+                self._pane_hits[len(lines)] = pane["id"]
+                lines.append(self._line([(label, brand, False),
+                                         (deck.fit(pane["title"] or pane["agent"] or "shell", title_room, _cells),
+                                          p.text, pane["id"] == card["focus_id"])], width - _cells(badge), bg)
+                             + self._seg(badge, fg=pfg or p.text, bg=bg, bold=True))
+            who = next((i + 1 for i, pane in enumerate(card["panes"]) if pane["id"] == card["focus_id"]), 1)
+            lines.append(self._line([(f" Preview pane {who}: " + card["shown_title"], p.text, True)], width, bg))
             lines.append(self._line([("─" * width, p.line, False)], width, bg))
             for ln in card["tail"] or ["(empty screen)"]:
                 lines.append(self._line([(" " + ln, p.muted, False)], width, bg))
-        footer = self._line([(" ⏎ go to it · esc close", p.faint, False)], width, bg)
-        for y, ln in enumerate(lines[:max(1, rows - 1)]):
+        page = max(1, rows - 1)
+        self.scroll = max(0, min(self.scroll, max(0, len(lines) - page)))
+        footer_text = " 1–9 preview · ⏎ go · esc close"
+        if len(lines) > page:
+            footer_text = " ↑↓ scroll ·" + footer_text + f" {self.scroll + 1}/{len(lines)}"
+        footer = self._line([(footer_text, p.faint, False)], width, bg)
+        for y, ln in enumerate(lines[self.scroll:self.scroll + page]):
             w(set_cursor_position(0, y) + ln)
-        w(set_cursor_position(0, min(rows - 1, len(lines))) + footer)
+        w(set_cursor_position(0, rows - 1) + footer)
         self.flush()
 
     # ---- events -----------------------------------------------------------
@@ -213,13 +245,29 @@ class Peek(Handler):
         k = (key_event.key or "").upper()
         if k in ("Q", "ESCAPE"):
             self.quit_loop()
+        elif k in ("UP", "DOWN", "PAGE_UP", "PAGE_DOWN"):
+            delta = {"UP": -1, "DOWN": 1, "PAGE_UP": -max(1, self.screen_size.rows - 2),
+                     "PAGE_DOWN": max(1, self.screen_size.rows - 2)}[k]
+            self.scroll = max(0, self.scroll + delta)
+            self.draw_screen()
+        elif k in "123456789" and len(k) == 1 and self.card is not None:
+            panes = self.card["panes"]
+            if int(k) <= len(panes):
+                self._selected_id = panes[int(k) - 1]["id"]
+                self._refresh(force=True)
         elif k == "ENTER" and self.card is not None:
+            target = self._selected_id if any(p["id"] == self._selected_id for p in self.card["panes"]) else self.card["focus_id"]
             _rc("focus-tab", "--match", f"id:{self.card['tab_id']}")
-            _rc("focus-window", "--match", f"id:{self.card['focus_id']}")
+            _rc("focus-window", "--match", f"id:{target}")
             self.quit_loop()
 
     def on_click(self, mouse_event) -> None:
-        self.quit_loop()
+        wid = self._pane_hits.get(mouse_event.cell_y + self.scroll)
+        if wid is not None:
+            self._selected_id = wid
+            self._refresh(force=True)
+        else:
+            self.quit_loop()
 
     def on_resize(self, new_size) -> None:
         self.screen_size = new_size

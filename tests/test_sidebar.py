@@ -48,12 +48,53 @@ class QueuedLoop:
     def call_soon_threadsafe(self, fn, *args):
         self.callbacks.put((fn, args))
 
+    def call_later(self, delay, fn, *args):
+        handle = types.SimpleNamespace(cancelled=False)
+        handle.cancel = lambda: setattr(handle, "cancelled", True)
+        self.callbacks.put((lambda: None if handle.cancelled else fn(*args), ()))
+        return handle
+
     def apply_one(self):
         fn, args = self.callbacks.get(timeout=1)
         fn(*args)
 
 
 class SidebarTests(unittest.TestCase):
+    def test_hover_waits_briefly_and_old_result_is_rejected_immediately(self):
+        s = self.sidebar()
+        with patch.object(s._preview_worker, "submit") as submit, patch.object(s._preview_worker, "invalidate") as invalidate:
+            s.sel = 1
+            s._request_preview(delay=True)
+            submit.assert_not_called()
+            invalidate.assert_called_once()
+            s.asyncio_loop.apply_one()
+            submit.assert_called_once()
+            s.finalize()
+
+    def test_usage_switch_and_refresh_do_not_dismiss_persistent_panel(self):
+        s = self.sidebar()
+        s.quit_loop = Mock()
+        event = lambda k: types.SimpleNamespace(type="press", key=k, mods=0)
+        with patch.object(s, "_request_usage") as fetch, patch.object(self.m, "_PANEL", True):
+            s.on_key_event(event("U"))
+            self.assertEqual(s._view, "usage")
+            s.on_key_event(event("R"))
+            fetch.assert_called_with(force=True)
+            s.on_key_event(event("ESCAPE"))
+            self.assertEqual(s._view, "agents")
+            s.quit_loop.assert_not_called()
+        s.finalize()
+
+    def test_periodic_snapshot_keeps_hovered_pane_by_identity(self):
+        s = self.sidebar()
+        r = self.m.deck.RowData(1, 11, pane_rows=(self.m.deck.PaneData(11), self.m.deck.PaneData(12)))
+        s.snap = self.m.Snapshot([r], "")
+        s.sel, s._hover_pane, s.preview_for, s._first = 0, (0, 1), 12, False
+        with patch.object(s, "_request_preview"), patch.object(s, "_schedule_spin"):
+            s._apply(self.m.Snapshot([self.m.deck.RowData(2, 22), r], ""))
+        self.assertEqual(s._hover_pane, (1, 1))
+        s.finalize()
+
     def setUp(self):
         self.m = load_sidebar()
 
@@ -86,6 +127,14 @@ class SidebarTests(unittest.TestCase):
         self.assertTrue(kit[0][3].endswith("join-kit.py"))
         self.assertEqual(kit[0][4:], ("--to", "1", "--side", "auto"))
         self.assertIn(("focus-window", "--match", "id:20"), calls)
+
+    def test_runner_prefers_its_source_over_an_older_installed_helper(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            Path(cfg, "kittymux_deck.py").write_text("raise RuntimeError('old installed helper selected')\n")
+            with patch.dict(sys.modules):
+                sys.modules.pop("kittymux_deck", None)
+                m = load_sidebar(cfg=cfg, argv0="-c")
+                self.assertEqual(Path(m.deck.__file__).resolve().parent, PYTHON)
 
     def test_the_join_kitten_is_found_next_to_the_modules_not_in_the_config_dir(self):
         """Inside a running kitten sys.argv[0] is not the script, and the config dir holds only links to the modules: join-kit.py must be found

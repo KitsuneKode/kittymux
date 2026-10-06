@@ -185,3 +185,11 @@ def write_private(path: Path, payload: str) -> None:
                 os.unlink(tmp)
             except FileNotFoundError:
                 pass
+
+
+def safe_mtime(path) -> float:
+    """A disappearing transcript sorts last; collection can still use the surviving files."""
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0

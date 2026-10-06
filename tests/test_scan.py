@@ -925,6 +925,27 @@ class JournalIntegrationTests(ScanBase):
             KS._journal_note(w, "done")
         self.assertEqual((rec()["turns"], rec()["work_s"]), (1, 90))
 
+    def test_agent_exit_in_a_live_window_closes_its_journal_record(self):
+        w = self.agent_window()
+        KS.scan_window(w, 1.0)
+        KS._journal_tick(self.k.boss, {"1"}, 1000.0)
+        with mock.patch.object(KS, "agent_of", return_value=None):
+            KS.scan_window(w, 2.0)
+        KS._journal_tick(self.k.boss, {"1"}, 1010.0)
+        rec = self.records()["claude:" + self.SID]
+        self.assertFalse(rec["open"])
+        import kittymux_journal as J
+        self.assertFalse(J.is_running(rec))
+        self.assertTrue(J.recoverable(J.entries({"session": rec}, 1020.0, 3600.0)))
+
+    def test_transient_resume_identification_miss_keeps_a_live_agent_key(self):
+        w = self.agent_window()
+        KS.scan_window(w, 1.0)
+        key = KS._journal_rt()["keys"]["1"]
+        with mock.patch("kittymux_resume.identify", return_value=None):
+            KS._journal_note(w, "idle", 1000.0)
+        self.assertEqual(KS._journal_rt()["keys"]["1"], key)
+
     def test_a_closed_window_is_marked_closed_and_the_file_survives(self):
         w = self.agent_window()
         KS.scan_window(w, 1.0)

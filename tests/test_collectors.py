@@ -42,6 +42,22 @@ class CollectorTests(unittest.TestCase):
         self.clock = p.start()
         self.addCleanup(p.stop)
 
+    def test_file_disappearing_during_sort_does_not_fail_the_provider(self):
+        paths = ((claude, ".claude/projects/demo"), (devin, ".local/share/devin/cli/transcripts"))
+        original = Path.stat
+        for mod, folder in paths:
+            with self.subTest(provider=mod.__name__):
+                self.write(folder + "/vanished.jsonl" if mod is claude else folder + "/vanished.json", "{}")
+                self.write(folder + "/kept.jsonl" if mod is claude else folder + "/kept.json", "{}")
+                def raced(path, *a, **kw):
+                    if path.name.startswith("vanished"):
+                        raise FileNotFoundError("synthetic deleted file")
+                    return original(path, *a, **kw)
+                with patch.object(Path, "stat", raced):
+                    data = mod.collect()
+                self.assertEqual(data["name"], mod.__name__)
+                self.assertNotIn("err", data)
+
     def write(self, name, payload):
         path = self.home / name
         path.parent.mkdir(parents=True, exist_ok=True)

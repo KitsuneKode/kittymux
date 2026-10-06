@@ -128,7 +128,7 @@ features:
   - id: usage-hud
     label: Usage HUD
     status: shipped
-    description: Local usage numbers per provider; live quotas only when you turn the network on.
+    description: Local usage and opt-in live quotas, in an overlay, separate window or persistent Agents and Usage panel.
   - id: file-refs
     label: Clickable file references
     status: shipped
@@ -170,9 +170,9 @@ features:
     status: planned
     description: One keystroke stream into every pane of a tab, like tmux synchronize-panes.
   - id: layout-keys
-    label: Layout cycle and rotate keys
-    status: planned
-    description: Keys to rotate panes and move a pane in a direction. ctrl+alt+space already cycles layouts.
+    label: Native pane controls
+    status: shipped
+    description: A visible native picker swaps neighbours, rotates the current split, exchanges its sides and equalizes; ctrl+alt+space cycles layouts.
   - id: docs-site
     label: Documentation site
     status: planned

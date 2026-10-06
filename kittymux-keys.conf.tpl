@@ -92,6 +92,9 @@ map ctrl+alt+shift+8   nth_window 7
 map ctrl+alt+shift+9   nth_window 8
 # ctrl+alt+shift+y — number every pane, press a digit to swap the current pane with that one
 map ctrl+alt+shift+y     swap_with_window
+# ctrl+alt+shift+; — pane controls: h/j/k/l swap with a neighbor · r rotate · s swap split sides · e equalize · a choose a pane · esc cancel
+map ctrl+alt+shift+semicolon kitten @KITTYMUX_HOME@/python/pane-kit.py
+map --when-focus-on title:kittymux-panes ctrl+alt+shift+semicolon close_window
 # ctrl+alt+shift+j — join this tab into another as splits: pick the tab (type to filter · ⏎ joins · tab = side · ctrl+t = whole tab / this pane)
 map ctrl+alt+shift+j     kitten @KITTYMUX_HOME@/python/join-kit.py
 map --when-focus-on cmdline:join-kit.py ctrl+alt+shift+j close_window
@@ -106,7 +109,8 @@ map ctrl+alt+shift+c     toggle_window_title_bars
 # ============================================
 map ctrl+alt+i           launch --type=overlay --cwd=current @KITTYMUX_HOME@/bin/mux-cwd.sh
 map ctrl+alt+shift+i     launch --type=overlay --cwd=current @KITTYMUX_HOME@/bin/mux-cwd.sh --detail
-map ctrl+alt+u           launch --type=overlay /usr/bin/python3 @KITTYMUX_HOME@/bin/mux-usage.py
+map ctrl+alt+u           launch --type=overlay --title=kittymux-usage python3 @KITTYMUX_HOME@/bin/mux-usage.py
+map --when-focus-on title:kittymux-usage ctrl+alt+u close_window
 # agent picker: every agent pane across windows/sessions + live preview
 # (ctrl+alt+g, not +a — ctrl+alt+a is Hyprland's swapcol on this setup)
 map ctrl+alt+g           launch --type=overlay @KITTYMUX_HOME@/bin/mux-agents.sh
@@ -169,7 +173,7 @@ map ctrl+alt+shift+l     launch --type=overlay @KITTYMUX_HOME@/bin/kittymux layo
 # ctrl+alt+[ / ]     — jump between shell prompts in scrollback
 # alt+shift+h/l/j/k  — resize pane narrower/wider/taller/shorter
 # ============================================
-map ctrl+alt+slash        launch --type=overlay --title kittymux-keys /usr/bin/python3 @KITTYMUX_HOME@/bin/mux-keys.py
+map ctrl+alt+slash        launch --type=overlay --title kittymux-keys python3 @KITTYMUX_HOME@/bin/mux-keys.py
 # pressing it again while the overlay is open closes it (otherwise the key would stack a second overlay on top)
 map --when-focus-on title:kittymux-keys ctrl+alt+slash close_window
 map ctrl+alt+shift+slash  show_last_command_output

@@ -341,15 +341,6 @@ def _compact_session_name(session_name: str) -> str:
     return _truncate(session_name, _SESSION_SOFT_MAX)
 
 
-def _split_window_count(title: str) -> tuple[str, str]:
-    if " :" in title and title.endswith(":"):
-        prefix, suffix = title.rsplit(" :", 1)
-        count = suffix[:-1]
-        if count.isdigit():
-            return prefix, f"+{count}"
-    return title, ""
-
-
 def _title_from_cmdline(cmdline: list[str]) -> str:
     if not cmdline:
         return ""
@@ -559,22 +550,32 @@ class _MiniMap(tuple):
 _STATE_TINT = {"working": "working", "waiting": "waiting", "limited": "alert"}
 
 
+@_per_pass
+def _pane_count(tab_id: int, fallback: int) -> int:
+    try:
+        return get_boss().tab_for_id(tab_id).windows.num_groups
+    except Exception:
+        return fallback
+
+
 def _pane_map(tab_id: int, pal, cols: int):
     """A to-scale picture of a split tab's panes (one row of quadrant blocks), each pane tinted by its state, the focused
     pane brighter. None when the tab is not split or its geometry is unavailable."""
     try:
         tab = get_boss().tab_for_id(tab_id)
-        wins = [w for w in tab.windows if getattr(w, "is_visible_in_layout", True)]
+        boss = get_boss()
+        groups = list(tab.windows.iter_all_layoutable_groups(only_visible=True))
+        wins = [boss.window_id_map[g.main_window_id] for g in groups]
         if len(wins) < 2:
             return None
         width = 8 if cols >= 26 else 6
-        grid = kittymux_deck.layout_minimap([(w.id, w.geometry.left, w.geometry.top, w.geometry.right, w.geometry.bottom)
-                                             for w in wins], width, 1)
+        grid = kittymux_deck.complete_minimap(tuple((g.main_window_id, g.geometry.left, g.geometry.top, g.geometry.right, g.geometry.bottom)
+                                                   for g in groups), width, 1)
         if not grid:
             return None
         now = time.monotonic()
         panes = _panes_state()
-        focused = tab.active_window.id if tab.active_window is not None else 0
+        focused = tab.windows.active_group.main_window_id if tab.windows.active_group is not None else 0
         colors = {}
         for i, w in enumerate(wins):
             state = kittymux_agents.fresh_verdict(panes.get(str(w.id)), now)
@@ -702,8 +703,7 @@ def _usage_alert() -> tuple[str, int] | None:
 
 
 def _compact_title(tab: TabBarData, limit: int) -> str:
-    raw_title, window_count = _split_window_count(tab.title or "")
-    title = _clean_visible_title(raw_title)
+    title = _clean_visible_title(tab.title or "")
     cwd, foreground, last_cmd = _active_window_info(tab.tab_id)
     process_label = _best_process_label(foreground, last_cmd)
     agent = _agent_from_fg(foreground)
@@ -736,10 +736,6 @@ def _compact_title(tab: TabBarData, limit: int) -> str:
 
     if title.lower() in {"zsh", "bash", "fish", "sh"}:
         title = _basename(cwd.rstrip("/")) if cwd else "~"
-
-    if window_count:
-        title_limit = max(1, limit - len(window_count) - 1)
-        return f"{_truncate(title, title_limit)} {window_count}"
 
     return _truncate(title, limit)
 
@@ -1129,16 +1125,19 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
             subtitle.append((f"{_ICON_FOLDER} {_short_cwd(cwd, 24)}", pal.muted if active else pal.faint))
         if subtitle and not extra_data.for_layout:
             _dump_row(tab.tab_id, legacy=True, pieces=[[subtitle[0][0], "legacy"]])
-    if tab.num_windows > 1:
+    pane_count = _pane_count(tab.tab_id, tab.num_windows)
+    if pane_count > 1:
         pane_map = _pane_map(tab.tab_id, pal, cols)
         chips = [] if pane_map else _pane_chips(tab.tab_id, pal, active)
-        subtitle.append((pane_map, pal.faint) if pane_map else (chips, pal.faint) if chips else (f"{tab.num_windows} panes", pal.faint))
+        # A count survives even when a narrow row cannot fit the map or its sampling loses a pane.
+        subtitle.insert(0, (f"{pane_count}p", pal.faint))
+        if pane_map or chips:
+            subtitle.append((pane_map, pal.faint) if pane_map else (chips, pal.faint))
     msg = kittymux_agents.resolve_msg(_tab_verdict(tab.tab_id)[1], state)
-    if msg:
-        # what it is waiting for beats the branch — but a split tab keeps its layout picture beside the question (room permitting)
-        subtitle = [p for p in subtitle if isinstance(p[0], _MiniMap) and cols >= 26] + [(msg, state_fg)]
-    elif state in kittymux_agents.NEEDS_YOU:
-        subtitle.append((state, state_fg))    # working needs no word — the spinner says it
+    # Identity stays in its own row even when an alert arrives. The title's state glyph
+    # remains visible when the height cap leaves no room for the separate alert row.
+    if msg and hdr_rows > 1 and not compact:
+        hdr_rows = 1
     if state == "done" and not compact:
         done_text = _changes_summary(str((_tab_verdict(tab.tab_id)[1] or {}).get("wid", "")))
         if done_text and done_text != "no changes":
@@ -1148,7 +1147,8 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
 
     header = hdr_rows > 0
     want_sub = lines_avail >= hdr_rows + 2 and bool(subtitle) and not compact
-    n_rows = hdr_rows + 1 + (1 if want_sub else 0)
+    want_alert = bool(msg) and not compact and lines_avail >= hdr_rows + 1 + int(want_sub) + 1
+    n_rows = hdr_rows + 1 + int(want_sub) + int(want_alert)
     n_rows = min(n_rows, lines_avail)
 
     bar = _rgb(pal.bar)
@@ -1279,6 +1279,15 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     _sep_column(screen, y0 + hdr_rows, n_rows - hdr_rows, row_bg, pal, native)
 
     last_row = y if want_sub else title_y
+    if want_alert:
+        last_row += 1
+        screen.cursor.y, screen.cursor.bg = last_row, row_bg
+        if active or stripe:
+            _put(screen, 0, _RAIL, _rgb(pal.waiting if stripe else pal.accent))
+        _put(screen, 3, _fit(kittymux_place.clean(msg), max(1, cols - 4 - sep_cols)), _rgb(state_fg), True)
+        screen.cursor.bold = False
+        if not extra_data.for_layout:
+            _dump_row(tab.tab_id, alert=kittymux_place.clean(msg))
     # a hairline in the blank row between this tab and the next (not after the last, not while kitty only measures)
     if extra_data.next_tab is not None and not extra_data.for_layout and last_row + 1 < screen.lines:
         screen.cursor.bg = bar

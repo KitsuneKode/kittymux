@@ -477,7 +477,9 @@ def clear_default(sdir: str) -> None:
 
 
 def cleanup_stale(sdir: str) -> int:
-    """Remove layout-<pid>.json for kitty processes that no longer exist."""
+    """Remove stale instance layouts; keep them when process liveness is unknown."""
+    if not os.path.isdir("/proc"):
+        return 0
     removed = 0
     try:
         names = os.listdir(sdir)
