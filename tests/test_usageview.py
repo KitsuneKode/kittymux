@@ -199,7 +199,7 @@ class MeterDrawingTests(unittest.TestCase):
             row = next(i for i, line in enumerate(card) if " 7d " in line)
             letters_line = card[row + 1]
             self.assertEqual("".join(letters_line.split()), letters, (cols, letters_line))
-            heat = [s for s in v.lines[row + 2] if s.text.strip() == "" and s.bg is not None and len(s.text) in (1, 2)]
+            heat = [s for s in v.lines[row + 2] if s.text.strip() == "" and s.bg not in (None, k.p.card, k.p.bar)]
             self.assertEqual(len(heat), 7, (cols, U.plain(v.lines[row + 2])))
 
     def test_week_letters_end_on_today(self):
