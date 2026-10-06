@@ -41,6 +41,10 @@ import kittymux_agents  # noqa: E402
 import kittymux_deck as deck  # noqa: E402
 import kittymux_git  # noqa: E402
 import kittymux_theme  # noqa: E402
+import kittymux_inbox  # noqa: E402
+import kittymux_inboxview  # noqa: E402
+import kittymux_meters  # noqa: E402
+import kittymux_ui  # noqa: E402
 import kittymux_usageview  # noqa: E402
 import kittymux_place  # noqa: E402
 
@@ -285,6 +289,11 @@ class Sidebar(Handler):
         self._preview_inflight = False
         self._view, self._usage_scroll, self._usage_data = "agents", 0, {}
         self._usage_process, self._usage_last = None, 0.0
+        self.kit = kittymux_ui.Kit(self.pal, cells=_cells)
+        self._usage_sel, self._usage_history, self._usage_regions = 0, {}, []
+        self._inbox, self._inbox_mtime, self._inbox_sel, self._inbox_filter, self._inbox_scroll = [], -1.0, 0, "all", 0
+        self._inbox_regions = ([], [], [])        # (filter chips, cards, buttons) in SCREEN coordinates, rebuilt on every draw
+        self._tab_regions = []
         self._preview_timer = None
         self._preview_rects = ()
         self._hover_pane = (-1, -1)             # (row, pane) of the child line under the pointer
@@ -333,6 +342,7 @@ class Sidebar(Handler):
                 except (OSError, ValueError):
                     pass
                 self._post(self._apply_usage, usage)
+                self._post(self._apply_side, *self._load_side())
             except Exception:
                 _log_error()
             finally:
@@ -351,6 +361,114 @@ class Sidebar(Handler):
             self._usage_data = data
             if getattr(self, "_view", "agents") == "usage":
                 self.draw_screen()
+
+    def _usage_pick(self, k: str) -> None:
+        """← → (h l, Tab) or 1..9 pick the provider whose card is shown; the strip wraps."""
+        count = len([x for x in (self._usage_data.get("providers") if isinstance(self._usage_data, dict) else None) or [] if isinstance(x, dict)])
+        if not count:
+            return
+        if len(k) == 1 and k in "123456789":
+            self._usage_sel = min(count - 1, int(k) - 1)
+        else:
+            self._usage_sel = (self._usage_sel + (-1 if k in ("LEFT", "H") else 1)) % count
+        self._usage_scroll = 0
+        self.draw_screen()
+
+    def _inbox_items(self) -> list:
+        return kittymux_inboxview.visible(self._inbox, self._inbox_filter)
+
+    def _inbox_key(self, k: str, shifted: bool) -> None:
+        keys = [f for f, _ in kittymux_inboxview.FILTERS]
+        n = len(self._inbox_items())
+        if k in ("A", "ESCAPE"):
+            self._set_view("agents")
+            return
+        if k == "Q":
+            self.quit_loop()
+            return
+        if k in ("J", "DOWN"):
+            self._inbox_sel = min(max(0, n - 1), self._inbox_sel + 1)
+        elif k in ("K", "UP"):
+            self._inbox_sel = max(0, self._inbox_sel - 1)
+        elif k in ("TAB", "F"):
+            self._inbox_filter = keys[(keys.index(self._inbox_filter) + (-1 if shifted else 1)) % len(keys)]
+            self._inbox_sel = 0
+        elif len(k) == 1 and k in "1234":
+            self._inbox_filter, self._inbox_sel = keys[int(k) - 1], 0
+        elif k == "ENTER":
+            self._inbox_act("jump")
+            return
+        elif k == "X":
+            self._inbox_act("dismiss_all" if shifted else "dismiss")
+            return
+        elif k == "R":
+            self._inbox_mtime = -1.0
+            self._request_refresh()
+            return
+        else:
+            return
+        self.draw_screen()
+
+    def _inbox_act(self, action: str, idx: int | None = None) -> None:
+        """jump: focus the agent's window (the CLI resolves its kitty and the window manager, and marks the event read).
+        dismiss: hide the event. Nothing here ever sends text to an agent."""
+        items = self._inbox_items()
+        i = self._inbox_sel if idx is None else idx
+        if action == "dismiss_all":
+            ids = [e["id"] for e in items if isinstance(e.get("id"), str)]
+        elif 0 <= i < len(items) and isinstance(items[i].get("id"), str):
+            ids = [items[i]["id"]]
+        else:
+            return
+        if action == "jump":
+            root = Path(deck.__file__).resolve().parent.parent
+            try:
+                subprocess.Popen([str(root / "bin" / "kittymux"), "inbox", "jump", ids[0]], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, start_new_session=True)
+            except OSError:
+                return
+            if not _PANEL:
+                self.quit_loop()
+            return
+        kittymux_inbox.ack(str(_STATE_DIR), time.time(), ids=ids, status="dismissed")
+        self._inbox = kittymux_inbox.load(str(_STATE_DIR))
+        try:
+            self._inbox_mtime = os.stat(kittymux_inbox.store_path(str(_STATE_DIR))).st_mtime
+        except OSError:
+            self._inbox_mtime = 0.0
+        self._inbox_sel = min(self._inbox_sel, max(0, len(self._inbox_items()) - 1))
+        self.draw_screen()
+
+    def _load_side(self):
+        """(history or None, inbox events or None, store mtime): the week of usage (only when that view is up) and the inbox (only when
+        its file changed). Runs on the worker thread; never raises."""
+        history = events = None
+        mtime = self._inbox_mtime
+        try:
+            if getattr(self, "_view", "agents") == "usage":
+                history = kittymux_meters.load_history(str(_STATE_DIR))
+            try:
+                mtime = os.stat(kittymux_inbox.store_path(str(_STATE_DIR))).st_mtime
+            except OSError:
+                mtime = 0.0
+            if mtime != self._inbox_mtime:
+                events = kittymux_inbox.load(str(_STATE_DIR))
+        except Exception:
+            _log_error()
+        return history, events, mtime
+
+    def _apply_side(self, history, events, mtime):
+        if not self._alive:
+            return
+        changed = False
+        if history is not None and history != self._usage_history:
+            self._usage_history, changed = history, True
+        if events is not None:
+            badge_moved = kittymux_inboxview.unread(events) != kittymux_inboxview.unread(self._inbox)
+            self._inbox, self._inbox_mtime = events, mtime
+            changed = changed or badge_moved or getattr(self, "_view", "agents") == "inbox"     # the deck only redraws when the badge moved
+        if changed:
+            self.draw_screen()
 
     def _request_usage(self, force=False):
         process = getattr(self, "_usage_process", None)
@@ -377,19 +495,61 @@ class Sidebar(Handler):
             self._schedule_spin()
         self.draw_screen()
 
-    def _draw_usage(self, cols, height):
-        p = self.pal
-        self.write(set_cursor_position(0, 0) + self._line([(" Usage", p.text, True)], cols, p.bar))
-        self.write(set_cursor_position(0, 1) + self._line([(" Agents [a]  Usage [u]", p.accent, True)], cols, p.surface))
-        rows = kittymux_usageview.rows(getattr(self, "_usage_data", {}), cols, _cells)
+    # ---- the three views share a tab strip, a footer and the resize handle ----
+    def _ansi(self, line) -> str:
+        return "".join(self._seg(sp.text, sp.fg, sp.bg, sp.bold, sp.dim) for sp in line)
+
+    def _body_width(self, cols: int) -> int:
+        return cols - 1 if self._can_drag() else cols                   # the last column is the resize handle
+
+    def _tabs_line(self, width: int) -> str:
+        view = getattr(self, "_view", "agents")
+        items = [("▦", "Agents", view == "agents", 0), ("◔", "Usage", view == "usage", 0),
+                 ("✉", "Inbox", view == "inbox", kittymux_inboxview.unread(self._inbox))]
+        self._tab_regions = [(a, b, name) for (a, b), name in zip(self.kit.tab_regions(items), ("agents", "usage", "inbox"))]
+        return self._ansi(self.kit.tabs(items, width))
+
+    def _draw_handle(self, cols: int, rows_n: int) -> None:
+        if self._can_drag():                      # the drag handle: lights up on hover / while dragging
+            p = self.pal
+            hot = getattr(self, "_drag", False) or getattr(self, "_handle_hot", False)
+            for y2 in range(rows_n):
+                self.write(set_cursor_position(cols - 1, y2) + self._seg("▕", fg=p.accent if hot else p.line, bg=p.bar))
+
+    def _draw_body(self, cols: int, height: int, header, lines, scroll: int, footer) -> int:
+        """Header row, tab strip, `lines` from `scroll`, footer keycaps. Returns the scroll actually used."""
+        w, width = self.write, self._body_width(cols)
         page = max(1, height - 3)
-        self._usage_scroll = max(0, min(getattr(self, "_usage_scroll", 0), max(0, len(rows) - page)))
-        visible = rows[self._usage_scroll:self._usage_scroll + page]
+        scroll = max(0, min(scroll, max(0, len(lines) - page)))
+        w(set_cursor_position(0, 0) + self._ansi(header))
+        w(set_cursor_position(0, 1) + self._tabs_line(width))
+        blank = self._seg(" " * width, bg=self.pal.bar)
         for y in range(page):
-            text, role = visible[y] if y < len(visible) else ("", "muted")
-            self.write(set_cursor_position(0, y + 2) + self._line([(text, getattr(p, role), role == "text")], cols, p.bar))
-        self.write(set_cursor_position(0, height - 1) + self._line([(" ↑↓ scroll · r refresh · a agents", p.faint, False)], cols, p.bar))
+            i = scroll + y
+            w(set_cursor_position(0, y + 2) + (self._ansi(lines[i]) if i < len(lines) else blank))
+        w(set_cursor_position(0, height - 1) + self._ansi(self.kit.keycaps(footer, width)))
+        self._draw_handle(cols, height)
         self.flush()
+        return scroll
+
+    def _draw_usage(self, cols, height):
+        v = kittymux_usageview.view(self._usage_data, self._usage_history, self._body_width(cols), self._usage_sel, self.kit)
+        self._usage_sel = v.sel
+        self._usage_scroll = self._draw_body(cols, height, v.header, v.lines, getattr(self, "_usage_scroll", 0),
+                                             [("←→", "provider"), ("r", "refresh"), ("a", "agents")])
+        self._usage_regions = [(x0, x1, y0 - self._usage_scroll + 2, y1 - self._usage_scroll + 2, idx) for x0, x1, y0, y1, idx in v.tiles]
+
+    def _draw_inbox(self, cols, height):
+        v = kittymux_inboxview.view(self._inbox, self._inbox_filter, self._inbox_sel, self._body_width(cols), self.kit)
+        self._inbox_sel = v.sel
+        page, top = max(1, height - 3), self._inbox_scroll
+        if v.cards:                                                       # keep the picked card on screen
+            y0, y1, _ = v.cards[v.sel]
+            top = 0 if v.sel == 0 else y0 if y0 < top else y1 - page if y1 > top + page else top
+        self._inbox_scroll = self._draw_body(cols, height, v.header, v.lines, top, [("j k", "move"), ("⏎", "jump"), ("x", "dismiss"), ("tab", "filter")])
+        off = 2 - self._inbox_scroll
+        self._inbox_regions = ([(x0, x1, off, filt) for x0, x1, filt in v.chips], [(y0 + off, y1 + off, i) for y0, y1, i in v.cards],
+                               [(x0, x1, y + off, i, act) for x0, x1, y, i, act in v.buttons])
 
     def _apply(self, snap) -> None:
         self._collecting = False
@@ -424,7 +584,7 @@ class Sidebar(Handler):
 
     # ---- spinner: redraw at frame rate only while something is working ----
     def _schedule_spin(self) -> None:
-        if getattr(self, "_spin_pending", False) or not self._alive or getattr(self, "_view", "agents") == "usage":
+        if getattr(self, "_spin_pending", False) or not self._alive or getattr(self, "_view", "agents") != "agents":
             return
         if any(r.status == "working" for r in self.snap.rows):
             self._spin_pending = True
@@ -630,8 +790,12 @@ class Sidebar(Handler):
     def draw_screen(self) -> None:
         cols, rows_n, bar_w = self._geom()
         p = self.pal
-        if getattr(self, "_view", "agents") == "usage":
+        view = getattr(self, "_view", "agents")
+        if view == "usage":
             self._draw_usage(cols, rows_n)
+            return
+        if view == "inbox":
+            self._draw_inbox(cols, rows_n)
             return
         w = self.write
         snap = self.snap
@@ -647,7 +811,7 @@ class Sidebar(Handler):
                     (f"   {len(snap.rows)}/{total}", p.faint, False)]
             w(set_cursor_position(0, 1) + self._line(line, bar_w, p.surface))
         else:
-            w(set_cursor_position(0, 1) + self._line([(" Agents  |  Usage [u]  ·  / search", p.faint, False)], bar_w, p.bar))
+            w(set_cursor_position(0, 1) + self._tabs_line(bar_w))
         # list
         avail = self._avail()
         y = 2
@@ -711,10 +875,7 @@ class Sidebar(Handler):
                 body = drawing + ([f"{r.panes} panes · [{next((i + 1 for i, child in enumerate(r.pane_rows) if child.win_id == self.preview_for), 1)}] preview"] if drawing else []) + self.preview
                 for j, ln in enumerate(body[:rows_n - 2]):
                     w(set_cursor_position(px, j + 2) + self._seg(deck.fit(ln, pw, _cells), fg=p.muted))
-        if self._can_drag():                      # the drag handle: lights up on hover / while dragging
-            hot = getattr(self, "_drag", False) or getattr(self, "_handle_hot", False)
-            for y2 in range(rows_n):
-                w(set_cursor_position(cols - 1, y2) + self._seg("▕", fg=p.accent if hot else p.line, bg=p.bar))
+        self._draw_handle(cols, rows_n)
         self.flush()
 
     # ---- events -----------------------------------------------------------
@@ -771,20 +932,29 @@ class Sidebar(Handler):
         if key_event.type == EventType.RELEASE:   # press+release both arrive; act once
             return
         k = (key_event.key or "").upper()
+        view = getattr(self, "_view", "agents")
         if not self.searching and k == "U":
-            self._set_view("agents" if getattr(self, "_view", "agents") == "usage" else "usage")
+            self._set_view("agents" if view == "usage" else "usage")
             return
-        if getattr(self, "_view", "agents") == "usage":
+        if not self.searching and k == "I":
+            self._set_view("agents" if view == "inbox" else "inbox")
+            return
+        if view == "usage":
             if k in ("A", "ESCAPE"):
                 self._set_view("agents")
             elif k == "Q":
                 self.quit_loop()
             elif k == "R":
                 self._request_usage(force=True)
+            elif k in ("LEFT", "H", "RIGHT", "L", "TAB") or (len(k) == 1 and k in "123456789"):
+                self._usage_pick(k)
             elif k in ("J", "K", "UP", "DOWN", "PAGE_UP", "PAGE_DOWN"):
                 delta = (-1 if k in ("K", "UP", "PAGE_UP") else 1) * (max(1, self.screen_size.rows - 3) if k.startswith("PAGE") else 1)
                 self._usage_scroll = max(0, self._usage_scroll + delta)
                 self.draw_screen()
+            return
+        if view == "inbox":
+            self._inbox_key(k, bool(key_event.mods & 1))
             return
         if self.searching:
             ch = getattr(key_event, "text", "") or (key_event.key if len(key_event.key or "") == 1 and not (key_event.mods & ~1) else "")
@@ -903,7 +1073,7 @@ class Sidebar(Handler):
         return deck.pane_at(self.snap.items, self.scroll, self._avail(), y - 2)
 
     def on_mouse_move(self, mouse_event) -> None:
-        if getattr(self, "_view", "agents") == "usage":
+        if getattr(self, "_view", "agents") != "agents":
             return
         if mouse_event.cell_x >= self._geom()[2]:
             return
@@ -917,10 +1087,39 @@ class Sidebar(Handler):
             self.draw_screen()
 
     def on_click(self, mouse_event) -> None:
-        if mouse_event.cell_y == 1 and not self.searching:
-            self._set_view("usage" if mouse_event.cell_x >= 12 else "agents")
+        x, y = mouse_event.cell_x, mouse_event.cell_y
+        view = getattr(self, "_view", "agents")
+        if y == 1 and not self.searching:                              # the tab strip, in every view
+            for x0, x1, name in self._tab_regions:
+                if x0 <= x < x1:
+                    if name != view:
+                        self._set_view(name)
+                    return
             return
-        if getattr(self, "_view", "agents") == "usage":
+        if view == "usage":
+            for x0, x1, y0, y1, idx in self._usage_regions:
+                if x0 <= x < x1 and y0 <= y < y1:
+                    self._usage_sel, self._usage_scroll = idx, 0
+                    self.draw_screen()
+                    return
+            return
+        if view == "inbox":
+            chips, cards, buttons = self._inbox_regions
+            for x0, x1, by, idx, act in buttons:
+                if y == by and x0 <= x < x1:
+                    self._inbox_sel = idx
+                    self._inbox_act(act, idx)
+                    return
+            for x0, x1, cy, filt in chips:
+                if y == cy and x0 <= x < x1:
+                    self._inbox_filter, self._inbox_sel = filt, 0
+                    self.draw_screen()
+                    return
+            for y0, y1, idx in cards:
+                if y0 <= y < y1:
+                    self._inbox_sel = idx
+                    self.draw_screen()
+                    return
             return
         if mouse_event.cell_x >= self._geom()[2]:
             return

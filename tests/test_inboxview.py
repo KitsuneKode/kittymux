@@ -117,6 +117,22 @@ class LayoutTests(unittest.TestCase):
         v = IV.view(sample(), "all", 0, 16, kit(), NOW)
         self.assertEqual(v.buttons, [])
 
+    def test_all_four_filters_stay_reachable_at_every_realistic_panel_width(self):
+        k = kit()
+        for cols in (26, 30, 32, 36, 38, 44, 52, 80):
+            for filt in ("all", "needs", "done", "limits"):
+                v = IV.view(sample(), filt, 0, cols, k, NOW)
+                self.assertEqual([c[2] for c in v.chips], ["all", "needs", "done", "limits"], (cols, filt))
+                for x0, x1, _ in v.chips:
+                    self.assertTrue(0 <= x0 < x1 <= cols)
+
+    def test_wider_panels_get_the_wider_wording(self):
+        k = kit()
+        self.assertIn("Needs you", text(IV.view(sample(), "all", 0, 80, k, NOW)))
+        narrow = text(IV.view(sample(), "all", 0, 32, k, NOW))
+        self.assertNotIn("Needs you", narrow)
+        self.assertIn("!", narrow)
+
     def test_filter_chips_are_regions_in_order_and_the_active_one_is_strong(self):
         k = kit()
         v = IV.view(sample(), "needs", 0, 52, k, NOW)

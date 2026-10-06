@@ -140,12 +140,27 @@ def _event_rows(kit: U.Kit, ev: dict, inner: int, selected: bool, now: float) ->
     return rows, button_row, regions
 
 
+GLYPH_LABELS = {"all": "All", "needs": "!", "done": "✓", "limits": "⊘"}
+
+
 def _chips(kit: U.Kit, filt: str, tally: dict, cols: int) -> tuple:
+    """The four filters on one row. The widest wording that fits wins: full words with counts, then glyphs with counts, then glyphs with
+    only the picked one counted, then bare glyphs; all four stay clickable at any panel width a person would use."""
     p = kit.p
+    tiers = [lambda k, label: f"{label} {tally[k]}" if tally[k] else label,
+             lambda k, label: f"{GLYPH_LABELS[k]} {tally[k]}" if tally[k] else GLYPH_LABELS[k],
+             lambda k, label: f"{GLYPH_LABELS[k]} {tally[k]}" if tally[k] and k == filt else GLYPH_LABELS[k],
+             lambda k, label: GLYPH_LABELS[k]]
+    texts = None
+    for tier in tiers:
+        cand = [(k, tier(k, label)) for k, label in FILTERS]
+        if 1 + sum(kit.chip_width(t) for _, t in cand) + (len(cand) - 1) <= cols:
+            texts = cand
+            break
+    texts = texts or [(k, GLYPH_LABELS[k]) for k, _ in FILTERS]
     line, regions, x = [U.S(" ", None, p.bar)], [], 1
-    for key, label in FILTERS:
+    for key, text in texts:
         active = key == filt
-        text = f"{label} {tally[key]}" if tally[key] else label
         chip = kit.chip(text, "text" if active else "muted", on=p.bar, strong=active)
         w = U.line_cells(chip, kit.cells)
         if x + w > cols:
