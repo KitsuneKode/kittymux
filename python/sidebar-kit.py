@@ -502,12 +502,20 @@ class Sidebar(Handler):
     def _body_width(self, cols: int) -> int:
         return cols - 1 if self._can_drag() else cols                   # the last column is the resize handle
 
-    def _tabs_line(self, width: int) -> str:
+    def _tabs_line(self, width: int, hint: str = "") -> str:
+        """The strip: three pills (the picked one carries its name, the others an icon and a count). `hint` rides at the right edge when the
+        strip leaves room for it."""
         view = getattr(self, "_view", "agents")
         items = [("▦", "Agents", view == "agents", 0), ("◔", "Usage", view == "usage", 0),
                  ("✉", "Inbox", view == "inbox", kittymux_inboxview.unread(self._inbox))]
-        self._tab_regions = [(a, b, name) for (a, b), name in zip(self.kit.tab_regions(items), ("agents", "usage", "inbox"))]
-        return self._ansi(self.kit.tabs(items, width))
+        regions = self.kit.tab_regions(items)
+        self._tab_regions = [(a, b, name) for (a, b), name in zip(regions, ("agents", "usage", "inbox"))]
+        hint_w = _cells(hint) + 1 if hint else 0
+        if hint and width - hint_w >= regions[-1][1] + 2:
+            line = self.kit.tabs(items, width - hint_w) + [kittymux_ui.S(hint + " ", self.pal.faint, self.pal.bar)]
+        else:
+            line = self.kit.tabs(items, width)
+        return self._ansi(line)
 
     def _draw_handle(self, cols: int, rows_n: int) -> None:
         if self._can_drag():                      # the drag handle: lights up on hover / while dragging
@@ -811,7 +819,7 @@ class Sidebar(Handler):
                     (f"   {len(snap.rows)}/{total}", p.faint, False)]
             w(set_cursor_position(0, 1) + self._line(line, bar_w, p.surface))
         else:
-            w(set_cursor_position(0, 1) + self._tabs_line(bar_w))
+            w(set_cursor_position(0, 1) + self._tabs_line(bar_w, "/ search"))
         # list
         avail = self._avail()
         y = 2

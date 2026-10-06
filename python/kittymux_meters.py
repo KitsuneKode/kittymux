@@ -163,7 +163,10 @@ def week_series(history, key: str, today: datetime | None = None) -> list | None
     for back in range(6, -1, -1):
         day = (today - timedelta(days=back)).strftime("%Y-%m-%d")
         entry = history.get(day)
-        out.append(num(entry.get(key)) if isinstance(entry, dict) else None)
+        # Only exact daily counters (`_daily_version` 2, what mux-usage itself keeps): older entries are rolling weekly totals or rounded display
+        # text, and drawing them as one day's burn would be a lie.
+        value = num(entry.get(key)) if isinstance(entry, dict) and entry.get("_daily_version") == 2 else None
+        out.append(value if value is not None and value >= 0 else None)
     return out if any(v for v in out) else None
 
 

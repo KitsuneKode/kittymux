@@ -42,8 +42,8 @@ def data(ts=NOW - 13, extra=(), live=None):
     return {"ts": ts, "providers": providers, "live": live or {}}
 
 
-HISTORY = {"2026-10-01": {"claude_fresh": 5, "devin_tok": 1}, "2026-10-05": {"claude_fresh": 9, "devin_tok": 4},
-           "2026-10-07": {"claude_fresh": 3, "devin_tok": 8}}
+HISTORY = {"2026-10-01": {"claude_fresh": 5, "devin_tok": 1, "_daily_version": 2}, "2026-10-05": {"claude_fresh": 9, "devin_tok": 4, "_daily_version": 2},
+           "2026-10-07": {"claude_fresh": 3, "devin_tok": 8, "_daily_version": 2}}
 
 
 def text(view):
@@ -106,7 +106,8 @@ class TileTests(unittest.TestCase):
         for (a0, a1), (b0, b1) in zip(spans, spans[1:]):
             self.assertLessEqual(a1, b0)
         x0, x1, y0, y1, _ = v.tiles[0]
-        self.assertIn("C", U.plain(v.lines[y0 + 1])[x0:x1])           # the monogram line of the first tile
+        import kittymux_agents
+        self.assertIn(kittymux_agents.AGENTS["codex"].glyph, U.plain(v.lines[y0 + 1])[x0:x1])      # the logo line of the first tile
 
     def test_many_providers_wrap_to_a_second_row(self):
         k = kit()
@@ -147,6 +148,16 @@ class MeterDrawingTests(unittest.TestCase):
             self.assertIn(want, body)
         self.assertEqual(body.count("▏"), 2)                          # a pace tick on each quota that knows its window
 
+    def test_the_share_survives_any_panel_width_and_the_countdown_gives_way_first(self):
+        k = kit()
+        for cols in (12, 16, 20, 22, 26, 30, 38):
+            body = text(V.view(data(), None, cols, 0, k, NOW, TODAY))
+            self.assertIn("99%", body, cols)
+            self.assertIn("63%", body, cols)
+        wide, narrow = text(V.view(data(), None, 38, 0, k, NOW, TODAY)), text(V.view(data(), None, 22, 0, k, NOW, TODAY))
+        self.assertIn("↻ 3h 49m"[:2], wide)
+        self.assertNotIn("↻", narrow)
+
     def test_pace_is_where_an_even_spend_would_be(self):
         q = {"pct": 99.0, "rem_s": 13800, "window_s": 18000}
         self.assertAlmostEqual(V._pace(q), 23.33, places=1)
@@ -179,10 +190,36 @@ class MeterDrawingTests(unittest.TestCase):
         self.assertIn("tokens per day", with_hist)
         self.assertNotIn("tokens per day", without)
 
+    def test_all_seven_days_fit_at_every_panel_width(self):
+        k = kit()
+        letters = V.week_letters(TODAY)
+        for cols in (18, 20, 24, 26, 30, 38, 60):                         # below 18 columns a logo and seven days cannot share a row
+            v = V.view(data(), HISTORY, cols, 0, k, NOW, TODAY)
+            card = [U.plain(line) for line in v.lines]
+            row = next(i for i, line in enumerate(card) if " 7d " in line)
+            letters_line = card[row + 1]
+            self.assertEqual("".join(letters_line.split()), letters, (cols, letters_line))
+            heat = [s for s in v.lines[row + 2] if s.text.strip() == "" and s.bg is not None and len(s.text) in (1, 2)]
+            self.assertEqual(len(heat), 7, (cols, U.plain(v.lines[row + 2])))
+
     def test_week_letters_end_on_today(self):
         self.assertEqual(len(V.week_letters(TODAY)), 7)
         self.assertEqual(V.week_letters(TODAY)[-1], "W")              # 2026-10-07 is a Wednesday
         self.assertEqual(V.week_letters(TODAY)[0], "T")
+
+
+class MarkTests(unittest.TestCase):
+    def test_known_providers_get_their_logo_and_unknown_ones_their_initial(self):
+        import kittymux_agents
+        k = kit()
+        self.assertIn(kittymux_agents.AGENTS["claude"].glyph, U.plain(V.mark("claude", k, k.p.card)))
+        self.assertIn("N", U.plain(V.mark("newcomer", k, k.p.card)))
+        self.assertEqual(U.line_cells(V.mark("devin", k, k.p.card)), 3)
+
+    def test_three_providers_starting_with_c_are_not_three_identical_marks(self):
+        k = kit()
+        marks = {U.plain(V.mark(n, k, k.p.card)) for n in ("claude", "codex", "cursor")}
+        self.assertEqual(len(marks), 3)
 
 
 class StateTests(unittest.TestCase):

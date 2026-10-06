@@ -65,6 +65,13 @@ def brand(name: str, kit: U.Kit) -> int:
     return agent.brand if agent else kit.p.muted
 
 
+def mark(name: str, kit: U.Kit, on: int) -> list:
+    """The provider's own logo (the icon font the deck already uses) on a tint of its brand colour; a provider we have no logo for gets its
+    initial, so three providers that all begin with C are not three identical tiles."""
+    agent = kittymux_agents.AGENTS.get(name)
+    return kit.monogram(agent.glyph if agent and agent.glyph else name[:1], brand(name, kit), on)
+
+
 def _dot(kit: U.Kit, tone: str, on: int) -> list:
     return [kit.text(DOTS.get(tone, "◌"), kit.ink(kit.tone(tone), on, 3.0), on)]
 
@@ -105,13 +112,17 @@ def _pace(m: dict):
 
 def _quota(kit: U.Kit, m: dict, inner: int, bg: int) -> list:
     tone = "muted" if m.get("clock") else kit.ramp(m["pct"])
-    left = kit.chip(m["label"] or "quota", "muted", on=bg, strong=True)
+    label = kit.chip(m["label"] or "quota", "muted", on=bg, strong=True)
     rem = M.num(m.get("rem_s"))
-    if rem is not None and m["label"] != "cap":
-        left += [U.S(" ", None, bg)] + kit.chip("↻ " + fmt_span(rem), "muted", on=bg)
+    countdown = kit.chip("↻ " + fmt_span(rem), "muted", on=bg) if rem is not None and m["label"] != "cap" else []
     pct = [U.S(f"{round(m['pct'])}%", kit.ink(kit.tone(tone), bg), bg, bold=True)]
     if m.get("clock"):
         pct = [U.S(f"{round(m['pct'])}% of window", kit.ink(kit.p.muted, bg), bg)]
+        if U.line_cells(label, kit.cells) + 1 + U.line_cells(pct, kit.cells) > inner:
+            pct = [U.S(f"{round(m['pct'])}%", kit.ink(kit.p.muted, bg), bg)]
+    # the share is the point of the row: when the line is too narrow for everything, the countdown goes first, then the label
+    options = [label + [U.S(" ", None, bg)] + countdown if countdown else label, label, []]
+    left = next((o for o in options if U.line_cells(o, kit.cells) + U.line_cells(pct, kit.cells) + (1 if o else 0) <= inner), [])
     return [_row(kit, left, pct, inner, bg), kit.gauge(m["pct"], inner, bg, tone=tone, pace=_pace(m))]
 
 
@@ -139,7 +150,7 @@ def _focus_lines(kit: U.Kit, provider: dict, summary: dict, history: dict | None
     bg = kit.p.card
     name = summary["name"]
     status = summary["status"]
-    head_left = kit.monogram(name[:1], brand(name, kit), bg) + [U.S(" ", None, bg), U.S(name.title(), kit.ink(kit.p.text, bg), bg, bold=True)]
+    head_left = mark(name, kit, bg) + [U.S(" ", None, bg), U.S(name.title(), kit.ink(kit.p.text, bg), bg, bold=True)]
     head_right = (kit.chip(summary["plan"], "muted", on=bg) + [U.S(" ", None, bg)] if summary["plan"] else []) + _dot(kit, summary["tone"], bg)
     rows = [_row(kit, head_left, head_right, inner, bg)]
     if status == "pending":
@@ -184,7 +195,7 @@ def _tile(kit: U.Kit, provider: dict, summary: dict, width: int, selected: bool)
     else:
         value = _dot(kit, tone if summary["status"] == "ok" else "muted", bg)
     name = summary["name"]
-    row1 = _row(kit, kit.monogram(name[:1], brand(name, kit), bg), value, inner, bg)
+    row1 = _row(kit, mark(name, kit, bg), value, inner, bg)
     row2 = kit.gauge(worst if summary["status"] == "ok" else None, inner, bg, tone=tone)
     return kit.card([row1, row2], width, on=kit.p.bar, selected=selected, margin=0, padx=1, accent=selected)
 
@@ -223,14 +234,17 @@ def _strip(kit: U.Kit, providers: list, summaries: list, sel: int, cols: int, y0
 
 
 def _heat_card(kit: U.Kit, series: list, cols: int, letters: str) -> list:
-    """series: [(name, [7 values])]. One row per provider, a tinted block per day."""
+    """series: [(name, [7 values])]. One row per provider, a tinted block per day, as wide as the panel allows (7 days always fit)."""
     bg = kit.p.card
     inner = kit.inner_width(cols)
-    rows = [_row(kit, kit.chip("7d", "muted", on=bg, strong=True), [U.S("tokens per day", kit.ink(kit.p.muted, bg), bg)], inner, bg)]
-    pad = U.S("    ", None, bg)
-    rows.append(kit.fit_line([pad, U.S("".join(c.ljust(3) for c in letters).rstrip(), kit.ink(kit.p.faint, bg, 3.0), bg)], inner, bg))
+    days = len(letters)
+    cell, gap = next(((c, g) for c, g in ((2, 1), (1, 1), (1, 0)) if 4 + days * c + (days - 1) * g <= inner), (1, 0))
+    pitch = cell + gap
+    caption = "tokens per day" if inner >= 30 else "tokens"
+    rows = [_row(kit, kit.chip("7d", "muted", on=bg, strong=True), [U.S(caption, kit.ink(kit.p.muted, bg), bg)], inner, bg)]
+    rows.append(kit.fit_line([U.S("    ", None, bg), U.S("".join(c.ljust(pitch) for c in letters).rstrip(), kit.ink(kit.p.faint, bg, 3.0), bg)], inner, bg))
     for name, values in series:
-        rows.append(kit.fit_line(kit.monogram(name[:1], brand(name, kit), bg) + [U.S(" ", None, bg)] + kit.heat(values, "accent", bg), inner, bg))
+        rows.append(kit.fit_line(mark(name, kit, bg) + [U.S(" ", None, bg)] + kit.heat(values, "accent", bg, cell=cell, gap=gap), inner, bg))
     return kit.card(rows, cols)
 
 
@@ -284,5 +298,6 @@ def view(data, history: dict | None, cols: int, sel: int, kit: U.Kit, now: float
 
     if not (isinstance(data, dict) and data.get("live")):
         out.append(kit.blank(cols, p.bar))
-        out.append(kit.fit_line([U.S(" local data · live quotas are opt-in", kit.ink(p.faint, p.bar, 3.0), p.bar)], cols, p.bar))
+        note = " local data · live quotas are opt-in" if cols >= 38 else " local data only" if cols >= 18 else " local"
+        out.append(kit.fit_line([U.S(note, kit.ink(p.faint, p.bar, 3.0), p.bar)], cols, p.bar))
     return View(header, out, regions, sel, len(providers))

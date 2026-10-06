@@ -113,9 +113,24 @@ class LayoutTests(unittest.TestCase):
             self.assertLessEqual(jump[1], dismiss[0])
             self.assertEqual(text(v).count("Jump"), 1)
 
-    def test_a_panel_too_narrow_for_both_buttons_draws_none_rather_than_a_broken_one(self):
-        v = IV.view(sample(), "all", 0, 16, kit(), NOW)
-        self.assertEqual(v.buttons, [])
+    def test_narrow_panels_still_get_a_jump_button_and_the_widest_set_that_fits(self):
+        k = kit()
+        for cols in (14, 16, 20, 24, 26, 30, 38, 60):
+            v = IV.view(sample(), "all", 0, cols, k, NOW)
+            self.assertIn("jump", [b[4] for b in v.buttons], cols)
+            row = U.plain(v.lines[v.buttons[0][2]])
+            for x0, x1, y, _, act in v.buttons:
+                self.assertTrue(0 <= x0 < x1 <= cols)
+                self.assertIn({"jump": "Jump", "dismiss": "✕" if "Dismiss" not in row else "Dismiss"}[act], row[x0:x1])
+        wide = IV.view(sample(), "all", 0, 60, k, NOW)
+        self.assertEqual([b[4] for b in wide.buttons], ["jump", "dismiss"])
+        self.assertIn("⏎", text(wide))
+        mid = IV.view(sample(), "all", 0, 26, k, NOW)
+        self.assertEqual([b[4] for b in mid.buttons], ["jump", "dismiss"])
+        self.assertNotIn("⏎", U.plain(mid.lines[mid.buttons[0][2]]))            # no key hints at this width
+
+    def test_a_panel_too_narrow_for_even_one_button_draws_none(self):
+        self.assertEqual(IV.view(sample(), "all", 0, 9, kit(), NOW).buttons, [])
 
     def test_all_four_filters_stay_reachable_at_every_realistic_panel_width(self):
         k = kit()

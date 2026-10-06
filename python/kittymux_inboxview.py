@@ -129,14 +129,25 @@ def _event_rows(kit: U.Kit, ev: dict, inner: int, selected: bool, now: float) ->
             rows.append(kit.fit_line(kit.chip("↻ " + V.fmt_span(reset - now), "muted", on=bg), inner, bg))
     button_row, regions = None, []
     if selected:
-        jump = kit.button("Jump", "⏎", primary=True, on=bg)
-        dismiss = kit.button("Dismiss", "x", on=bg)
-        jw = U.line_cells(jump, kit.cells)
-        dw = U.line_cells(dismiss, kit.cells)
-        if jw + 1 + dw <= inner:
-            rows.append(kit.fit_line(jump + [U.S(" ", None, bg)] + dismiss, inner, bg))
-            button_row = len(rows) - 1
-            regions = [(0, jw, "jump"), (jw + 1, jw + 1 + dw, "dismiss")]
+        # the widest set that fits: both with their key hints, both plain, Jump with a compact dismiss, Jump alone
+        tiers = [[("jump", kit.button("Jump", "⏎", primary=True, on=bg)), ("dismiss", kit.button("Dismiss", "x", on=bg))],
+                 [("jump", kit.button("Jump", primary=True, on=bg)), ("dismiss", kit.button("Dismiss", on=bg))],
+                 [("jump", kit.button("Jump", primary=True, on=bg)), ("dismiss", kit.button("✕", on=bg))],
+                 [("jump", kit.button("Jump", primary=True, on=bg))]]
+        for tier in tiers:
+            widths = [U.line_cells(b, kit.cells) for _, b in tier]
+            if sum(widths) + len(tier) - 1 <= inner:
+                line, x = [], 0
+                for (action, button), w in zip(tier, widths):
+                    if line:
+                        line.append(U.S(" ", None, bg))
+                        x += 1
+                    line += button
+                    regions.append((x, x + w, action))
+                    x += w
+                rows.append(kit.fit_line(line, inner, bg))
+                button_row = len(rows) - 1
+                break
     return rows, button_row, regions
 
 
@@ -205,5 +216,4 @@ def view(events, filt: str, sel: int, cols: int, kit: U.Kit, now: float | None =
         if button_row is not None:
             y = y0 + 1 + button_row                              # +1: the card's top edge row
             buttons += [(2 + a, 2 + b, y, i, act) for a, b, act in regions]      # 2 = margin + padx
-        lines.append(kit.blank(cols, p.bar))
     return InboxView(header, chips, lines, cards, buttons, sel, len(items))

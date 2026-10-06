@@ -85,7 +85,8 @@ class ClaudeTests(unittest.TestCase):
         self.assertEqual(ms[0]["rem_s"], 3900)
 
     def test_the_week_series_rides_on_the_first_token_counter(self):
-        hist = {"2026-10-01": {"claude_fresh": 5}, "2026-10-07": {"claude_fresh": 9}, "2026-10-04": {"claude_fresh": 2}}
+        hist = {"2026-10-01": {"claude_fresh": 5, "_daily_version": 2}, "2026-10-07": {"claude_fresh": 9, "_daily_version": 2},
+                "2026-10-04": {"claude_fresh": 2, "_daily_version": 2}}
         rows = [{"label": "week", "text": "5M tok · 3 sess"}]
         ms = M.meters({"name": "claude", "rows": rows}, hist, TODAY)
         self.assertEqual(ms[0]["series"], [5, None, None, 2, None, None, 9])
@@ -143,10 +144,21 @@ class RobustnessTests(unittest.TestCase):
         self.assertEqual([m["pct"] for m in q], [100.0, 0.0])
 
     def test_week_series_tolerates_a_bad_history_file(self):
-        for hist in (None, [], "x", {"2026-10-07": "x"}, {"2026-10-07": {"claude_fresh": "9"}}, {}):
+        for hist in (None, [], "x", {"2026-10-07": "x"}, {"2026-10-07": {"claude_fresh": "9", "_daily_version": 2}}, {}):
             self.assertIsNone(M.week_series(hist, "claude_fresh", TODAY))
-        self.assertIsNone(M.week_series({"2026-10-07": {"claude_fresh": 1}}, "", TODAY))
-        self.assertIsNone(M.week_series({"2026-10-07": {"claude_fresh": 0}}, "claude_fresh", TODAY))
+        self.assertIsNone(M.week_series({"2026-10-07": {"claude_fresh": 1, "_daily_version": 2}}, "", TODAY))
+        self.assertIsNone(M.week_series({"2026-10-07": {"claude_fresh": 0, "_daily_version": 2}}, "claude_fresh", TODAY))
+
+    def test_legacy_entries_are_never_drawn_as_daily_burn(self):
+        legacy = {"2026-10-07": {"claude_fresh": 999}, "2026-10-06": {"claude_fresh": 5, "_daily_version": 1}}
+        self.assertIsNone(M.week_series(legacy, "claude_fresh", TODAY))
+        mixed = {"2026-10-07": {"claude_fresh": 999}, "2026-10-06": {"claude_fresh": 5, "_daily_version": 2}}
+        self.assertEqual(M.week_series(mixed, "claude_fresh", TODAY), [None, None, None, None, None, 5, None])
+
+    def test_negative_and_non_finite_counters_are_not_drawn(self):
+        bad = {"2026-10-07": {"claude_fresh": -4, "_daily_version": 2}, "2026-10-06": {"claude_fresh": float("nan"), "_daily_version": 2},
+               "2026-10-05": {"claude_fresh": 3, "_daily_version": 2}}
+        self.assertEqual(M.week_series(bad, "claude_fresh", TODAY), [None, None, None, None, 3, None, None])
 
     def test_history_file_is_read_and_a_missing_or_broken_one_is_empty(self):
         with tempfile.TemporaryDirectory() as d:
