@@ -117,7 +117,7 @@ Pick a provider with `←` `→` (or `h` `l`, or the digits `1` to `9`), or clic
 
 ### Inbox
 
-Every event from the [inbox](/docs/users/notifications-and-inbox) is a card, with what needs you first and the newest first inside each group: a badge for its kind, the agent and its tab, how long ago, what it said, and for a limit a full gauge with the time to reset. Read events stay under the unread ones, dimmed, until you dismiss them. Four chips filter the list: All, Needs you, Done and Limits.
+Every event from the [inbox](/docs/users/notifications-and-inbox) is a card, with what needs you first and the newest first inside each group: a badge for its kind, the agent and its tab, how long ago, what it said, and for a limit a full gauge with the time to reset. Read events stay under the unread ones, dimmed, for a day (`kittymux inbox --all` lists the rest). Four chips filter the list: All, Needs you, Done and Limits.
 
 | To | Keyboard | Mouse |
 | --- | --- | --- |
@@ -126,6 +126,7 @@ Every event from the [inbox](/docs/users/notifications-and-inbox) is a card, wit
 | Dismiss the card | `x` | Click **Dismiss** |
 | Dismiss everything in this filter | `X` | |
 | Change the filter | `tab` (`shift+tab` goes back), or `1` to `4` | Click a chip |
+| First or last card (the last one also shows the wait ledger under the cards) | `g` or `Home`, `G` or `End` | |
 | Reload | `r` | |
 
 **Jump** focuses the agent's window and marks that window's events read. Nothing in the inbox ever types into an agent: dismissing only hides the card.

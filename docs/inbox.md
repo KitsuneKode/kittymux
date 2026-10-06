@@ -42,7 +42,9 @@ acknowledges everything it reported (`status: read`). `kittymux explain` shows, 
 ```
 
 `events` is newest first (at most 60). `pid` + `w` identify the kitty process and window. In **private mode** (`notify-private`) `body` is empty.
-`id` is stable. New fields may be added; consumers must ignore unknown ones (bumping `version` only for breaking changes).
+`id` is stable. New fields may be added; consumers must ignore unknown ones (bumping `version` only for breaking changes). Two optional fields come from folding the log: `t0`, when the
+event first appeared (`t` moves to the newest report of a merged event), and `ack_t`, when it first stopped being unread (you focused its window, read or dismissed it). `kittymux inbox ledger`
+turns them into how long agents waited on you.
 
 ## CLI (what an add-on calls)
 
@@ -52,6 +54,7 @@ kittymux inbox ack ID… | --all                 mark read
 kittymux inbox clear [--all]                   dismiss unread (or everything)
 kittymux inbox jump [ID]                       focus the window (kitty remote control + hyprctl); no ID = the most pressing unread one; marks it read
 kittymux inbox watch                           one JSON line per NEW event (a convenience for scripts)
+kittymux inbox ledger [--json]                 how long agents waited on you (first appeared → first looked at); today, this week, median, longest
 ```
 
 ## Building an add-on

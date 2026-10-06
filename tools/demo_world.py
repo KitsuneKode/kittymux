@@ -97,6 +97,13 @@ def inbox(state: Path, now: float) -> None:
         ev = I.make_event(kind, agent, 7, "screen", now - age, pid=424242, tab=tab, title=title, body=body, **extra)
         I.add(str(state), ev)
     I.ack(str(state), now, ids=[e["id"] for e in I.load(str(state)) if e["kind"] == "info"])      # the last one has been read
+    # a week of earlier waits (seconds until you first looked), so the wait ledger has something to draw
+    for days_ago, hours_ago, waited, kind in ((0, 5, 150, "permission"), (1, 3, 95, "question"), (1, 6, 40, "permission"), (2, 4, 310, "permission"),
+                                              (3, 2, 18, "question"), (5, 7, 120, "permission"), (6, 1, 460, "permission")):
+        t = now - days_ago * 86400 - hours_ago * 3600
+        old = I.make_event(kind, "claude", 7, "screen", t, pid=424242, tab="web", title="Needs you", body="")
+        I.add(str(state), old)
+        I.ack(str(state), t + waited, ids=[old["id"]])
 
 
 def build(out: Path, now: float | None = None) -> None:

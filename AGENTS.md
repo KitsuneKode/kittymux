@@ -41,6 +41,8 @@ remote work.
   first four, split variants — only show for a query), ranked by `score`, drawn with the shared kit. The kitten ONLY CHOOSES: `handle_result` runs `kittymux act JSON` from kitty (`boss.run_background_process`, so the CLI's parent is kitty and `_own_kitty_socket` works) AFTER
   the overlay is gone (a focus change made while it was open would be undone when it closes). `act` re-validates with `kittymux_palette.validate_action` (ids are ints, journal keys match one shape, agents must be installed, `run` ids are a fixed whitelist
   of kittymux argvs): never add an op there without extending the validator and `tests/test_palette.py`'s refusal list. `tests/smoke_palette.sh` drives it with real keys and mouse.
+- `python/kittymux_ledger.py` (pure) — the wait ledger: how long agents waited on you, from an inbox event's `t0` (first appeared) to its `ack_t` (first looked at; both are optional fields `kittymux_inbox.fold` keeps, schema
+  version unchanged), a wait counting at most `CAP_S` toward a total. A card at the bottom of the panel's Inbox view and `kittymux inbox ledger`. It says "how fast you got to each agent", never "how long the answer took".
 - `python/kittymux_features.py` (pure) + `kittymux features [list | on|off NAME | preset minimal|default|full]` — the switchboard for the optional pieces of the bar: `folder`, `hue`, `collide`, `panetitle` are live; `sheet`,
   `hover` are planned (saved, nothing reads them — the CLI says so). Precedence: env `KITTYMUX_<NAME>` > flag file `<name>-off|-on` in `$KITTYMUX_STATE` > default; the bar resolves it once per pass
   (`tab_bar._features`). With `folder` off the bar draws the line it always drew — keep that path as it was.

@@ -139,9 +139,11 @@ def fold(ops: list[dict]) -> list[dict]:
         if kind == "add" and isinstance(op.get("id"), str) and op.get("kind") in KINDS:
             key = merge_key(op)
             prev = events.get(recent.get(key, ""))
-            if prev is not None and op.get("t", 0) - prev.get("t", 0) <= MERGE_WINDOW_S and prev.get("status") == "unread":
+            # the window is symmetric: a report appended out of order (two kitty processes, a skewed clock) must not merge into an event it is hours away from
+            if prev is not None and abs(op.get("t", 0) - prev.get("t", 0)) <= MERGE_WINDOW_S and prev.get("status") == "unread":
                 prev["count"] = prev.get("count", 1) + 1
-                prev["t"] = op["t"]
+                prev["t0"] = min(prev.get("t0", prev.get("t", 0)), op.get("t", 0))
+                prev["t"] = max(prev.get("t", 0), op.get("t", 0))             # the newest report; it never moves backwards
                 prev["sources"] = sorted(set(prev.get("sources", [])) | set(op.get("sources", [])))
                 if op.get("confidence") == "high":
                     prev["confidence"] = "high"                      # any authoritative source upgrades it
@@ -150,6 +152,7 @@ def fold(ops: list[dict]) -> list[dict]:
                         prev[field] = op[field]
                 continue
             ev = {k: v for k, v in op.items() if k != "op"}
+            ev.setdefault("t0", ev.get("t", 0))                      # when it FIRST appeared (`t` moves to the newest report of a merged event)
             events[ev["id"]] = ev
             order.append(ev["id"])
             recent[key] = ev["id"]
@@ -160,9 +163,12 @@ def fold(ops: list[dict]) -> list[dict]:
                 if eid in targets or (op.get("w") is not None and str(op["w"]) == ev.get("w") and str(op.get("pid", ev.get("pid"))) == str(ev.get("pid"))):
                     if ev.get("status") == "unread":
                         ev["status"] = op.get("status") if op.get("status") in STATUSES else "read"
+                        ev["ack_t"] = op.get("t", 0)                    # when you first looked at it (focused its window, read or dismissed it)
         elif kind == "clear":
             for ev in events.values():
                 if ev.get("status") == "unread" or op.get("all"):
+                    if ev.get("status") == "unread":
+                        ev["ack_t"] = op.get("t", 0)
                     ev["status"] = "dismissed"
     return [events[i] for i in order]
 
@@ -171,7 +177,7 @@ def is_duplicate(existing: list[dict], ev: dict) -> bool:
     """Would adding `ev` merge into a still-unread event? (The caller then skips the popup: it was already shown.)"""
     key = merge_key(ev)
     for old in reversed(existing):
-        if merge_key(old) == key and old.get("status") == "unread" and ev.get("t", 0) - old.get("t", 0) <= MERGE_WINDOW_S:
+        if merge_key(old) == key and old.get("status") == "unread" and abs(ev.get("t", 0) - old.get("t", 0)) <= MERGE_WINDOW_S:
             return True
     return False
 

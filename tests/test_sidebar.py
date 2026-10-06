@@ -432,6 +432,19 @@ class SidebarTests(unittest.TestCase):
         self.assertEqual(s._inbox_filter, "limits")
         s.finalize()
 
+    def test_g_and_shift_g_and_home_end_jump_to_the_ends_of_the_inbox(self):
+        s = self.sidebar()
+        s._view, s._inbox = "inbox", self.inbox_events()
+        s.on_key_event(self.key("G", mods=1))
+        self.assertEqual(s._inbox_sel, 2)
+        s.on_key_event(self.key("G"))
+        self.assertEqual(s._inbox_sel, 0)
+        s.on_key_event(self.key("END"))
+        self.assertEqual(s._inbox_sel, 2)
+        s.on_key_event(self.key("HOME"))
+        self.assertEqual(s._inbox_sel, 0)
+        s.finalize()
+
     def test_enter_jumps_with_the_cli_and_never_touches_the_agent(self):
         s = self.sidebar()
         s._view, s._inbox = "inbox", self.inbox_events()

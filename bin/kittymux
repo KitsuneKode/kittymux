@@ -9,7 +9,7 @@
                          layout width [+N|-N|N]   layout preset NAME   layout pick   layout show
                          layout default [clear]   (pin the current layout as the start for new windows; otherwise new kitties start with your last choice)
   kittymux inbox       everything that wants your attention (questions, permissions, usage limits, finished runs), newest first:
-                         inbox [--all] [--json] [--limit N] [--waybar]   inbox ack [ID… | --all]   inbox clear   inbox jump [ID]   inbox watch
+                         inbox [--all] [--json] [--limit N] [--waybar]   inbox ack [ID… | --all]   inbox clear   inbox jump [ID]   inbox watch   inbox ledger [--json]
   kittymux sessions    save/restore sessions WITH the agents' conversations (claude --resume <id>, codex resume <id>, …) and make new ones from templates:
                          sessions [list] | save [NAME] [--all] [--direct] | restore [NAME|last] | autosave | new NAME [--template T] [--agent A] [--cwd DIR] | templates | check | prepare | rewrite FILE|--recent
                          sessions history [--since 7d] [--json]   sessions recover [NAME] [--since 6h]   (every agent session is journaled as it runs)
@@ -68,6 +68,7 @@ import kittymux_inbox  # noqa: E402
 import kittymux_journal  # noqa: E402
 import kittymux_keymap  # noqa: E402
 import kittymux_launcher  # noqa: E402
+import kittymux_ledger  # noqa: E402
 import kittymux_meters  # noqa: E402
 import kittymux_palette  # noqa: E402
 import kittymux_quiet  # noqa: E402
@@ -868,6 +869,13 @@ def inbox(argv: list[str]) -> int:
             print("kittymux inbox: nothing to jump to", file=sys.stderr)
             return 1
         return inbox_jump(target)
+    if cmd == "ledger":
+        summ = kittymux_ledger.summary(kittymux_inbox.load(sdir), now)
+        if "--json" in rest:
+            print(json.dumps(summ, indent=1))
+        else:
+            print(kittymux_ledger.format_text(summ))
+        return 0
     if cmd == "waybar" or "--waybar" in argv:
         print(json.dumps(kittymux_launcher.waybar_status(kittymux_inbox.load(sdir), now), ensure_ascii=False))
         return 0
@@ -889,7 +897,7 @@ def inbox(argv: list[str]) -> int:
         except KeyboardInterrupt:
             return 0
     if cmd != "list":
-        print("usage: kittymux inbox [--all] [--json] [--limit N] | ack | clear | jump | watch", file=sys.stderr)
+        print("usage: kittymux inbox [--all] [--json] [--limit N] | ack | clear | jump | watch | ledger", file=sys.stderr)
         return 2
     show_all, as_json, limit = "--all" in rest, "--json" in rest, 30
     if "--limit" in rest:

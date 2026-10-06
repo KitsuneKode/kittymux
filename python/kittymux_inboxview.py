@@ -12,6 +12,7 @@ import time
 from typing import NamedTuple
 
 import kittymux_deck
+import kittymux_ledger as LG
 import kittymux_meters as M
 import kittymux_place
 import kittymux_ui as U
@@ -21,6 +22,7 @@ FILTERS = (("all", "All"), ("needs", "Needs you"), ("done", "Done"), ("limits", 
 KIND = {"permission": ("!", "warm"), "question": ("?", "warm"), "limit": ("⊘", "hot"), "done": ("✓", "calm"), "error": ("✕", "hot"),
         "info": ("·", "muted")}
 SHOWN_MAX = 40
+READ_SHOWN_S = 86400.0                  # a read event stays listed for a day; older ones are history (`kittymux inbox --all`, and the ledger)
 TEXT_ROWS = 2
 
 
@@ -54,15 +56,21 @@ def _matches(ev: dict, filt: str) -> bool:
     return True
 
 
-def visible(events, filt: str = "all") -> list:
-    """Events to list: not dismissed, filtered, unread first (needs-you before the rest), newest first inside each group."""
+def visible(events, filt: str = "all", now: float | None = None) -> list:
+    """Events to list: not dismissed, filtered, unread first (needs-you before the rest), newest first inside each group. With `now`, a READ event older than a day is left out."""
     keep = [e for e in events if isinstance(e, dict) and e.get("kind") in KIND and _matches(e, filt)] if isinstance(events, list) else []
+    keep = [e for e in keep if _listed(e, now)]
     keep.sort(key=lambda e: (e.get("status") != "unread", e.get("severity") != "needs-you", -(M.num(e.get("t")) or 0.0)))
     return keep[:SHOWN_MAX]
 
 
-def counts(events) -> dict:
-    return {f: sum(1 for e in events if isinstance(e, dict) and e.get("kind") in KIND and _matches(e, f)) if isinstance(events, list) else 0
+def _listed(e, now) -> bool:
+    return now is None or e.get("status") == "unread" or now - (M.num(e.get("t")) or 0.0) <= READ_SHOWN_S
+
+
+def counts(events, now: float | None = None) -> dict:
+    """What each filter chip says: the same events `visible` would list (before its cap)."""
+    return {f: sum(1 for e in events if isinstance(e, dict) and e.get("kind") in KIND and _matches(e, f) and _listed(e, now)) if isinstance(events, list) else 0
             for f, _ in FILTERS}
 
 
@@ -182,6 +190,24 @@ def _chips(kit: U.Kit, filt: str, tally: dict, cols: int) -> tuple:
     return kit.fit_line(line, cols, p.bar), regions
 
 
+def _ledger(kit: U.Kit, events, cols: int, now: float) -> list:
+    """The wait ledger as a card under the events: how long agents waited on you today, a week of it, the median. Nothing when there is nothing measured."""
+    summ = LG.summary(events, now)
+    if not summ:
+        return []
+    p, bg = kit.p, kit.p.card
+    inner = kit.inner_width(cols)
+    muted = kit.ink(p.muted, bg)
+    head = V._row(kit, kit.chip("waited on you", "muted", on=bg, strong=True), [U.S(f"median {LG.fmt_dur(summ['median_s'])} ", muted, bg)], inner, bg)
+    n = summ["count_today"]
+    big = [U.S(LG.fmt_dur(summ["today_s"]) or "0s", kit.ink(p.text, bg), bg, bold=True), U.S(" today", muted, bg),
+           U.S(f"  {n} wait{'s' if n != 1 else ''}", kit.ink(p.faint, bg, 3.0), bg)]
+    rows = [head, kit.fit_line(big, inner, bg)] + kit.bars(summ["series"], inner, rows=2, tone="warm", on=bg, labels=V.week_letters(None, LG.DAYS))
+    if summ["ongoing"]:
+        rows.append(kit.fit_line(kit.chip(f"{summ['ongoing']} waiting now", "warm", on=bg), inner, bg))
+    return [kit.blank(cols, p.bar)] + kit.card(rows, cols)
+
+
 def view(events, filt: str, sel: int, cols: int, kit: U.Kit, now: float | None = None) -> InboxView:
     """Never raises. `sel` indexes the VISIBLE list (clamped); the caller keeps it in range across refreshes."""
     p = kit.p
@@ -189,8 +215,8 @@ def view(events, filt: str, sel: int, cols: int, kit: U.Kit, now: float | None =
     cols = max(8, int(cols))
     filt = filt if filt in dict(FILTERS) else "all"
     events = events if isinstance(events, list) else []
-    items = visible(events, filt)
-    tally = counts(events)
+    items = visible(events, filt, now)
+    tally = counts(events, now)
     sel = max(0, min(int(sel) if M.num(sel) is not None else 0, max(0, len(items) - 1)))
     un, ny = unread(events), needs_you(events)
     left = [U.S(f" {un} unread" if un else " all read", kit.ink(p.muted, p.bar), p.bar)]
@@ -204,7 +230,7 @@ def view(events, filt: str, sel: int, cols: int, kit: U.Kit, now: float | None =
     if not items:
         empty = [kit.fit_line([U.S("✓ ", kit.ink(p.done, p.card), p.card, bold=True), U.S("All clear", kit.ink(p.text, p.card), p.card, bold=True)], inner, p.card),
                  kit.fit_line([U.S("nothing waits on you" if filt == "all" else "nothing in this filter", kit.ink(p.muted, p.card), p.card)], inner, p.card)]
-        lines += kit.card(empty, cols)
+        lines += kit.card(empty, cols) + _ledger(kit, events, cols, now)
         return InboxView(header, chips, lines, [], [], 0, 0)
     for i, ev in enumerate(items):
         selected = i == sel
@@ -216,4 +242,5 @@ def view(events, filt: str, sel: int, cols: int, kit: U.Kit, now: float | None =
         if button_row is not None:
             y = y0 + 1 + button_row                              # +1: the card's top edge row
             buttons += [(2 + a, 2 + b, y, i, act) for a, b, act in regions]      # 2 = margin + padx
+    lines += _ledger(kit, events, cols, now)
     return InboxView(header, chips, lines, cards, buttons, sel, len(items))

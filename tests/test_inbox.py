@@ -171,6 +171,60 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(len(I.load(self.d)), 1)
 
 
+class WaitTimeTests(unittest.TestCase):
+    """The two times the wait ledger needs: when an event first appeared, and when you first looked at it."""
+
+    def test_first_seen_stays_put_while_a_merged_report_moves_the_newest_time(self):
+        a, b = ev("permission", t=1000.0), ev("permission", t=1020.0)
+        e = I.fold([a, b])[0]
+        self.assertEqual((e["t0"], e["t"], e["count"]), (1000.0, 1020.0, 2))
+
+    def test_acknowledging_records_when_and_only_the_first_time(self):
+        a = ev("permission", t=1000.0)
+        ops = [a, {"op": "ack", "t": 1090.0, "ids": [a["id"]]}, {"op": "ack", "t": 5000.0, "ids": [a["id"]]}]
+        e = I.fold(ops)[0]
+        self.assertEqual((e["status"], e["ack_t"]), ("read", 1090.0))
+
+    def test_a_window_ack_and_a_dismissal_and_a_clear_all_count_as_looking(self):
+        a, b, c = ev("permission", w=1, t=1000.0), ev("question", w=2, t=1000.0), ev("done", w=3, t=1000.0)
+        ops = [a, b, c, {"op": "ack", "t": 1050.0, "w": "1", "pid": 42}, {"op": "ack", "t": 1060.0, "ids": [b["id"]], "status": "dismissed"}, {"op": "clear", "t": 1070.0}]
+        got = {e["w"]: e for e in I.fold(ops)}
+        self.assertEqual((got["1"]["ack_t"], got["2"]["ack_t"], got["3"]["ack_t"]), (1050.0, 1060.0, 1070.0))
+        self.assertEqual((got["2"]["status"], got["3"]["status"]), ("dismissed", "dismissed"))
+
+    def test_an_event_nobody_looked_at_has_no_ack_time(self):
+        self.assertNotIn("ack_t", I.fold([ev("permission", t=1000.0)])[0])
+
+    def test_an_older_report_appended_later_is_not_merged_into_a_newer_event_hours_away(self):
+        new, old = ev("permission", t=100000.0), ev("permission", t=100000.0 - 5 * 3600)
+        folded = I.fold([new, old])
+        self.assertEqual(len(folded), 2)
+        self.assertEqual({e["t"] for e in folded}, {100000.0, 100000.0 - 5 * 3600})
+        self.assertEqual([e["count"] for e in folded], [1, 1])
+
+    def test_a_slightly_out_of_order_report_still_merges_and_time_never_moves_backwards(self):
+        a, b = ev("permission", t=1000.0), ev("permission", t=980.0)
+        e = I.fold([a, b])[0]
+        self.assertEqual((e["count"], e["t"], e["t0"]), (2, 1000.0, 980.0))
+
+    def test_is_duplicate_is_symmetric_too(self):
+        existing = I.fold([ev("permission", t=100000.0)])
+        self.assertTrue(I.is_duplicate(existing, ev("permission", t=99990.0)))
+        self.assertFalse(I.is_duplicate(existing, ev("permission", t=100000.0 - 5 * 3600)))
+
+    def test_compaction_keeps_both_times(self):
+        a = ev("permission", t=1000.0)
+        events = I.fold([a, ev("permission", t=1010.0), {"op": "ack", "t": 1100.0, "ids": [a["id"]]}])
+        again = I.fold(I.compact(events))[0]
+        self.assertEqual((again["t0"], again["ack_t"], again["status"]), (1000.0, 1100.0, "read"))
+
+    def test_events_from_an_old_log_without_the_fields_still_fold(self):
+        old = dict(ev("permission", t=1000.0))
+        old.pop("op")
+        e = I.fold([dict(old, op="add")])[0]
+        self.assertEqual(e["t0"], 1000.0)
+
+
 def _writer(args):
     d, n, base = args
     for i in range(n):

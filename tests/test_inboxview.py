@@ -66,6 +66,20 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(IV.counts(events), {"all": 4, "needs": 2, "done": 0, "limits": 1})
         self.assertEqual((IV.unread(events), IV.needs_you(events)), (3, 2))
 
+    def test_a_read_event_is_listed_for_a_day_and_an_unread_one_never_ages_out(self):
+        old_read, new_read, old_unread = ev("done", age=3 * 86400, status="read"), ev("done", age=3600, status="read"), ev("question", age=3 * 86400)
+        kept = IV.visible([old_read, new_read, old_unread], "all", NOW)
+        self.assertEqual(len(kept), 2)
+        self.assertIn(old_unread, kept)
+        self.assertIn(new_read, kept)
+        self.assertEqual(len(IV.visible([old_read, new_read, old_unread], "all")), 3)        # without a clock nothing ages
+
+    def test_the_filter_chips_count_what_the_list_shows(self):
+        events = [ev("done", age=3 * 86400, status="read"), ev("done", age=3600, status="read"), ev("question", age=3 * 86400)]
+        self.assertEqual(IV.counts(events, NOW)["all"], len(IV.visible(events, "all", NOW)))
+        self.assertEqual(IV.counts(events, NOW), {"all": 2, "needs": 1, "done": 1, "limits": 0})
+        self.assertEqual(IV.counts(events)["all"], 3)
+
     def test_a_long_log_is_capped(self):
         many = [ev("info", age=i) for i in range(200)]
         self.assertEqual(len(IV.visible(many)), IV.SHOWN_MAX)
@@ -205,6 +219,51 @@ class ContentTests(unittest.TestCase):
         body = text(IV.view([ev("done", title=long.strip())], "all", 0, 30, kit(), NOW))
         self.assertIn("…", body)
         self.assertLessEqual(body.count("word"), 12)
+
+
+class LedgerTests(unittest.TestCase):
+    def waits(self):
+        a = ev("permission", age=600, status="read")
+        a["t0"], a["ack_t"] = NOW - 600, NOW - 480
+        b = ev("question", age=120)
+        b["t0"] = NOW - 120
+        return [a, b]
+
+    def test_the_ledger_card_shows_today_the_median_and_who_is_waiting_now(self):
+        body = text(IV.view(self.waits(), "all", 0, 38, kit(), NOW))
+        for want in ("waited on you", "median", "today", "2 waits", "1 waiting now"):
+            self.assertIn(want, body)
+        self.assertIn("4m", body)                                          # 120 s read + 120 s still waiting
+
+    def test_no_ledger_when_nothing_was_measured(self):
+        quiet = [ev("done"), ev("limit", reset_at=NOW + 100), ev("info", status="read")]          # nothing here ever asked for you
+        self.assertNotIn("waited on you", text(IV.view(quiet, "all", 0, 38, kit(), NOW)))
+        self.assertNotIn("waited on you", text(IV.view([], "all", 0, 38, kit(), NOW)))
+
+    def test_an_unread_question_is_already_a_wait(self):
+        self.assertIn("waiting now", text(IV.view(sample(), "all", 0, 38, kit(), NOW)))
+
+    def test_the_ledger_also_shows_under_all_clear(self):
+        done = self.waits()[:1]
+        body = text(IV.view(done, "limits", 0, 38, kit(), NOW))
+        self.assertIn("nothing in this filter", body)
+        self.assertIn("waited on you", body)
+
+    def test_every_line_stays_the_panel_width_with_the_ledger(self):
+        for colors in (TOKYO, LATTE):
+            for kw in ({}, {"cells": wide, "rounded": False}):
+                k = kit(colors, **kw)
+                for cols in (12, 20, 26, 38, 60):
+                    v = IV.view(self.waits(), "all", 0, cols, k, NOW)
+                    for line in [v.header] + v.lines:
+                        self.assertEqual(U.line_cells(line, k.cells), cols, cols)
+
+    def test_the_ledger_does_not_disturb_the_card_regions(self):
+        v = IV.view(self.waits(), "all", 0, 38, kit(), NOW)
+        self.assertEqual(len(v.cards), 2)
+        for (a0, a1, _), (b0, b1, _) in zip(v.cards, v.cards[1:]):
+            self.assertLessEqual(a1, b0)
+        self.assertTrue(all(y1 <= len(v.lines) for _y0, y1, _i in v.cards))
 
 
 class RobustnessTests(unittest.TestCase):

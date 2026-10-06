@@ -375,7 +375,7 @@ class Sidebar(Handler):
         self.draw_screen()
 
     def _inbox_items(self) -> list:
-        return kittymux_inboxview.visible(self._inbox, self._inbox_filter)
+        return kittymux_inboxview.visible(self._inbox, self._inbox_filter, time.time())
 
     def _inbox_key(self, k: str, shifted: bool) -> None:
         keys = [f for f, _ in kittymux_inboxview.FILTERS]
@@ -390,6 +390,10 @@ class Sidebar(Handler):
             self._inbox_sel = min(max(0, n - 1), self._inbox_sel + 1)
         elif k in ("K", "UP"):
             self._inbox_sel = max(0, self._inbox_sel - 1)
+        elif k in ("HOME",) or (k == "G" and not shifted):
+            self._inbox_sel = 0
+        elif k in ("END",) or (k == "G" and shifted):
+            self._inbox_sel = max(0, n - 1)
         elif k in ("TAB", "F"):
             self._inbox_filter = keys[(keys.index(self._inbox_filter) + (-1 if shifted else 1)) % len(keys)]
             self._inbox_sel = 0
@@ -553,7 +557,7 @@ class Sidebar(Handler):
         page, top = max(1, height - 3), self._inbox_scroll
         if v.cards:                                                       # keep the picked card on screen
             y0, y1, _ = v.cards[v.sel]
-            top = 0 if v.sel == 0 else y0 if y0 < top else y1 - page if y1 > top + page else top
+            top = 0 if v.sel == 0 else len(v.lines) if v.sel == v.count - 1 else y0 if y0 < top else y1 - page if y1 > top + page else top      # the last card reveals what is under it (the ledger)
         self._inbox_scroll = self._draw_body(cols, height, v.header, v.lines, top, [("j k", "move"), ("⏎", "jump"), ("x", "dismiss"), ("tab", "filter")])
         off = 2 - self._inbox_scroll
         self._inbox_regions = ([(x0, x1, off, filt) for x0, x1, filt in v.chips], [(y0 + off, y1 + off, i) for y0, y1, i in v.cards],

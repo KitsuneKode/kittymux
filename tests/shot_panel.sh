@@ -3,7 +3,7 @@
 # (tools/demo_world.py: a fake HOME the real collectors read, a week of history, inbox events) and is driven with real key events.
 # Each step also checks the text the view drew, so this doubles as a smoke test of the three views.
 #   bash tests/shot_panel.sh dark|light OUT_DIR [COLS] [LINES]       (default 38 x 44: a docked panel's size)
-# Writes OUT_DIR/{agents,usage-codex,usage-claude,usage-cursor,usage-devin,inbox,inbox-needs}.png.
+# Writes OUT_DIR/{agents,usage-codex,usage-claude,usage-cursor,usage-devin,inbox,inbox-needs,inbox-ledger}.png.
 # Needs Xvfb, xdotool, kitty, ImageMagick (`import`), python3; otherwise SKIP (exit 0). Never touches another kitty or your real state.
 set -u
 HOME_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -130,6 +130,11 @@ shot inbox
 key Tab
 wait_text "Needs" || true
 shot inbox-needs
+key Tab; key Tab; key Tab                                       # back to All
+key shift+g                                                     # the last card: the wait ledger shows under it
+wait_text "waited on you" || fail "Inbox: the wait ledger never showed under the last card"
+screen | grep -q "median" || fail "Inbox: the ledger has no median"
+shot inbox-ledger
 
 key a
 wait_text "tabs" || fail "a did not return to the Agents view"

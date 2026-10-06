@@ -53,6 +53,10 @@ features:
     label: Command palette
     status: shipped
     description: ctrl+alt+shift+space is one searchable list of what needs you, every tab, conversations to reopen, new agents with their quota headroom and a few actions.
+  - id: wait-ledger
+    label: Wait ledger
+    status: shipped
+    description: How long agents waited on you, from when their event first appeared to when you first looked at it, as a card in the panel's Inbox view and as kittymux inbox ledger.
   - id: panel-usage
     label: Usage view in the panel
     status: shipped
