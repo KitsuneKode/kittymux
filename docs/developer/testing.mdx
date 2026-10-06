@@ -47,7 +47,7 @@ Each rig starts its own kitty, usually in a virtual display (Xvfb) with a privat
 | `smoke_openref.sh`          | `ctrl+shift+click` on `src/app.py:42:7` opens the editor at line 42.                                                   |
 | `smoke_extras.sh`           | `kittymux screenshot`, and `kittymux dim` when `slangc` exists.                                                        |
 
-Run display-sharing rigs one after another. Use `SMOKE_SHOT=<absolute path prefix>` with `smoke_sidebar.sh` to keep screenshots. To look at a visual change, render the bar with `tests/shot_bar.sh` in dark and light and at the narrowest width, then read the picture. Unit tests did not catch a hue palette of four near-identical greens.
+Run display-sharing rigs one after another. Use `SMOKE_SHOT=<absolute path prefix>` with `smoke_sidebar.sh` to keep screenshots. To look at a visual change, render the bar with `tests/shot_bar.sh` in dark and light and at the narrowest width, then read the picture. For the panel use `tests/shot_panel.sh dark|light OUT_DIR [COLS] [LINES]`: it runs the real panel in a private kitty on a synthetic world (`tests/panel_fixture.py`), drives it with real key events, checks the text of the Agents, Usage and Inbox views and saves a PNG of each. Unit tests did not catch a hue palette of four near-identical greens.
 
 ### The rules a rig must follow
 

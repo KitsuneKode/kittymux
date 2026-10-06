@@ -9,12 +9,18 @@ This page is the short version of `AGENTS.md`. When the two differ, `AGENTS.md` 
 
 | Kind            | What it is                                                                                  | Examples                                                                                         |
 | --------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Pure modules    | No kitty imports. Unit-tested in `tests/`.                                                  | `kittymux_state`, `kittymux_agents`, `kittymux_theme`, `kittymux_place`, `kittymux_join`, `kittymux_inbox`, `kittymux_resume`, `kittymux_keymap` |
+| Pure modules    | No kitty imports. Unit-tested in `tests/`.                                                  | `kittymux_state`, `kittymux_agents`, `kittymux_theme`, `kittymux_place`, `kittymux_join`, `kittymux_inbox`, `kittymux_resume`, `kittymux_keymap`, `kittymux_ui`, `kittymux_meters`, `kittymux_usageview`, `kittymux_inboxview` |
 | In-kitty pieces | Run inside the kitty process. Reloaded by `tab_bar.py` on every configuration load.         | `tab_bar.py`, `kittymux_scan`, `kittymux_barsize`, `kittymux_panetitle`                          |
 | Kittens         | Overlay interfaces, run by path.                                                            | `sidebar-kit.py` (deck and panel), `peek-kit.py` (peek card), `join-kit.py` (join list) |
 | Scripts         | Shell and CLI glue.                                                                         | `bin/kittymux`, `bin/mux-*` (including the keymap overlay, `mux-keys.py`), `lib/mux.sh`               |
 
 Python files run under kitty's bundled interpreter, so `kitty.*` and `kittens.*` are importable there and not under the system Python. Kittens are executed, not imported: there is no `__file__`, so they find their directory through `KITTY_CONFIG_DIRECTORY` and `sys.argv`.
+
+## One look for every surface
+
+`kittymux_ui` is the only place a panel view learns how a card, a gauge, a chip or a tab looks. It is pure: you give it a palette and a width and get back lines of styled spans, each exactly that wide. Cards are half blocks with quadrant corners, gauges are lower-half blocks and pills use round caps, all glyphs kitty draws itself. Every colour is a token of the live theme, so a theme switch restyles every surface, and text on a card is held to a 4.5 to 1 contrast. `kittymux_usageview` and `kittymux_inboxview` build whole views from it and return click regions as well as lines; `sidebar-kit.py` only places them and handles keys and the mouse.
+
+`kittymux_meters` is the one model for every provider's usage. A collector's rows become meters of four kinds (quota, counter, state, spend), from numeric sidecar fields when a row has them and from its label and text when it does not, so an old cache still draws. A view draws a meter by its kind, never by its provider's name.
 
 ## One answer for status
 

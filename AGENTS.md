@@ -29,6 +29,14 @@ remote work.
 - `python/kittymux_theme.py` / `kittymux_agents.py` / `kittymux_deck.py` — pure helper modules
   (no kitty imports; unit-tested in `tests/`). Theme tokens derive from live kitty colours; symlinked
   into the config dir by `install.sh`. Never hardcode a palette in `tab_bar.py`/`sidebar-kit.py`.
+- `python/kittymux_ui.py` (pure) — the ONE place a cell-drawn surface learns what a card, gauge, chip, tab, keycap or chart looks like: a `Kit(palette, cells, rounded)` returns LINES of styled spans, each exactly the width asked for
+  (`fit_line`), from glyphs kitty draws itself (half-block cards with quadrant corners, lower-half-block gauges, Powerline round caps). Every colour is a `Palette` token (`card`, `card_hi`, `track`, `on_accent` live in `kittymux_theme._surfaces`,
+  the calm/warm/hot ramp reuses `done`/`waiting`/`alert`); text is `ink`ed to 4.5:1 on whatever it sits on; program/provider text is `kittymux_place.clean`ed. Shape rule: pills for chips/tabs/toggles, one chamfered radius for cards and buttons, square keycaps.
+- `python/kittymux_meters.py` (pure) — ONE model for every provider's usage: rows → `quota | counter | state | spend` meters (numeric sidecars `rem_s window_s tok cached sess turns ago_s state plan status lines ai_pct` when a collector
+  gives them, label/text heuristics otherwise, so an old `agent-usage.json` still draws). Views draw by KIND, never by provider name. History is read only from `_daily_version == 2` entries: older ones are rolling totals, never one day's burn.
+- `python/kittymux_usageview.py` + `python/kittymux_inboxview.py` (pure) — the panel's Usage and Inbox views: lines plus click regions (`View.tiles`, `InboxView.chips/cards/buttons`); `sidebar-kit.py` places them (strip, header, footer keycaps, the
+  resize handle) and owns keys, mouse and refresh. Narrow panels degrade in tiers (the share outlives the countdown; the filter chips go full words → glyphs → bare glyphs; buttons lose their key hints). The Inbox never types into an agent: Jump runs
+  `kittymux inbox jump`, Dismiss only changes the event's status. `tests/shot_panel.sh` + `tests/panel_fixture.py` render and drive the real panel on synthetic data.
 - `python/kittymux_features.py` (pure) + `kittymux features [list | on|off NAME | preset minimal|default|full]` — the switchboard for the optional pieces of the bar: `folder`, `hue`, `collide`, `panetitle` are live; `sheet`,
   `hover` are planned (saved, nothing reads them — the CLI says so). Precedence: env `KITTYMUX_<NAME>` > flag file `<name>-off|-on` in `$KITTYMUX_STATE` > default; the bar resolves it once per pass
   (`tab_bar._features`). With `folder` off the bar draws the line it always drew — keep that path as it was.
@@ -171,7 +179,7 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
   (it IS re-run on every config reload) and restarts: `kittymux_scan.restart()`, `kittymux_barsize.install()`.
 - Long-lived state (timer ids etc.) lives in `sys.modules["_kittymux_scan_rt"]`, never in plain module
   globals — a reload re-executes the file and would forget a live timer (→ stacked timers = leak).
-- **A look is verified by looking.** Before and after a visual change render the bar with `tests/shot_bar.sh` (dark AND light, the 30-column bar and the narrowest one) and read the PNG — unit tests did not catch a hue
+- **A look is verified by looking.** Before and after a visual change render the bar with `tests/shot_bar.sh` (and the panel with `tests/shot_panel.sh`, narrow too: a 26-column panel found three layout bugs unit tests missed) (dark AND light, the 30-column bar and the narrowest one) and read the PNG — unit tests did not catch a hue
   palette of four near-identical greens that sat next to the "done" colour. A tint stays quieter than the state colours; the name is the one bright thing on a row.
 - **Redraw = three calls**: `tm.update_tab_bar_data()`, `tm.mark_tab_bar_dirty()`, then `mark_os_window_dirty(id)` +
   `wakeup_main_loop()`. The first two only update cells; without the last two kitty does not render until the

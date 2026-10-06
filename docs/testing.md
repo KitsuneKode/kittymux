@@ -24,6 +24,7 @@ Run from the isolated worktree, using the rigs' private config, sockets and stat
 bash tests/test_install.sh
 bash tests/smoke_state.sh
 bash tests/smoke_sidebar.sh
+bash tests/shot_panel.sh dark /tmp/panel-shots   # the real panel on synthetic data: Agents, Usage, Inbox (also light, and narrow: COLS as the third argument)
 bash tests/smoke_drag.sh
 bash tests/smoke_resize.sh
 bash tests/smoke_panes.sh

@@ -54,7 +54,9 @@ If `kittymux` is "not found", `~/.local/bin` is not on your `PATH`: add `export 
   PR number and listening ports (`:3000`).
 - **A docked sidebar panel** (`ctrl+alt+shift+b`, Wayland). The deck as a persistent left column via
   `kitten panel`: the compositor reserves its width so tiled windows sit beside it — the cmux-style
-  always-visible sidebar. ~1% CPU idle.
+  always-visible sidebar. ~1% CPU idle. Three views behind a strip of pills (`a` Agents, `u` Usage, `i` Inbox): **Usage** is a row of provider
+  tiles and one card (thin gauges with a pace tick and a reset countdown, a big token number with a week of bars, state chips); **Inbox** is every
+  typed event as a card with Jump and Dismiss. All of it is drawn from your theme's colours by one shared kit.
 - **An attention queue** (`ctrl+alt+y`). One key jumps to the agent that has been waiting the
   longest — across sessions and OS windows. A desktop notification fires when an unfocused
   agent starts waiting.
@@ -527,6 +529,10 @@ kittymux/
     ├── kittymux_barsize.py# drag-to-resize the vertical bar
     ├── kittymux_git.py    # branch/worktree reader (no subprocess)
     ├── kittymux_deck.py   # deck grouping/layout logic (pure, tested)
+    ├── kittymux_ui.py     # the shared look: cards, gauges, chips, tabs, charts (pure, tested)
+    ├── kittymux_meters.py # one model (quota, counter, state, spend) for every provider (pure, tested)
+    ├── kittymux_usageview.py  # the panel's Usage view (pure, tested)
+    ├── kittymux_inboxview.py  # the panel's Inbox view (pure, tested)
     └── collectors/        # usage plugins (_common.py shared helpers)
 ```
 
