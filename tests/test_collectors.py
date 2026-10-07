@@ -186,6 +186,54 @@ class CollectorTests(unittest.TestCase):
         self.assertIn("rem_s", five)
         self.assertNotIn("rem_s", week)                         # no reset time on record: nothing is invented
 
+    @staticmethod
+    def codex_event(iso, five, week, resets=None, minutes=None):
+        w5 = {"used_percent": five}
+        if resets is not None:
+            w5["resets_at"] = resets
+        if minutes is not None:
+            w5["window_minutes"] = minutes
+        return json.dumps({"timestamp": iso, "payload": {"rate_limits": {"primary": w5, "secondary": {"used_percent": week}, "plan_type": "plus"}}}) + "\n"
+
+    def test_codex_takes_the_newest_event_not_the_newest_file_name(self):
+        now = self.clock.return_value
+        old_name = self.write(".codex/sessions/2026/10/06/rollout-2026-10-06T01-00-00-a.jsonl", self.codex_event("2026-10-07T12:00:00Z", 77, 11, now + 3600))
+        new_name = self.write(".codex/sessions/2026/10/07/rollout-2026-10-07T01-00-00-b.jsonl", self.codex_event("2026-10-07T01:00:00Z", 5, 5, now + 3600))
+        for path in (old_name, new_name):
+            os.utime(path, (now, now))
+        result = codex.collect()
+        self.assertEqual([r["pct"] for r in result["rows"]], [77, 11])         # the file with the later NAME held the older event
+        self.assertEqual(result["sample_ts"], datetime.fromisoformat("2026-10-07T12:00:00+00:00").timestamp())
+
+    def test_codex_reads_the_last_event_of_a_file_and_only_its_tail(self):
+        now = self.clock.return_value
+        filler = json.dumps({"payload": {"x": "y" * 400}}) + "\n"
+        body = self.codex_event("2026-10-07T01:00:00Z", 1, 1, now + 100) + filler * 3000 + "{cut in half" + "\n" + self.codex_event("2026-10-07T09:00:00Z", 42, 7, now + 100)
+        self.write(".codex/sessions/rollout-2026-10-07T01-00-00-c.jsonl", body)
+        self.assertGreater(len(body), codex.TAIL_BYTES)
+        self.assertEqual([r["pct"] for r in codex.collect()["rows"]], [42, 7])
+
+    def test_codex_does_not_present_an_ended_window_as_current(self):
+        now = self.clock.return_value
+        self.write(".codex/sessions/rollout-2026-10-07T01-00-00-d.jsonl", self.codex_event("2026-10-07T01:00:00Z", 99, 63, now - 60))
+        rows = codex.collect()["rows"]
+        self.assertTrue(all("pct" not in r for r in rows[:1]))
+        self.assertEqual(rows[0]["state"], "closed")
+        self.assertIn("reset", rows[0]["text"])
+        self.assertNotIn("99", json.dumps(rows[0]))
+        self.assertNotIn("pct", rows[0])
+
+    def test_codex_uses_the_window_length_the_event_reports(self):
+        now = self.clock.return_value
+        self.write(".codex/sessions/rollout-2026-10-07T01-00-00-e.jsonl", self.codex_event("2026-10-07T01:00:00Z", 10, 10, now + 600, minutes=300))
+        self.assertEqual(codex.collect()["rows"][0]["window_s"], 300 * 60)
+        self.write(".codex/sessions/rollout-2026-10-07T02-00-00-f.jsonl", self.codex_event("2026-10-07T02:00:00Z", 10, 10, now + 600, minutes=-5))
+        self.assertEqual(codex.collect()["rows"][0]["window_s"], 5 * 3600)    # nonsense falls back to the known default
+
+    def test_codex_junk_in_a_rollout_never_raises(self):
+        self.write(".codex/sessions/rollout-2026-10-07T01-00-00-g.jsonl", '{"payload": {"rate_limits": "x"}}\n{"payload": null}\n[1,2]\n\x00\xff garbage "rate_limits"\n')
+        self.assertEqual(codex.collect()["rows"], [])
+
     def test_claude_rows_carry_numeric_sidecars_next_to_the_text(self):
         self.timezone("America/New_York")
         self.clock.return_value = datetime.fromisoformat("2026-03-09T04:30:00+00:00").timestamp()

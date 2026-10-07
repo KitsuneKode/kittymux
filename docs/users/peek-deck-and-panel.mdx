@@ -120,6 +120,17 @@ Separate from the cards above, `ctrl+alt+i` shows a small pill with the current 
 
 The panel has three views. A strip of three pills at the top switches between them: **Agents**, **Usage** (a dial) and **Inbox** (an envelope, with a count when something is unread). Click a pill, or press `a`, `u` or `i`. The picked pill carries its name and the others show an icon, so the strip stays one short row. `esc` returns to Agents. `q` or the global toggle closes the panel, so bind `kittymux panel toggle` to a key in your window manager to reach it from any app.
 
+### Agents
+
+The list you look at most is built to stay calm until something needs you.
+
+- **One bright thing per row: the title.** A state is a mark at the right edge (a spinner, `!`, `⊘`, `✓`), not a sentence.
+- **What needs you is findable without reading.** A row that is asking for you has a stripe on its left edge and a faint warm tint across it. A tab at its limit is tinted red and says `limit hit`.
+- **Detail appears where you point.** The branch (or folder) is always there. The pull request and listening ports show on the picked or hovered row, and the pane count stays so a split is never a surprise.
+- **Buttons look like buttons.** Under the list a row of keycaps does what its key does when you click it: `⏎ jump`, `/ find`, `a join`, `t detach`. The one under the pointer lights up in your accent colour. A narrow panel drops buttons from the right, so the most useful stay.
+
+Every view has the same kind of button row at the bottom: Usage has `r refresh` and `d details`, Inbox has `⏎ jump`, `x dismiss` and `tab filter`. Greyed-out hints such as `j k move` are labels, not buttons.
+
 ### Usage
 
 A row of tiles, one per provider. Each tile shows the provider's logo and its worst share of a limit, or a dot when it has no limit to measure. The tile you pick opens as a card underneath, drawn by what the provider reports:
@@ -129,6 +140,8 @@ A row of tiles, one per provider. Each tile shows the provider's logo and its wo
 - **State** is a chip: the plan, a closed five-hour window, a cap hit last week.
 
 Below the card, a seven-day strip shows tokens per day for providers that have history. Only exact daily numbers are drawn, so an old rolling total is never shown as one day. A provider kittymux has never heard of still gets a card, drawn from the same four kinds of meter, and a provider that is loading, failed or not installed says so instead of showing an empty box.
+
+A provider's own report is dated when it is older than ten minutes (`sample 3h ago`, in amber after an hour), so a quiet agent does not look fresh. A quota window that has already ended is shown as `window reset · no newer sample`, never as the percentage it had. `d` shows source notes and how to turn on live quotas, and a live fetch that failed or went stale says so on the card.
 
 Pick a provider with `←` `→` (or `h` `l`, or the digits `1` to `9`), or click its tile. `↑` `↓` scroll and `r` refreshes. A narrow panel drops the countdown before it drops the share. Network requests remain [opt-in](/docs/users/customization#usage-hud).
 

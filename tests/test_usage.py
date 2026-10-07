@@ -55,7 +55,7 @@ class UsageTests(unittest.TestCase):
         with patch.object(usage,"load_collectors",return_value=[mod]), patch.object(usage.C,"LIVE",True), patch("time.time",return_value=9000):
             usage.get_data(True)
         samples=json.loads((usage.C.STATE_DIR/"agent-usage-trends.json").read_text())["samples"]
-        self.assertEqual(samples,[{"provider":"claude","row":0,"at":7200,"pct":63}])
+        self.assertEqual(samples,[{"provider":"claude","row":0,"at":7200,"pct":63,"label":"5h"}])
 
     def test_legacy_weekly_history_is_not_rendered_as_daily_burn(self):
         usage.C.HIST.write_text(json.dumps({"2026-03-08": {

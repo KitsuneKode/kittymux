@@ -329,6 +329,14 @@ class PortedFromTheTextDashboardTests(unittest.TestCase):
         body = text(V.view(data(), HISTORY, 38, 1, kit(), NOW, TODAY, trends={"claude": lines["claude"]}))
         self.assertIn(graph[:10], body)
 
+    def test_an_old_provider_sample_is_dated_and_a_fresh_one_is_not(self):
+        base = {"name": "codex", "rows": [{"label": "5h", "pct": 40}]}
+        k = kit()
+        fresh = text(V.view({"ts": NOW, "providers": [dict(base, sample_ts=NOW - 120)]}, None, 38, 0, k, NOW, TODAY))
+        old = text(V.view({"ts": NOW, "providers": [dict(base, sample_ts=NOW - 3 * 3600)]}, None, 38, 0, k, NOW, TODAY))
+        self.assertNotIn("sample", fresh)
+        self.assertIn("sample 3h", old)
+
     def test_trend_input_is_validated(self):
         junk = [None, 5, {"provider": "x"}, {"provider": "claude", "row": True, "at": NOW, "pct": 1}, {"provider": "claude", "row": 0, "at": float("nan"), "pct": 1},
                 {"provider": "claude", "row": 0, "at": NOW, "pct": 500}, {"provider": "other", "row": 0, "at": NOW, "pct": 1}]

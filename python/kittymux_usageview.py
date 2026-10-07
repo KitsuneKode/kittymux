@@ -162,17 +162,21 @@ def trend_lines(data, width, now=None):
         p, r, t, v = (s.get("provider"), s.get("row"), s.get("at"), s.get("pct"))
         if p not in ("claude", "codex", "cursor", "devin") or not isinstance(r, int) or isinstance(r, bool) or not 0 <= r < 16:
             continue
+        label = s.get("label")
+        label = label if isinstance(label, str) and 0 < len(label) <= 6 and label.isalnum() else None
         if not all((isinstance(n, (int, float)) and not isinstance(n, bool) and math.isfinite(n) for n in (t, v))):
             continue
         if not 0 <= v <= 100 or not end - 47 * 3600 <= t <= end:
             continue
-        series.setdefault(p, {}).setdefault(r, {})[int(t // 3600) * 3600] = v
+        series.setdefault(p, {}).setdefault((label or f"#{r}", r), {})[int(t // 3600) * 3600] = v      # a quota is its label; a row POSITION only for old samples
     out = {}
     blocks = "▁▂▃▄▅▆▇█"
     for p, row_points in series.items():
-        points = row_points[min(row_points)]
+        key = max(row_points, key=lambda k: (len(row_points[k]), -k[1]))       # the quota with the most hours on record (the lowest row on a tie)
+        points = row_points[key]
         if len(points) < 2:
             continue
+        tag = key[0] if not key[0].startswith("#") else "first quota"
         n = min(48, max(2, width))
         values = []
         for i in range(n):
@@ -180,12 +184,14 @@ def trend_lines(data, width, now=None):
             b = end - (48 - (i + 1) * 48 // n) * 3600 + 3600
             group = [(t, v) for t, v in points.items() if a <= t < b]
             values.append("·" if not group else blocks[min(7, round(max(group)[1] * 7 / 100))])
-        captions = [("48h quota", "muted"), ("0–100% · gap", "muted")] if width < 16 else [("48h · first quota · 0–100%", "muted"), ("· no recorded sample", "muted")]
+        captions = [("48h quota", "muted"), ("0–100% · gap", "muted")] if width < 16 else [(f"48h · {tag} · 0–100%", "muted"), ("· no recorded sample", "muted")]
         out[p] = [("".join(values), "accent"), *captions]
     return out
 
 
 LIVE_STALE_S = 300.0
+SAMPLE_QUIET_S = 600.0       # a provider report younger than this is just "now"
+SAMPLE_STALE_S = 3600.0      # older than this is drawn as a warning
 
 
 def _live_chips(kit: U.Kit, data, provider: dict, name: str, now: float, bg: int) -> list:
@@ -203,6 +209,11 @@ def _live_chips(kit: U.Kit, data, provider: dict, name: str, now: float, bg: int
             chips.append(kit.chip(text, "warm" if stale else "muted", on=bg))
         else:
             chips.append(kit.chip("live · age unknown", "warm", on=bg))
+    sample = M.num(provider.get("sample_ts"))
+    if sample and sample > 0:                                  # the provider's own last report: an old one is not "now"
+        age = max(0.0, now - sample)
+        if age >= SAMPLE_QUIET_S:
+            chips.append(kit.chip(f"sample {fmt_span(age)} ago", "warm" if age >= SAMPLE_STALE_S else "muted", on=bg))
     msg = provider.get("live_error")
     if msg:
         chips.append(kit.chip("⊘ " + kittymux_place.clean(str(msg)[:200])[:60], "warm", on=bg))

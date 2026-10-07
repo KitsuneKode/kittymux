@@ -98,6 +98,37 @@ wait_text "tabs" || fail "the Agents view never drew its header"
 screen | grep -q "▦\|Agents" || fail "the Agents view has no tab strip"
 shot agents
 
+# buttons are buttons: a keycap lights up under a real pointer and a real click does what its key does
+cell() {                      # cell TEXT -> "col row" of the first screen cell where TEXT starts (empty when absent)
+  screen | python3 -c "
+import sys
+t = sys.argv[1]
+for r, ln in enumerate(sys.stdin.read().split('\n')):
+    c = ln.find(t)
+    if c >= 0:
+        print(c, r); break" "$1"
+}
+point() {                     # point COL ROW: the pointer to the middle of that cell (real motion events, a few steps)
+  local px py
+  px=$(( ($1 * GW + GW / 2) / COLS + GX )); py=$(( ($2 * GH + GH / 2) / LINES_N + GY ))
+  X mousemove $((px - 8)) $((py - 3)); sleep 0.15; X mousemove $((px - 3)) $((py - 1)); sleep 0.15; X mousemove "$px" "$py"; sleep 0.6
+}
+read -r JC JR <<<"$(cell join)"
+[ -n "${JC:-}" ] || fail "Agents: the action bar (jump / join / detach / find) is not drawn"
+point "$JC" "$JR"
+redraw_keep_pointer() { sleep 0.3; }
+DISPLAY=$DISP import -window root -crop "${GW}x${GH}+${GX}+${GY}" +repage "$OUT/agents-hover.png" 2>/dev/null
+hex=$(convert "$OUT/agents-hover.png" -format '%[hex:u.p{'"$(( ((JC - 1) * GW + GW / 2) / COLS ))"','"$(( (JR * GH + GH / 4) / LINES_N ))"'}]' info: 2>/dev/null)   # the padding cell left of the label: no letter antialiasing in it
+echo "hovered keycap pixel: $hex"
+[ "$hex" = "F08FB8" ] || fail "Agents: the keycap under the pointer did not light up in the accent (pixel $hex)"
+read -r FC FR <<<"$(cell find)"
+[ -n "${FC:-}" ] || fail "Agents: no find button"
+point "$FC" "$FR"; X click 1; sleep 0.8
+screen | grep -q "▏" || fail "Agents: clicking the find button did not open the search"
+key Escape
+screen | grep -q "▏" && fail "Agents: Esc did not close the search"
+X mousemove $((GX + GW - 4)) $((GY + 4)); sleep 0.4        # pointer away: nothing stays lit
+
 key u
 wait_text "4 providers" || fail "the Usage view never drew four providers (is the collector reading the fixture?)"
 screen | grep -q "Codex" || fail "Usage: the first provider's card is missing"
@@ -108,6 +139,14 @@ if [ "$COLS" -ge 32 ]; then      # narrower panels drop the countdown on purpose
   screen | grep -q "plus" || fail "Usage: the plan chip is missing"
 fi
 shot usage-codex
+
+read -r DC DR <<<"$(cell details)"                              # the details button
+[ -n "${DC:-}" ] || fail "Usage: no details button in the footer"
+point "$DC" "$DR"; X click 1; sleep 0.8
+screen | grep -q "KITTYMUX_USAGE_LIVE" || fail "Usage: clicking details did not show the source notes"
+point "$DC" "$DR"; X click 1; sleep 0.8
+screen | grep -q "KITTYMUX_USAGE_LIVE" && fail "Usage: clicking details again did not hide them"
+X mousemove $((GX + GW - 4)) $((GY + 4)); sleep 0.3
 
 key Right
 wait_text "Claude" || fail "Usage: Right did not pick the second provider"
@@ -139,8 +178,10 @@ shot inbox-ledger
 # dismiss is reversible: x hides the card and the footer offers z for a few seconds; z brings it back; the offer expires by itself
 key g
 screen | grep -q "4 unread" || fail "Inbox: expected 4 unread before dismissing"
-key x
-wait_text "3 unread" || fail "Inbox: x did not dismiss the picked card"
+read -r XC XR <<<"$(cell dismiss)"                              # the footer's dismiss button (the card's own button says Dismiss with a capital)
+[ -n "${XC:-}" ] || fail "Inbox: no dismiss button in the footer"
+point "$XC" "$XR"; X click 1
+wait_text "3 unread" || fail "Inbox: clicking the dismiss keycap did not dismiss the picked card"
 screen | grep -q "z .*undo" || fail "Inbox: the footer does not offer z to undo a dismissal"
 shot inbox-undo
 key z

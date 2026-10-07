@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import types
 import time
 from pathlib import Path
 
@@ -38,6 +39,7 @@ for _d in (_CONFIG_DIR, _source_dir()):
             sys.path.remove(_d)
         sys.path.insert(0, _d)
 import kittymux_agents  # noqa: E402
+import kittymux_agentsview  # noqa: E402
 import kittymux_features  # noqa: E402
 import kittymux_deck as deck  # noqa: E402
 import kittymux_git  # noqa: E402
@@ -526,6 +528,7 @@ class Sidebar(Handler):
 
     def _set_view(self, view):
         self._view = view
+        self._foot_hot = None
         if view == "usage":
             self._request_usage()
         if view == "agents":
@@ -555,6 +558,19 @@ class Sidebar(Handler):
             line = line + [kittymux_ui.S(hint + " ", self.pal.faint, self.pal.bar)]
         return self._ansi(line)
 
+    def _footer(self, lead: list, pairs: list, width: int) -> str:
+        """Clickable keycaps after an optional lead (e.g. "+3 more"). Records where each drew so a click or a hover can find it; the one the
+        pointer is on lights up."""
+        pairs = [x if len(x) == 3 else (x[0], x[1], None) for x in pairs]          # (key, label[, token]): no token = a hint, not a button
+        lead_w = kittymux_ui.line_cells(lead, self.kit.cells)
+        line, regions = kittymux_agentsview.action_bar(self.kit, pairs, max(0, width - lead_w), getattr(self, "_foot_hot", None))
+        self._foot_regions = [(x0 + lead_w, x1 + lead_w, token, i) for x0, x1, token, i in regions]
+        return self._ansi(lead + line)
+
+    def _press(self, token: str) -> None:
+        """A click on a keycap does exactly what the key does: the same handler, a synthetic press."""
+        self.on_key_event(types.SimpleNamespace(type=EventType.PRESS, key=token, mods=0, text=""))
+
     def _draw_handle(self, cols: int, rows_n: int) -> None:
         if self._can_drag():                      # the drag handle: lights up on hover / while dragging
             p = self.pal
@@ -573,7 +589,8 @@ class Sidebar(Handler):
         for y in range(page):
             i = scroll + y
             w(set_cursor_position(0, y + 2) + (self._ansi(lines[i]) if i < len(lines) else blank))
-        w(set_cursor_position(0, height - 1) + self._ansi(self.kit.keycaps(footer, width)))
+        self._foot_y = height - 1
+        w(set_cursor_position(0, height - 1) + self._footer([], footer, width))
         self._draw_handle(cols, height)
         self.flush()
         return scroll
@@ -584,7 +601,7 @@ class Sidebar(Handler):
                                     details=self._usage_details)
         self._usage_sel = v.sel
         self._usage_scroll = self._draw_body(cols, height, v.header, v.lines, getattr(self, "_usage_scroll", 0),
-                                             [("←→", "provider"), ("r", "refresh"), ("d", "details" if not self._usage_details else "hide"), ("a", "agents")])
+                                             [("r", "refresh", "R"), ("d", "details" if not self._usage_details else "hide", "D"), ("←→", "pick"), ("a", "agents", "A")])
         self._usage_regions = [(x0, x1, y0 - self._usage_scroll + 2, y1 - self._usage_scroll + 2, idx) for x0, x1, y0, y1, idx in v.tiles]
 
     def _draw_inbox(self, cols, height):
@@ -594,9 +611,9 @@ class Sidebar(Handler):
         if v.cards:                                                       # keep the picked card on screen
             y0, y1, _ = v.cards[v.sel]
             top = 0 if v.sel == 0 else len(v.lines) if v.sel == v.count - 1 else y0 if y0 < top else y1 - page if y1 > top + page else top      # the last card reveals what is under it (the ledger)
-        footer = [("j k", "move"), ("⏎", "jump"), ("x", "dismiss"), ("tab", "filter")]
+        footer = [("⏎", "jump", "ENTER"), ("x", "dismiss", "X"), ("j k", "move"), ("tab", "filter", "TAB")]       # buttons first: a narrow panel drops from the right
         if self._undo_live():                                             # the way back is offered where the hand just was, replacing what it does not need
-            footer = [("z", "undo " + (f"{len(self._inbox_undo[0])} dismissed" if len(self._inbox_undo[0]) > 1 else "dismiss"))] + footer[:2]
+            footer = [("z", "undo " + (f"{len(self._inbox_undo[0])} dismissed" if len(self._inbox_undo[0]) > 1 else "dismiss"), "Z")] + footer[:2]
         self._inbox_scroll = self._draw_body(cols, height, v.header, v.lines, top, footer)
         off = 2 - self._inbox_scroll
         self._inbox_regions = ([(x0, x1, off, filt) for x0, x1, filt in v.chips], [(y0 + off, y1 + off, i) for y0, y1, i in v.cards],
@@ -776,77 +793,13 @@ class Sidebar(Handler):
         return out
 
     def _row_lines(self, r, selected: bool, bar_w: int) -> tuple[str, str]:
-        p = self.pal
-        bg = p.surface_hi if selected else p.bar
-        rail = (_RAIL, p.accent, False) if r.current else (" ", p.text, False)
-        glyph_fg = kittymux_agents.AGENTS[r.agent].brand if r.agent in kittymux_agents.AGENTS else p.muted
-        if r.tool:                                   # quiet tool glyph, not a brand mark
-            icon = (r.glyph, p.muted if selected or r.current else p.faint, False)
-        else:
-            icon = (r.glyph or " ",
-                    glyph_fg if selected or r.current else kittymux_theme.blend(glyph_fg, p.bg, 0.6), False)
-        state_fg = {"waiting": p.waiting, "working": p.working, "limited": p.alert,
-                    "done": kittymux_theme.blend(p.done, p.bg, 0.65), "unread": p.faint}.get(r.status)
-        title_fg = p.text if (selected or r.current) else p.muted
-        title = deck.pad(r.title or "—", bar_w - 3 - 2, _cells)
-        dot = (kittymux_agents.state_glyph(r.status, animate=self._motion()), state_fg, r.status in kittymux_agents.NEEDS_YOU) if state_fg is not None else (" ", p.text, False)
-        line1 = self._line([rail, icon, (" ", p.text, False),
-                            (title, title_fg, selected or r.current), dot, (" ", p.text, False)], bar_w, bg)
-
-        idx = str(r.index)
-        room = bar_w - 3 - 1 - len(idx) - 1
-        sub_fg = p.muted if (selected or r.current) else p.faint
-        parts = []
-        if r.branch:
-            parts.append((f"{_ICON_BRANCH} {r.branch}", sub_fg))
-        elif r.cwd:
-            parts.append((f"{_ICON_FOLDER} {_short_home(r.cwd)}", sub_fg))
-        if r.pr:
-            parts.append((r.pr, p.info))
-        if r.ports:
-            parts.append((" ".join(f":{n}" for n in r.ports[:3]), p.info))
-        if r.panes > 1:
-            parts.append((f"{r.panes} panes", p.faint))
-        tail = [(r.status, state_fg)] if r.status in kittymux_agents.NEEDS_YOU else []
-        if r.msg:
-            tail = [(r.status, state_fg)]
-        reserve = sum(_cells(t) + 2 for t, _ in tail)
-        cells, used = [], 0
-        for i, (text, fg) in enumerate(parts):
-            sep = "  " if i else ""
-            avail = room - used - reserve - _cells(sep)
-            if avail <= 1:
-                break
-            piece = sep + deck.fit(text, avail, _cells)
-            cells.append((piece, fg, False))
-            used += _cells(piece)
-        for text, fg in tail:
-            sep = "  " if used else ""
-            if room - used >= _cells(sep + text):
-                cells.append((sep + text, fg, False))
-                used += _cells(sep + text)
-        lead = [rail if r.current else (" ", p.text, False), (" ", p.text, False), (" ", p.text, False)]
-        body = self._line(lead + cells, bar_w - 1 - len(idx), bg)
-        line2 = body + self._seg(idx, fg=p.faint, bg=bg) + self._seg(" ", bg=bg)
-        return line1, line2
+        home = os.path.expanduser("~")
+        animate = self._motion()
+        return (self._ansi(kittymux_agentsview.title_row(self.kit, r, selected, False, bar_w, animate)),
+                self._ansi(kittymux_agentsview.context_row(self.kit, r, selected, False, bar_w, home)))
 
     def _pane_line(self, r, j: int, bar_w: int, hovered: bool) -> str:
-        """`   ├ ◆ title ........ ⠋` — one child line of a split tab (└ on the last)."""
-        p = self.pal
-        pd = r.pane_rows[j]
-        last = j == min(len(r.pane_rows), deck.MAX_PANE_ROWS) - 1
-        bg = p.surface if hovered else p.bar
-        brand = kittymux_agents.AGENTS[pd.agent].brand if pd.agent in kittymux_agents.AGENTS else p.muted
-        lit = pd.active or hovered
-        icon_fg = (brand if lit else kittymux_theme.blend(brand, p.bg, 0.6)) if pd.agent else (p.muted if lit else p.faint)
-        state_fg = {"waiting": p.waiting, "working": p.working, "limited": p.alert,
-                    "done": kittymux_theme.blend(p.done, p.bg, 0.65)}.get(pd.state)
-        mark = (kittymux_agents.state_glyph(pd.state), state_fg, pd.state in kittymux_agents.NEEDS_YOU) \
-            if state_fg is not None else (" ", p.text, False)
-        title = deck.pad(pd.title or pd.agent or "shell", bar_w - 7 - 3, _cells)
-        return self._line([("   ", p.text, False), ("└" if last else "├", p.line, False), (" ", p.text, False),
-                           (pd.glyph or "·", icon_fg, False), (" ", p.text, False),
-                           (title, p.text if lit else p.muted, pd.active), mark, (" ", p.text, False)], bar_w, bg)
+        return self._ansi(kittymux_agentsview.pane_row(self.kit, r, j, hovered, bar_w, self._motion()))
 
     @Handler.atomic_update
     def draw_screen(self) -> None:
@@ -863,17 +816,15 @@ class Sidebar(Handler):
         snap = self.snap
         # header: counts + hint
         waiting = sum(1 for r in snap.rows if r.status in kittymux_agents.NEEDS_YOU)
-        head = [(f" {len(snap.rows)} tabs", p.text, True)]
-        if waiting:
-            head.append((f"  {kittymux_agents.state_glyph('waiting')} {waiting} waiting", p.waiting, True))
-        w(set_cursor_position(0, 0) + self._line(head, bar_w, p.bar))
+        working = sum(1 for r in snap.rows if r.status == "working")
+        w(set_cursor_position(0, 0) + self._ansi(kittymux_agentsview.summary_row(self.kit, len(snap.rows), waiting, working, bar_w, self._motion())))
         if self.searching or self.query:
             total = len(self.full.rows) if self.full is not None else len(snap.rows)
             line = [(" / ", p.accent, True), (self.query, p.text, True), ("▏" if self.searching else "", p.accent, False),
                     (f"   {len(snap.rows)}/{total}", p.faint, False)]
             w(set_cursor_position(0, 1) + self._line(line, bar_w, p.surface))
         else:
-            w(set_cursor_position(0, 1) + self._tabs_line(bar_w, "/ search"))
+            w(set_cursor_position(0, 1) + self._tabs_line(bar_w))
         # list
         avail = self._avail()
         y = 2
@@ -881,11 +832,7 @@ class Sidebar(Handler):
         drawn = 0
         for off, it in deck.visible(snap.items, self.scroll, avail):
             if it.kind == "header":
-                col = p.accent if it.current else p.faint
-                cnt = f"{it.count}  "
-                w(set_cursor_position(0, y + off) + self._line(
-                    [(" " + it.label.upper(), col, True)], bar_w - len(cnt), p.bar)
-                    + self._seg(cnt, fg=p.faint, bg=p.bar))
+                w(set_cursor_position(0, y + off) + self._ansi(kittymux_agentsview.header_row(self.kit, it.label, it.count, it.current, bar_w)))
                 drawn = off + 1
             elif it.kind == "pane":
                 w(set_cursor_position(0, y + off) + self._pane_line(
@@ -901,9 +848,11 @@ class Sidebar(Handler):
             w(set_cursor_position(0, yy) + blank)
         shown = sum(1 for _o, it in deck.visible(snap.items, self.scroll, avail) if it.kind == "row")
         hidden = sum(1 for it in snap.items[self.scroll:] if it.kind == "row") - shown
-        if hidden > 0:
-            w(set_cursor_position(0, rows_n - 1 - dr) + self._line(
-                [(f" +{hidden} more", p.faint, False)], bar_w, p.bar))
+        more = [kittymux_ui.S(f" +{hidden} more ", self.kit.ink(p.faint, p.bar, 3.0), p.bar)] if hidden > 0 else []
+        self._foot_y = rows_n - 1 - dr
+        # most useful first: a narrow panel drops buttons from the right
+        w(set_cursor_position(0, self._foot_y) + self._footer(
+            more, [("⏎", "jump", "ENTER"), ("/", "find", "/"), ("a", "join", "A"), ("t", "detach", "T")], bar_w))
         if not snap.rows:
             w(set_cursor_position(0, 2) + self._line([(" no tabs", p.faint, False)], bar_w, p.bar))
         if dr and snap.rows:                      # the preview drawer: what the hovered tab/pane shows right now
@@ -1137,8 +1086,22 @@ class Sidebar(Handler):
     def _pane_at(self, y: int) -> tuple:
         return deck.pane_at(self.snap.items, self.scroll, self._avail(), y - 2)
 
+    def _foot_hit(self, mouse_event):
+        """(index, token) of the keycap under the pointer, else None."""
+        if mouse_event.cell_y != getattr(self, "_foot_y", -1):
+            return None
+        for x0, x1, token, i in getattr(self, "_foot_regions", []):
+            if x0 <= mouse_event.cell_x < x1:
+                return i, token
+        return None
+
     def on_mouse_move(self, mouse_event) -> None:
-        if getattr(self, "_view", "agents") != "agents":
+        hit = self._foot_hit(mouse_event)
+        hot = hit[0] if hit else None
+        if hot != getattr(self, "_foot_hot", None):
+            self._foot_hot = hot                              # a keycap lights up under the pointer: it is a button before it is pressed
+            self.draw_screen()
+        if hit or getattr(self, "_view", "agents") != "agents":
             return
         if mouse_event.cell_x >= self._geom()[2]:
             return
@@ -1154,6 +1117,10 @@ class Sidebar(Handler):
     def on_click(self, mouse_event) -> None:
         x, y = mouse_event.cell_x, mouse_event.cell_y
         view = getattr(self, "_view", "agents")
+        hit = self._foot_hit(mouse_event)
+        if hit and not (self.searching and view == "agents"):
+            self._press(hit[1])
+            return
         if y == 1 and not self.searching:                              # the tab strip, in every view
             for x0, x1, name in self._tab_regions:
                 if x0 <= x < x1:

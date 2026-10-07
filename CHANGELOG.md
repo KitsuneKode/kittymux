@@ -5,6 +5,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 ## [Unreleased]
 
 ### Added
+- **Agents view redesign.** One bright thing per row (the title), a state mark at the right edge, a stripe and a faint warm tint on rows that need you, and detail (PR, ports) only on the picked or hovered row. Rows are drawn by a pure module, `kittymux_agentsview`, tested at every width in both themes.
+- **Clickable buttons in every panel view.** A row of keycaps under the list (`⏎ jump`, `/ find`, `a join`, `t detach`; `r`/`d` in Usage; `⏎`/`x`/`tab` in Inbox) does what its key does when clicked, and lights up under the pointer. Narrow panels drop buttons from the right, so the most useful stay.
+- **Usage numbers you can trust.** The Codex collector picks the newest limit *event* by its own timestamp (not the newest file name), reads only the tail of each rollout, uses the window length the event reports, and shows a window that has already ended as `window reset · no newer sample` instead of its old percentage. A provider's report older than ten minutes is dated on its card, and trend history is recorded at the time a snapshot describes and keyed by quota label (`5h`, `wk`), not by row position.
+- **Usage trend and live age on the card** (ported from the first text dashboard): a 48-hour sparkline, the age and any failure of a live fetch, and `d` for source notes. The render is bounded however many rows a cache claims.
 - **Dismiss can be undone.** In the panel's Inbox, `z` brings back what the last `x` or `X` hid; the footer offers it for 8 seconds and then drops the offer on its own. New inbox op `restore` (older readers ignore it).
 - **`motion` switch** (`kittymux features off motion`, `KITTYMUX_MOTION=off`): the working spinner holds one still frame in the bar and the panel, and the 10 fps redraw timers stop. On by default.
 - **Open the panel from anywhere**: a documented Hyprland bind and an optional `layerrule` for a slide-in from the screen edge (the panel's layer name is `kittymux-panel`).
