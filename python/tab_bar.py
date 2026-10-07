@@ -44,6 +44,7 @@ import kittymux_launcher  # noqa: E402
 import kittymux_layout  # noqa: E402
 import kittymux_panetitle  # noqa: E402
 import kittymux_place  # noqa: E402
+import kittymux_reload  # noqa: E402
 import kittymux_scan  # noqa: E402
 import kittymux_state  # noqa: E402
 import kittymux_theme  # noqa: E402
@@ -52,13 +53,13 @@ import kittymux_titles  # noqa: E402
 # kitty re-runs this file on every config reload, but Python keeps imported modules
 # for the life of the process — so after an upgrade a running kitty would keep serving
 # the OLD helpers to the NEW tab bar (AttributeError on any name added since). Reload
-# them every time this file runs.
-for _mod in (kittymux_theme, kittymux_agents, kittymux_git, kittymux_features, kittymux_place, kittymux_panetitle, kittymux_layout,
-             kittymux_state, kittymux_scan, kittymux_barsize, kittymux_deck, kittymux_titles):
-    try:
-        importlib.reload(_mod)
-    except Exception:
-        pass
+# EVERY kittymux module the process has imported, dependencies first (kittymux_reload):
+# a hand-kept list missed the helpers that are only imported on first use.
+try:
+    importlib.reload(kittymux_reload)
+    kittymux_reload.reload_all()
+except Exception:
+    pass
 try:
     kittymux_scan.restart()          # the scan timer must run the reloaded code, and never stack
     kittymux_barsize.install()       # drag-to-resize + spacer-aware tab hit test (idempotent; the

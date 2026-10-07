@@ -204,8 +204,8 @@ Markers are verified against live sessions per agent in `docs/compatibility.md` 
 - Ownership: kitty owns tabs/panes/sessions; the WM owns OS-window borders
   and global chords — check `hyprctl binds` before taking a `ctrl+alt+` key.
 - **kitty caches watcher modules per path for the life of the process** — `on_load` and `pane-state.py` run once.
-  Anything that must pick up an upgrade on `load_config` lives in a helper module that `tab_bar.py` reloads
-  (it IS re-run on every config reload) and restarts: `kittymux_scan.restart()`, `kittymux_barsize.install()`.
+  Anything that must pick up an upgrade on `load_config` lives in a `kittymux_*.py` helper: `tab_bar.py` (re-run on every config reload) refreshes EVERY kittymux module the process has imported, dependencies first (`kittymux_reload.reload_all` — a hand-kept list
+  missed the helpers imported lazily on first use, so a day-old inbox/sockets module served a new scanner), then restarts what runs on timers: `kittymux_scan.restart()`, `kittymux_barsize.install()`.
 - Long-lived state (timer ids etc.) lives in `sys.modules["_kittymux_scan_rt"]`, never in plain module
   globals — a reload re-executes the file and would forget a live timer (→ stacked timers = leak).
 - **A look is verified by looking.** Before and after a visual change render the bar with `tests/shot_bar.sh` (and the panel with `tests/shot_panel.sh`, narrow too: a 26-column panel found three layout bugs unit tests missed) (dark AND light, the 30-column bar and the narrowest one) and read the PNG — unit tests did not catch a hue
