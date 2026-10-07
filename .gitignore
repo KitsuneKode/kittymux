@@ -6,3 +6,15 @@ __pycache__/
 .worktrees/
 assets/brand/candidates/
 assets/brand/check-*.png
+
+# site/ (generated; see site/README.md)
+site/node_modules/
+site/dist/
+site/.output/
+site/.vercel/
+site/.source/
+site/.shots/
+site/content/docs/
+site/public/assets/*
+!site/public/assets/shots/
+site/src/generated/
