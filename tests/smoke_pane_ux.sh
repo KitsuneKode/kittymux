@@ -83,7 +83,7 @@ sleep 1.5
 X key u
 sleep .25
 RC get-text --match cmdline:sidebar-kit.py > "$RUN/usage.txt"
-rg 'Provider limits' "$RUN/usage.txt" >/dev/null
+rg 'Local snapshots' "$RUN/usage.txt" >/dev/null
 rg '100% used' "$RUN/usage.txt" >/dev/null
 if [ -n "${SHOT:-}" ]; then RC screenshot "${SHOT}.usage.png" >/dev/null; fi
 X key Escape

@@ -49,6 +49,14 @@ class UsageTests(unittest.TestCase):
             usage.get_data(True)
         self.assertEqual(json.loads(usage.C.HIST.read_text())["2026-03-09"]["burn"], 2345)
 
+    def test_sync_live_quota_history_uses_last_success_after_merge(self):
+        mod = SimpleNamespace(__name__="claude", collect=lambda: {"name":"claude", "rows":[]},
+                              live=lambda cached: {"ts":7200, "attempt_ts":9000, "rows":[{"label":"5h", "pct":63}]})
+        with patch.object(usage,"load_collectors",return_value=[mod]), patch.object(usage.C,"LIVE",True), patch("time.time",return_value=9000):
+            usage.get_data(True)
+        samples=json.loads((usage.C.STATE_DIR/"agent-usage-trends.json").read_text())["samples"]
+        self.assertEqual(samples,[{"provider":"claude","row":0,"at":7200,"pct":63}])
+
     def test_legacy_weekly_history_is_not_rendered_as_daily_burn(self):
         usage.C.HIST.write_text(json.dumps({"2026-03-08": {
             "claude_fresh": 9900000, "devin_tok": 2000, "burn": 9902000, "other": "preserved"}}))

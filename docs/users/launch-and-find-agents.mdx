@@ -79,6 +79,7 @@ When an agent's run starts, kittymux remembers the state of the repository aroun
 ```sh
 kittymux changes                 # this window: files and lines changed since its run started
 kittymux changes --files --json  # every file, machine-readable
+kittymux changes --diff          # bounded patch since the run baseline
 kittymux changes --all           # the cached summary of every window in this kitty
 ```
 

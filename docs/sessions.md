@@ -22,7 +22,7 @@ kitty alone restores an agent window as a **fresh** `claude`/`codex`: layout and
    (`claude --dangerously-skip-permissions --model opus` → `… --resume <id>`) and stripping stale hook state. Nothing is guessed: see "How the session id is found".
    **A restored window asks first** (see below) — it never silently re-enters a conversation.
 2. **Autosave — the last state of things.** The scanner saves this kitty (`autosave-<pid>.kitty-session`, newest 5 kept) when the set of windows changes and has settled for 20 s (at most
-   once a minute) and at least every 15 minutes. `kittymux sessions restore last` brings the newest back. Off: `touch ~/.local/state/kittymux/autosave-off` or `KITTYMUX_AUTOSAVE=0`.
+   once a minute) and at least every 15 minutes. A confirmed application quit also captures Kitty’s native session while its panes are alive and publishes it through an offline writer, so it does not depend on the closing socket. Cancelled quits do not save; uncatchable kills use the last periodic snapshot. `kittymux sessions restore last` brings the newest back. Off: `touch ~/.local/state/kittymux/autosave-off` or `KITTYMUX_AUTOSAVE=0`.
 3. **Templates.** `kittymux sessions new api --template agent --agent claude --cwd ~/code/api` writes a ready session (an agent with a shell beside it). Shipped: `plain`, `agent`, `duo`
    (two agents + a shell), `review` (agent + the working-tree diff + a shell). Your own `~/.config/kittymux/templates/<name>.kitty-session` wins. Every template is checked against kitty's own parser in the tests.
 4. **The restore prompt.** In the saved file an agent window's command is `kittymux resume-prompt --info <json>` (the json carries the agent, the session id, the original command

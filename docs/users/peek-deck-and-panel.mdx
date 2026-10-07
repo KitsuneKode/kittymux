@@ -101,8 +101,15 @@ Separate from the cards above, `ctrl+alt+i` shows a small pill with the current 
 
 ## Agents and Usage in the persistent panel
 
-Bind `kittymux panel toggle` to Mod+N in your window manager to reach it from any app. The panel stays open when you jump, merge or detach. Click **Agents / Usage** or press `u` to switch views. Usage shows provider quotas, local numbers and reset times; `↑/↓` scroll and `r` refreshes. Escape returns to Agents; `q` or the global toggle closes it. Network requests remain [opt-in](/docs/users/customization#usage-hud).
+Bind `kittymux panel toggle` to Mod+N in your window manager to reach it from any app. The panel stays open when you jump, merge or detach. Click **Agents / Usage** or press `u` to switch views. Usage groups providers into cards with remaining quota, separate used/remaining meter segments, reset times and word-wrapped local numbers. `↑/↓` scroll, `r` refreshes and `d` reveals source notes and errors. Escape returns to Agents; `q` or the global toggle closes it. Network requests remain [opt-in](/docs/users/customization#usage-hud).
 
 Hover a tab or its pane row for a preview. Requests wait briefly while the pointer crosses rows and stale results are discarded. The preview identifies its pane and shows a numbered layout from kitty's real geometry. In Peek, press a digit or click a pane row to change the preview without moving focus; Enter jumps to that pane. Long titles and paths wrap, and arrows / Page Up / Page Down scroll the card.
 
 Kitty 0.49.2's native tab bar receives no idle hover events. Right-click opens Peek there. Its native resize cursor also requires two visible panes; a single or zoomed pane uses the bar-side grab zone with a hand pointer. The docked panel can show its own resize cursor because it receives motion events.
+
+
+### Reading the Usage graphs
+
+A quota sparkline shows the first quota row's recorded hourly samples over 48 hours on a fixed 0–100% scale. Daily token bars show seven calendar days of exact local Claude counters relative to their peak. Dots mean **unrecorded**, not zero; today's tokens are partial. A new installation starts collecting quota history rather than inventing a trend. An elapsed local usage window is labeled elapsed, never remaining quota.
+
+The view reports local refresh age and each live provider’s last-success age. Stale live data and failed fetches remain visible in the overview. History uses the original live observation timestamp, so a failed refresh does not create a fresh quota sample. It reads cached usage on the existing background worker and skips agent, PR and port scans while Usage is visible. Colours follow your kitty theme. Live provider requests remain opt-in.

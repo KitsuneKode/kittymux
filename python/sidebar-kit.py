@@ -43,6 +43,7 @@ import kittymux_git  # noqa: E402
 import kittymux_theme  # noqa: E402
 import kittymux_usageview  # noqa: E402
 import kittymux_place  # noqa: E402
+import kittymux_files  # noqa: E402
 
 _STATE_DIR = Path(os.environ["KITTYMUX_STATE"]) if os.environ.get("KITTYMUX_STATE") else \
     Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))) / "kittymux"
@@ -284,6 +285,7 @@ class Sidebar(Handler):
         self.preview_for = 0
         self._preview_inflight = False
         self._view, self._usage_scroll, self._usage_data = "agents", 0, {}
+        self._usage_history, self._usage_trends, self._usage_details = {}, {}, False
         self._usage_process, self._usage_last = None, 0.0
         self._preview_timer = None
         self._preview_rects = ()
@@ -324,15 +326,13 @@ class Sidebar(Handler):
         def work() -> None:
             snap = None
             try:
-                snap = self._collector.collect()
-                usage = {}
-                try:
-                    path = _STATE_DIR / "agent-usage.json"
-                    if path.stat().st_size <= 2 * 1024 * 1024:
-                        usage = json.loads(path.read_text())
-                except (OSError, ValueError):
-                    pass
-                self._post(self._apply_usage, usage)
+                # Usage needs no agent ls/PR/ports scan. Read files on this worker only.
+                if getattr(self, "_view", "agents") == "agents":
+                    snap = self._collector.collect()
+                usage = kittymux_files.read_json(_STATE_DIR / "agent-usage.json", {})
+                history = kittymux_files.read_json(_STATE_DIR / "agent-usage-history.json", {})
+                trends = kittymux_files.read_json(_STATE_DIR / "agent-usage-trends.json", {})
+                self._post(self._apply_usage, usage, history, trends)
             except Exception:
                 _log_error()
             finally:
@@ -346,9 +346,11 @@ class Sidebar(Handler):
         except Exception:
             pass
 
-    def _apply_usage(self, data):
+    def _apply_usage(self, data, history=None, trends=None):
         if self._alive and isinstance(data, dict):
             self._usage_data = data
+            if history is not None: self._usage_history = history
+            if trends is not None: self._usage_trends = trends
             if getattr(self, "_view", "agents") == "usage":
                 self.draw_screen()
 
@@ -377,18 +379,40 @@ class Sidebar(Handler):
             self._schedule_spin()
         self.draw_screen()
 
+    def _navigation_labels(self, cols):
+        active = getattr(self, "_view", "agents")
+        if cols < 28:
+            return (" A Agents ", " U ") if active == "agents" else (" A ", " U Usage ")
+        return " Agents [a] ", " Usage [u]"
+
+    def _navigation(self, cols):
+        p = self.pal
+        active = getattr(self, "_view", "agents")
+        labels = self._navigation_labels(cols)
+        return self._line([(labels[0], kittymux_theme.ensure_contrast(p.text if active == "agents" else p.faint, p.surface, 4.5), active == "agents"),
+                           (labels[1], kittymux_theme.ensure_contrast(p.text if active == "usage" else p.faint, p.surface, 4.5), active == "usage")], cols, p.surface)
+
     def _draw_usage(self, cols, height):
         p = self.pal
         self.write(set_cursor_position(0, 0) + self._line([(" Usage", p.text, True)], cols, p.bar))
-        self.write(set_cursor_position(0, 1) + self._line([(" Agents [a]  Usage [u]", p.accent, True)], cols, p.surface))
-        rows = kittymux_usageview.rows(getattr(self, "_usage_data", {}), cols, _cells)
+        self.write(set_cursor_position(0, 1) + self._navigation(cols))
+        rows = kittymux_usageview.dashboard(getattr(self, "_usage_data", {}), cols, _cells,
+                                           history=getattr(self, "_usage_history", {}),
+                                           trends=kittymux_usageview.trend_lines(getattr(self, "_usage_trends", {}), max(1, cols - 4)),
+                                           details=getattr(self, "_usage_details", False))
         page = max(1, height - 3)
         self._usage_scroll = max(0, min(getattr(self, "_usage_scroll", 0), max(0, len(rows) - page)))
         visible = rows[self._usage_scroll:self._usage_scroll + page]
         for y in range(page):
-            text, role = visible[y] if y < len(visible) else ("", "muted")
-            self.write(set_cursor_position(0, y + 2) + self._line([(text, getattr(p, role), role == "text")], cols, p.bar))
-        self.write(set_cursor_position(0, height - 1) + self._line([(" ↑↓ scroll · r refresh · a agents", p.faint, False)], cols, p.bar))
+            row = visible[y] if y < len(visible) else kittymux_usageview.Line(())
+            bg = p.surface if row.surface else p.bar
+            parts = [(text, kittymux_theme.ensure_contrast(p.line if role == "track" else getattr(p, role), bg, 3 if role == "track" else 4.5),
+                      role == "text") for text, role in row.runs]
+            self.write(set_cursor_position(0, y + 2) + self._line(parts, cols, bg))
+        hint = " ↑↓ scroll · r refresh · d details · esc back"
+        if cols < 44: hint = " ↑↓ · r refresh · d info · esc"
+        if cols < 28: hint = " ↑↓  r  d  esc"
+        self.write(set_cursor_position(0, height - 1) + self._line([(hint, kittymux_theme.ensure_contrast(p.faint, p.bar, 4.5), False)], cols, p.bar))
         self.flush()
 
     def _apply(self, snap) -> None:
@@ -647,7 +671,7 @@ class Sidebar(Handler):
                     (f"   {len(snap.rows)}/{total}", p.faint, False)]
             w(set_cursor_position(0, 1) + self._line(line, bar_w, p.surface))
         else:
-            w(set_cursor_position(0, 1) + self._line([(" Agents  |  Usage [u]  ·  / search", p.faint, False)], bar_w, p.bar))
+            w(set_cursor_position(0, 1) + self._navigation(bar_w))
         # list
         avail = self._avail()
         y = 2
@@ -779,6 +803,9 @@ class Sidebar(Handler):
                 self._set_view("agents")
             elif k == "Q":
                 self.quit_loop()
+            elif k == "D":
+                self._usage_details = not getattr(self, "_usage_details", False)
+                self.draw_screen()
             elif k == "R":
                 self._request_usage(force=True)
             elif k in ("J", "K", "UP", "DOWN", "PAGE_UP", "PAGE_DOWN"):
@@ -918,7 +945,9 @@ class Sidebar(Handler):
 
     def on_click(self, mouse_event) -> None:
         if mouse_event.cell_y == 1 and not self.searching:
-            self._set_view("usage" if mouse_event.cell_x >= 12 else "agents")
+            cols = self._geom()[2] if getattr(self, "_view", "agents") == "agents" else self.screen_size.cols
+            divider = _cells(self._navigation_labels(cols)[0])
+            self._set_view("usage" if mouse_event.cell_x >= divider else "agents")
             return
         if getattr(self, "_view", "agents") == "usage":
             return

@@ -128,7 +128,7 @@ features:
   - id: usage-hud
     label: Usage HUD
     status: shipped
-    description: Local usage and opt-in live quotas, in an overlay, separate window or persistent Agents and Usage panel.
+    description: Local usage and opt-in live quotas, with provider cards, quota meters and recorded trends in the persistent Agents and Usage panel; overlay and separate window also available.
   - id: file-refs
     label: Clickable file references
     status: shipped

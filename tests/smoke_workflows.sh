@@ -54,7 +54,7 @@ for _ in $(seq 60); do [[ -S "$T/a" && -S "$T/b" ]] && break; sleep 0.2; done
 # The attention CLI's established discovery convention uses PID-suffixed socket names.
 ln -s "$T/a" "$T/mykitty-$APID"
 ln -s "$T/b" "$T/mykitty-$BPID"
-export KITTYMUX_SOCKET_GLOB="$T/mykitty-*"
+export KITTYMUX_SOCKET_GLOB="$T/mykitty-*" KITTYMUX_SOCKET_DIRS="$T"
 python3 - "$ROOT" "$T" "$APID" "$BPID" <<'PY'
 import json, os, pathlib, subprocess, sys, time
 root, tmp = map(pathlib.Path, sys.argv[1:3])

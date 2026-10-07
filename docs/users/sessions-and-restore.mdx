@@ -24,7 +24,7 @@ kitty's `save_as_session --use-foreground-process` saves tabs, windows, the exac
 
 1. **Resume.** Before kitty saves, kittymux marks each agent window with its agent and, when known, its session id. After kitty writes the file, each agent's saved command becomes its resume command, keeping every flag it was started with. For example `claude --dangerously-skip-permissions --model opus` becomes the same command plus `--resume <id>`.
 2. **A prompt before resuming.** A restored agent window never silently re-enters a conversation. It shows what it would resume and waits for one key.
-3. **Autosave.** The scanner saves each kitty when its set of windows changes and has settled for 20 seconds, at most once a minute and at least every 15 minutes. The newest five are kept.
+3. **Autosave.** The scanner saves each kitty when its set of windows changes and has settled for 20 seconds, at most once a minute and at least every 15 minutes. The newest five periodic saves are kept. On a confirmed application quit in supported kitty versions, a reload-safe native callback also captures the latest layout before teardown. An offline worker rewrites verified exact agent resumes and atomically publishes it without using the closing socket. Cancelled quit prompts do not save; kills and crashes use the periodic save. Utility panels are excluded.
 4. **Templates.** A ready project session in one command.
 5. **A journal.** Every agent session is recorded as it runs, so nothing is lost between saves.
 

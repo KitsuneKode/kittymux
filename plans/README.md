@@ -8,14 +8,31 @@ conditions, and update your row when done.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| [007](007-fix-journal-stale-open-records.md) | Journal: agent exit inside a live window leaves a permanently "open" record | P1 | S | — | TODO |
-| [008](008-cleanup-dead-code-and-stale-artifacts.md) | Remove dead code: `_split_window_count`, `include-tab-bar.conf`, `/usr/bin/python3`, collector stat guard | P2 | S | — | TODO |
-| [009](009-proc-liveness-guard.md) | Guard `/proc` liveness checks so non-Linux hosts don't delete live state | P2 | XS | — | TODO |
-| [010](010-quit-time-autosave.md) | Final session snapshot on kitty quit (`on_quit` watcher) | P2 | S | — | TODO |
-| [011](011-changes-diff-view-and-doctor-bundle.md) | `changes --diff` patch view + `doctor --bundle` (T3 Code adoptions) | P3 | M | — | TODO |
-| [012](012-consolidate-shell-layer-into-cli.md) | Language strategy: no TS/Go rewrite — consolidate the ~5k-line shell layer into `bin/kittymux` + typed JSON schemas | P3 | M-L | — | TODO |
+| [007](007-fix-journal-stale-open-records.md) | Journal: agent exit inside a live window leaves a permanently "open" record | P1 | S | — | DONE (7699a5c; verified regression checks) |
+| [008](008-cleanup-dead-code-and-stale-artifacts.md) | Remove dead code: `_split_window_count`, `include-tab-bar.conf`, `/usr/bin/python3`, collector stat guard | P2 | S | — | DONE (7699a5c; verified regression checks) |
+| [009](009-proc-liveness-guard.md) | Guard `/proc` liveness checks so non-Linux hosts don't delete live state | P2 | XS | — | DONE (7699a5c; verified regression checks) |
+| [010](010-quit-time-autosave.md) | Final session snapshot on kitty quit (`on_quit` watcher) | P2 | S | — | DONE (validated follow-up) |
+| [011](011-changes-diff-view-and-doctor-bundle.md) | `changes --diff` patch view + `doctor --bundle` (T3 Code adoptions) | P3 | M | — | DONE (validated follow-up) |
+| [012](012-consolidate-shell-layer-into-cli.md) | Validated incremental nav/newtab/scratch and session helper ports | P3 | M-L | — | DONE (validated follow-up) |
 
-Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
+Status values: TODO | DONE (validated follow-up) | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
+
+## Follow-up execution (2026-10-07)
+
+The user approved the remaining work and plan revisions. Plans 010–012 below replace unsafe/risky sketches with bounded native capture, allowlisted diagnostics and incremental validated workflow ports. Plan [013](013-usage-panel-dashboard.md) improves Usage with proportional meters, compact cards and graphs of recorded data. Implementation and verification occurred in `.worktrees/usage-next` before integration.
+
+| Plan | Scope | Status |
+|---|---|---|
+| 010 | Native capture on confirmed quit, offline agent rewrite, reload-safe callback registration | DONE (validated follow-up) |
+| 011 | Bounded checkpoint patch view; allowlisted private diagnostics archive | DONE (validated follow-up) |
+| 012 | Validated socket/state/context boundaries; session helper and nav/newtab/scratch ports with shell shims | DONE (validated follow-up) |
+| 013 | Theme-derived Usage cards, distinct filled/empty meters, recorded quota/activity graphs, narrow/detail states | DONE (validated follow-up) |
+
+## Follow-up verification
+
+The full unit suite and private native smoke rigs cover quit capture/reload, session restore, owned workflows, pane UI persistence and private checkpoint snapshots. Usage was visually inspected in dark/light at 32 and 16 columns; the bar at 30 and 16 columns in both themes. No live provider requests were enabled. Final integration and desktop application evidence is recorded in `docs/audit-2026-10-07-plan-review.md`.
+
+A fresh independent reviewer found stale live-quota freshness/history and parked-session capture contamination; both received regression fixes. Its final review was interrupted by a service usage limit, so the remaining diff received author review rather than a completed independent sign-off.
 
 ## Findings verified during the audit and NOT planned
 
@@ -80,7 +97,7 @@ Selection: the operator said "go ahead" after the review, so plans were written 
 | [005](005-explicit-agent-status-via-hooks.md) | Explicit agent status via hooks → user var → watcher (heuristic as fallback) | P2 | M | 003, 004 | DONE |
 | [006](006-spike-persistent-panel-sidebar.md) | SPIKE: persistent docked `kitten panel` sidebar on Hyprland | P3 | M | 004 | DONE (GO — shipped as bin/mux-panel; see 006-spike-report.md) |
 
-Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
+Status values: TODO | DONE (validated follow-up) | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
 ## Dependency notes
 

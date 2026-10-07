@@ -95,6 +95,8 @@ def _history() -> dict:
 
 
 def _record_history(providers: list) -> None:
+    from kittymux_usagehistory import record
+    record(str(C.STATE_DIR), providers)
     hist = _history()
     for p in providers:
         metric = p.get("daily") or {}
@@ -146,8 +148,6 @@ def collect() -> dict:
     providers.sort(key=lambda p: (
         _ORDER.index(p["name"]) if p["name"] in _ORDER else len(_ORDER),
         p["name"]))
-    _record_history(providers)
-
     live = {}
     if C.LIVE:
         try:
@@ -166,6 +166,7 @@ def collect() -> dict:
             provider = next((p for p in providers if p["name"] == name), None)
             if provider is not None:
                 _apply_live(provider, result)
+    _record_history(providers)
     return {"ts": time.time(), "providers": providers, "live": live}
 
 
@@ -206,7 +207,7 @@ def _apply_live(p: dict, lv: dict) -> None:
     if lv.get("rows"):
         p["rows"] = [r for r in p["rows"]
                      if not r.get("_live") and r["label"] != "5h"]
-        p["rows"] = [dict(r, _live=1) for r in lv["rows"]] + p["rows"]
+        p["rows"] = [dict(r, _live=1, _live_ts=lv.get("ts")) for r in lv["rows"]] + p["rows"]
 
 
 def _sanitise(d: dict) -> dict:
@@ -344,7 +345,7 @@ def _drain(loader: Loader, data: dict) -> None:
         if not loader.pending and not loader.local_done:
             loader.local_done = True
             data["ts"] = time.time()
-            _record_history(data["providers"])
+        _record_history(data["providers"])
         C.write_private(C.CACHE, json.dumps(_sanitise(data)))
 
 

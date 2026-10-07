@@ -228,7 +228,7 @@ def finish(state_dir: str, kitty_pid: int, window_id, cwd: str, now: float | Non
     if summary is None:
         return None
     summary["files_list"] = [{"path": p, "add": a, "del": d} for a, d, p in (rows or [])[:MAX_ROWS]]
-    update(state_dir, kitty_pid, window_id, {"summary": summary, "summary_ts": now if now is not None else time.time(), "vs": vs, "top": cur["top"]}, now)
+    update(state_dir, kitty_pid, window_id, {"summary": summary, "summary_ts": now if now is not None else time.time(), "vs": vs, "top": cur["top"], "base_tree": base, "current_tree": cur["tree"]}, now)
     return summary
 
 
@@ -238,3 +238,62 @@ def _tree_of(top: str, commit: str, state_dir: str) -> str | None:
         return None
     rc, out = _git(["rev-parse", "--verify", "-q", f"{commit}^{{tree}}"], info["top"], _odb_env(state_dir, info))
     return out.strip() if rc == 0 else None
+
+
+def patch(entry: dict, state_dir: str, max_bytes: int=256 * 1024, max_lines: int=2000) -> dict | None:
+    """Read a private checkpoint patch with bounded memory/time and no repo helpers."""
+    import re
+    import selectors
+    import signal
+    base, cur = (entry.get('base_tree'), entry.get('current_tree'))
+    if not all((isinstance(v, str) and re.fullmatch('[0-9a-f]{40}', v) for v in (base, cur))):
+        return None
+    info = repo_info(entry.get('top', ''))
+    if info is None:
+        return None
+    cmd = ['git', '-c', 'core.fsmonitor=false', '-c', 'gc.auto=0', '-c', 'maintenance.auto=false', 'diff', '--no-ext-diff', '--no-textconv', '--no-color', '--no-renames', base, cur, '--']
+    try:
+        p = subprocess.Popen(cmd, cwd=info['top'], env=_clean_env(_odb_env(state_dir, info)), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError:
+        return None
+    out = bytearray()
+    truncated = False
+    deadline = time.monotonic() + TIMEOUT_S
+    try:
+        with selectors.DefaultSelector() as sel:
+            sel.register(p.stdout, selectors.EVENT_READ)
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None
+                ready = sel.select(min(0.25, remaining))
+                if not ready:
+                    continue
+                chunk = os.read(p.stdout.fileno(), 16384)
+                if not chunk:
+                    break
+                room = max_bytes - len(out)
+                out.extend(chunk[:room])
+                if len(chunk) > room or out.count(b'\n') > max_lines:
+                    truncated = True
+                    break
+        if not truncated and p.wait(timeout=max(0.1, deadline - time.monotonic())) != 0:
+            return None
+        text = bytes(out).decode('utf-8', 'replace')
+        lines = text.splitlines(keepends=True)
+        if len(lines) > max_lines:
+            truncated = True
+            text = ''.join(lines[:max_lines])
+        text = text.encode('utf-8')[:max_bytes].decode('utf-8', 'ignore')
+        return {'text': text, 'truncated': truncated, 'max_bytes': max_bytes, 'max_lines': max_lines}
+    except (OSError, subprocess.SubprocessError):
+        return None
+    finally:
+        if p.poll() is None:
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        p.wait()
+        if p.stdout:
+            p.stdout.close()

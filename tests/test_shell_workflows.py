@@ -25,16 +25,18 @@ if name == 'kitty':
     data = states[target]
     command = args[args.index('--to') + 2]
     if command == 'ls':
-        print(json.dumps(data))
+        print(json.dumps([] if 'state:overlay_parent' in args else data))
     elif command == 'launch':
         oid = int(os.environ.get('MOCK_LAUNCH_OS', '1'))
         ow = next(o for o in data if o['id'] == oid)
         var = args[args.index('--var') + 1] if '--var' in args else ''
         user_vars = dict([var.split('=', 1)]) if var else {}
-        ow['tabs'].append({'id': 9, 'title': '!scratch', 'windows': [
-            {'id': 99, 'user_vars': user_vars}]})
+        tid = max([8]+[t['id'] for t in ow['tabs']])+1
+        wid = max([98]+[w['id'] for t in ow['tabs'] for w in t['windows']])+1
+        ow['tabs'].append({'id': tid, 'title': '!scratch', 'windows': [
+            {'id': wid, 'user_vars': user_vars}]})
         (root / 'kitty.json').write_text(json.dumps(states))
-        print(99)
+        print(wid)
     elif command == 'close-tab':
         tid = int(args[args.index('--match') + 1].split(':')[1])
         for ow in data:
@@ -84,6 +86,7 @@ class ShellWorkflows(unittest.TestCase):
             self.targets.append('unix:' + str(path))
         self.env['KITTY_LISTEN_ON'] = self.targets[0]
         self.env['KITTYMUX_SOCKET_GLOB'] = str(self.root / 'mykitty-*')
+        self.env['KITTYMUX_SOCKET_DIRS'] = str(self.root)
         self.states = {s: self.window() for s in self.targets}
         self.save_states()
 
@@ -142,15 +145,8 @@ kitty_remote close-tab --match id:7
         self.assertEqual(self.calls(), [])
 
     def test_newtab_no_trusted_socket_never_calls_kitty(self):
-        result = self.run_shell('''
-source() {
-    builtin source "$@"
-    mux_owned_socket() { return 1; }
-    mux_kitty_sockets() { :; }
-}
-unset KITTY_LISTEN_ON
-source bin/mux-newtab.sh
-''', check=False)
+        self.env['KITTYMUX_TARGET'] = 'unix:/nonexistent'
+        result = self.cli('mux-newtab.sh', check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.calls(), [])
 
@@ -210,16 +206,8 @@ mux_resolve_socket
         self.assertEqual(self.calls('close-tab'), [])
 
     def test_scratch_no_trusted_socket_never_calls_kitty(self):
-        # Wrap sourcing to keep all resolver trust checks private and negative.
-        result = self.run_shell('''
-source() {
-    builtin source "$@"
-    mux_owned_socket() { return 1; }
-    mux_kitty_sockets() { :; }
-}
-unset KITTY_LISTEN_ON
-source bin/mux-scratch.sh
-''', check=False)
+        self.env['KITTYMUX_TARGET'] = 'unix:/nonexistent'
+        result = self.cli('mux-scratch.sh', check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('no trusted kitty socket', result.stderr)
         self.assertEqual(self.calls(), [])

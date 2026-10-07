@@ -11,7 +11,10 @@ Checks your install and tells you how to fix what is off: dependencies, the remo
 
 ```sh
 kittymux doctor
+kittymux doctor --bundle [DIRECTORY]
 ```
+
+The bundle is a private local archive of generated versions, platform, feature switches and counts. It excludes configs, environment values, logs, screen text, titles, paths, commands and session identities. Nothing is uploaded.
 
 ## `kittymux demo`
 
@@ -119,8 +122,10 @@ kittymux fanout clean NAME [--yes] [--force]
 What the agent in a window changed since its run started. It never writes into your repository.
 
 ```sh
-kittymux changes [--window ID] [--files] [--json] [--all]
+kittymux changes [--window ID] [--files] [--diff] [--json] [--all]
 ```
+
+`--diff` shows the patch between the run baseline and the current private checkpoint. Output stops at 256 KiB or 2000 lines; `--json --diff` includes the patch and truncation metadata. Choose one window; `--all --diff` is rejected.
 
 ## `kittymux reopen`
 
@@ -249,3 +254,22 @@ kittymux uninstall --yes --purge     # also deletes the state directory
 ## `kittymux version`
 
 Prints the kittymux version.
+
+
+## `kittymux workflow`
+
+Internal entry point used by the existing shell scripts. It validates the source kitty and pane, keeps command arguments intact and verifies scratch launch identity before closing a previous scratch tab. Keys and script names stay the same.
+
+```sh
+kittymux workflow nav prev|next|N
+kittymux workflow newtab [--home] [--next]
+kittymux workflow scratch [--cwd DIR] [-- COMMAND ARG…]
+kittymux workflow find-session NAME
+kittymux workflow save-session WINDOW_ID FILE
+kittymux workflow session-names|session-current|session-active|session-last WINDOW_ID
+kittymux workflow session-cycle WINDOW_ID prev|next
+```
+
+The internal `save-session` helper saves the active named session of the owning OS window; an anonymous workspace saves only its anonymous panes. Parked named sessions are excluded. Use `kittymux sessions save NAME --all` for an explicit full-instance save.
+
+`sessions finalize FD PID CAPTURED_NS` is an internal offline writer for inherited quit captures, not a user restore command.

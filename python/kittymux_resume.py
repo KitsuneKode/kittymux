@@ -412,6 +412,25 @@ def prompt_choice(data: bytes, default: str = "resume") -> str | None:
     return None
 
 
+def _embedded_foreground(tokens, agents, meta):
+    """Kitty 0.49 stores shell-started commands in native launch metadata."""
+    for index, token in enumerate(tokens):
+        if not token.startswith(UNSERIALIZE) or len(token) > 256 * 1024:
+            continue
+        try:
+            data = json.loads(token[len(UNSERIALIZE):])
+        except ValueError:
+            continue
+        command = data.get("cmd_at_shell_startup") if isinstance(data, dict) else None
+        if not (isinstance(command, list) and 0 < len(command) <= 200 and
+                all(isinstance(t, str) and t and "\0" not in t and len(t) < 4096 for t in command)):
+            continue
+        hit = agent_of(agents, command)
+        if hit and meta.get("agent") == hit[0]:
+            return index, data, command, hit
+    return None
+
+
 def rewrite_session(text: str, agents: dict, enabled=lambda name: True, wrapper: list[str] | None = None) -> tuple[str, list[str]]:
     """Rewrite a saved session file using only what is IN it: each window kitty serialised carries the `--var=kittymux_sid=<id>` and
     `--var=kittymux_resume=exact|latest` we set on it just before saving (see `kittymux sessions prepare`), and its foreground command. No live kitty,
@@ -431,11 +450,18 @@ def rewrite_session(text: str, agents: dict, enabled=lambda name: True, wrapper:
         command = tokens[start:]
         hit = agent_of(agents, command)
         meta = _vars(tokens)
+        embedded = _embedded_foreground(tokens[:start], agents, meta) if hit is None else None
+        if embedded:
+            _, _, command, hit = embedded
         mode = meta.get("resume", "")
         if hit and mode in ("exact", "latest") and enabled(hit[0]):
             new = resume_argv(agents[hit[0]], command, meta.get("sid"), mode, hit[1])
             if new:
-                if wrapper:          # ask first: the window starts the prompt, which then runs `new` or the original `command`
+                if embedded:
+                    index, data, _, _ = embedded
+                    data.pop("cmd_at_shell_startup", None)
+                    tokens[index] = UNSERIALIZE + json.dumps(data, separators=(",", ":"))
+                if wrapper:
                     tokens = tokens[:start] + wrapper + ["--info", prompt_info(hit[0], mode, meta.get("sid"), command, new)]
                     report.append("%s → asks, then %s" % (hit[0], shlex.join(new)))
                 else:

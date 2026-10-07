@@ -356,37 +356,13 @@ goto_session_for_window() {
     set_os_window_title_for_session "$(session_display_name "$session_target")"
 }
 
-save_session_file_for_window() {
-    local window_id="$1"
-    local session_file="$2"
-    local save_args
-    save_args="$(join_shell_words \
-        --save-only \
-        --use-foreground-process \
-        --match=state:focused_os_window \
-        "$session_file"
-    )"
-    kitty_action_for_window "id:${window_id}" save_as_session "$save_args"
+# Testable Python helpers keep paths and session names as exact argv elements.
+kittymux_workflow() {
+    KITTYMUX_TARGET="$KITTY_SOCKET" "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../bin/kittymux" workflow "$@"
 }
 
-# ── Cross-OS-window session lookup ────────────────────────────────────────────
-
-# Returns the OS window ID that currently hosts <session_name>, or exits 1.
-find_os_window_for_session() {
-    local session_name="$1"
-    local escaped
-    escaped="$(regex_escape "$session_name")"
-    kitty_remote ls --match-tab "session:^${escaped}$" 2>/dev/null \
-    | python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-for ow in data:
-    if ow.get('tabs'):
-        print(ow['id'])
-        sys.exit(0)
-sys.exit(1)
-"
-}
+save_session_file_for_window() { kittymux_workflow save-session "$@"; }
+find_os_window_for_session() { kittymux_workflow find-session "$@"; }
 
 # Active-tab title for an OS window (used for Hyprland focus matching).
 os_window_active_title() {
@@ -782,56 +758,14 @@ session_is_active_in_focused_window() {
     printf '%s' "$json" | count_tabs_from_json | grep -q '^[1-9]'
 }
 
-live_session_names_for_window() {
-    local window_id="$1"
-    local session_name
-    declare -A seen=()
+live_session_names_for_window() { kittymux_workflow session-names "$@"; }
 
-    while IFS= read -r session_name; do
-        [[ -n "$session_name" ]] || continue
-        session_is_live_in_focused_window "$session_name" || continue
-        [[ -n "${seen[$session_name]:-}" ]] && continue
-        seen["$session_name"]=1
-        printf '%s\n' "$session_name"
-    done < <(read_live_history_names_for_window "$window_id")
-
-    while IFS= read -r file; do
-        session_name="$(session_name_from_file "$file")"
-        session_is_live_in_focused_window "$session_name" || continue
-        [[ -n "${seen[$session_name]:-}" ]] && continue
-        seen["$session_name"]=1
-        printf '%s\n' "$session_name"
-    done < <(session_files_sorted)
-}
-
-current_live_session_name_for_window() {
-    local window_id="$1"
-    local session_name
-    while IFS= read -r session_name; do
-        [[ -n "$session_name" ]] || continue
-        if session_is_active_in_focused_window "$session_name"; then
-            printf '%s\n' "$session_name"
-            return 0
-        fi
-    done < <(live_session_names_for_window "$window_id")
-    live_session_names_for_window "$window_id" | head -n 1
-}
+current_live_session_name_for_window() { kittymux_workflow session-current "$@"; }
 
 # Like current_live_session_name_for_window, but NO fallback — prints a name
 # only when a saved session is verified active. Used by autosave, where
 # guessing would overwrite the wrong file.
-active_named_session_for_window() {
-    local window_id="$1"
-    local session_name
-    while IFS= read -r session_name; do
-        [[ -n "$session_name" ]] || continue
-        if session_is_active_in_focused_window "$session_name"; then
-            printf '%s\n' "$session_name"
-            return 0
-        fi
-    done < <(live_session_names_for_window "$window_id")
-    return 0
-}
+active_named_session_for_window() { kittymux_workflow session-active "$@"; }
 
 # Checkpoint the departing session before it is parked. Anonymous workspaces
 # are skipped — autosave never invents a filename. Run BEFORE goto_session
@@ -847,46 +781,9 @@ autosave_active_session_for_window() {
     save_session_file_for_window "$window_id" "$session_file" || true
 }
 
-last_live_session_name_for_window() {
-    local window_id="$1"
-    local current_name session_name
-    current_name="$(current_live_session_name_for_window "$window_id")"
-    while IFS= read -r session_name; do
-        [[ -n "$session_name" ]] || continue
-        [[ "$session_name" == "$current_name" ]] && continue
-        session_is_live_in_focused_window "$session_name" || continue
-        printf '%s\n' "$session_name"
-        return 0
-    done < <(read_live_history_names_for_window "$window_id")
-}
+last_live_session_name_for_window() { kittymux_workflow session-last "$@"; }
 
-cycle_live_session_name_for_window() {
-    local window_id="$1"
-    local direction="$2"
-    local current_name index target_index
-    local -a session_names=()
-
-    mapfile -t session_names < <(live_session_names_for_window "$window_id")
-    [[ "${#session_names[@]}" -gt 0 ]] || return 1
-
-    current_name="$(current_live_session_name_for_window "$window_id")"
-    if [[ -z "$current_name" ]]; then
-        printf '%s\n' "${session_names[0]}"; return 0
-    fi
-
-    for index in "${!session_names[@]}"; do
-        if [[ "${session_names[$index]}" == "$current_name" ]]; then
-            if [[ "$direction" == "prev" ]]; then
-                target_index=$(( (index - 1 + ${#session_names[@]}) % ${#session_names[@]} ))
-            else
-                target_index=$(( (index + 1) % ${#session_names[@]} ))
-            fi
-            printf '%s\n' "${session_names[$target_index]}"
-            return 0
-        fi
-    done
-    printf '%s\n' "${session_names[0]}"
-}
+cycle_live_session_name_for_window() { kittymux_workflow session-cycle "$@"; }
 
 focus_live_session_name() {
     local window_id="$1"

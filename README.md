@@ -289,7 +289,7 @@ stripped) are kept, in `scan-<pid>.json` (mode 0600, inside the 0700 state dir).
 
 `ctrl+alt+shift+s` (or `kittymux sessions save NAME`) saves with kitty's own `save_as_session` and then rewrites every agent window to its resume command — `claude … --resume <id>`,
 `codex resume <id>`, `grok --resume`, `droid -r`, `agy --conversation`, … — keeping the flags it was started with — and a restored agent window **asks** first (Enter resume · n new · s shell · a all; `KITTYMUX_RESUME=auto` skips the question). kittymux **autosaves** too (`kittymux sessions restore last` after a crash or a
-reboot). `kittymux sessions new api --template agent` makes a ready project session (templates: plain, agent, duo, review). Nothing is guessed: each CLI's own `--help` is probed first, ambiguous
+reboot). Confirmed application quit also captures the latest layout natively before teardown, then publishes it through an offline worker; cancellation leaves it alone. `kittymux sessions new api --template agent` makes a ready project session (templates: plain, agent, duo, review). Nothing is guessed: each CLI's own `--help` is probed first, ambiguous
 cases (two windows, no exposed id) are restored as saved rather than opening one conversation twice, and `kittymux sessions list` shows what would happen and why. Details, the per-agent table and how
 to add an agent: [docs/sessions.md](docs/sessions.md). Every agent session is also **journaled** as it runs (`kittymux sessions history` for the numbers, `kittymux sessions recover`
 after a crash).
@@ -571,3 +571,10 @@ to identify those tools.
 The bar keeps the folder line when an alert arrives and gives the alert its own row when the height cap permits. A split count survives narrow bars; the tiny layout map is drawn only when it represents every visible pane. Peek and the deck show a numbered native layout; digit/click selection in Peek changes the preview without focusing the target. Full titles and folders wrap in Peek; arrows scroll.
 
 Hover previews work in the deck and panel. Kitty 0.49.2 sends no idle motion to the native tab bar: right-click or the keyboard Peek is its detail gesture. Kitty's C mouse handler also requires **two visible windows** for native border hit-testing, so a single/zoomed pane uses the bar-side resize grip with the hand pointer; the docked panel has its own resize cursor. We do not modify kitty's C binary.
+
+
+### Usage dashboard and support tools
+
+Mod+N's persistent Agents and Usage panel uses theme-derived provider cards, distinct quota segments, reset times and recorded history. Press `u` for Usage, `d` for source details, `r` to refresh and Escape to return to Agents. Graph gaps are unrecorded samples; elapsed windows are not quota percentages. Usage skips agent/PR/port scans while visible. Live requests stay opt-in.
+
+`kittymux changes --diff` displays a bounded patch from the run's private baseline. `kittymux doctor --bundle [DIRECTORY]` creates a private local archive of generated versions, feature switches and counts, excluding logs, paths, commands, titles and agent identities. Nav/newtab/scratch and selected session helpers now delegate to validated Python workflows while retaining their shell entry points.

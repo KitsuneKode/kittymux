@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """kittymux — helper CLI.
 
-  kittymux doctor      check your install and tell you exactly how to fix what's off
+  kittymux doctor      check your install; doctor --bundle [DIR] writes generated, private support facts
   kittymux demo        try kittymux in an isolated window (your config is never touched)
   kittymux hooks       print the Claude Code hook config;  --install merges it (backup first)
   kittymux layout      switch this kitty's bar on the fly:
@@ -23,7 +23,7 @@
   kittymux fanout      ONE task to several agents at once, each in its own git worktree + branch + tab (they cannot collide), then compare what each did:
                          fanout "fix the login bug" claude,codex,devin [--name N] [--base REF]    fanout list | compare NAME | clean NAME [--yes] [--force]
   kittymux changes     what the agent in a window changed since its run started: `7 files +142 −30` + the biggest files (never writes into your repo):
-                         changes [--window ID] [--files] [--json] [--all]     (also shown on a finished tab and in `pick`)
+                         changes [--window ID] [--files] [--diff] [--json] [--all]     (also shown on a finished tab and in `pick`)
   kittymux reopen      bring back the most recently closed agent conversation in a new tab (it asks before resuming)
   kittymux notify      quiet the popups and bells (everything still lands in the inbox): notify status | mute [1h] | unmute | off | on | done off|on
   kittymux snooze      no popups for ONE agent window for a while: snooze [1h] [--window ID] [--clear]
@@ -40,6 +40,7 @@
   kittymux screenshot  PNG of this kitty window (kitty's own renderer): screenshot [--tab|--window] [FILE]
   kittymux upgrade     after a git pull: refresh links, reload every running kitty twice, run doctor
   kittymux uninstall   show what install.sh added (dry run); --yes removes it, --purge also deletes the state dir
+  kittymux workflow    internal nav, newtab, scratch and session helpers used by the shell shims
   kittymux version
 
 `demo` is the 30-second tour: a scratch kitty with a sample session, fake agents in
@@ -56,6 +57,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
 
 HOME_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(HOME_DIR, "python"))
@@ -124,7 +126,13 @@ class Report:
 
 def _run(cmd: list[str], timeout: float = 3.0) -> tuple[int, str]:
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        inherited = {}
+        if "--to" in cmd and cmd.index("--to") + 1 < len(cmd):
+            import kittymux_sockets
+            fd = kittymux_sockets.socket_fd(cmd[cmd.index("--to") + 1])
+            if fd is not None:
+                inherited["pass_fds"] = (fd,)
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, **inherited)
         return p.returncode, p.stdout
     except Exception:
         return 1, ""
@@ -245,6 +253,27 @@ def _hypr_conflicts() -> list[str]:
         return []
     tpl = os.path.join(HOME_DIR, "kittymux-keys.conf.tpl")
     return conflicts_from_binds(binds, open(tpl, encoding="utf-8").read())
+
+
+def doctor_cmd(argv: list[str]) -> int:
+    if not argv:
+        return doctor()
+    if argv == ["--help"]:
+        print("usage: kittymux doctor [--bundle [DIRECTORY]]")
+        return 0
+    if argv[0] != "--bundle" or len(argv) > 2:
+        print("usage: kittymux doctor [--bundle [DIRECTORY]]", file=sys.stderr)
+        return 2
+    import kittymux_diagnostics
+    facts = kittymux_diagnostics.summary(kittymux_layout.state_dir(), VERSION, _run(["kitty", "--version"])[1],
+                                         kittymux_features.resolve_all())
+    try:
+        path = kittymux_diagnostics.bundle(argv[1] if len(argv) == 2 else os.getcwd(), facts)
+    except (OSError, ValueError):
+        print("kittymux doctor: could not write bundle; choose a writable directory", file=sys.stderr)
+        return 1
+    print(f"saved {path} (generated facts only; no raw logs or private content)")
+    return 0
 
 
 def doctor() -> int:
@@ -640,35 +669,16 @@ def _owned_socket(path: str) -> bool:
 def _own_kitty_socket() -> str | None:
     """The kitty this process was started FROM (kitty spawns key-bound commands, so its pid names the socket even when the environment is stale; then the environment hints),
     or None when we were not started inside a kitty at all (a window-manager bind, a plain terminal)."""
-    ppid = str(os.getppid())
-    for d in _socket_dirs():
-        if _owned_socket(f"{d}/mykitty-{ppid}"):
-            return f"unix:{d}/mykitty-{ppid}"
-    env = os.environ.get("KITTY_LISTEN_ON", "")
-    if env.startswith("unix:") and _owned_socket(env[5:]):
-        return env
-    pid = os.environ.get("KITTY_PID", "")
-    if pid.isdigit():
-        for d in _socket_dirs():
-            if _owned_socket(f"{d}/mykitty-{pid}"):
-                return f"unix:{d}/mykitty-{pid}"
-    return None
+    import kittymux_sockets
+    return kittymux_sockets.own(_socket_dirs(), _owned_socket)
 
 
 def _target_socket() -> str | None:
     """The kitty instance this command was launched from.
 
     Order matters: an explicit KITTYMUX_TARGET; then the kitty we were started from; finally the newest socket we own."""
-    explicit = os.environ.get("KITTYMUX_TARGET", "")
-    if explicit.startswith("unix:") and _owned_socket(explicit[5:]):
-        return explicit
-    own = _own_kitty_socket()
-    if own:
-        return own
-    import glob
-    socks = sorted((g for d in _socket_dirs() for g in glob.glob(os.path.join(d, "mykitty-*")) if _owned_socket(g)),
-                   key=lambda g: os.stat(g).st_mtime, reverse=True)
-    return f"unix:{socks[0]}" if socks else None
+    import kittymux_sockets
+    return kittymux_sockets.target(_own_kitty_socket, _socket_dirs(), _owned_socket)
 
 
 def _socket_pid(sock: str) -> int | None:
@@ -1018,7 +1028,7 @@ def _wait_for_write(paths_before: dict, directory: str, seconds: float = 6.0) ->
     return []
 
 
-def sessions_save(argv: list[str]) -> int:
+def sessions_save(argv: list[str], directory: str | None = None) -> int:
     name = next((a for a in argv if not a.startswith("-")), "")
     if name and not TEMPLATE_NAME.match(name):
         print("kittymux sessions: a session name is letters, digits, . _ - (up to 60)", file=sys.stderr)
@@ -1027,7 +1037,7 @@ def sessions_save(argv: list[str]) -> int:
     if not sock:
         print("kittymux sessions: no kitty remote-control socket found", file=sys.stderr)
         return 1
-    sdir = _sessions_dir()
+    sdir = directory or _sessions_dir()
     os.makedirs(sdir, mode=0o700, exist_ok=True)
     plan = sessions_prepare(sock)
     name = name or time.strftime("saved-%Y%m%d-%H%M%S")
@@ -1061,9 +1071,18 @@ def sessions_autosave(keep: int = 5) -> int:
     if pid is None:
         return 1
     import io
+    import tempfile
+    import kittymux_sessionfile
     from contextlib import redirect_stderr, redirect_stdout
-    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-        rc = sessions_save([f"autosave-{pid}", "--all"])
+    captured_ns = time.time_ns()
+    sdir = _sessions_dir()
+    os.makedirs(sdir, mode=0o700, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".pending-", dir=sdir) as pending:
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            rc = sessions_save([f"autosave-{pid}", "--all"], directory=pending)
+        if rc == 0:
+            text = Path(pending, f"autosave-{pid}.kitty-session").read_text(encoding="utf-8")
+            kittymux_sessionfile.publish(sdir, pid, captured_ns, text)
     old = sorted(glob.glob(os.path.join(_sessions_dir(), "autosave-*.kitty-session")), key=os.path.getmtime, reverse=True)[keep:]
     for p in old:
         try:
@@ -1071,6 +1090,28 @@ def sessions_autosave(keep: int = 5) -> int:
         except OSError:
             pass
     return rc
+
+
+def sessions_finalize(argv: list[str]) -> int:
+    """Internal offline writer: an inherited anonymous capture, no kitty RPC."""
+    import kittymux_sessionfile
+    if len(argv) != 3 or not all(a.isdecimal() for a in argv):
+        return 2
+    fd, pid, captured_ns = map(int, argv)
+    if fd < 3 or pid <= 0 or captured_ns <= 0:
+        return 2
+    try:
+        with os.fdopen(fd, "rb") as f:
+            raw = f.read(kittymux_sessionfile.MAX_BYTES + 1)
+        if len(raw) > kittymux_sessionfile.MAX_BYTES:
+            return 1
+        agents = _resume_agents()
+        text, _ = kittymux_resume.rewrite_session(raw.decode("utf-8"), agents,
+                    enabled=lambda n: agent_enabled(n, agents), wrapper=prompt_wrapper())
+        kittymux_sessionfile.publish(_sessions_dir(), pid, captured_ns, text)
+        return 0
+    except (OSError, ValueError):
+        return 1
 
 
 def sessions_list(argv: list[str]) -> int:
@@ -1428,6 +1469,8 @@ def sessions(argv: list[str]) -> int:
         return 0
     if cmd == "autosave":
         return sessions_autosave()
+    if cmd == "finalize":
+        return sessions_finalize(rest)
     if cmd == "prepare":
         sock = _target_socket()
         if not sock:
@@ -1471,8 +1514,8 @@ def _focused_socket() -> str | None:
     happens to have focus — a second kitty, a scratch instance or a test rig must not be hijacked), else — started from outside every kitty, e.g. a window-manager bind — the one
     that has the keyboard focus right now, else the newest."""
     explicit = os.environ.get("KITTYMUX_TARGET", "")
-    if explicit.startswith("unix:") and _owned_socket(explicit[5:]):
-        return explicit
+    if explicit:
+        return explicit if explicit.startswith("unix:") and _owned_socket(explicit[5:]) else None
     own = _own_kitty_socket()
     if own:
         return own
@@ -1956,11 +1999,14 @@ def checkpoint(argv: list[str]) -> int:
 
 
 def changes_cmd(argv: list[str]) -> int:
-    """`kittymux changes [--window ID] [--files] [--json] [--all]` — what the agent in a window changed since its run started (or since HEAD when kittymux was not watching
+    """`kittymux changes [--window ID] [--files] [--diff] [--json] [--all]` — what the agent in a window changed since its run started (or since HEAD when kittymux was not watching
     at the start): `7 files +142 −30` and the biggest files. Computed now, so it is right even mid-run. `--all`: the cached summary of every window in this kitty (no git)."""
-    unknown = [a for a in argv if a.startswith("-") and a not in ("--files", "--json", "--all", "--window")]
+    unknown = [a for a in argv if a.startswith("-") and a not in ("--files", "--json", "--all", "--window", "--diff")]
     if unknown:
-        print(f"kittymux changes: unknown option {unknown[0]}   usage: kittymux changes [--window ID] [--files] [--json] [--all]", file=sys.stderr)
+        print(f"kittymux changes: unknown option {unknown[0]}   usage: kittymux changes [--window ID] [--files] [--diff] [--json] [--all]", file=sys.stderr)
+        return 2
+    if "--diff" in argv and "--all" in argv:
+        print("kittymux changes: --diff selects one window; omit --all", file=sys.stderr)
         return 2
     sock = _target_socket()
     pid = _socket_pid(sock) if sock else None
@@ -1991,10 +2037,21 @@ def changes_cmd(argv: list[str]) -> int:
         return 1
     entry = kittymux_changes.load(sdir, pid).get(wid, {})
     since = f"since its run started {kittymux_journal.human_span(time.time() - entry['base_ts'])} ago" if entry.get("vs") == "run" and entry.get("base_ts") else "compared with HEAD (kittymux was not watching when the run started)"
+    patch = kittymux_changes.patch(entry, sdir) if "--diff" in argv else None
+    if "--diff" in argv and patch is None:
+        print("kittymux changes: checkpoint patch unavailable; refresh the checkpoint and retry", file=sys.stderr)
+        return 1
+    if patch is not None:
+        patch["text"] = "\n".join(kittymux_place.clean_line(line) for line in patch["text"].split("\n"))
     if "--json" in argv:
-        print(json.dumps({"window": int(wid), "vs": entry.get("vs"), **summary}, indent=1))
+        print(json.dumps({"window": int(wid), "vs": entry.get("vs"), **summary, **({"patch": patch} if patch is not None else {})}, indent=1))
         return 0
     print(f"{kittymux_changes.format_summary(summary)}   {c('2', since)}")
+    if patch is not None:
+        print(patch["text"], end="" if patch["text"].endswith("\n") else "\n")
+        if patch["truncated"]:
+            print("\n[patch truncated at 256 KiB / 2000 lines]")
+        return 0
     if "--files" in argv or summary["files"] <= 12:
         for f in summary.get("files_list", [])[:40]:
             a, d = ("bin" if f["add"] is None else f"+{f['add']}"), ("" if f["del"] is None else f"−{f['del']}")
@@ -2221,7 +2278,7 @@ def usage_cmd(argv: list[str]) -> int:
             r = subprocess.run(["kitty", "@", "--to", sock, "launch", "--match", f"id:{win}", "--type=overlay",
                                 "--title", "kittymux-usage", "python3", program], stdin=subprocess.DEVNULL, check=False)
             return r.returncode
-        child_env = dict(os.environ)
+        child_env = dict(os.environ, KITTYMUX_AUTOSAVE="0")
         for key in ("KITTY_PID", "KITTY_WINDOW_ID", "KITTY_LISTEN_ON", "KITTYMUX_TARGET"):
             child_env.pop(key, None)
         subprocess.Popen(["kitty", "--class", "kittymux-usage", "--title", "kittymux-usage",
@@ -2719,12 +2776,31 @@ def uninstall(argv: list[str]) -> int:
     return 0
 
 
+def workflow_cmd(argv: list[str]) -> int:
+    """Internal shared entry point for nav/newtab/scratch and session shell shims."""
+    if not argv or argv == ["--help"]:
+        print("usage: kittymux workflow nav|newtab|scratch|find-session|save-session|session-names|session-current|session-active|session-cycle|session-last [ARGS]")
+        return 0 if argv else 2
+    sock = _target_socket()
+    if not sock:
+        print("kittymux: no trusted kitty socket (allow_remote_control socket-only + listen_on unix:${XDG_RUNTIME_DIR}/mykitty)", file=sys.stderr)
+        return 1
+    import kittymux_workflows
+    try:
+        return kittymux_workflows.run(argv, sock, _run, _ls(sock), kittymux_layout.state_dir())
+    except (OSError, ValueError, TypeError, KeyError):
+        print("kittymux workflow: source context unavailable or invalid; no other kitty was selected", file=sys.stderr)
+        return 1
+
+
 def main(argv: list[str]) -> int:
     cmd = argv[0] if argv else "help"
     if cmd == "uninstall":
         return uninstall(argv[1:])
+    if cmd == "workflow":
+        return workflow_cmd(argv[1:])
     if cmd == "doctor":
-        return doctor()
+        return doctor_cmd(argv[1:])
     if cmd == "upgrade":
         return upgrade(argv[1:])
     if cmd == "demo":

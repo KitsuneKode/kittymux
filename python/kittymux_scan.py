@@ -481,6 +481,74 @@ def _autosave_enabled() -> bool:
     return os.environ.get("KITTYMUX_AUTOSAVE") != "0" and not os.path.exists(os.path.join(state_dir(), "autosave-off"))
 
 
+def _quit_capture(boss, window, data) -> None:
+    """Capture before teardown; the detached writer never needs the closing socket."""
+    if not data.get("confirmed") or not _autosave_enabled() or os.environ.get("KITTYMUX_PANEL") == "1":
+        return
+    if getattr(_RT, "exit_captured", False) or not callable(getattr(boss, "serialize_state_as_session", None)):
+        return
+    originals = []
+    outcome = "exit capture failed"
+    try:
+        import tempfile
+        from kitty.session import default_save_as_session_opts
+        _, R = _journal_mod()
+        agents = _journal_agents(R)
+        for w in list(boss.all_windows):
+            original = dict(w.user_vars)
+            originals.append((w, original))
+            for key in ("kittymux_agent", "kittymux_resume", "kittymux_sid"):
+                w.user_vars.pop(key, None)
+            fg = [{"pid": p.get("pid"), "cmdline": p.get("cmdline") or []}
+                  for p in getattr(w.child, "foreground_processes", [])]
+            ident = R.identify(agents, fg, os.environ.get("KITTYMUX_CLAUDE_HOME") or os.path.expanduser("~/.claude"))
+            if ident and ident.get("sid"):
+                w.user_vars.update(kittymux_agent=ident["agent"], kittymux_resume="exact", kittymux_sid=ident["sid"])
+        opts = default_save_as_session_opts()
+        opts.use_foreground_process = True
+        opts.match = ""
+        captured_ns = time.time_ns()
+        chunks, size = [], 0
+        for line in boss.serialize_state_as_session(ser_opts=opts):
+            raw = (line + "\n").encode("utf-8")
+            size += len(raw)
+            if size > 8 * 1024 * 1024:
+                raise ValueError("capture too large")
+            chunks.append(raw)
+        os.makedirs(state_dir(), mode=0o700, exist_ok=True)
+        # TemporaryFile is unlinked; no partially captured restore candidate exists.
+        with tempfile.TemporaryFile(dir=state_dir()) as f:
+            f.write(b"".join(chunks))
+            f.seek(0)
+            cli = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "bin", "kittymux")
+            subprocess.Popen([cli, "sessions", "finalize", str(f.fileno()), str(os.getpid()), str(captured_ns)],
+                             pass_fds=(f.fileno(),), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+        _RT.exit_captured = True
+        outcome = "exit capture handed to offline writer"
+    except Exception:
+        _debug()
+    finally:
+        for w, original in originals:
+            w.user_vars.clear()
+            w.user_vars.update(original)
+        _record("autosave", "", "", outcome=outcome)
+
+
+def _install_quit_capture() -> None:
+    """Replace our callback on reload without touching other global watchers."""
+    try:
+        from kitty.window import global_watchers
+        callbacks = global_watchers().on_quit
+        old = getattr(_RT, "quit_callback", None)
+        if old in callbacks:
+            callbacks.remove(old)
+        callbacks.append(_quit_capture)
+        _RT.quit_callback = _quit_capture
+    except Exception:
+        pass
+
+
 def _maybe_autosave(now: float, window_ids) -> str:
     """Decide (and, when due, start) an autosave. Returns what it did (for tests/debugging)."""
     st = vars(_RT).setdefault("autosave", {"sig": None, "since": 0.0, "last": now, "pending": False})
@@ -915,6 +983,7 @@ def restart() -> None:
     """Drop the timers and start fresh — used after this file was reloaded so the timer runs the
     NEW code rather than the function objects of the previous version."""
     stop()
+    _install_quit_capture()
     ensure_started()
 
 

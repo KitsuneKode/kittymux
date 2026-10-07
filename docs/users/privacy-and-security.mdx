@@ -49,3 +49,8 @@ Notification text can come from the agent's screen. It is stripped of control ch
 ## Report a vulnerability
 
 Report it privately through [GitHub's private vulnerability reporting](https://github.com/KitsuneKode/kittymux/security/advisories/new). Do not open a public issue for something exploitable. Include what you saw, the kitty and kittymux versions (`kitty --version`, `kittymux version`) and a minimal way to reproduce it. A reply comes within about a week, and a fix and an advisory follow once it is confirmed. Only the latest release and `main` are supported.
+
+
+`kittymux doctor --bundle [DIRECTORY]` creates a mode-0600 archive of generated, allowlisted facts only: versions, platform, display type, feature booleans and state counts. Runtime files, configs, logs, titles, paths, commands, environment values, agent identities and screen text are excluded. The bundle stays local.
+
+Quota trend history stores only fixed provider names, row ordinals, hour timestamps and numeric percentages, bounded to 48 hours. It contains no provider response bodies or account details.

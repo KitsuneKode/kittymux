@@ -85,6 +85,17 @@ class SidebarTests(unittest.TestCase):
             s.quit_loop.assert_not_called()
         s.finalize()
 
+    def test_narrow_usage_navigation_click_has_the_same_hit_boundary_as_drawing(self):
+        s = self.sidebar()
+        s.screen_size.cols = 16
+        s._view = "usage"
+        labels = s._navigation_labels(16)
+        self.assertLessEqual(sum(len(t) for t in labels), 16)
+        with patch.object(s, "_set_view") as select:
+            s.on_click(types.SimpleNamespace(cell_y=1, cell_x=len(labels[0])))
+            select.assert_called_once_with("usage")
+        s.finalize()
+
     def test_periodic_snapshot_keeps_hovered_pane_by_identity(self):
         s = self.sidebar()
         r = self.m.deck.RowData(1, 11, pane_rows=(self.m.deck.PaneData(11), self.m.deck.PaneData(12)))
