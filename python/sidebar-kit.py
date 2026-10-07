@@ -50,6 +50,7 @@ import kittymux_meters  # noqa: E402
 import kittymux_ui  # noqa: E402
 import kittymux_usageview  # noqa: E402
 import kittymux_place  # noqa: E402
+import kittymux_titles  # noqa: E402
 import kittymux_files  # noqa: E402
 
 _STATE_DIR = Path(os.environ["KITTYMUX_STATE"]) if os.environ.get("KITTYMUX_STATE") else \
@@ -210,10 +211,20 @@ class Collector:
 
     def __init__(self):
         self._pr = PrCache()
+        self._tidy = True                           # the `titles` switch, read once per collect
 
     def branch(self, cwd: str) -> str:
         gi = kittymux_git.info(cwd)                 # reads .git/HEAD; no subprocess
         return "" if gi is None or gi.branch == "detached" else gi.branch
+
+    def _project(self, cwd: str) -> str:
+        """The repo or folder a directory belongs to (what a tab is called when its title says nothing); "~" for home, "" when unknown."""
+        if not cwd:
+            return ""
+        try:
+            return kittymux_place.facts(cwd, kittymux_git.info(cwd), os.path.expanduser("~")).project
+        except Exception:
+            return ""
 
     def _pane(self, w: dict, active_id: int, panes: dict, now: float) -> deck.PaneData:
         name, tool = kittymux_agents.identify(w)
@@ -223,6 +234,8 @@ class Collector:
         else:
             state = kittymux_agents.fresh_verdict(panes.get(str(w["id"])), now)
         title = (w.get("title") or "").strip() or _short_home(w.get("cwd", ""))
+        if self._tidy:
+            title = kittymux_titles.tidy(title, name, self._project(w.get("cwd", ""))).text or title
         return deck.PaneData(win_id=w["id"], glyph=agent.glyph if agent else kittymux_agents.TOOLS.get(tool, ""),
                              agent=name or "", tool=bool(tool and not agent), state=state,
                              title=kittymux_agents.strip_title_prefix(title), active=w["id"] == active_id, cwd=w.get("cwd", ""))
@@ -233,6 +246,10 @@ class Collector:
         except Exception:
             return None
         panes = _panes_state(data)
+        try:
+            self._tidy = kittymux_features.enabled("titles", str(_STATE_DIR))
+        except Exception:
+            self._tidy = True
         children = deck.children_map(_proc_ppids())
         listeners = _listeners()
         rows, current_session = [], ""
@@ -267,14 +284,17 @@ class Collector:
                 pids = [w.get("pid") for w in wins if w.get("pid")]
                 ports = tuple(sorted({p for pid in pids
                                       for p in deck.ports_for(int(pid), children, listeners)}))
+                raw_title = kittymux_agents.strip_agent_prefix(tab.get("title") or "", name)
+                shown = kittymux_titles.tidy(tab.get("title") or "", name, self._project(cwd)).text if self._tidy else raw_title
                 rows.append(deck.RowData(
                     tab_id=tab["id"], win_id=jump_to, session=session,
-                    title=kittymux_agents.strip_agent_prefix(tab.get("title") or "", name),
+                    title=shown or raw_title, raw_title=raw_title,
                     glyph=agent.glyph if agent else kittymux_agents.TOOLS.get(tool_name, ""),
                     tool=bool(tool_name and not agent),
                     agent=name or "", branch=branch, cwd=cwd,
                     panes=len(wins), status=status, unread=unread, current=current,
                     msg=kittymux_agents.resolve_msg(panes.get(str(deciding or aw["id"])), st) if st else "",
+                    age=kittymux_agents.state_age(st, (panes.get(str(deciding or aw["id"])) or {}).get("ts_state"), now) if st else "",
                     pr=self._pr.get(cwd, branch), ports=ports, pane_rows=pane_rows,
                     win_ids=tuple(w["id"] for w in wins)))
         return Snapshot(rows, current_session)
@@ -832,7 +852,7 @@ class Sidebar(Handler):
         drawn = 0
         for off, it in deck.visible(snap.items, self.scroll, avail):
             if it.kind == "header":
-                w(set_cursor_position(0, y + off) + self._ansi(kittymux_agentsview.header_row(self.kit, it.label, it.count, it.current, bar_w)))
+                w(set_cursor_position(0, y + off) + self._ansi(kittymux_agentsview.header_row(self.kit, it.label, it.count, it.current, bar_w, it.attn)))
                 drawn = off + 1
             elif it.kind == "pane":
                 w(set_cursor_position(0, y + off) + self._pane_line(
@@ -864,7 +884,7 @@ class Sidebar(Handler):
             who = pd.title if pd else r.title
             w(set_cursor_position(0, top + 1) + self._line(
                 [(" " + deck.fit(f"{who} · {_short_home(pd.cwd if pd else r.cwd)}", bar_w - 2, _cells), p.faint, True)], bar_w, p.bar))
-            body = [ln.strip() for ln in self.preview if ln.strip()][-(dr - 2):]
+            body = deck.tidy_preview(self.preview, dr - 2)
             for j in range(dr - 2):
                 text = body[j] if j < len(body) else ""
                 w(set_cursor_position(0, top + 2 + j) + self._line([(" " + text, p.muted, False)], bar_w, p.bar))

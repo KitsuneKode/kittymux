@@ -47,13 +47,14 @@ import kittymux_place  # noqa: E402
 import kittymux_scan  # noqa: E402
 import kittymux_state  # noqa: E402
 import kittymux_theme  # noqa: E402
+import kittymux_titles  # noqa: E402
 
 # kitty re-runs this file on every config reload, but Python keeps imported modules
 # for the life of the process — so after an upgrade a running kitty would keep serving
 # the OLD helpers to the NEW tab bar (AttributeError on any name added since). Reload
 # them every time this file runs.
 for _mod in (kittymux_theme, kittymux_agents, kittymux_git, kittymux_features, kittymux_place, kittymux_panetitle, kittymux_layout,
-             kittymux_state, kittymux_scan, kittymux_barsize, kittymux_deck):
+             kittymux_state, kittymux_scan, kittymux_barsize, kittymux_deck, kittymux_titles):
     try:
         importlib.reload(_mod)
     except Exception:
@@ -220,7 +221,7 @@ def _title_keys(os_window_id: int) -> dict:
         tm = get_boss().os_window_map.get(os_window_id)
         for t in (tm.tabs if tm else []):
             cwd, foreground, last_cmd = _active_window_info(t.id)
-            sig = (t.name, t.title, cwd, last_cmd, repr(foreground))
+            sig = (t.name, t.title, cwd, last_cmd, repr(foreground), _features().get("titles", True))
             hit = _TITLE_KEY_CACHE.get(t.id)
             if hit is not None and hit[0] == sig:
                 key = hit[1]
@@ -228,7 +229,7 @@ def _title_keys(os_window_id: int) -> dict:
                 # what kitty hands the bar as the tab's title (Tab.data_for_tab_bar): the name you gave it, else the window's title
                 title = _compact_title(types.SimpleNamespace(title=t.name or t.title or "", tab_id=t.id), 40)
                 info = _agent_from_fg(foreground)          # the row draws "web", not "Claude:web": compare what is DRAWN
-                key = kittymux_agents.strip_agent_prefix(title, info[2] if info else None)
+                key = _tidy_title(kittymux_agents.strip_agent_prefix(title, info[2] if info else None), info[2] if info else None, cwd)
             fresh[t.id] = (sig, key)
             out[t.id] = key
     except Exception:
@@ -707,6 +708,17 @@ def _usage_alert() -> tuple[str, int] | None:
     return _usage_state[1]
 
 
+def _tidy_title(title: str, agent: str | None, cwd: str) -> str:
+    """What the row is CALLED (kittymux_titles): the task, or the project when the title is only a product name or an agent's reply."""
+    if not title or not _features().get("titles", True):
+        return title
+    try:
+        out = kittymux_titles.tidy(title, agent, _facts(cwd).project if cwd else "").text
+    except Exception:
+        return title
+    return out or title
+
+
 def _compact_title(tab: TabBarData, limit: int) -> str:
     title = _clean_visible_title(tab.title or "")
     cwd, foreground, last_cmd = _active_window_info(tab.tab_id)
@@ -863,7 +875,7 @@ def _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal) -> i
     state = _tab_state(tab)
     marks_w = 2 if state else 0
     title_limit = _title_limit(max_title_length, index, session_name, tab.is_active, marks_w)
-    title = kittymux_agents.strip_agent_prefix(_compact_title(tab, title_limit), info[2] if info else None)
+    title = _tidy_title(kittymux_agents.strip_agent_prefix(_compact_title(tab, title_limit), info[2] if info else None), info[2] if info else None, cwd)
 
     chip = _rgb(pal.surface_hi) if tab.is_active else 0
     screen.cursor.bg = chip
@@ -1207,8 +1219,9 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
             number = hue if active else kittymux_theme.blend(hue, pal.bar, 0.6)
         _put(screen, 3, str(index), _rgb(number))
     elif title_room >= 3:
-        title = _fit(kittymux_agents.strip_agent_prefix(_compact_title(tab, max(4, title_room)), info[2] if info else None),
-                     title_room)
+        title = _tidy_title(kittymux_agents.strip_agent_prefix(_compact_title(tab, max(4, title_room)), info[2] if info else None),
+                            info[2] if info else None, cwd)
+        title = kittymux_titles.shorten(title, title_room, _cells) if _features().get("titles", True) else _fit(title, title_room)
         _put(screen, 3, title,
              _rgb(pal.text) if active else _rgb(pal.muted), bold=active)
         if _BAR_DUMP and not extra_data.for_layout:

@@ -13,6 +13,7 @@ import kittymux_agents
 import kittymux_deck
 import kittymux_place
 import kittymux_theme as T
+import kittymux_titles
 import kittymux_ui as U
 
 ICON_BRANCH = ""
@@ -57,11 +58,12 @@ def title_row(kit: U.Kit, r, selected: bool, hovered: bool, width: int, animate:
         icon_fg = brand if lit or needs else T.blend(brand, p.bg, 0.6)
     icon = U.S(r.glyph or " ", kit.ink(icon_fg, bg, 3.0), bg)
     title_fg = p.text if (lit or needs) else p.muted
-    title = U.S(kittymux_place.clean(r.title or "—"), kit.ink(title_fg, bg), bg, bold=lit or needs)
     sc = _state_color(p, r.status)
     mark = [U.S(" ", None, bg), U.S(kittymux_agents.state_glyph(r.status, animate=animate), kit.ink(sc, bg, 3.0), bg, bold=needs), U.S(" ", None, bg)] if sc is not None else [U.S("   ", None, bg)]
     left = [rail, icon, U.S(" ", None, bg)]
     room = width - U.line_cells(left, kit.cells) - U.line_cells(mark, kit.cells)
+    shown = kittymux_titles.shorten(kittymux_place.clean(r.title or "—"), max(0, room), kit.cells)          # cut at a word, not in the middle of one
+    title = U.S(shown, kit.ink(title_fg, bg), bg, bold=lit or needs)
     body = kit.fit_line([title], max(0, room), bg)
     return kit.fit_line(left + body + mark, width, bg)
 
@@ -89,7 +91,9 @@ def context_row(kit: U.Kit, r, selected: bool, hovered: bool, width: int, home: 
             detail.append(U.S(" ".join(f":{int(n)}" for n in r.ports[:3] if isinstance(n, int)), kit.ink(p.info, bg), bg))
     if r.panes > 1:
         detail.append(U.S(f"{r.panes} panes", kit.ink(p.muted if lit else p.faint, bg, 3.0), bg))
-    tail = [U.S("needs you" if r.status == "waiting" else "limit hit", kit.ink(_state_color(p, r.status), bg), bg, bold=True)] if needs else []
+    age = f" {r.age}" if r.age else ""
+    tail = [U.S(("needs you" if r.status == "waiting" else "limit hit") + age, kit.ink(_state_color(p, r.status), bg), bg, bold=True)] if needs else \
+           [U.S("done" + age, kit.ink(p.faint, bg, 3.0), bg)] if r.status == "done" and r.age else []
     left = [rail, U.S("  ", None, bg)]
     room = width - U.line_cells(left, kit.cells) - U.line_cells([idx], kit.cells)
     reserve = sum(kit.cells(s.text) + 2 for s in tail)
@@ -123,16 +127,23 @@ def pane_row(kit: U.Kit, r, j: int, hovered: bool, width: int, animate: bool = T
     mark = [U.S(" ", None, bg), U.S(kittymux_agents.state_glyph(pd.state, animate=animate), kit.ink(sc, bg, 3.0), bg, bold=needs), U.S(" ", None, bg)] if sc is not None else [U.S("   ", None, bg)]
     left = [U.S("   ", None, bg), U.S("└" if last else "├", p.line, bg), U.S(" ", None, bg), U.S(pd.glyph or "·", kit.ink(icon_fg, bg, 3.0), bg), U.S(" ", None, bg)]
     room = width - U.line_cells(left, kit.cells) - U.line_cells(mark, kit.cells)
-    title = U.S(kittymux_place.clean(pd.title or pd.agent or "shell"), kit.ink(p.text if lit else p.muted, bg), bg, bold=pd.active)
+    shown = kittymux_titles.shorten(kittymux_place.clean(pd.title or pd.agent or "shell"), max(0, room), kit.cells)
+    title = U.S(shown, kit.ink(p.text if lit else p.muted, bg), bg, bold=pd.active)
     return kit.fit_line(left + kit.fit_line([title], max(0, room), bg) + mark, width, bg)
 
 
-def header_row(kit: U.Kit, label: str, count: int, current: bool, width: int) -> list:
+def header_row(kit: U.Kit, label: str, count: int, current: bool, width: int, attn: int = 0) -> list:
+    """` SESSION NAME ...... ! 2  7 `: the name (accent when it is the one you are in), how many of its tabs ask for you, how many tabs it has."""
     p = kit.p
-    cnt = U.S(f"{count}  ", kit.ink(p.faint, p.bar, 3.0), p.bar)
+    right = ([U.S(f"{kittymux_agents.state_glyph('waiting')} {attn}", kit.ink(p.waiting, p.bar), p.bar, bold=True), U.S("  ", None, p.bar)] if attn else [])
+    right.append(U.S(f"{count}  ", kit.ink(p.faint, p.bar, 3.0), p.bar))
+    rw = U.line_cells(right, kit.cells)
+    if rw + 4 > width:                              # no room for the name: the count of tabs goes first, then the badge
+        right = right[-1:]
+        rw = U.line_cells(right, kit.cells)
     name = U.S(" " + kittymux_place.clean(label).upper(), kit.ink(p.accent if current else p.faint, p.bar, 3.0), p.bar, bold=True)
-    room = width - kit.cells(cnt.text)
-    return kit.fit_line(kit.fit_line([name], max(0, room), p.bar) + [cnt], width, p.bar)
+    room = width - rw
+    return kit.fit_line(kit.fit_line([name], max(0, room), p.bar) + right, width, p.bar)
 
 
 def summary_row(kit: U.Kit, tabs: int, waiting: int, working: int, width: int, animate: bool = True) -> list:

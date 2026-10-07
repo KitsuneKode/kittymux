@@ -188,9 +188,51 @@ class GroupTests(unittest.TestCase):
         self.assertFalse(items[3].current)
         self.assertEqual(items[3].label, "b")
 
-    def test_no_session_label(self):
-        items, _ = D.flatten(D.group_rows(mk(1, ""), ""), "")
-        self.assertEqual(items[0].label, D.NO_SESSION)
+    def test_a_lone_unnamed_group_has_no_header_and_an_unnamed_group_beside_a_named_one_is_called_other_tabs(self):
+        items, flat = D.flatten(D.group_rows(mk(2, ""), ""), "")
+        self.assertEqual([i.kind for i in items], ["row", "row"])               # "N tabs" says it already
+        self.assertEqual(len(flat), 2)
+        items, _ = D.flatten(D.group_rows(mk(1, "work") + mk(1, ""), "work"), "work")
+        self.assertEqual([i.label for i in items if i.kind == "header"], ["work", D.NO_SESSION])
+        self.assertEqual(D.NO_SESSION, "other tabs")
+        items, _ = D.flatten(D.group_rows(mk(1, "work"), "work"), "work")
+        self.assertEqual(items[0].kind, "header")                                # a named session still says which one you are in
+
+    def test_a_header_counts_the_rows_that_ask_for_you(self):
+        rows = mk(4, "work")
+        rows[0].status, rows[1].status, rows[2].status = "waiting", "limited", "working"
+        items, _ = D.flatten(D.group_rows(rows, "work"), "work")
+        self.assertEqual((items[0].count, items[0].attn), (4, 2))
+
+
+class TidyPreviewTests(unittest.TestCase):
+    SCREEN = ["", "\u250c" + "\u2500" * 30 + "\u2510", "\u2502 Audit codebase security and de \u2502", "\u2502 login RAM, verify the mount     \u2502", "\u2514" + "\u2500" * 30 + "\u2518",
+              "\u26a0 5h 41% left", "\u203a Ask Codex to do anything", "? for shortcuts", "gpt-6.1 high \u00b7 Context 55% used", "esc to interrupt", "---------"]
+
+    def test_real_lines_stay_and_chrome_goes(self):
+        got = D.tidy_preview(self.SCREEN, 10)
+        self.assertEqual(got, ["Audit codebase security and de", "login RAM, verify the mount", "\u26a0 5h 41% left", "\u203a Ask Codex to do anything"])
+
+    def test_it_keeps_the_last_n_and_never_more(self):
+        lines = [f"line {i}" for i in range(20)]
+        self.assertEqual(D.tidy_preview(lines, 3), ["line 17", "line 18", "line 19"])
+        self.assertEqual(D.tidy_preview(lines, 0), [])
+        self.assertEqual(D.tidy_preview(lines, -2), [])
+        self.assertEqual(len(D.tidy_preview(lines, 99)), 20)
+
+    def test_repeats_blank_and_hostile_lines(self):
+        self.assertEqual(D.tidy_preview(["a", "a", "", "   ", "a", "b", "a"], 5), ["a", "b", "a"])     # blanks go first, then back-to-back repeats collapse; a later repeat stays
+        out = D.tidy_preview(["ok\x1b[31m red\x1b]0;x\x07", "tab\there"], 5)
+        self.assertTrue(all("\x1b" not in l and "\x07" not in l for l in out))
+        self.assertEqual(D.tidy_preview(None, 3), [])
+        self.assertEqual(D.tidy_preview([5, None, b"x"], 3), ["5", "None", "b'x'"])
+
+    def test_an_all_chrome_screen_is_empty_not_invented(self):
+        self.assertEqual(D.tidy_preview(["\u2500" * 20, "? for shortcuts", "", "esc to interrupt"], 5), [])
+
+    def test_a_long_real_line_that_merely_mentions_a_hint_is_kept(self):
+        line = "The docs say press ctrl+c to stop the server, and then we need to rerun the migration with the new flags so the schema matches"
+        self.assertEqual(D.tidy_preview([line], 3), [line])
 
 
 class HitTests(unittest.TestCase):

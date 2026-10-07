@@ -1,12 +1,13 @@
 # kittymux deck — pure layout/grouping logic for the sidebar command deck.
 # No kitty imports: unit-tested under system python3 (tests/test_deck.py).
 
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 import kittymux_place
 from typing import Callable
 
-NO_SESSION = "(no session)"
+NO_SESSION = "other tabs"            # tabs that belong to no named session (shown only next to a named one)
 
 
 MAX_PANE_ROWS = 8       # a split tab lists at most this many of its panes under the tab
@@ -30,7 +31,8 @@ class RowData:
     tab_id: int
     win_id: int
     session: str = ""
-    title: str = ""
+    title: str = ""         # what the row is CALLED (kittymux_titles.tidy)
+    raw_title: str = ""     # the window title as the program set it: only the `/` search looks at it
     glyph: str = ""
     agent: str = ""
     tool: bool = False      # glyph is a quiet tool glyph, not an agent logo
@@ -39,6 +41,7 @@ class RowData:
     panes: int = 1
     status: str = ""        # working | waiting | done | ""
     msg: str = ""           # what the agent is waiting for (from hooks)
+    age: str = ""           # how long it has been in this state ("4m", "1h"): only from a minute on, only for states where it matters
     pr: str = ""            # "#123" for the branch's open pull request
     ports: tuple = ()       # TCP ports listening under this pane
     unread: bool = False
@@ -54,6 +57,7 @@ class Item:
     height: int
     label: str = ""         # header text
     count: int = 0          # header: rows in the group
+    attn: int = 0           # header: rows in the group that ask for you (waiting / limited)
     row: int = -1           # row/pane: index into the flat row list (a pane's parent)
     pane: int = -1          # pane: index into the parent's pane_rows
     current: bool = False   # header: this is the current session
@@ -79,9 +83,11 @@ def flatten(groups: list[tuple[str, list[RowData]]], current_session: str) -> tu
     """Items (headers + 2-line rows) and the flat row list they index into."""
     items: list[Item] = []
     flat: list[RowData] = []
+    only_unnamed = len(groups) == 1 and not groups[0][0]
     for name, members in groups:
-        items.append(Item("header", 1, label=name or NO_SESSION, count=len(members),
-                          current=(name == current_session)))
+        if not only_unnamed:                       # a lone unnamed group has nothing to say: its header would only repeat "N tabs"
+            items.append(Item("header", 1, label=name or NO_SESSION, count=len(members),
+                              attn=sum(1 for r in members if r.status in ("waiting", "limited")), current=(name == current_session)))
         for r in members:
             items.append(Item("row", 2, row=len(flat)))
             flat.append(r)
@@ -234,6 +240,31 @@ def wrap_detail(text: str, width: int, cells=len) -> list[str]:
     return out + ([line] if line else [])
 
 
+_RULE = re.compile(r"^[\s\u2500-\u257f\u2580-\u259f\-_=~*+.|]+$")                  # box drawing, block elements, ----, ====: a border, not content
+_BORDER = re.compile(r"^[\u2502\u2503\u2551|]\s?|\s?[\u2502\u2503\u2551|]$")           # the vertical edges of a boxed prompt
+_HINT = re.compile(
+    r"(?:\?\s+for\s+shortcuts|esc(?:ape)?\s+to\s+(?:interrupt|cancel|stop|go\s+back)|ctrl\+[a-z]\s+to\s+\w+|shift\+tab\s+to\s+\w+|tab\s+to\s+(?:cycle|expand|queue)|"
+    r"press\s+enter\s+to\s+continue|\bcontext\s+\d+%\s*(?:used|left)?\s*$|\(esc\s+to\s+\w+\)|bypass\s+permissions|auto-accept\s+edits|\d+\s*(?:k|m)?\s+tokens?\s*$)",
+    re.I)
+
+
+def tidy_preview(lines, keep: int) -> list:
+    """The last `keep` lines of a pane worth reading in a small drawer: no blank lines, no box rules or box edges, no TUI hint footers ("? for shortcuts",
+    "esc to interrupt"), and no line twice in a row. Never invents text; an all-chrome screen yields []."""
+    out: list = []
+    for raw in lines or ():
+        text = kittymux_place.clean_line(str(raw)).rstrip()
+        if not text.strip() or _RULE.match(text):
+            continue
+        text = _BORDER.sub("", text).strip()
+        if not text or _RULE.match(text) or _HINT.search(text) and len(text) < 90:
+            continue
+        if out and out[-1] == text:
+            continue
+        out.append(text)
+    return out[-max(0, keep):] if keep > 0 else []
+
+
 def numbered_layout(rects: tuple, cols: int, rows: int, active: int = 0) -> list[str]:
     """Outline native pane rectangles and label them in kitty's window order. [] if too small."""
     if not rects or cols < 6 or rows < 3:
@@ -262,7 +293,7 @@ def numbered_layout(rects: tuple, cols: int, rows: int, active: int = 0) -> list
 
 def matches(row: RowData, tokens: list) -> bool:
     """Every token (lower-case) appears somewhere in the row's searchable text."""
-    hay = " ".join((row.title, row.branch, row.cwd, row.agent, row.status, row.msg, row.session, row.pr)).lower()
+    hay = " ".join((row.title, row.raw_title, row.branch, row.cwd, row.agent, row.status, row.msg, row.session, row.pr)).lower()
     return all(t in hay for t in tokens)
 
 

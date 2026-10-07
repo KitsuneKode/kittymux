@@ -1236,7 +1236,7 @@ class FeaturesTests(unittest.TestCase):
     def test_list_shows_every_feature_and_where_it_comes_from(self):
         rc, out, _err, _ = self.run_cmd()
         self.assertEqual(rc, 0)
-        for name in ("folder", "hue", "collide", "sheet", "hover", "panetitle", "motion"):
+        for name in ("folder", "hue", "collide", "sheet", "hover", "panetitle", "motion", "titles"):
             self.assertIn(name, out)
         self.assertIn("default", out)
 
@@ -1277,7 +1277,7 @@ class FeaturesTests(unittest.TestCase):
         for name in ("sheet", "hover"):
             line = next(ln for ln in out.splitlines() if ln.split()[:1] == [name])
             self.assertIn("planned", line, line)
-        for name in ("folder", "hue", "collide", "panetitle", "motion"):
+        for name in ("folder", "hue", "collide", "panetitle", "motion", "titles"):
             line = next(ln for ln in out.splitlines() if ln.split()[:1] == [name])
             self.assertNotIn("planned", line, line)
         rc, out, _e, sdir = self.run_cmd("off", "sheet")

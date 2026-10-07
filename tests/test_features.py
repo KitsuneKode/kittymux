@@ -54,7 +54,7 @@ class FeatureTests(unittest.TestCase):
     def test_presets(self):
         F.apply_preset(self.sdir, "minimal")
         self.assertEqual(F.resolve_all(self.sdir, {}),
-                         {"folder": True, "hue": False, "collide": False, "sheet": False, "hover": False, "panetitle": False, "motion": True})
+                         {"folder": True, "hue": False, "collide": False, "sheet": False, "hover": False, "panetitle": False, "motion": True, "titles": True})
         F.apply_preset(self.sdir, "full")
         self.assertTrue(all(F.resolve_all(self.sdir, {}).values()))
         F.apply_preset(self.sdir, "default")
@@ -71,7 +71,7 @@ class FeatureTests(unittest.TestCase):
         self.assertEqual(F.PLANNED, frozenset({"sheet", "hover"}))
         self.assertTrue(F.PLANNED <= set(F.FEATURES))
         self.assertTrue(F.live().isdisjoint(F.PLANNED))
-        self.assertEqual(F.live(), frozenset({"folder", "hue", "collide", "panetitle", "motion"}))
+        self.assertEqual(F.live(), frozenset({"folder", "hue", "collide", "panetitle", "motion", "titles"}))
 
     def test_motion_is_on_by_default_and_a_preset_that_turns_things_off_leaves_the_spinner_alone(self):
         self.assertTrue(F.enabled("motion", self.sdir, {}))

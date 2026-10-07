@@ -96,6 +96,14 @@ class QuietByDefaultTests(unittest.TestCase):
         self.assertIn(":3000", picked)
         self.assertIn("#42", picked)
 
+    def test_how_long_it_has_waited_rides_with_the_word_and_a_finished_run_says_how_long_ago(self):
+        k = next(kits())
+        self.assertIn("needs you 4m", text(V.context_row(k, row(status="waiting", age="4m"), False, False, 40)))
+        self.assertIn("limit hit 1h", text(V.context_row(k, row(status="limited", age="1h"), False, False, 40)))
+        self.assertIn("done 3m", text(V.context_row(k, row(status="done", age="3m"), False, False, 40)))
+        self.assertNotIn("done", text(V.context_row(k, row(status="done", age=""), False, False, 40)))          # under a minute is not news
+        self.assertNotIn("4m", text(V.context_row(k, row(status="working", age="4m"), False, False, 40)))
+
     def test_the_current_tab_counts_as_lit_too(self):
         k = next(kits())
         self.assertIn(":3000", text(V.context_row(k, row(current=True), False, False, 36)))
@@ -203,6 +211,31 @@ class ActionBarTests(unittest.TestCase):
         line, _ = V.action_bar(k, [("\x1b[31mx", "ev\x1b]0;t\x07il", "X")], 30)
         self.assertNotIn("\x1b", text(line))
         self.assertNotIn("\x07", text(line))
+
+
+class HeaderTests(unittest.TestCase):
+    def test_the_header_is_exactly_the_width_and_shows_the_badge_only_when_something_asks(self):
+        for k in kits():
+            for w in (10, 14, 20, 26, 38):
+                for attn in (0, 3):
+                    line = V.header_row(k, "a very long session name indeed", 12, True, w, attn)
+                    self.assertEqual(U.line_cells(line, k.cells), w, (w, attn))
+            quiet = text(V.header_row(k, "work", 7, False, 30, 0))
+            loud = text(V.header_row(k, "work", 7, False, 30, 2))
+            self.assertNotIn("!", quiet)
+            self.assertIn("! 2", loud)
+            self.assertTrue(loud.rstrip().endswith("7"))
+            self.assertTrue(quiet.strip().startswith("WORK"))
+
+    def test_when_there_is_no_room_the_count_outlives_the_badge(self):
+        k = next(kits())
+        got = text(V.header_row(k, "work", 12, False, 9, 3))
+        self.assertNotIn("!", got)
+        self.assertIn("12", got)
+
+    def test_a_hostile_session_name_is_cleaned(self):
+        k = next(kits())
+        self.assertNotIn("\x1b", text(V.header_row(k, "\x1b[31mred\x07", 1, False, 30)))
 
 
 class SummaryTests(unittest.TestCase):

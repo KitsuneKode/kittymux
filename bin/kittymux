@@ -2185,6 +2185,7 @@ FEATURE_HELP = {
     "sheet": "(planned — not built yet) the side sheet for a tab",
     "hover": "(planned — not built yet) open the sheet on hover, inside the sheet only: kitty sends the bar no idle motion",
     "panetitle": "the same line in each pane's title bar, plus the pane's own title (ctrl+alt+shift+c shows the bars; kitty ≥ 0.49.2)",
+    "titles": "a tab is called by its task or its project, never by an agent's reply or its product name; long titles are cut at a word",
     "motion": "the working spinner turns (off: one still frame, and nothing redraws a bar just to animate it)",
 }
 
