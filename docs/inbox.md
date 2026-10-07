@@ -30,7 +30,7 @@ acknowledges everything it reported (`status: read`). `kittymux explain` shows, 
 
 ## Files (state dir: `$KITTYMUX_STATE` or `~/.local/state/kittymux`, all mode 0600)
 
-- `inbox.jsonl` — append-only operations, safe for several kitty processes to write at once (`O_APPEND`, plus a lock for compaction): `{"op":"add",…}`, `{"op":"ack",…}`, `{"op":"clear"}`. Compacted past 256 KB.
+- `inbox.jsonl` — append-only operations, safe for several kitty processes to write at once (`O_APPEND`, plus a lock for compaction): `{"op":"add",…}`, `{"op":"ack",…}`, `{"op":"clear"}`, `{"op":"restore","ids":[…]}` (undoes a dismissal: the event is unread again and forgets its `ack_t`; events that are not dismissed are left alone; an older reader ignores the op). Compacted past 256 KB.
 - **`inbox-snapshot.json`** — the folded view, rewritten atomically after every change. **This is what a widget watches.** Schema version 1:
 
 ```json

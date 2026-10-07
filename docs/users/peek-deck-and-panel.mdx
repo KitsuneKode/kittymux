@@ -85,6 +85,23 @@ Press `ctrl+alt+shift+b`. The deck becomes a persistent column: the compositor r
 - Hover previews a tab or pane in a drawer under the list.
 - Drag the panel's inner edge to resize it. The pointer turns into a resize cursor there, and the width is remembered.
 
+### Open it from anywhere
+
+The chords above work inside kitty. To open the panel from any app, bind `kittymux panel toggle` in your window manager. On Hyprland, with Super and N:
+
+```ini
+bind = SUPER, N, exec, kittymux panel toggle
+
+# optional: slide in from the screen edge instead of the compositor's default layer animation
+layerrule {
+    name = kittymux-panel-slide
+    match:namespace = kittymux-panel
+    animation = slide left
+}
+```
+
+Use `slide right` if you moved the panel with `KITTYMUX_PANEL_EDGE=right`. The panel's layer name is `kittymux-panel`, so the rule touches nothing else. The speed comes from your own `layers` animation line. The slide is the compositor's, not kittymux's: kittymux draws no animation of its own when the panel opens or closes, because a toggle you press many times a day should be instant. Check that your chord is free with `hyprctl binds`.
+
 The panel needs `wlr-layer-shell`, so it works on Hyprland, and should on sway, river and niri. It is not available on GNOME or on X11. Its placement beside the bar is verified by hand on Hyprland only. See [Platforms and compatibility](/docs/users/platforms).
 
 ## Where is this pane?
@@ -125,11 +142,12 @@ Every event from the [inbox](/docs/users/notifications-and-inbox) is a card, wit
 | Go to the agent | `⏎` | Click **Jump** on the picked card |
 | Dismiss the card | `x` | Click **Dismiss** |
 | Dismiss everything in this filter | `X` | |
+| Take the last dismissal back (the footer offers it for 8 seconds) | `z` | |
 | Change the filter | `tab` (`shift+tab` goes back), or `1` to `4` | Click a chip |
 | First or last card (the last one also shows the wait ledger under the cards) | `g` or `Home`, `G` or `End` | |
 | Reload | `r` | |
 
-**Jump** focuses the agent's window and marks that window's events read. Nothing in the inbox ever types into an agent: dismissing only hides the card.
+**Jump** focuses the agent's window and marks that window's events read. Nothing in the inbox ever types into an agent: dismissing only hides the card, and `z` brings it back. Right after a dismissal the footer swaps its hints for `z undo` and takes it away after 8 seconds, or as soon as you use it. One step only: a second dismissal replaces the first offer.
 
 Hover a tab or its pane row for a preview. Requests wait briefly while the pointer crosses rows and stale results are discarded. The preview identifies its pane and shows a numbered layout from kitty's real geometry. In Peek, press a digit or click a pane row to change the preview without moving focus; Enter jumps to that pane. Long titles and paths wrap, and arrows / Page Up / Page Down scroll the card.
 

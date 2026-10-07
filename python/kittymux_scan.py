@@ -421,7 +421,7 @@ def _trace(msg: str) -> None:
 
 def _spin_tick(timer_id) -> None:
     try:
-        tms = _working_tms()
+        tms = _working_tms() if _motion_on() else []         # switched off while a spinner ran: the timer ends with its next beat
         _trace(f"spin_tick tms={len(tms)}")
         if not tms:
             _stop_spinner()
@@ -455,9 +455,18 @@ def _stop_spinner() -> None:
         _RT.spin_timer = None
 
 
+def _motion_on() -> bool:
+    """The `motion` switch (env > flag file > default). Off: nothing here redraws a bar just to turn a spinner."""
+    try:
+        import kittymux_features
+        return kittymux_features.enabled("motion", state_dir())
+    except Exception:
+        return True
+
+
 def _sync_spinner() -> None:
     try:
-        working = any(v.get("state") == "working" for v in _RT.verdicts.values())
+        working = any(v.get("state") == "working" for v in _RT.verdicts.values()) and _motion_on()
         if working and _RT.spin_timer is None:
             from kitty.fast_data_types import add_timer
             _RT.spin_timer = add_timer(_spin_tick, SPIN_INTERVAL, True)

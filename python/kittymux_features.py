@@ -7,10 +7,10 @@
 
 import os
 
-FEATURES = ("folder", "hue", "collide", "sheet", "hover", "panetitle")
-DEFAULTS = {"folder": True, "hue": True, "collide": True, "sheet": True, "hover": False, "panetitle": True}   # panetitle only shows when pane title bars are on
+FEATURES = ("folder", "hue", "collide", "sheet", "hover", "panetitle", "motion")
+DEFAULTS = {"folder": True, "hue": True, "collide": True, "sheet": True, "hover": False, "panetitle": True, "motion": True}   # panetitle only shows when pane title bars are on; motion off = a still glyph where a spinner turned
 PRESETS = {
-    "minimal": frozenset({"folder"}),
+    "minimal": frozenset({"folder", "motion"}),
     "default": frozenset(name for name, on in DEFAULTS.items() if on),
     "full": frozenset(FEATURES),
 }

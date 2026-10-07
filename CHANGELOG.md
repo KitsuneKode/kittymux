@@ -5,6 +5,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 ## [Unreleased]
 
 ### Added
+- **Dismiss can be undone.** In the panel's Inbox, `z` brings back what the last `x` or `X` hid; the footer offers it for 8 seconds and then drops the offer on its own. New inbox op `restore` (older readers ignore it).
+- **`motion` switch** (`kittymux features off motion`, `KITTYMUX_MOTION=off`): the working spinner holds one still frame in the bar and the panel, and the 10 fps redraw timers stop. On by default.
+- **Open the panel from anywhere**: a documented Hyprland bind and an optional `layerrule` for a slide-in from the screen edge (the panel's layer name is `kittymux-panel`).
 - **Wait ledger**: how long agents waited on you, from when a permission or question event first appeared to when you first looked at it. A card in the panel's Inbox view (today, median, a week of bars, who is waiting now) and `kittymux inbox ledger [--json]`. The inbox fold keeps two new optional fields, `t0` and `ack_t` (schema version unchanged).
 - **Command palette** (`ctrl+alt+shift+space`, `kittymux palette`): one searchable list, inside the kitty you are in, of what needs you, every tab, conversations to reopen, a new agent (with its provider's quota headroom; the first four CLIs show, type to find the rest) and a few fixed actions. Type to filter, `⏎` or a click does it. It only chooses: `kittymux act` re-validates the choice (a tab id, an installed agent, one of a fixed list) and acts after the overlay has closed.
 - **Pick the agent that still has room.** The new-agent rows of `kittymux pick` show their provider's headroom (`◔ 5h 99% used`, `◔ limit hit, resets 3h 50m`) from the usage numbers the panel already keeps; nothing is fetched.

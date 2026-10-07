@@ -164,6 +164,13 @@ def fold(ops: list[dict]) -> list[dict]:
                     if ev.get("status") == "unread":
                         ev["status"] = op.get("status") if op.get("status") in STATUSES else "read"
                         ev["ack_t"] = op.get("t", 0)                    # when you first looked at it (focused its window, read or dismissed it)
+        elif kind == "restore":                                    # an undone dismissal: the event is unread again, as if it had never been looked at
+            ids = op.get("ids")
+            for eid in ids if isinstance(ids, list) else []:
+                ev = events.get(eid) if isinstance(eid, str) else None
+                if ev is not None and ev.get("status") == "dismissed":
+                    ev["status"] = "unread"
+                    ev.pop("ack_t", None)
         elif kind == "clear":
             for ev in events.values():
                 if ev.get("status") == "unread" or op.get("all"):
@@ -295,6 +302,19 @@ def ack(state_dir: str, now: float, *, ids: list | None = None, window: str | in
         fd = _locked(state_dir)
         try:
             _append(store_path(state_dir), op)
+            _refresh(state_dir, now)
+        finally:
+            os.close(fd)
+    except Exception:
+        pass
+
+
+def restore(state_dir: str, now: float, ids: list) -> None:
+    """Undo a dismissal (only events that are still dismissed come back; anything else is left alone)."""
+    try:
+        fd = _locked(state_dir)
+        try:
+            _append(store_path(state_dir), {"op": "restore", "t": round(now, 1), "ids": [i for i in ids if isinstance(i, str)]})
             _refresh(state_dir, now)
         finally:
             os.close(fd)

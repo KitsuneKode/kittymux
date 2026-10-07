@@ -136,6 +136,27 @@ wait_text "waited" || fail "Inbox: the wait ledger never showed under the last c
 screen | grep -q "median" || fail "Inbox: the ledger has no median"
 shot inbox-ledger
 
+# dismiss is reversible: x hides the card and the footer offers z for a few seconds; z brings it back; the offer expires by itself
+key g
+screen | grep -q "4 unread" || fail "Inbox: expected 4 unread before dismissing"
+key x
+wait_text "3 unread" || fail "Inbox: x did not dismiss the picked card"
+screen | grep -q "z .*undo" || fail "Inbox: the footer does not offer z to undo a dismissal"
+shot inbox-undo
+key z
+wait_text "4 unread" || fail "Inbox: z did not bring the dismissed card back"
+screen | grep -q "z .*undo" && fail "Inbox: the undo offer stayed after it was used"
+key x; wait_text "3 unread" || fail "Inbox: second dismissal failed"
+sleep 9                                                         # no key: the offer must go away on its own timer
+screen | grep -q "z .*undo" && fail "Inbox: the undo offer never expired (the timed redraw did not run)"
+key z                                                           # too late: nothing comes back
+screen | grep -q "3 unread" || fail "Inbox: z after the offer expired changed something"
+KITTYMUX_STATE=$STATE python3 -c "
+import sys; sys.path.insert(0, '$HOME_DIR/python')
+import kittymux_inbox as I, time
+ev = [e for e in I.load('$STATE') if e['status'] == 'dismissed']
+I.restore('$STATE', time.time(), [e['id'] for e in ev])" && key r   # put the fixture back as it was found
+
 key a
 wait_text "tabs" || fail "a did not return to the Agents view"
 echo "PASS: Agents, Usage (four providers) and Inbox views drew from the synthetic world; PNGs in $OUT"

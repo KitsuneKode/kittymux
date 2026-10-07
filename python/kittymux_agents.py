@@ -278,9 +278,9 @@ STATE_GLYPH = {"working": SPINNER[0], "waiting": "!", "limited": "⊘", "done": 
 SPINNER_FPS = 10.0
 
 
-def state_glyph(state: str, now: float | None = None) -> str:
-    """Glyph for a state; `working` animates with the clock (pass `now` in tests)."""
-    if state == "working":
+def state_glyph(state: str, now: float | None = None, animate: bool = True) -> str:
+    """Glyph for a state; `working` animates with the clock (pass `now` in tests). `animate=False` (the `motion` switch off) is one still frame."""
+    if state == "working" and animate:
         import time as _t
         t = _t.monotonic() if now is None else now
         return SPINNER[int(t * SPINNER_FPS) % len(SPINNER)]

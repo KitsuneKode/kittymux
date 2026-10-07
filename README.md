@@ -246,6 +246,7 @@ Every optional piece is its own switch — use all of it, some of it, or none (t
 | `sheet` | the side sheet — **planned, no effect yet** | planned |
 | `hover` | open the sheet on hover — **planned, no effect yet**; kitty sends the bar no idle mouse motion, so it can only live inside the sheet | planned |
 | `panetitle` | the same line in each pane's title bar, then the pane's own title (`ctrl+alt+shift+c` shows the bars; kitty ≥ 0.49.2) | on |
+| `motion` | the working spinner turns (off: one still frame in the bar and the panel, and no timer redraws a bar just to animate it) | on |
 
 ```bash
 kittymux features                 # what is on, and where each setting comes from
@@ -571,7 +572,7 @@ to identify those tools.
 
 ### Persistent agents and usage
 
-`kittymux panel toggle` opens the native kitty Wayland panel from any app. Bind it to Mod+N in your window manager. It stays open after jumping, merging or detaching panes. Click **Agents / Usage** or press `u` to switch views; Usage shows provider limits, local activity and reset times, with `↑/↓` to scroll and `r` to refresh. Escape returns to Agents; `q` or the global toggle closes the panel. Its colours follow kitty's theme; quotas marked elapsed describe time, not consumed tokens. Live provider requests remain opt-in (`KITTYMUX_USAGE_LIVE=1`).
+`kittymux panel toggle` opens the native kitty Wayland panel from any app. Bind it to Mod+N in your window manager (a Hyprland snippet, with an optional slide-in rule, is in [Peek, deck and panel](docs/users/peek-deck-and-panel.mdx)). It stays open after jumping, merging or detaching panes. Click **Agents / Usage** or press `u` to switch views; Usage shows provider limits, local activity and reset times, with `↑/↓` to scroll and `r` to refresh. Escape returns to Agents; `q` or the global toggle closes the panel. Its colours follow kitty's theme; quotas marked elapsed describe time, not consumed tokens. Live provider requests remain opt-in (`KITTYMUX_USAGE_LIVE=1`).
 
 `kittymux pick` keeps the searchable agent menu and adds a **Usage** entry. `kittymux usage` opens an overlay inside kitty, or its own window from another app; `--window` always opens a separate window.
 

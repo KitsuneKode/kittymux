@@ -142,6 +142,7 @@ class SpinnerTests(unittest.TestCase):
         self.assertEqual(A.state_glyph("working", 3.14), A.state_glyph("working", 3.14))
 
     def test_static_states(self):
+        self.assertEqual({A.state_glyph("working", t / A.SPINNER_FPS, animate=False) for t in range(40)}, {A.SPINNER[0]})   # motion off: one still frame
         self.assertEqual(A.state_glyph("waiting"), "!")
         self.assertEqual(A.state_glyph("done"), "✓")
         self.assertEqual(A.state_glyph("unread"), "•")

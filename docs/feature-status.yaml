@@ -64,7 +64,11 @@ features:
   - id: panel-inbox
     label: Inbox view in the panel
     status: shipped
-    description: Every typed event as a card with Jump and Dismiss, and filters for what needs you, what finished and limits.
+    description: Every typed event as a card with Jump and Dismiss, and filters for what needs you, what finished and limits. A dismissal can be taken back with z for eight seconds.
+  - id: motion-switch
+    label: Still spinner (motion off)
+    status: shipped
+    description: kittymux features off motion holds the working spinner on one frame in the bar and the panel and stops the redraw timers that turn it.
   - id: join
     label: Join a tab into another
     status: shipped

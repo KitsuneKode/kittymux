@@ -185,6 +185,11 @@ def _features() -> dict:
         return dict(kittymux_features.DEFAULTS)
 
 
+def _glyph(state: str) -> str:
+    """A state's glyph; the spinner holds still when the `motion` switch is off."""
+    return kittymux_agents.state_glyph(state, animate=_features().get("motion", True))
+
+
 @_per_pass
 def _facts(cwd: str):
     """Project / worktree / inner path / branch of a directory — once per pass and per directory (reads .git/HEAD only)."""
@@ -605,7 +610,7 @@ def _pane_chips(tab_id: int, pal, active: bool) -> list[tuple[str, int]]:
         if runs:
             runs.append((" ", pal.faint))
         runs.append((agent.glyph, agent.brand if active else _mute(agent.brand, pal)))
-        mark = "" if state == "idle" else kittymux_agents.state_glyph(state)
+        mark = "" if state == "idle" else _glyph(state)
         if mark:
             runs.append((mark, _state_color(state, pal)))
     return runs
@@ -885,7 +890,7 @@ def _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal) -> i
     if state:
         screen.cursor.fg = _rgb(_state_color(state, pal))
         screen.cursor.bold = state in kittymux_agents.NEEDS_YOU
-        screen.draw(" " + kittymux_agents.state_glyph(state))
+        screen.draw(" " + _glyph(state))
         screen.cursor.bold = False
     screen.draw(" " if tab.is_active else "")
 
@@ -1003,7 +1008,7 @@ def _attention_parts(counts: dict[str, int], pal) -> list[tuple[str, int, bool]]
     parts = []
     for state in ("waiting", "limited", "done"):
         if counts.get(state):
-            parts.append((f"{kittymux_agents.state_glyph(state)} {counts[state]}  ", _state_color(state, pal),
+            parts.append((f"{_glyph(state)} {counts[state]}  ", _state_color(state, pal),
                           state in kittymux_agents.NEEDS_YOU))
     return parts
 
@@ -1050,7 +1055,7 @@ def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: in
     if compact:
         # `»` on top, the attention badges underneath (the whole two-row header is the button)
         _button(screen, y, 1, 1, cols - 4, _EXPAND, pal)
-        badge = " ".join(f"{kittymux_agents.state_glyph(st)}{counts[st]}" for st in ("waiting", "limited", "done") if counts.get(st))
+        badge = " ".join(f"{_glyph(st)}{counts[st]}" for st in ("waiting", "limited", "done") if counts.get(st))
         if badge and rows > 1:
             screen.cursor.y = y + 1
             screen.cursor.bg = bar
@@ -1213,7 +1218,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
              bold=state in kittymux_agents.NEEDS_YOU)
     if state_fg is not None and cols >= 6:
         # full bar: state mark at the right edge; rail: tucked right after the number so the row reads as one cluster
-        _put(screen, 5 if compact else cols - 1 - sep_cols, kittymux_agents.state_glyph(state), _rgb(state_fg),
+        _put(screen, 5 if compact else cols - 1 - sep_cols, _glyph(state), _rgb(state_fg),
              bold=state in kittymux_agents.NEEDS_YOU)
     title_y = y
 

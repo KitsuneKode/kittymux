@@ -117,6 +117,21 @@ class FoldTests(unittest.TestCase):
         out = I.fold([a, b, {"op": "clear"}])
         self.assertEqual([e["status"] for e in out], ["dismissed", "dismissed"])
 
+    def test_restore_undoes_a_dismissal_and_forgets_that_it_was_looked_at(self):
+        a, b = ev("permission", w=1, t=1000.0), ev("done", w=2, t=1000.0)
+        dismissed = [a, b, {"op": "ack", "t": 1060.0, "ids": [a["id"], b["id"]], "status": "dismissed"}]
+        out = I.fold(dismissed + [{"op": "restore", "ids": [a["id"]]}])
+        self.assertEqual([e["status"] for e in out], ["unread", "dismissed"])
+        self.assertNotIn("ack_t", out[0])                                      # the wait is open again, not counted as answered
+        self.assertEqual(out[1]["ack_t"], 1060.0)
+
+    def test_restore_only_touches_dismissed_events_and_ignores_junk(self):
+        a = ev("permission", w=1, t=1000.0)
+        read = I.fold([a, {"op": "ack", "t": 1010.0, "ids": [a["id"]]}, {"op": "restore", "ids": [a["id"]]}])
+        self.assertEqual((read[0]["status"], read[0]["ack_t"]), ("read", 1010.0))        # read is not dismissed: left alone
+        out = I.fold([a, {"op": "restore", "ids": ["nope", 5, None]}, {"op": "restore"}, {"op": "restore", "ids": "x"}, {"op": "restore", "ids": 5}])
+        self.assertEqual([e["status"] for e in out], ["unread"])
+
     def test_damaged_input_is_ignored(self):
         out = I.fold([None, 5, {"op": "add"}, {"op": "add", "id": "x", "kind": "nope"}, {"op": "?"}, ev("done", t=1.0)])
         self.assertEqual(len(out), 1)
@@ -229,6 +244,19 @@ def _writer(args):
     d, n, base = args
     for i in range(n):
         I.add(d, I.make_event("info", "agent", base + i, "screen", 1000.0 + base + i * 100, pid=base))
+
+
+class RestoreStoreTests(unittest.TestCase):
+    def test_dismiss_then_restore_through_the_store(self):
+        with tempfile.TemporaryDirectory() as d:
+            a = ev("permission", w=1, t=1000.0)
+            I.add(d, a)
+            I.ack(d, 1010.0, ids=[a["id"]], status="dismissed")
+            self.assertEqual(I.load(d)[0]["status"], "dismissed")
+            I.restore(d, 1011.0, [a["id"]])
+            got = I.load(d)[0]
+            self.assertEqual(got["status"], "unread")
+            self.assertNotIn("ack_t", got)
 
 
 class ConcurrencyTests(unittest.TestCase):

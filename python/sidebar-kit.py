@@ -38,6 +38,7 @@ for _d in (_CONFIG_DIR, _source_dir()):
             sys.path.remove(_d)
         sys.path.insert(0, _d)
 import kittymux_agents  # noqa: E402
+import kittymux_features  # noqa: E402
 import kittymux_deck as deck  # noqa: E402
 import kittymux_git  # noqa: E402
 import kittymux_theme  # noqa: E402
@@ -58,6 +59,7 @@ _RAIL = "▌"
 _STALE_AFTER = 15.0
 _PR_TTL = 120.0
 _REFRESH_EVERY = 1.5
+_UNDO_S = 8.0                 # how long `z` can take a dismissal back (the footer says so while it can)
 
 
 def _C(rgb: int) -> Color:
@@ -293,6 +295,7 @@ class Sidebar(Handler):
         self._usage_sel, self._usage_history, self._usage_regions = 0, {}, []
         self._inbox, self._inbox_mtime, self._inbox_sel, self._inbox_filter, self._inbox_scroll = [], -1.0, 0, "all", 0
         self._inbox_regions = ([], [], [])        # (filter chips, cards, buttons) in SCREEN coordinates, rebuilt on every draw
+        self._inbox_undo = None                   # (ids, expires on the monotonic clock) of the last dismissal, while `z` can still take it back
         self._tab_regions = []
         self._preview_timer = None
         self._preview_rects = ()
@@ -405,6 +408,9 @@ class Sidebar(Handler):
         elif k == "X":
             self._inbox_act("dismiss_all" if shifted else "dismiss")
             return
+        elif k == "Z":
+            self._inbox_undo_do()
+            return
         elif k == "R":
             self._inbox_mtime = -1.0
             self._request_refresh()
@@ -435,12 +441,38 @@ class Sidebar(Handler):
                 self.quit_loop()
             return
         kittymux_inbox.ack(str(_STATE_DIR), time.time(), ids=ids, status="dismissed")
+        self._inbox_reload()
+        self._inbox_sel = min(self._inbox_sel, max(0, len(self._inbox_items()) - 1))
+        self._inbox_undo = (ids, time.monotonic() + _UNDO_S)
+        if self._alive:
+            self.asyncio_loop.call_later(_UNDO_S + 0.1, self._undo_expired)       # the offer goes away by itself: one redraw, no polling
+        self.draw_screen()
+
+    def _inbox_reload(self) -> None:
         self._inbox = kittymux_inbox.load(str(_STATE_DIR))
         try:
             self._inbox_mtime = os.stat(kittymux_inbox.store_path(str(_STATE_DIR))).st_mtime
         except OSError:
             self._inbox_mtime = 0.0
-        self._inbox_sel = min(self._inbox_sel, max(0, len(self._inbox_items()) - 1))
+
+    def _undo_live(self) -> bool:
+        return bool(self._inbox_undo) and time.monotonic() < self._inbox_undo[1]
+
+    def _undo_expired(self) -> None:
+        if self._alive and self._inbox_undo and not self._undo_live():
+            self._inbox_undo = None
+            if getattr(self, "_view", "agents") == "inbox":
+                self.draw_screen()
+
+    def _inbox_undo_do(self) -> None:
+        """`z`: bring back what the last dismissal hid (one step, for _UNDO_S seconds). The cards come back where the clock puts them."""
+        if not self._undo_live():
+            self._inbox_undo = None
+            return
+        ids, _ = self._inbox_undo
+        self._inbox_undo = None
+        kittymux_inbox.restore(str(_STATE_DIR), time.time(), ids)
+        self._inbox_reload()
         self.draw_screen()
 
     def _load_side(self):
@@ -558,7 +590,10 @@ class Sidebar(Handler):
         if v.cards:                                                       # keep the picked card on screen
             y0, y1, _ = v.cards[v.sel]
             top = 0 if v.sel == 0 else len(v.lines) if v.sel == v.count - 1 else y0 if y0 < top else y1 - page if y1 > top + page else top      # the last card reveals what is under it (the ledger)
-        self._inbox_scroll = self._draw_body(cols, height, v.header, v.lines, top, [("j k", "move"), ("⏎", "jump"), ("x", "dismiss"), ("tab", "filter")])
+        footer = [("j k", "move"), ("⏎", "jump"), ("x", "dismiss"), ("tab", "filter")]
+        if self._undo_live():                                             # the way back is offered where the hand just was, replacing what it does not need
+            footer = [("z", "undo " + (f"{len(self._inbox_undo[0])} dismissed" if len(self._inbox_undo[0]) > 1 else "dismiss"))] + footer[:2]
+        self._inbox_scroll = self._draw_body(cols, height, v.header, v.lines, top, footer)
         off = 2 - self._inbox_scroll
         self._inbox_regions = ([(x0, x1, off, filt) for x0, x1, filt in v.chips], [(y0 + off, y1 + off, i) for y0, y1, i in v.cards],
                                [(x0, x1, y + off, i, act) for x0, x1, y, i, act in v.buttons])
@@ -598,13 +633,24 @@ class Sidebar(Handler):
     def _schedule_spin(self) -> None:
         if getattr(self, "_spin_pending", False) or not self._alive or getattr(self, "_view", "agents") != "agents":
             return
-        if any(r.status == "working" for r in self.snap.rows):
+        if self._motion() and any(r.status == "working" for r in self.snap.rows):
             self._spin_pending = True
             self.asyncio_loop.call_later(0.1, self._spin)
 
+    def _motion(self) -> bool:
+        """The `motion` switch, read at most once a second (a stat per frame would cost more than the frame)."""
+        now = time.monotonic()
+        if now - getattr(self, "_motion_at", -9.0) >= 1.0:
+            self._motion_at = now
+            try:
+                self._motion_on = kittymux_features.enabled("motion", str(_STATE_DIR))
+            except Exception:
+                self._motion_on = True
+        return self._motion_on
+
     def _spin(self) -> None:
         self._spin_pending = False
-        if self._alive and getattr(self, "_view", "agents") == "agents" and any(r.status == "working" for r in self.snap.rows):
+        if self._alive and getattr(self, "_view", "agents") == "agents" and self._motion() and any(r.status == "working" for r in self.snap.rows):
             self.draw_screen()
             self._schedule_spin()
 
@@ -739,7 +785,7 @@ class Sidebar(Handler):
                     "done": kittymux_theme.blend(p.done, p.bg, 0.65), "unread": p.faint}.get(r.status)
         title_fg = p.text if (selected or r.current) else p.muted
         title = deck.pad(r.title or "—", bar_w - 3 - 2, _cells)
-        dot = (kittymux_agents.state_glyph(r.status), state_fg, r.status in kittymux_agents.NEEDS_YOU) if state_fg is not None else (" ", p.text, False)
+        dot = (kittymux_agents.state_glyph(r.status, animate=self._motion()), state_fg, r.status in kittymux_agents.NEEDS_YOU) if state_fg is not None else (" ", p.text, False)
         line1 = self._line([rail, icon, (" ", p.text, False),
                             (title, title_fg, selected or r.current), dot, (" ", p.text, False)], bar_w, bg)
 
