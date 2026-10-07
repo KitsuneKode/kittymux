@@ -9,7 +9,7 @@
     "start": "vite preview",
     "preview": "vite preview",
     "types:check": "tsc --noEmit",
-    "sync": "bun scripts/sync-docs.mjs",
+    "sync": "bun scripts/sync-docs.mjs && bun scripts/gen-facts.mjs",
     "predev": "bun run sync",
     "prebuild": "bun run sync",
     "test": "bun test",

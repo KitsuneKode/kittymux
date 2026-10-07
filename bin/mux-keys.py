@@ -48,8 +48,8 @@ def _vlen(s: str) -> int:
 # ── conf parsing ────────────────────────────────────────────────────────────
 
 _KEY_IN_COMMENT = re.compile(
-    r"^#\s*((?:ctrl|shift|alt|kitty_mod|cmd|super|caps_lock)\+[+\w;,.\[\]/=-]+"
-    r"|[+\w;,.\[\]/=-]+[+][\w;,.\[\]/=-]+)\s*(?:\(.*?\))?\s*[-—–]{1,2}\s*(.+)$")
+    r"^#\s*((?:ctrl|shift|alt|kitty_mod|cmd|super|caps_lock)\+[+\w;,.\[\]/=`\\-]+"
+    r"|[+\w;,.\[\]/=`\\-]+[+][\w;,.\[\]/=`\\-]+)\s*(?:\(.*?\))?\s*[-—–]{1,2}\s*(.+)$")
 
 _SECTION_MARK = re.compile(r"^#\s*=+\s*$")
 _MAP_LINE = re.compile(r"^map(?:\s+--when-focus-on\s+\S+)?\s+(\S+)\s+(.*)$")
@@ -103,6 +103,11 @@ _ACTION_LABELS = {
     "show_last_command_output": "last command output",
     "show_scrollback": "scrollback pager",
     "scroll_to_prompt": "scroll to prompt",
+    "scroll_page_up": "scroll up one page",
+    "scroll_page_down": "scroll down one page",
+    "scroll_home": "scroll to the top of the scrollback",
+    "scroll_end": "scroll to the bottom (the live screen)",
+    "goto_tab": "previously active tab",
     "resize_window": "resize pane",
     "send_text": "send text",
     "toggle_fullscreen": "fullscreen",
@@ -122,6 +127,8 @@ _TAIL_WORDS = {
 def _humanize(rest: str) -> str:
     parts = rest.split()
     action = parts[0] if parts else ""
+    if "mux-newtab" in rest and "--home" in rest:
+        return "new tab in your home directory"
     for stem, label in _LABELS.items():
         if stem in rest:
             tail = parts[-1] if parts else ""
@@ -131,6 +138,14 @@ def _humanize(rest: str) -> str:
             elif tail and re.fullmatch(r"\d+", tail):
                 suffix = " " + tail
             return label + suffix
+    if action == "resize_window" and len(parts) >= 2 and parts[1] in ("narrower", "wider", "taller", "shorter"):
+        n = parts[2] if len(parts) > 2 and parts[2].isdigit() else ""
+        unit = "columns" if parts[1] in ("narrower", "wider") else "rows"
+        return f"resize pane {parts[1]}" + (f" by {n} {unit}" if n else "")
+    if action == "scroll_to_prompt" and len(parts) == 2:
+        return "scroll to the previous shell prompt" if parts[1].startswith("-") else "scroll to the next shell prompt"
+    if action == "goto_tab" and parts[1:2] == ["-1"]:
+        return "flip to the previously active tab"
     if action == "nth_window" and len(parts) == 2 and re.fullmatch(r"\d+", parts[1]):
         return f"focus pane {int(parts[1]) + 1}"                    # kitty counts from 0, the digit on screen from 1
     label = _ACTION_LABELS.get(action, "")
@@ -248,7 +263,12 @@ def parse_conf(path: str) -> list[tuple[str, list[tuple[str, str]]]]:
             if m:
                 key_comments[_comment_key(m.group(1).strip())] = m.group(2).strip()
                 continue
+            if re.match(r"^map\s+--mode\s", line):
+                continue                                       # a key INSIDE a mode (spawn, leader): the mode's own comment and card describe them
             m = _MAP_LINE.match(line)
+            if m and m.group(1) == "--new-mode":               # `map --new-mode spawn <options> CHORD`: the chord that opens the mode is the row
+                chord = line.split()[-1]
+                m = re.match(r"^(\S+)\s+(.*)$", f"{chord} mode")
             if m and not line.startswith("map --when-focus-on"):
                 key, rest = m.group(1), m.group(2)
                 desc = key_comments.pop(_comment_key(key), None) or _humanize(rest)

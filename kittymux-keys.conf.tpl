@@ -187,7 +187,7 @@ map alt+shift+h           resize_window narrower 3
 map alt+shift+l           resize_window wider 3
 map alt+shift+j           resize_window taller 3
 map alt+shift+k           resize_window shorter 3
-# alt+shift+equal — make every pane in this tab the same size again (what ctrl+alt+0 used to do)
+# alt+shift+equal — make every pane in this tab the same size again
 map alt+shift+equal       layout_action equalize
 
 # ============================================
