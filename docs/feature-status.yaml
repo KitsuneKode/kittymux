@@ -64,7 +64,7 @@ features:
   - id: panel-usage
     label: Usage view in the panel
     status: shipped
-    description: Provider tiles, limit gauges with a pace tick and a countdown, token counters with a week of bars, and state chips, drawn from one model for every provider.
+    description: Provider tiles, limit gauges with a pace notch and a countdown, token counters with a week of bars, and state chips, drawn from one model for every provider.
   - id: panel-inbox
     label: Inbox view in the panel
     status: shipped
