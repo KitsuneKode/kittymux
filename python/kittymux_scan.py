@@ -423,6 +423,7 @@ def scan_all(timer_id=None) -> None:
     try:
         from kitty.fast_data_types import get_boss
         boss = get_boss()
+        _socket_link()                                       # a flag check once it has run; retries until kitty is listening
         now = time.monotonic()
         live, bars, n_agents, dirty = set(), {}, 0, False
         age_due = now - vars(_RT).get("age_refresh", 0.0) >= AGE_REFRESH
@@ -1101,6 +1102,33 @@ def _retime(interval: float) -> None:
         _RT.scan_timer = None
 
 
+def _socket_link() -> None:
+    """Once per kitty process: keep /tmp/mykitty-<pid> pointing at kitty's real control socket when that lives elsewhere ($XDG_RUNTIME_DIR). Scripts written
+    for `listen_on unix:/tmp/mykitty` look nowhere else, and silently stopped working the day the socket moved (the user's own quick-config chords did).
+    Never replaces anything that exists, only ever acts on kitty's own socket, and never raises. Switch: `socketlink`."""
+    try:
+        rt = vars(_RT)
+        if rt.get("socklink_done"):
+            return
+        from kitty.fast_data_types import get_boss
+        listening = getattr(get_boss(), "listening_on", "") or ""
+        if not listening:
+            return                                           # kitty is not listening (yet): ask again on the next call
+        rt["socklink_done"] = True
+        _ensure_path()
+        import kittymux_features
+        import kittymux_sockets
+        if not kittymux_features.enabled("socketlink", state_dir()):
+            _record("socketlink", "-", "", outcome="switched off")
+            return
+        legacy = os.environ.get("KITTYMUX_LEGACY_SOCKET_DIR") or "/tmp"
+        runtime = os.path.dirname(listening[5:]) if listening.startswith("unix:/") else None
+        pruned = kittymux_sockets.prune_links(legacy, runtime)
+        _record("socketlink", "-", "", outcome=kittymux_sockets.legacy_link(listening, legacy), pruned=len(pruned))
+    except Exception:
+        _debug()
+
+
 def ensure_started() -> bool:
     """Start the scanner if it is not running. Idempotent and cheap — the tab bar calls it on
     every draw, so a freshly (re)loaded kitty config brings it up without a restart."""
@@ -1113,6 +1141,7 @@ def ensure_started() -> bool:
     except Exception:
         return False
     _install_notification_tap()
+    _socket_link()
     _retime(SCAN_FAST)
     return _RT.scan_timer is not None
 
@@ -1121,6 +1150,7 @@ def restart() -> None:
     """Drop the timers and start fresh — used after this file was reloaded so the timer runs the
     NEW code rather than the function objects of the previous version."""
     stop()
+    vars(_RT).pop("socklink_done", None)                     # a reload re-checks the link (cheap): the user may have removed it, or a kitty may have exited
     _install_quit_capture()
     ensure_started()
 

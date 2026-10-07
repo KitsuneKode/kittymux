@@ -251,6 +251,7 @@ Every optional piece is its own switch — use all of it, some of it, or none (t
 | `sudo` | a notification when `sudo`/`doas`/`su`/`pkexec` waits for your password in a pane you are not looking at (fixed text; the line on screen is never stored) | on |
 | `loginprompt` | the same for `ssh` and `git` asking for a passphrase, a password or to trust a host | on |
 | `pkgprompt` | the same for `pacman`/`paru`/`yay`/`apt`/`dnf` waiting for a yes or a no | on |
+| `socketlink` | a link at `/tmp/mykitty-<pid>` to kitty's real control socket, so scripts written for `listen_on unix:/tmp/mykitty` still find it | on |
 
 ```bash
 kittymux features                 # what is on, and where each setting comes from

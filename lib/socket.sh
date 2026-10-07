@@ -25,9 +25,14 @@ mux_owned_socket() { [[ -S "$1" && -O "$1" ]]; }
 # Owned kitty sockets, newest first (kitty appends its pid: listen_on unix:/tmp/mykitty →
 # /tmp/mykitty-<pid>). Also looks in $XDG_RUNTIME_DIR, the safer place for listen_on.
 mux_kitty_sockets() {
-    local s
+    local s real seen=$'\n'
     while IFS= read -r s; do
-        mux_owned_socket "$s" && printf '%s\n' "$s"
+        mux_owned_socket "$s" || continue
+        # a socket and its /tmp compatibility link are ONE kitty: list the first spelling only
+        real=$(readlink -f -- "$s" 2>/dev/null || printf '%s' "$s")
+        case "$seen" in *$'\n'"$real"$'\n'*) continue ;; esac
+        seen+="$real"$'\n'
+        printf '%s\n' "$s"
     done < <(ls -t /tmp/mykitty-* "${XDG_RUNTIME_DIR:-/nonexistent}"/mykitty-* 2>/dev/null)
 }
 

@@ -16,6 +16,9 @@ symptoms:
   - id: notifications-wrong
     question: Why are notifications doubled or missing?
     anchor: notifications are doubled or missing
+  - id: scripts-lost-kitty
+    question: Why do my own scripts and their keys stop working after I moved the control socket?
+    anchor: my own scripts cannot find kitty after i moved the socket
   - id: finished-too-early
     question: Why does an agent show as finished too early?
     anchor: an agent shows as finished too early

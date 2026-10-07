@@ -60,6 +60,16 @@ got="$(
 )"
 check "no trusted socket returns failure and no fallback address" '1:' "$got"
 
+# a socket and its /tmp compatibility link are ONE kitty
+mkdir -p "$tmp/leg"; ln -sf "$tmp/run/mykitty-$PPID" "$tmp/leg/mykitty-$PPID"
+listed="$(
+    ls() { command ls "$@" 2>/dev/null; }
+    # shellcheck disable=SC2329
+    mux_kitty_sockets_probe() { :; }
+    for s in "$tmp/leg/mykitty-$PPID" "$tmp/run/mykitty-$PPID"; do mux_owned_socket "$s" && printf '%s\n' "$s"; done | while IFS= read -r s; do readlink -f -- "$s"; done | sort -u | wc -l
+)"
+check "the link and the socket resolve to one kitty" 1 "$listed"
+
 # private runtime dir
 d="$(XDG_RUNTIME_DIR="$tmp/run" mux_runtime_dir)"
 check "runtime dir under XDG_RUNTIME_DIR"   "$tmp/run/kittymux" "$d"

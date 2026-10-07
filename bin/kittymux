@@ -179,13 +179,36 @@ def _socket_dirs() -> list[str]:
     return dirs
 
 
+def _doctor_legacy_scripts(r) -> None:
+    """The socket lives in a private directory, but older scripts look for /tmp/mykitty-<pid> (what `listen_on unix:/tmp/mykitty` made). Say how many of
+    YOUR scripts do, and whether the compatibility link that keeps them working is on (feature `socketlink`)."""
+    import glob as _glob
+    n = 0
+    for path in sorted(_glob.glob(os.path.join(CFG, "*.sh")))[:200]:
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                n += "/tmp/mykitty" in f.read(65536)
+        except OSError:
+            pass
+    if not n:
+        return
+    if kittymux_features.enabled("socketlink", STATE):
+        r.ok(f"{n} of your scripts in {CFG} look for /tmp/mykitty-<pid>: kittymux keeps a link there, so they still find kitty")
+    else:
+        r.warning(f"{n} of your scripts in {CFG} look for /tmp/mykitty-<pid>, and the socket is elsewhere", "turn the link back on:  kittymux features on socketlink  (then reload)")
+
+
 def _sockets() -> list[str]:
     """Kitty sockets we may trust: real sockets owned by us, in /tmp or $XDG_RUNTIME_DIR."""
     import glob
+    import kittymux_sockets
     socks = [s for d in _socket_dirs() for s in glob.glob(os.path.join(d, "mykitty-*")) if _owned_socket(s)]
     env = os.environ.get("KITTY_LISTEN_ON", "")
     ok_env = [env] if env.startswith("unix:") and _owned_socket(env[5:]) else []
-    return list(dict.fromkeys(ok_env + [f"unix:{s}" for s in socks]))      # one entry per socket, order kept
+    every = list(dict.fromkeys(ok_env + [f"unix:{s}" for s in socks]))
+    by_path = {e: e[5:] for e in every}                                       # a socket and its /tmp compatibility link are ONE kitty: list it once
+    kept = kittymux_sockets.dedupe(list(by_path.values()))
+    return [e for e in every if by_path[e] in kept]
 
 
 def _fc_families() -> set:
@@ -343,6 +366,8 @@ def doctor() -> int:
                           "prefer  listen_on unix:${XDG_RUNTIME_DIR}/mykitty  (private 0700 directory; kittymux finds it there too)")
         else:
             r.warning("remote control may be off", "add to kitty.conf: allow_remote_control socket-only / listen_on unix:${XDG_RUNTIME_DIR}/mykitty")
+        if listen and not listen.group(1).startswith("/tmp/"):
+            _doctor_legacy_scripts(r)
     import glob as _glob
     for f in ["tab_bar.py"] + sorted(os.path.basename(g) for g in _glob.glob(os.path.join(HOME_DIR, "python", "kittymux_*.py"))):
         p = os.path.join(CFG, f)
@@ -2189,6 +2214,7 @@ FEATURE_HELP = {
     "sudo": "a desktop notification when sudo, doas, su or pkexec waits for your password in a pane you are not looking at",
     "loginprompt": "the same for ssh and git asking for a passphrase, a password or to trust a host",
     "pkgprompt": "the same for pacman, paru, yay, apt and dnf waiting for a yes or a no",
+    "socketlink": "a link at /tmp/mykitty-<pid> to kitty's real control socket, so scripts written for listen_on in /tmp still find this kitty",
     "motion": "the working spinner turns (off: one still frame, and nothing redraws a bar just to animate it)",
 }
 

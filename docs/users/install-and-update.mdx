@@ -60,7 +60,7 @@ allow_remote_control socket-only
 listen_on unix:${XDG_RUNTIME_DIR}/mykitty
 ```
 
-`socket-only` stops programs inside a terminal, such as an agent's tool output or a file you `cat`, from controlling kitty with an escape sequence. Plain `yes` allows that. The runtime directory is private to you, unlike `/tmp`. kittymux works fully with this setting, and `kittymux doctor` warns about `yes` and about a socket in `/tmp`.
+Scripts of your own that look for `/tmp/mykitty-<pid>` keep working: kittymux links that path to the real socket (switch `socketlink`). `socket-only` stops programs inside a terminal, such as an agent's tool output or a file you `cat`, from controlling kitty with an escape sequence. Plain `yes` allows that. The runtime directory is private to you, unlike `/tmp`. kittymux works fully with this setting, and `kittymux doctor` warns about `yes` and about a socket in `/tmp`.
 
 ### Leader mode
 

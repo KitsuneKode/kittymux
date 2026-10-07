@@ -59,6 +59,14 @@ kittymux doctor
 
 **Fix.** Run `kittymux hooks --install`. With the `Stop` hook, only the agent's own word ends a turn. `kittymux doctor` says when a hook event is missing. Then run `kittymux explain` to see which evidence ended the turn. See [When is something "done"?](/docs/users/agent-status#when-is-something-done).
 
+## My own scripts cannot find kitty after I moved the socket
+
+**Cause.** Scripts written for `listen_on unix:/tmp/mykitty` look for `/tmp/mykitty-<pid>` and nowhere else. When the socket moves to `${XDG_RUNTIME_DIR}`, they find no kitty. Their keys then seem to do nothing, with no error to read, because a key-bound background script has nowhere to print one.
+
+**What kittymux does.** It keeps a link at `/tmp/mykitty-<pid>` that points to the real socket, so those scripts keep working. The link grants nothing: the socket sits in your private directory, and only you can open it. kittymux never replaces anything that is already at that path, and it removes the links of kitties that have exited. `kittymux doctor` says how many of your scripts depend on it.
+
+**Fix if it is missing.** `kittymux features on socketlink`, then reload kitty (`kittymux upgrade`). For one kitty, right now: `ln -s "$XDG_RUNTIME_DIR/mykitty-<pid>" /tmp/mykitty-<pid>`.
+
 ## A bell moves my focus
 
 **Cause.** A bell in an unfocused window makes kitty request attention, and some compositors answer by focusing that window and switching workspace. Hyprland does this when `misc:focus_on_activate` is on.

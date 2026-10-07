@@ -761,6 +761,66 @@ class LimitEpisodeTests(ScanBase):
         self.assertTrue(any("same usage-limit episode" in o for o in outcomes), outcomes)
 
 
+class SocketLinkTests(ScanBase):
+    """The compatibility link at /tmp/mykitty-<pid> (see kittymux_sockets): made once per kitty, never over anything, switchable."""
+
+    def setUp(self):
+        super().setUp()
+        import socket as _s
+        self.dir = tempfile.mkdtemp()
+        self.run, self.legacy = os.path.join(self.dir, "run"), os.path.join(self.dir, "tmp")
+        os.mkdir(self.run, 0o700)
+        os.mkdir(self.legacy)
+        self.path = os.path.join(self.run, "mykitty-4242")
+        self.sock = _s.socket(_s.AF_UNIX)
+        self.sock.bind(self.path)
+        self.k.boss.listening_on = "unix:" + self.path
+        vars(KS._RT).pop("socklink_done", None)
+        self._env2 = mock.patch.dict(os.environ, {"KITTYMUX_LEGACY_SOCKET_DIR": self.legacy})
+        self._env2.start()
+
+    def tearDown(self):
+        self._env2.stop()
+        self.sock.close()
+        super().tearDown()
+
+    def link(self):
+        return os.path.join(self.legacy, "mykitty-4242")
+
+    def test_starting_the_scanner_links_the_old_path_once(self):
+        KS.ensure_started()
+        self.assertEqual(os.readlink(self.link()), self.path)
+        os.unlink(self.link())
+        KS.ensure_started()                                   # the bar calls this on every draw: it must not redo the work
+        self.assertFalse(os.path.lexists(self.link()))
+        KS.restart()                                          # a config reload does: that re-checks
+        self.assertEqual(os.readlink(self.link()), self.path)
+
+    def test_the_decision_log_says_what_happened(self):
+        KS.ensure_started()
+        rows = [r for r in vars(KS._RT).get("decisions", []) if r.get("kind") == "socketlink"]
+        self.assertEqual([r["outcome"] for r in rows], ["linked"])
+
+    def test_the_switch_turns_it_off(self):
+        open(os.path.join(self.state, "socketlink-off"), "w").close()
+        KS.ensure_started()
+        self.assertEqual(os.listdir(self.legacy), [])
+
+    def test_a_kitty_that_is_not_listening_is_left_alone_and_asked_again_later(self):
+        self.k.boss.listening_on = ""
+        KS.ensure_started()
+        self.assertEqual(os.listdir(self.legacy), [])
+        self.assertNotIn("socklink_done", vars(KS._RT))
+        self.k.boss.listening_on = "unix:" + self.path
+        KS.scan_all()                                         # the scanner's own tick retries: the bar does not call ensure_started again
+        self.assertTrue(os.path.islink(self.link()))
+
+    def test_links_of_kitties_that_exited_are_removed(self):
+        os.symlink(os.path.join(self.run, "mykitty-1"), os.path.join(self.legacy, "mykitty-1"))
+        KS.ensure_started()
+        self.assertEqual(sorted(os.listdir(self.legacy)), ["mykitty-4242"])
+
+
 class InboxIntegrationTests(ScanBase):
     def inbox(self):
         return KS._inbox().load(self.state)
