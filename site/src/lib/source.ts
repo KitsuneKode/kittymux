@@ -1,5 +1,6 @@
 import { llms, loader } from 'fumadocs-core/source';
 import { defineDocs } from 'fumadocs-mdx/macro';
+import { applyMdxPreset } from 'fumadocs-mdx/config';
 import { lucideIconsPlugin } from 'fumadocs-core/source/lucide-icons';
 import { docsRoute } from './shared';
 
@@ -7,10 +8,8 @@ export const docs = defineDocs({
   dir: 'content/docs',
   docs: {
     async: true,
-    mdxOptions: {
-      // kitty config blocks are written ```conf in docs/; Shiki has no such grammar, and ini highlights it the same way
-      rehypeCodeOptions: { langAlias: { conf: 'ini' } },
-    },
+    // Code blocks are dark in both site themes (see app.css), so one dark, high-contrast Shiki theme serves both.
+    mdxOptions: applyMdxPreset({ rehypeCodeOptions: { themes: { light: 'github-dark-high-contrast', dark: 'github-dark-high-contrast' } } }),
     postprocess: {
       includeProcessedMarkdown: true,
     },

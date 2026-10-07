@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { syncDocs, validateDocs } from './sync-docs.mjs'
+import { forSite, syncDocs, validateDocs } from './sync-docs.mjs'
 
 function fixture(files) {
   const root = mkdtempSync(join(tmpdir(), 'kmx-docs-'))
@@ -72,4 +72,10 @@ test('sync copies pages, meta files and referenced assets, and throws on errors'
   expect(existsSync(join(pub, 'assets', 'x.png'))).toBe(true)
   const bad = fixture({ 'docs/index.mdx': page('Home', '[x](/docs/gone)') })
   expect(() => syncDocs({ docsDir: join(bad, 'docs'), assetsDir: join(bad, 'assets'), outDir: join(bad, 'o'), publicDir: join(bad, 'p') })).toThrow(/gone/)
+})
+
+test('conf fences become ini in the site copy only, and only as a fence language', () => {
+  expect(forSite('```conf\nx=1\n```\n  ```conf\n')).toBe('```ini\nx=1\n```\n  ```ini\n')
+  expect(forSite('```config\n```conf-extra')).toBe('```config\n```conf-extra')
+  expect(forSite('say conf here')).toBe('say conf here')
 })

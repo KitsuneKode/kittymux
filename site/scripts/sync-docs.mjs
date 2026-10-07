@@ -1,5 +1,5 @@
 // docs/ is the only place prose lives. This validates it for the site and copies it into content/docs.
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -70,6 +70,11 @@ export function validateDocs(docsDir, assetsDir) {
   return { errors, pages: [...pages], assets: [...assets] }
 }
 
+/** docs/ writes kitty config blocks as ```conf; Shiki has no such grammar and ini highlights the same lines. Only the site's copy changes. */
+export function forSite(text) {
+  return text.replace(/^(\s*```)conf(?![\w-])/gm, '$1ini')
+}
+
 export function syncDocs({ docsDir, assetsDir, outDir, publicDir }) {
   const { errors, pages, assets } = validateDocs(docsDir, assetsDir)
   if (errors.length) throw new Error(`docs sync failed:\n  ${errors.join('\n  ')}`)
@@ -79,7 +84,8 @@ export function syncDocs({ docsDir, assetsDir, outDir, publicDir }) {
     if (!/\.(mdx?|json)$/.test(file)) continue
     const dest = join(outDir, relative(docsDir, file))
     mkdirSync(dirname(dest), { recursive: true })
-    cpSync(file, dest)
+    if (/\.mdx?$/.test(file)) writeFileSync(dest, forSite(readFileSync(file, 'utf8')))
+    else cpSync(file, dest)
   }
   for (const rel of assets) {                                         // only what the pages show: the notification icons and templates stay out
     const dest = join(publicDir, 'assets', rel)
