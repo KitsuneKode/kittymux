@@ -104,6 +104,29 @@ class QuietByDefaultTests(unittest.TestCase):
         self.assertNotIn("done", text(V.context_row(k, row(status="done", age=""), False, False, 40)))          # under a minute is not news
         self.assertNotIn("4m", text(V.context_row(k, row(status="working", age="4m"), False, False, 40)))
 
+    def test_the_state_words_give_way_before_the_place_does(self):
+        k = next(kits())
+        r = row(status="waiting", age="4m", branch="main")
+        wide_text = text(V.context_row(k, r, False, False, 40))
+        self.assertIn("needs you 4m", wide_text)
+        for w in (20, 22, 24, 26, 30):
+            t = text(V.context_row(k, r, False, False, w))
+            self.assertIn("main", t, (w, t))                                  # the branch is never cut for the sake of the word
+            self.assertTrue(t.rstrip().endswith("3"), (w, t))
+        tight = text(V.context_row(k, r, False, False, 22))
+        self.assertIn("4m", tight)                                            # the age survives longest: it is the news
+        self.assertNotIn("needs you", tight)
+        limited = text(V.context_row(k, row(status="limited", age="1h", cwd="/home/u/.config/hypr", branch=""), False, False, 26, "/home/u"))
+        self.assertIn("~/.con", limited)
+
+    def test_pr_and_ports_never_wear_a_state_colour(self):
+        for k in kits():
+            p = k.p
+            state_colours = {p.working, p.waiting, p.alert, p.done}
+            for s in V.context_row(k, row(), True, False, 40, ""):
+                if ":3000" in s.text or "#42" in s.text:
+                    self.assertFalse({s.fg} & state_colours, (s, "a PR or port looks like a state"))
+
     def test_the_current_tab_counts_as_lit_too(self):
         k = next(kits())
         self.assertIn(":3000", text(V.context_row(k, row(current=True), False, False, 36)))
@@ -211,6 +234,45 @@ class ActionBarTests(unittest.TestCase):
         line, _ = V.action_bar(k, [("\x1b[31mx", "ev\x1b]0;t\x07il", "X")], 30)
         self.assertNotIn("\x1b", text(line))
         self.assertNotIn("\x07", text(line))
+
+
+class EmptyTests(unittest.TestCase):
+    def test_an_empty_list_says_why_and_what_to_do_in_the_exact_width(self):
+        for k in kits():
+            for w in (10, 20, 26, 38):
+                for query in ("", "zzz", "x" * 100, "\x1b[31mred"):
+                    lines = V.empty_rows(k, w, query)
+                    self.assertTrue(all(U.line_cells(l, k.cells) == w for l in lines), (w, query))
+                    self.assertTrue(all("\x1b" not in text(l) for l in lines))
+        k = next(kits())
+        quiet = " ".join(text(l) for l in V.empty_rows(k, 40))
+        self.assertIn("No tabs yet", quiet)
+        searched = " ".join(text(l) for l in V.empty_rows(k, 60, "migrate"))
+        self.assertIn("No tab matches", searched)
+        self.assertIn("migrate", searched)
+        self.assertIn("esc clears", searched)
+
+
+class DisclosureTests(unittest.TestCase):
+    def test_a_split_tab_shows_a_marker_that_says_open_or_closed_in_column_two(self):
+        for k in kits():
+            for state, glyph in ((False, "\u25b8"), (True, "\u25be")):
+                line = V.context_row(k, row(panes=3), False, False, 36, "", state)
+                t = text(line)
+                self.assertEqual(t[2], glyph, t)
+                self.assertEqual(U.line_cells(line, k.cells), 36)
+            plain = text(V.context_row(k, row(panes=1), False, False, 36, "", None))
+            self.assertNotIn("\u25b8", plain)
+            self.assertNotIn("\u25be", plain)
+            self.assertEqual(plain[2], " ")
+
+    def test_the_marker_never_changes_the_width_or_pushes_the_number_off(self):
+        k = next(kits())
+        for w in (12, 16, 20, 26, 38):
+            for state in (None, False, True):
+                t = text(V.context_row(k, row(panes=3), False, False, w, "", state))
+                self.assertEqual(len(t), w)
+                self.assertTrue(t.rstrip().endswith("3"), (w, state, t))
 
 
 class HeaderTests(unittest.TestCase):

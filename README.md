@@ -246,6 +246,7 @@ Every optional piece is its own switch — use all of it, some of it, or none (t
 | `sheet` | the side sheet — **planned, no effect yet** | planned |
 | `hover` | open the sheet on hover — **planned, no effect yet**; kitty sends the bar no idle mouse motion, so it can only live inside the sheet | planned |
 | `panetitle` | the same line in each pane's title bar, then the pane's own title (`ctrl+alt+shift+c` shows the bars; kitty ≥ 0.49.2) | on |
+| `titles` | a tab is called by its task, or by its project when the title is only a product name or an agent's reply; titles are cut at a word | on |
 | `motion` | the working spinner turns (off: one still frame in the bar and the panel, and no timer redraws a bar just to animate it) | on |
 
 ```bash

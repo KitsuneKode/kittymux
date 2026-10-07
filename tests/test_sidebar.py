@@ -25,7 +25,7 @@ def load_sidebar(cfg=None, argv0=None):
         "kittens.tui.operations": dict(MouseTracking=types.SimpleNamespace(full=1),
                                       set_cursor_position=Mock(), styled=Mock()),
         "kitty.fast_data_types": dict(wcswidth=len),
-        "kitty.key_encoding": dict(EventType=types.SimpleNamespace(RELEASE="release")),
+        "kitty.key_encoding": dict(EventType=types.SimpleNamespace(PRESS="press", RELEASE="release")),
         "kitty.rgb": dict(Color=Mock()), "kitty.typing_compat": dict(BossType=object),
     }
     for name, values in attrs.items():
@@ -117,6 +117,147 @@ class SidebarTests(unittest.TestCase):
         with patch.object(s, "_request_preview"), patch.object(s, "_schedule_spin"):
             s._apply(self.m.Snapshot([self.m.deck.RowData(2, 22), r], ""))
         self.assertEqual(s._hover_pane, (1, 1))
+        s.finalize()
+
+    # ---- a split tab's panes are listed only when you open it ------------------------------------------------------------------------
+    def split_rows(self, current=1):
+        D = self.m.deck
+        def row(tab, win, panes, cur=False, status=""):
+            pr = tuple(D.PaneData(win * 10 + j, state="waiting" if status == "waiting" and j == 1 else "") for j in range(panes)) if panes >= 2 else ()
+            return D.RowData(tab, win, title=f"tab {tab}", pane_rows=pr, panes=max(1, panes), current=cur, status=status, win_ids=tuple(win * 10 + j for j in range(panes)))
+        return [row(1, 1, 3, cur=current == 1), row(2, 2, 1), row(3, 3, 2, cur=current == 3), row(4, 4, 2)]
+
+    def applied(self, rows=None):
+        s = self.sidebar()
+        with patch.object(s, "_request_preview"), patch.object(s, "_schedule_spin"):
+            s._apply(self.m.Snapshot(rows or self.split_rows(), ""))
+        return s
+
+    def kinds(self, s):
+        return [(i.kind, i.row) for i in s.snap.items if i.kind in ("row", "pane")]
+
+    def test_the_first_look_opens_only_the_tab_you_are_in(self):
+        s = self.applied()
+        self.assertEqual(s._open, {1})
+        self.assertEqual([k for k in self.kinds(s) if k[0] == "pane"], [("pane", 0)] * 3)         # tab 1's three panes; tab 3 and 4 are one line each
+        s.finalize()
+
+    def test_hovering_never_opens_a_tab_and_a_refresh_does_not_either(self):
+        s = self.applied()
+        before = list(s.snap.items)
+        with patch.object(s, "_request_preview"):
+            for y in range(2, 14):
+                s.on_mouse_move(types.SimpleNamespace(cell_x=5, cell_y=y))
+        self.assertEqual(s._open, {1})
+        # an agent in a collapsed split starts asking: its row says so, the list does not move under the pointer
+        rows = self.split_rows()
+        rows[3].status = "waiting"
+        rows[3].pane_rows[1].state = "waiting"
+        with patch.object(s, "_request_preview"), patch.object(s, "_schedule_spin"):
+            s._apply(self.m.Snapshot(rows, ""))
+        self.assertEqual(s._open, {1})
+        self.assertEqual([i.kind for i in s.snap.items], [i.kind for i in before])
+        s.finalize()
+
+    def test_keys_open_and_close_the_picked_tab_and_do_nothing_for_a_single_pane(self):
+        s = self.applied()
+        with patch.object(s, "_request_preview"):
+            s.sel = 2                                                                           # tab 3: two panes, closed
+            s.on_key_event(self.key("RIGHT"))
+            self.assertEqual(s._open, {1, 3})
+            s.on_key_event(self.key("LEFT"))
+            self.assertEqual(s._open, {1})
+            s.on_key_event(self.key("O"))
+            self.assertEqual(s._open, {1, 3})
+            s.on_key_event(self.key("O"))
+            self.assertEqual(s._open, {1})
+            s.sel = 1                                                                           # tab 2: one pane
+            for k in ("RIGHT", "O", "LEFT"):
+                s.on_key_event(self.key(k))
+            self.assertEqual(s._open, {1})
+        s.finalize()
+
+    def test_a_click_on_the_marker_toggles_and_does_not_jump_but_a_click_elsewhere_does(self):
+        s = self.applied()
+        y_of = {}
+        for off, it in self.m.deck.visible(s.snap.items, s.scroll, s._avail()):
+            if it.kind == "row":
+                y_of[it.row] = off + 2
+        with patch.object(s, "_jump") as jump, patch.object(s, "_request_preview"):
+            s.on_click(self.click(2, y_of[2] + 1))                                              # the ▸ of tab 3's context line
+            self.assertEqual(s._open, {1, 3})
+            jump.assert_not_called()
+            s.on_mouse_move(types.SimpleNamespace(cell_x=8, cell_y=y_of[0]))                    # a click jumps to the row you are on: hovering selects it
+            s.on_click(self.click(8, y_of[0]))                                                  # the title of tab 1
+            jump.assert_called()
+        s.finalize()
+
+    def test_what_you_opened_survives_a_refresh_and_a_closed_tab_is_forgotten(self):
+        s = self.applied()
+        with patch.object(s, "_request_preview"):
+            s._toggle_open(3, True)
+        self.assertEqual(s._open, {1, 4})
+        with patch.object(s, "_request_preview"), patch.object(s, "_schedule_spin"):
+            s._apply(self.m.Snapshot(self.split_rows(), ""))
+            self.assertEqual(s._open, {1, 4})
+            s._apply(self.m.Snapshot(self.split_rows()[1:], ""))                                # tab 1 is gone
+        self.assertEqual(s._open, {4})
+        s.finalize()
+
+    def test_a_search_keeps_the_open_state(self):
+        s = self.applied()
+        s.query = "tab"
+        with patch.object(s, "_request_preview"):
+            s._refilter()
+        self.assertEqual(s.snap.open_tabs, frozenset({1}))
+        self.assertEqual(len([k for k in self.kinds(s) if k[0] == "pane"]), 3)
+        s.finalize()
+
+    # ---- the ? card -----------------------------------------------------------------------------------------------------------------
+    def test_question_mark_opens_the_card_and_any_key_closes_it_and_a_view_switch_clears_it(self):
+        s = self.applied()
+        s.draw_screen = Mock()
+        s.on_key_event(self.key("?"))
+        self.assertTrue(s._help)
+        s.on_key_event(self.key("j"))
+        self.assertFalse(s._help)                                        # one keypress closes it and is not also acted on
+        self.assertEqual(s.sel, 0)
+        s.on_key_event(self.key("/", mods=1))                            # shift+/ is how a US keyboard types ?
+        self.assertTrue(s._help)
+        s._set_view("usage")
+        self.assertFalse(s._help)
+        s.finalize()
+
+    def test_question_mark_is_text_while_searching(self):
+        s = self.applied()
+        s.draw_screen = Mock()
+        s.searching = True
+        s.on_key_event(types.SimpleNamespace(type="press", key="?", mods=1, text="?"))
+        self.assertFalse(s._help)
+        s.finalize()
+
+    def test_the_footer_has_a_question_mark_keycap_at_the_right_edge_that_a_click_presses(self):
+        s = self.applied()
+        s.draw_screen = Mock()
+        with patch.object(s, "_ansi", return_value=""):
+            s._footer([], [("a", "join", "A")], 30)
+        slot = [r for r in s._foot_regions if r[2] == "?"]
+        self.assertEqual(len(slot), 1)
+        x0, x1, _tok, idx = slot[0]
+        self.assertEqual((x1, x1 - x0), (30, 3))
+        self.assertEqual(idx, self.m._HELP_SLOT)
+        s._foot_y = 5
+        s.on_click(self.click(x0 + 1, 5))
+        self.assertTrue(s._help)
+        s.on_click(self.click(3, 9))                                     # a click anywhere closes the card
+        self.assertFalse(s._help)
+        s.finalize()
+
+    def test_a_footer_too_narrow_for_the_keycap_does_not_draw_it(self):
+        s = self.applied()
+        with patch.object(s, "_ansi", return_value=""):
+            s._footer([], [("a", "join", "A")], 14)
+        self.assertEqual([r for r in s._foot_regions if r[2] == "?"], [])
         s.finalize()
 
     def setUp(self):

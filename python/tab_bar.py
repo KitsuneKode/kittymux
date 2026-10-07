@@ -227,9 +227,8 @@ def _title_keys(os_window_id: int) -> dict:
                 key = hit[1]
             else:
                 # what kitty hands the bar as the tab's title (Tab.data_for_tab_bar): the name you gave it, else the window's title
-                title = _compact_title(types.SimpleNamespace(title=t.name or t.title or "", tab_id=t.id), 40)
                 info = _agent_from_fg(foreground)          # the row draws "web", not "Claude:web": compare what is DRAWN
-                key = _tidy_title(kittymux_agents.strip_agent_prefix(title, info[2] if info else None), info[2] if info else None, cwd)
+                key = _shown_title(types.SimpleNamespace(title=t.name or t.title or "", tab_id=t.id), 40, info, cwd)
             fresh[t.id] = (sig, key)
             out[t.id] = key
     except Exception:
@@ -719,6 +718,19 @@ def _tidy_title(title: str, agent: str | None, cwd: str) -> str:
     return out or title
 
 
+_UNCUT = 400                         # `_compact_title`'s limit when something later does the one and only cut (a word boundary, not mid-word)
+
+
+def _shown_title(tab, limit: int, info, cwd: str) -> str:
+    """The title a row draws, at most `limit` cells: with the `titles` switch on, the whole title is tidied FIRST (a clean-up must see the real text, not one
+    already cut with an ellipsis) and cut ONCE, at a word; off, it is the old path exactly (`_compact_title` cuts, the agent prefix goes)."""
+    agent = info[2] if info else None
+    if not _features().get("titles", True):
+        return kittymux_agents.strip_agent_prefix(_compact_title(tab, limit), agent)
+    whole = kittymux_agents.strip_agent_prefix(_compact_title(tab, _UNCUT), agent)
+    return kittymux_titles.shorten(_tidy_title(whole, agent, cwd), limit, _cells)
+
+
 def _compact_title(tab: TabBarData, limit: int) -> str:
     title = _clean_visible_title(tab.title or "")
     cwd, foreground, last_cmd = _active_window_info(tab.tab_id)
@@ -875,7 +887,7 @@ def _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal) -> i
     state = _tab_state(tab)
     marks_w = 2 if state else 0
     title_limit = _title_limit(max_title_length, index, session_name, tab.is_active, marks_w)
-    title = _tidy_title(kittymux_agents.strip_agent_prefix(_compact_title(tab, title_limit), info[2] if info else None), info[2] if info else None, cwd)
+    title = _shown_title(tab, title_limit, info, cwd)
 
     chip = _rgb(pal.surface_hi) if tab.is_active else 0
     screen.cursor.bg = chip
@@ -1219,9 +1231,8 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
             number = hue if active else kittymux_theme.blend(hue, pal.bar, 0.6)
         _put(screen, 3, str(index), _rgb(number))
     elif title_room >= 3:
-        title = _tidy_title(kittymux_agents.strip_agent_prefix(_compact_title(tab, max(4, title_room)), info[2] if info else None),
-                            info[2] if info else None, cwd)
-        title = kittymux_titles.shorten(title, title_room, _cells) if _features().get("titles", True) else _fit(title, title_room)
+        title = _shown_title(tab, max(4, title_room), info, cwd)
+        title = title if _features().get("titles", True) else _fit(title, title_room)
         _put(screen, 3, title,
              _rgb(pal.text) if active else _rgb(pal.muted), bold=active)
         if _BAR_DUMP and not extra_data.for_layout:

@@ -41,6 +41,7 @@ for _d in (_CONFIG_DIR, _source_dir()):
 import kittymux_agents  # noqa: E402
 import kittymux_agentsview  # noqa: E402
 import kittymux_features  # noqa: E402
+import kittymux_helpview  # noqa: E402
 import kittymux_deck as deck  # noqa: E402
 import kittymux_git  # noqa: E402
 import kittymux_theme  # noqa: E402
@@ -63,6 +64,7 @@ _RAIL = "▌"
 _STALE_AFTER = 15.0
 _PR_TTL = 120.0
 _REFRESH_EVERY = 1.5
+_HELP_SLOT = 999               # the `?` keycap is not one of a view's buttons: it has its own hover slot
 _UNDO_S = 8.0                 # how long `z` can take a dismissal back (the footer says so while it can)
 
 
@@ -194,16 +196,19 @@ def _listeners() -> list:
 
 
 class Snapshot:
-    __slots__ = ("rows", "items", "current_session", "source", "query")
+    __slots__ = ("rows", "items", "current_session", "source", "query", "open_tabs")
 
-    def __init__(self, rows: list, current_session: str, query: str = ""):
-        self.source, self.query = rows, query
+    def __init__(self, rows: list, current_session: str, query: str = "", open_tabs=None):
+        self.source, self.query, self.open_tabs = rows, query, open_tabs
         groups = deck.filter_groups(deck.group_rows(rows, current_session), query)   # indexes are assigned BEFORE filtering
-        self.items, self.rows = deck.flatten(groups, current_session)
+        self.items, self.rows = deck.flatten(groups, current_session, open_tabs)
         self.current_session = current_session
 
     def with_query(self, query: str) -> "Snapshot":
-        return Snapshot(self.source, self.current_session, query)
+        return Snapshot(self.source, self.current_session, query, self.open_tabs)
+
+    def with_open(self, open_tabs) -> "Snapshot":
+        return Snapshot(self.source, self.current_session, self.query, None if open_tabs is None else frozenset(open_tabs))
 
 
 class Collector:
@@ -324,6 +329,8 @@ class Sidebar(Handler):
         self._preview_timer = None
         self._preview_rects = ()
         self._hover_pane = (-1, -1)             # (row, pane) of the child line under the pointer
+        self._help = False                      # the `?` card is showing instead of the view body
+        self._open = None                       # tab ids whose panes are listed under them; None until the first snapshot (then: the tab you are in)
         self.query, self.searching, self.full = "", False, None     # the `/` search
         self._alive = True
         self._preview_worker = deck.LatestWorker(
@@ -548,6 +555,7 @@ class Sidebar(Handler):
 
     def _set_view(self, view):
         self._view = view
+        self._help = False
         self._foot_hot = None
         if view == "usage":
             self._request_usage()
@@ -583,8 +591,19 @@ class Sidebar(Handler):
         pointer is on lights up."""
         pairs = [x if len(x) == 3 else (x[0], x[1], None) for x in pairs]          # (key, label[, token]): no token = a hint, not a button
         lead_w = kittymux_ui.line_cells(lead, self.kit.cells)
-        line, regions = kittymux_agentsview.action_bar(self.kit, pairs, max(0, width - lead_w), getattr(self, "_foot_hot", None))
+        hot = getattr(self, "_foot_hot", None)
+        help_cap, help_w = [], 0
+        if width - lead_w >= 18:                       # a small `?` at the right edge: always there, never squeezed out by the buttons
+            p = self.pal
+            lit = hot == _HELP_SLOT
+            help_cap = [kittymux_ui.S(" ? ", p.on_accent if lit else self.kit.ink(p.text, p.card_hi), p.accent if lit else p.card_hi, bold=True)]
+            help_w = 3
+        line, regions = kittymux_agentsview.action_bar(self.kit, pairs, max(0, width - lead_w - (help_w + 1 if help_w else 0)), hot)
         self._foot_regions = [(x0 + lead_w, x1 + lead_w, token, i) for x0, x1, token, i in regions]
+        if help_w:
+            gap = width - lead_w - help_w - kittymux_ui.line_cells(line, self.kit.cells)
+            line = line + [kittymux_ui.S(" " * max(0, gap), None, self.pal.bar)] + help_cap
+            self._foot_regions.append((width - help_w, width, "?", _HELP_SLOT))
         return self._ansi(lead + line)
 
     def _press(self, token: str) -> None:
@@ -614,6 +633,12 @@ class Sidebar(Handler):
         self._draw_handle(cols, height)
         self.flush()
         return scroll
+
+    def _draw_help(self, cols, height, view):
+        width = self._body_width(cols)
+        header = self.kit.fit_line([kittymux_ui.S(" keys and gestures", self.kit.ink(self.pal.text, self.pal.bar), self.pal.bar, bold=True)], width, self.pal.bar)
+        lines = kittymux_helpview.view(view, width, self.kit)
+        self._draw_body(cols, height, header, lines, 0, [("esc", "back", "ESCAPE")])
 
     def _draw_usage(self, cols, height):
         v = kittymux_usageview.view(self._usage_data, self._usage_history, self._body_width(cols), self._usage_sel, self.kit,
@@ -645,6 +670,11 @@ class Sidebar(Handler):
             return
         keep = self.snap.rows[self.sel].tab_id if self.snap.rows else None
         hovered = self.preview_for if self._hover_pane[0] == self.sel else 0
+        alive = {r.tab_id for r in snap.rows}
+        if self._open is None:
+            self._open = {r.tab_id for r in snap.rows if r.current and len(r.pane_rows) >= 2}      # the first look: your own tab is open, the rest are one line each
+        self._open &= alive                      # a closed tab does not keep a seat
+        snap = snap.with_open(self._open)        # panes appear under a split tab only when it is open: nothing moves under the pointer by itself
         self.full = snap                         # the unfiltered view; self.snap is what the `/` search leaves of it
         self.snap = snap.with_query(self.query) if self.query else snap
         snap = self.snap
@@ -816,7 +846,8 @@ class Sidebar(Handler):
         home = os.path.expanduser("~")
         animate = self._motion()
         return (self._ansi(kittymux_agentsview.title_row(self.kit, r, selected, False, bar_w, animate)),
-                self._ansi(kittymux_agentsview.context_row(self.kit, r, selected, False, bar_w, home)))
+                self._ansi(kittymux_agentsview.context_row(self.kit, r, selected, False, bar_w, home,
+                                                            (r.tab_id in (self._open or ())) if len(r.pane_rows) >= 2 else None)))
 
     def _pane_line(self, r, j: int, bar_w: int, hovered: bool) -> str:
         return self._ansi(kittymux_agentsview.pane_row(self.kit, r, j, hovered, bar_w, self._motion()))
@@ -826,6 +857,9 @@ class Sidebar(Handler):
         cols, rows_n, bar_w = self._geom()
         p = self.pal
         view = getattr(self, "_view", "agents")
+        if self._help:
+            self._draw_help(cols, rows_n, view)
+            return
         if view == "usage":
             self._draw_usage(cols, rows_n)
             return
@@ -874,7 +908,8 @@ class Sidebar(Handler):
         w(set_cursor_position(0, self._foot_y) + self._footer(
             more, [("⏎", "jump", "ENTER"), ("/", "find", "/"), ("a", "join", "A"), ("t", "detach", "T")], bar_w))
         if not snap.rows:
-            w(set_cursor_position(0, 2) + self._line([(" no tabs", p.faint, False)], bar_w, p.bar))
+            for j, ln in enumerate(kittymux_agentsview.empty_rows(self.kit, bar_w, self.query)):
+                w(set_cursor_position(0, 2 + j) + self._ansi(ln))
         if dr and snap.rows:                      # the preview drawer: what the hovered tab/pane shows right now
             r = snap.rows[self.sel]
             row, pane = self._hover_pane
@@ -964,6 +999,14 @@ class Sidebar(Handler):
             return
         k = (key_event.key or "").upper()
         view = getattr(self, "_view", "agents")
+        if self._help:                                          # the `?` card: one keypress closes it, whatever the key
+            self._help = False
+            self.draw_screen()
+            return
+        if not self.searching and ((key_event.key or "") == "?" or getattr(key_event, "text", "") == "?" or ((key_event.key or "") == "/" and key_event.mods & 1)):
+            self._help = True
+            self.draw_screen()
+            return
         if not self.searching and k == "U":
             self._set_view("agents" if view == "usage" else "usage")
             return
@@ -1025,6 +1068,15 @@ class Sidebar(Handler):
             self.sel = max(0, n - 1)
         elif k == "ENTER":
             self._jump()
+            return
+        elif k in ("RIGHT", "L") and not shifted:
+            self._toggle_open(self.sel, True)
+            return
+        elif k in ("LEFT", "H") and not shifted:
+            self._toggle_open(self.sel, False)
+            return
+        elif k == "O" and not shifted:
+            self._toggle_open(self.sel)
             return
         elif k == "A" and not shifted:
             self._absorb()
@@ -1141,6 +1193,10 @@ class Sidebar(Handler):
         if hit and not (self.searching and view == "agents"):
             self._press(hit[1])
             return
+        if self._help:
+            self._help = False
+            self.draw_screen()
+            return
         if y == 1 and not self.searching:                              # the tab strip, in every view
             for x0, x1, name in self._tab_regions:
                 if x0 <= x < x1:
@@ -1175,6 +1231,10 @@ class Sidebar(Handler):
             return
         if mouse_event.cell_x >= self._geom()[2]:
             return
+        line_row, line = deck.row_line_at(self.snap.items, self.scroll, self._avail(), mouse_event.cell_y - 2)
+        if line_row >= 0 and line == 1 and 1 <= x <= 3 and len(self.snap.rows[line_row].pane_rows) >= 2:
+            self._toggle_open(line_row)                  # the ▸ / ▾ in front of the context line: open or close this tab's panes (it does not jump)
+            return
         row, pane = self._pane_at(mouse_event.cell_y)
         if row >= 0:
             self._jump(row, pane)
@@ -1184,6 +1244,24 @@ class Sidebar(Handler):
     def on_resize(self, new_size) -> None:
         self.screen_size = new_size
         self._clamp()
+        self.draw_screen()
+
+    def _toggle_open(self, row: int, to=None) -> None:
+        """Show or hide the panes of split tab `row`. Only a click on its ▸/▾ or →/←/o does this: hovering and an agent starting to ask never do."""
+        if not (0 <= row < len(self.snap.rows)) or len(self.snap.rows[row].pane_rows) < 2:
+            return
+        tab = self.snap.rows[row].tab_id
+        opened = tab in self._open
+        want = (not opened) if to is None else bool(to)
+        if want == opened:
+            return
+        (self._open.add if want else self._open.discard)(tab)
+        self.full = self.full.with_open(self._open) if self.full is not None else None
+        self.snap = self.snap.with_open(self._open)
+        self._hover_pane = (-1, -1)
+        self.sel = next((i for i, r in enumerate(self.snap.rows) if r.tab_id == tab), self.sel)
+        self._clamp()
+        self._request_preview()
         self.draw_screen()
 
     def _promote(self) -> None:

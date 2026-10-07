@@ -102,6 +102,12 @@ settitle s5 "✳ Fix login bug"; expect s5 "Fix login bug" "a running agent with
 settitle s6 "Claude Code"; expect s6 "s6" "an agent with a generic title"
 # 7. the agent exited, its title stayed behind (no shell integration): the folder again
 settitle s7 "✳ Claude Code"; expect s7 "s7" "a stale agent title after the agent exited"
+# 6b. an agent that set a SENTENCE OF ITS REPLY as the title is not named by it: the project is; markdown and a full stop in a real title are cleaned; a task that merely STARTS like a reply word is left alone
+settitle s5 "I can't do that. I don't have access to the files"; expect s5 "s5" "an agent whose title is a sentence of its reply"
+settitle s5 '**Fix** the `login` redirect.'; expect s5 "Fix the login redirect" "markdown and a full stop in a title"
+settitle s6 "Okay button styles"; expect s6 "Okay button styles" "a task title that starts like an interjection"
+settitle s6 "Sorry, I can't find that file"; expect s6 "s6" "an apology as a title"
+echo "  ok   a reply is not a name (the project is), real titles are cleaned and left alone"
 echo "  ok   titled windows, agents with and without a conversation title, a stale title left behind"
 # 8. a restored agent window waiting on its resume prompt: said plainly, never 'python'
 got=$(drawn s8); case "$got" in *resume*) ;; *) fail "a restored window waiting on its resume prompt should say so, the bar drew '$got'" ;; esac

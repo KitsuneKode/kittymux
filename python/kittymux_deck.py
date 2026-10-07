@@ -79,8 +79,9 @@ def group_rows(rows: list[RowData], current_session: str) -> list[tuple[str, lis
     return [(name, groups[name]) for name in sorted(groups, key=key)]
 
 
-def flatten(groups: list[tuple[str, list[RowData]]], current_session: str) -> tuple[list[Item], list[RowData]]:
-    """Items (headers + 2-line rows) and the flat row list they index into."""
+def flatten(groups: list[tuple[str, list[RowData]]], current_session: str, open_tabs=None) -> tuple[list[Item], list[RowData]]:
+    """Items (headers + 2-line rows) and the flat row list they index into. A split tab lists its panes under it only when its tab id is in
+    `open_tabs` (None = every split tab is open): the list stays short until you ask for a tab's panes."""
     items: list[Item] = []
     flat: list[RowData] = []
     only_unnamed = len(groups) == 1 and not groups[0][0]
@@ -91,7 +92,7 @@ def flatten(groups: list[tuple[str, list[RowData]]], current_session: str) -> tu
         for r in members:
             items.append(Item("row", 2, row=len(flat)))
             flat.append(r)
-            if len(r.pane_rows) >= 2:
+            if len(r.pane_rows) >= 2 and (open_tabs is None or r.tab_id in open_tabs):
                 for j in range(min(len(r.pane_rows), MAX_PANE_ROWS)):
                     items.append(Item("pane", 1, row=len(flat) - 1, pane=j))
     return items, flat
@@ -139,6 +140,14 @@ def row_at(items: list[Item], scroll: int, avail: int, y: int) -> int:
         if it.kind == "row" and off <= y < off + it.height:
             return it.row
     return -1
+
+
+def row_line_at(items: list[Item], scroll: int, avail: int, y: int) -> tuple[int, int]:
+    """(flat row index, line inside the row: 0 title, 1 context) under line `y`, else (-1, -1)."""
+    for off, it in visible(items, scroll, avail):
+        if it.kind == "row" and off <= y < off + it.height:
+            return it.row, y - off
+    return -1, -1
 
 
 def pane_at(items: list[Item], scroll: int, avail: int, y: int) -> tuple[int, int]:
@@ -238,6 +247,38 @@ def wrap_detail(text: str, width: int, cells=len) -> list[str]:
         if cells(ch) <= width:
             line += ch
     return out + ([line] if line else [])
+
+
+def wrap_words(text: str, width: int, cells=len) -> list[str]:
+    """Prose wrapped at spaces (a word is never split unless it alone is wider than `width`, and then it is cut by cell). Terminal controls are never drawn."""
+    words = kittymux_place.clean(text).split()
+    if width < 1:
+        return []
+    lines: list[str] = []
+    cur = ""
+    for word in words:
+        cand = f"{cur} {word}" if cur else word
+        if cells(cand) <= width:
+            cur = cand
+            continue
+        if cur:
+            lines.append(cur)
+            cur = ""
+        while cells(word) > width:
+            piece = ""
+            for ch in word:
+                if cells(piece + ch) > width:
+                    break
+                piece += ch
+            if not piece:                                   # a single glyph wider than the room: drop it rather than loop
+                word = word[1:]
+                continue
+            lines.append(piece)
+            word = word[len(piece):]
+        cur = word
+    if cur:
+        lines.append(cur)
+    return lines
 
 
 _RULE = re.compile(r"^[\s\u2500-\u257f\u2580-\u259f\-_=~*+.|]+$")                  # box drawing, block elements, ----, ====: a border, not content

@@ -68,8 +68,9 @@ def title_row(kit: U.Kit, r, selected: bool, hovered: bool, width: int, animate:
     return kit.fit_line(left + body + mark, width, bg)
 
 
-def context_row(kit: U.Kit, r, selected: bool, hovered: bool, width: int, home: str = "") -> list:
-    """Where the tab is (branch, else folder), then — only on the picked or hovered row — PR, ports and pane count; the tab's number sits at the right edge."""
+def context_row(kit: U.Kit, r, selected: bool, hovered: bool, width: int, home: str = "", open_state=None) -> list:
+    """Where the tab is (branch, else folder), then — only on the picked or hovered row — PR, ports and pane count; the tab's number sits at the right edge.
+    `open_state` is None for a tab with one pane, else whether its panes are listed under it: a ▸ / ▾ in column 2 says so and a click there toggles."""
     p = kit.p
     bg = row_bg(p, r, selected, hovered)
     lit = selected or hovered or r.current
@@ -86,16 +87,23 @@ def context_row(kit: U.Kit, r, selected: bool, hovered: bool, width: int, home: 
     detail = []
     if lit:
         if r.pr:
-            detail.append(U.S(kittymux_place.clean(r.pr), kit.ink(p.info, bg), bg))
+            detail.append(U.S(kittymux_place.clean(r.pr), kit.ink(p.muted, bg), bg))        # never a state colour: `info` is the same blue as "working"
         if r.ports:
-            detail.append(U.S(" ".join(f":{int(n)}" for n in r.ports[:3] if isinstance(n, int)), kit.ink(p.info, bg), bg))
+            detail.append(U.S(" ".join(f":{int(n)}" for n in r.ports[:3] if isinstance(n, int)), kit.ink(p.muted, bg), bg))
     if r.panes > 1:
         detail.append(U.S(f"{r.panes} panes", kit.ink(p.muted if lit else p.faint, bg, 3.0), bg))
-    age = f" {r.age}" if r.age else ""
-    tail = [U.S(("needs you" if r.status == "waiting" else "limit hit") + age, kit.ink(_state_color(p, r.status), bg), bg, bold=True)] if needs else \
-           [U.S("done" + age, kit.ink(p.faint, bg, 3.0), bg)] if r.status == "done" and r.age else []
-    left = [rail, U.S("  ", None, bg)]
+    # the state's wording, longest first: the mark at the right edge already says "needs you", so the words give way before the place does
+    word = "needs you" if r.status == "waiting" else "limit hit" if r.status == "limited" else "done" if r.status == "done" and r.age else ""
+    short = "needs" if r.status == "waiting" else "limit" if r.status == "limited" else "done"
+    variants = [f"{word} {r.age}".strip(), f"{short} {r.age}".strip(), r.age] if word else []
+    tail_style = (kit.ink(_state_color(p, r.status), bg), True) if needs else (kit.ink(p.faint, bg, 3.0), False)
+    marker = U.S(" " if open_state is None else "\u25be" if open_state else "\u25b8", kit.ink(p.accent if lit else p.muted, bg, 3.0), bg)
+    left = [rail, U.S(" ", None, bg), marker, U.S(" ", None, bg)]
     room = width - U.line_cells(left, kit.cells) - U.line_cells([idx], kit.cells)
+    first = kit.cells(pieces[0].text) if pieces else 0
+    need_left = min(first, 12)                      # the place must stay readable: at least its first 12 cells (or all of it, when it is shorter)
+    text = next((v for v in dict.fromkeys(variants) if v and room - (kit.cells(v) + 2) >= need_left), "")
+    tail = [U.S(text, tail_style[0], bg, bold=tail_style[1])] if text else []
     reserve = sum(kit.cells(s.text) + 2 for s in tail)
     body, used = [], 0
     for i, s in enumerate(pieces + detail):
@@ -186,3 +194,16 @@ def action_bar(kit: U.Kit, pairs: list, width: int, hot: int | None = None, on: 
         if token is not None:
             regions.append((x0, used, token, i))
     return kit.fit_line(out, width, on), regions
+
+
+def empty_rows(kit: U.Kit, width: int, query: str = "") -> list:
+    """What the list says when it is empty: nothing matches the search (and how to get out of it), or there is no tab yet."""
+    p = kit.p
+    if query:
+        shown = kittymux_place.clean(query)[:24]
+        head, hint = f"No tab matches \u201c{shown}\u201d", "esc clears the search"
+    else:
+        head, hint = "No tabs yet", "open a tab and it shows up here"
+    return [kit.blank(width, p.bar),
+            kit.fit_line([U.S(" " + head, kit.ink(p.text, p.bar), p.bar, bold=True)], width, p.bar),
+            kit.fit_line([U.S(" " + hint, kit.ink(p.muted, p.bar, 3.0), p.bar)], width, p.bar)]

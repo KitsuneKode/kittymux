@@ -205,6 +205,51 @@ class GroupTests(unittest.TestCase):
         self.assertEqual((items[0].count, items[0].attn), (4, 2))
 
 
+class WrapWordsTests(unittest.TestCase):
+    def test_words_stay_whole_and_every_line_fits(self):
+        text = "go to the tab (the pane that asks) and pull this tab's panes into yours"
+        for w in range(6, 60):
+            lines = D.wrap_words(text, w)
+            self.assertTrue(all(len(l) <= w for l in lines), (w, lines))
+            if w >= 12:
+                self.assertEqual(" ".join(lines), text)                              # nothing lost, nothing split (the longest word is 6)
+        self.assertEqual(D.wrap_words("go to the tab (the pane that asks)", 28), ["go to the tab (the pane that", "asks)"])
+
+    def test_a_word_wider_than_the_room_is_cut_by_cell_and_never_loops(self):
+        self.assertEqual(D.wrap_words("abcdefghij", 4), ["abcd", "efgh", "ij"])
+        self.assertEqual(D.wrap_words("a abcdefghij b", 4), ["a", "abcd", "efgh", "ij b"])
+        self.assertEqual(D.wrap_words("x", 0), [])
+        self.assertEqual(D.wrap_words("", 5), [])
+        wide = lambda s: sum(2 if ord(c) > 0x2e80 else 1 for c in s)
+        self.assertTrue(all(wide(l) <= 4 for l in D.wrap_words("界界界界界", 4, wide)))
+        self.assertEqual(D.wrap_words("界", 1, wide), [])                              # a glyph wider than the room cannot be drawn: dropped, not looped on
+
+    def test_controls_are_dropped(self):
+        self.assertNotIn("\x1b", " ".join(D.wrap_words("a\x1b[31m b\x07 c", 20)))
+
+
+class OpenTabsTests(unittest.TestCase):
+    def rows(self):
+        P = D.PaneData
+        return [D.RowData(1, 11, title="a", pane_rows=(P(11), P(12), P(13))), D.RowData(2, 21, title="b"), D.RowData(3, 31, title="c", pane_rows=(P(31), P(32)))]
+
+    def test_panes_are_listed_only_under_open_tabs(self):
+        groups = D.group_rows(self.rows(), "")
+        every = [i.kind for i in D.flatten(groups, "", None)[0]]
+        self.assertEqual(every.count("pane"), 5)                                             # None = everything open: the old behaviour
+        for open_tabs, panes in ((set(), 0), ({1}, 3), ({3}, 2), ({1, 3}, 5), ({2}, 0), ({99}, 0)):
+            items, flat = D.flatten(D.group_rows(self.rows(), ""), "", open_tabs)
+            self.assertEqual([i.kind for i in items].count("pane"), panes, open_tabs)
+            self.assertEqual(len(flat), 3)
+
+    def test_rows_in_a_collapsed_list_are_found_by_line(self):
+        items, _ = D.flatten(D.group_rows(self.rows(), ""), "", set())
+        # items: row a (2 lines), row b (2), row c (2): lines 0-1, 2-3, 4-5 (a lone unnamed group has no header)
+        got = [D.row_line_at(items, 0, 20, y) for y in range(7)]
+        self.assertEqual(got, [(0, 0), (0, 1), (1, 0), (1, 1), (2, 0), (2, 1), (-1, -1)])
+        self.assertEqual(D.pane_at(items, 0, 20, 1), (-1, -1))                                 # no pane lines exist to hit
+
+
 class TidyPreviewTests(unittest.TestCase):
     SCREEN = ["", "\u250c" + "\u2500" * 30 + "\u2510", "\u2502 Audit codebase security and de \u2502", "\u2502 login RAM, verify the mount     \u2502", "\u2514" + "\u2500" * 30 + "\u2518",
               "\u26a0 5h 41% left", "\u203a Ask Codex to do anything", "? for shortcuts", "gpt-6.1 high \u00b7 Context 55% used", "esc to interrupt", "---------"]

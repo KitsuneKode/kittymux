@@ -63,7 +63,7 @@ initial_window_width ${COLS}c
 initial_window_height ${LINES_N}c
 include theme.conf
 CONF
-printf 'new_tab shell\nlaunch sh\nnew_tab web\nlaunch sh\nnew_tab api\nlaunch sh\nfocus_tab 0\n' > "$T/session"
+printf 'new_tab shell\nlaunch sh\nnew_tab web\nlaunch sh\nlaunch sh\nnew_tab api\nlaunch sh\nfocus_tab 0\n' > "$T/session"       # web has TWO panes: a split to open and close
 
 env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_DATA_HOME=$T/data \
   KITTYMUX_USAGE_HOME=$T/world/home KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
@@ -128,6 +128,47 @@ screen | grep -q "▏" || fail "Agents: clicking the find button did not open th
 key Escape
 screen | grep -q "▏" && fail "Agents: Esc did not close the search"
 X mousemove $((GX + GW - 4)) $((GY + 4)); sleep 0.4        # pointer away: nothing stays lit
+
+# a split's panes are listed only when you open it: ▸ closed, ▾ open; keys and a click on the marker both toggle; hovering and refreshes never do
+panes_shown() { screen | grep -c '[├└]'; }
+screen | grep -q "▸" || fail "Agents: the split tab (web) has no closed marker ▸"
+[ "$(panes_shown)" = 0 ] || fail "Agents: a closed split still lists its panes"
+key j; key o
+wait_text "▾" || fail "Agents: o did not open the picked split"
+[ "$(panes_shown)" -ge 2 ] || fail "Agents: an open split does not list its panes"
+key h; sleep 0.4
+[ "$(panes_shown)" = 0 ] || fail "Agents: h did not close the split"
+read -r MC MR <<<"$(cell "▸")"
+point "$MC" "$MR"; X click 1; sleep 0.8
+[ "$(panes_shown)" -ge 2 ] || fail "Agents: clicking the ▸ did not open the split"
+screen | grep -q "▾" || fail "Agents: the marker did not turn to ▾"
+shot agents-open
+point "$MC" "$MR"; X click 1; sleep 0.8
+[ "$(panes_shown)" = 0 ] || fail "Agents: clicking the ▾ did not close the split"
+X mousemove $((GX + GW - 4)) $((GY + 4)); sleep 0.5; sleep 3                          # a refresh tick passes with the pointer away: nothing opened by itself
+[ "$(panes_shown)" = 0 ] || fail "Agents: a refresh opened a split by itself"
+
+# an empty search says why and how to get out
+key slash; X type --delay 60 zzzz; sleep 0.6
+screen | grep -q "No tab matches" || fail "Agents: a search with no match says nothing"
+screen | grep -q "esc clears" || fail "Agents: the empty search does not say how to leave it"
+shot agents-empty-search
+key Escape; key Escape; sleep 0.4
+screen | grep -q "No tab matches" && fail "Agents: Esc did not clear the search"
+
+# ? shows this view's keys inside the panel; any key closes it; the footer's ? keycap does the same by click
+key question
+wait_text "Agents keys" || fail "Agents: ? did not open the keys card"
+screen | grep -q "esc closes" || fail "Agents: the keys card does not say how to leave"
+shot agents-help
+key Escape
+screen | grep -q "Agents keys" && fail "Agents: a key did not close the keys card"
+read -r QC QR <<<"$(cell "jump")"
+point $((COLS - 2)) "$QR"; X click 1; sleep 0.8
+screen | grep -q "Agents keys" || fail "Agents: clicking the ? keycap did not open the keys card"
+X click 1; sleep 0.6
+screen | grep -q "Agents keys" && fail "Agents: a click did not close the keys card"
+X mousemove $((GX + GW - 4)) $((GY + 4)); sleep 0.4
 
 key u
 wait_text "4 providers" || fail "the Usage view never drew four providers (is the collector reading the fixture?)"
