@@ -13,15 +13,21 @@
     "predev": "bun run sync",
     "prebuild": "bun run sync",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:crawl": "bun scripts/check-site.mjs \"$(cat BUILD_DIR)\" $(( $(find content/docs -name '*.mdx' | wc -l) + 3 ))",
+    "check": "bun run sync && bun test && bun run typecheck && bun run build && bun run check:crawl",
+    "axe": "bun scripts/axe.mjs \"$(cat BUILD_DIR)\"",
+    "shoot": "bun scripts/shoot.mjs \"$(cat BUILD_DIR)\""
   },
   "dependencies": {
+    "@base-ui/react": "1.8.0",
     "@fontsource-variable/epilogue": "5.3.0",
     "@fontsource-variable/jetbrains-mono": "5.3.0",
     "@tabler/icons-react": "3.49.0",
     "@tanstack/react-router": "1.170.41",
     "@tanstack/react-router-devtools": "1.167.2",
     "@tanstack/react-start": "1.168.60",
+    "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "fumadocs-core": "16.16.2",
     "fumadocs-mdx": "15.4.6",

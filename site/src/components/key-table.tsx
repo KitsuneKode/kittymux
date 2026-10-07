@@ -37,7 +37,7 @@ export function KeyTable({ keys }: { keys: Facts['keys'] }) {
             <h2 id={id} className="text-sm font-semibold uppercase tracking-[0.08em] text-link">
               {s.section}
             </h2>
-            <div role="region" aria-label={`${s.section} keys`} tabIndex={0} className="mt-3 overflow-x-auto rounded-xl border border-line">
+            <div tabIndex={0} className="mt-3 overflow-x-auto rounded-xl border border-line">
               <table className="w-full min-w-[28rem] border-collapse">
                 <tbody>
                   {s.rows.map((r) => (

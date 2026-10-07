@@ -22,6 +22,11 @@ try {
         await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: scheme }])
         await page.setViewport({ width, height: 900 })
         await page.goto(`http://localhost:4175${path}`, { waitUntil: 'networkidle0' })
+        // lazy images only load once scrolled into view: walk the page so a full-page shot is not full of holes
+        await page.evaluate(async () => {
+          for (let y = 0; y < document.body.scrollHeight; y += 600) { window.scrollTo(0, y); await new Promise((r) => setTimeout(r, 60)) }
+          window.scrollTo(0, 0)
+        })
         await Bun.sleep(400)
         const slug = (path === '/' ? 'home' : path.slice(1).replace(/[/#]/g, '-')) + `-${width}-${scheme}.png`
         await page.screenshot({ path: join(out, slug), fullPage: process.env.FULL === '1' })

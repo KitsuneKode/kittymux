@@ -16,16 +16,6 @@ import { useFumadocsLoader } from 'fumadocs-core/source/client';
 import { Suspense, use } from 'react';
 import { useMDXComponents } from '@/components/mdx';
 
-export const Route = createFileRoute('/docs/$')({
-  component: Page,
-  loader: async ({ params }) => {
-    const slugs = params._splat?.split('/') ?? [];
-    const data = await serverLoader({ data: slugs });
-    await docs.getPage(data.path)?.preload();
-    return data;
-  },
-});
-
 const serverLoader = createServerFn({
   method: 'GET',
 })
@@ -36,10 +26,30 @@ const serverLoader = createServerFn({
 
     return {
       path: page.path,
+      title: page.data.title,
+      description: page.data.description ?? '',
       markdownUrl: getPageMarkdownUrl(page).url,
       pageTree: await source.serializePageTree(source.getPageTree()),
     };
   });
+
+export const Route = createFileRoute('/docs/$')({
+  component: Page,
+  head: ({ loaderData }: { loaderData?: { title?: string; description?: string } }) => ({
+    meta: [
+      { title: loaderData?.title ? `${loaderData.title} — kittymux` : 'kittymux' },
+      { name: 'description', content: loaderData?.description ?? 'kittymux documentation' },
+      { property: 'og:title', content: loaderData?.title ?? 'kittymux' },
+      { property: 'og:description', content: loaderData?.description ?? '' },
+    ],
+  }),
+  loader: async ({ params }) => {
+    const slugs = params._splat?.split('/') ?? [];
+    const data = await serverLoader({ data: slugs });
+    await docs.getPage(data.path)?.preload();
+    return data;
+  },
+});
 
 function Content({ path, markdownUrl }: { path: string; markdownUrl: string }) {
   const page = docs.getPage(path);

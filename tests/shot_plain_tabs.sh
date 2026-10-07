@@ -14,7 +14,7 @@ trap cleanup EXIT
 if [ "$THEME" = light ]; then BG=#eff1f5 FG=#4c4f69; else BG=#1a1b26 FG=#c0caf5; fi
 cat > "$CFG/kitty.conf" <<CONF
 font_family JetBrainsMono Nerd Font Mono
-font_size 12
+font_size ${KMX_FONT_SIZE:-12}
 tab_bar_style powerline
 tab_bar_edge top
 tab_bar_min_tabs 1
@@ -22,7 +22,7 @@ window_padding_width 0
 confirm_os_window_close 0
 remember_window_size no
 initial_window_width ${COLS}c
-initial_window_height 3c
+initial_window_height 1c
 foreground $FG
 background $BG
 CONF

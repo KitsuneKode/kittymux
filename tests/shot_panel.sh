@@ -22,7 +22,7 @@ STATE=$T/world/state
 cp "$HOME_DIR/assets/kittymux-icons.ttf" "$T/data/fonts/" 2>/dev/null
 
 for n in $(seq 350 379); do [ -e "/tmp/.X$n-lock" ] || { DISP=:$n; break; }; done
-Xvfb "$DISP" -screen 0 1000x1100x24 >/dev/null 2>&1 & XPID=$!
+Xvfb "$DISP" -screen 0 1100x1700x24 >/dev/null 2>&1 & XPID=$!
 sleep 1; kill -0 "$XPID" 2>/dev/null || { echo "SKIP: Xvfb would not start"; XPID=""; exit 0; }
 for _ in $(seq 40); do [ -S "/tmp/.X11-unix/X${DISP#:}" ] && break; sleep 0.25; done
 
@@ -53,7 +53,7 @@ C
 fi
 cat > "$CFG/kitty.conf" <<CONF
 font_family JetBrainsMono Nerd Font Mono
-font_size 11
+font_size ${KMX_FONT_SIZE:-11}
 window_padding_width 0
 tab_bar_style hidden
 confirm_os_window_close 0

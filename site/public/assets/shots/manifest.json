@@ -8,28 +8,28 @@
     "height": 700
   },
   "panel-agents-dark.png": {
-    "width": 354,
-    "height": 432
+    "width": 506,
+    "height": 621
   },
   "panel-agents-light.png": {
-    "width": 354,
-    "height": 432
+    "width": 506,
+    "height": 621
   },
   "panel-inbox-dark.png": {
-    "width": 343,
-    "height": 500
+    "width": 495,
+    "height": 780
   },
   "panel-inbox-light.png": {
-    "width": 343,
-    "height": 500
+    "width": 495,
+    "height": 780
   },
   "panel-usage-dark.png": {
-    "width": 343,
-    "height": 500
+    "width": 495,
+    "height": 720
   },
   "panel-usage-light.png": {
-    "width": 343,
-    "height": 500
+    "width": 495,
+    "height": 720
   },
   "panes-equalized-dark.png": {
     "width": 1067,
@@ -64,11 +64,11 @@
     "height": 555
   },
   "plain-tabs-dark.png": {
-    "width": 961,
-    "height": 67
+    "width": 1249,
+    "height": 30
   },
   "plain-tabs-light.png": {
-    "width": 961,
-    "height": 67
+    "width": 1249,
+    "height": 30
   }
 }

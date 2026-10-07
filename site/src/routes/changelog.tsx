@@ -21,7 +21,7 @@ export const Route = createFileRoute('/changelog')({
 function Changelog() {
   return (
     <HomeLayout {...baseOptions()}>
-      <main id="main" className="mx-auto w-full max-w-[860px] px-5 py-12 md:px-8">
+      <div className="mx-auto w-full max-w-[860px] px-5 py-12 md:px-8">
         <h1 className="text-balance text-4xl font-bold tracking-[-0.03em] sm:text-5xl">Changelog</h1>
         <p className="mt-4 max-w-[60ch] text-pretty text-lg text-mute">What changed, newest first. Until the first tagged release, everything is listed under “Unreleased”.</p>
         {releases.map((r) => (
@@ -32,7 +32,7 @@ function Changelog() {
                 <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-link">{g.name}</h3>
                 <ul className="mt-3 flex flex-col gap-4">
                   {g.items.map((item, i) => (
-                    <li key={i} className="max-w-[72ch] text-pretty leading-relaxed [text-wrap:pretty]">
+                    <li key={i} className="max-w-[72ch] text-pretty leading-relaxed [overflow-wrap:anywhere]">
                       <Inline text={item} />
                     </li>
                   ))}
@@ -41,7 +41,7 @@ function Changelog() {
             ))}
           </section>
         ))}
-      </main>
+      </div>
       <SiteFooter />
     </HomeLayout>
   );

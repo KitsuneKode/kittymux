@@ -18,7 +18,7 @@ export const Route = createFileRoute('/keys')({
 function Keys() {
   return (
     <HomeLayout {...baseOptions()}>
-      <main id="main" className="mx-auto w-full max-w-[1000px] px-5 py-12 md:px-8">
+      <div className="mx-auto w-full max-w-[1000px] px-5 py-12 md:px-8">
         <h1 className="text-balance text-4xl font-bold tracking-[-0.03em] sm:text-5xl">Keys</h1>
         <p className="mt-4 max-w-[60ch] text-pretty text-lg text-mute">
           All <span className="tabular">{facts.chords}</span> chords, read from the same file kittymux installs, so this page cannot be out of date. <code>ctrl+alt+/</code> shows the same list inside kitty.
@@ -26,7 +26,7 @@ function Keys() {
         <div className="mt-10">
           <KeyTable keys={facts.keys} />
         </div>
-      </main>
+      </div>
       <SiteFooter />
     </HomeLayout>
   );

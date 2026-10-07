@@ -1,26 +1,53 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
-import { HomeLayout } from 'fumadocs-ui/layouts/home';
-import { baseOptions } from '@/lib/layout.shared';
+import { createFileRoute } from '@tanstack/react-router';
+import { DocsHub } from '@/components/landing/docs-hub';
+import { Faq } from '@/components/landing/faq';
+import { FinalCta } from '@/components/landing/final-cta';
+import { Hero } from '@/components/landing/hero';
+import { HowItKnows } from '@/components/landing/how-it-knows';
+import { Ideas } from '@/components/landing/ideas';
+import { Install } from '@/components/landing/install';
+import { KeysGlance } from '@/components/landing/keys-glance';
+import { Limits } from '@/components/landing/limits';
+import { Problem } from '@/components/landing/problem';
+import { ProofLine } from '@/components/landing/proof-line';
+import { SiteFooter } from '@/components/site-footer';
+import { ThemeToggle } from '@/components/theme-toggle';
+
+const TITLE = 'kittymux — know which agent needs you';
+const DESCRIPTION = 'kittymux turns kitty into a multiplexer for AI coding agents: one glance at the tab bar says who is working, who is waiting for you and who has finished.';
 
 export const Route = createFileRoute('/')({
+  head: () => ({
+    meta: [
+      { title: TITLE },
+      { name: 'description', content: DESCRIPTION },
+      { property: 'og:title', content: TITLE },
+      { property: 'og:description', content: DESCRIPTION },
+      { property: 'og:type', content: 'website' },
+    ],
+  }),
   component: Home,
 });
 
 function Home() {
   return (
-    <HomeLayout {...baseOptions()}>
-      <div className="flex flex-col flex-1 justify-center px-4 py-8 text-center">
-        <h1 className="font-medium text-xl mb-4">Fumadocs on Tanstack Start.</h1>
-        <Link
-          to="/docs/$"
-          params={{
-            _splat: '',
-          }}
-          className="px-3 py-2 rounded-lg bg-fd-primary text-fd-primary-foreground font-medium text-sm mx-auto"
-        >
-          Open Docs
-        </Link>
+    <div className="min-h-[100dvh] bg-page text-ink">
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:start-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-ink focus:px-4 focus:py-2 focus:text-page">Skip to content</a>
+      <Hero />
+      <ProofLine />
+      <Problem />
+      <Ideas />
+      <HowItKnows />
+      <Install />
+      <KeysGlance />
+      <DocsHub />
+      <Limits />
+      <Faq />
+      <FinalCta />
+      <div className="mx-auto flex w-full max-w-[1280px] justify-end px-5 pt-8 md:px-8">
+        <ThemeToggle />
       </div>
-    </HomeLayout>
+      <SiteFooter />
+    </div>
   );
 }

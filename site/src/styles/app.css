@@ -20,6 +20,24 @@
   --color-onred: var(--on-red);
   --color-onred-soft: var(--on-red-soft);
   --color-line: var(--line);
+  /* the names shadcn components use, pointed at the same tokens */
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --color-muted: var(--surface-hi);
+  --color-muted-foreground: var(--muted);
+  --color-border: var(--line);
+  --color-input: var(--line);
+  --color-ring: var(--fg);
+  --color-primary: var(--red);
+  --color-primary-foreground: var(--on-red);
+  --color-secondary: var(--surface-hi);
+  --color-secondary-foreground: var(--fg);
+  --color-accent: var(--surface-hi);
+  --color-accent-foreground: var(--fg);
+  --color-destructive: var(--red);
+  --color-card-foreground: var(--fg);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--fg);
 }
 
 /* Fumadocs' own variables, pointed at our tokens. Declared on :root AND .dark so the preset's own .dark values never win;

@@ -1,4 +1,5 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
+import { IconBrandGithub } from '@tabler/icons-react';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { appName, gitConfig } from './shared';
 
@@ -15,11 +16,11 @@ export function baseOptions(): BaseLayoutProps {
       ),
       url: '/',
     },
-    githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
     links: [
       { text: 'Docs', url: '/docs', active: 'nested-url' },
       { text: 'Keys', url: '/keys' },
       { text: 'Changelog', url: '/changelog' },
+      { type: 'icon', text: 'GitHub', label: 'kittymux on GitHub', url: `https://github.com/${gitConfig.user}/${gitConfig.repo}`, icon: <IconBrandGithub aria-hidden="true" />, external: true },
     ],
     slots: { themeSwitch: () => <ThemeToggle /> },
   };

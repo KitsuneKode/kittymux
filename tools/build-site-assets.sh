@@ -8,6 +8,7 @@ OUT="$HOME_DIR/site/public/assets/shots"
 export TMPDIR=${TMPDIR:-$HOME/.cache/kmx}        # a short path: a kitty socket path over ~107 characters silently fails
 mkdir -p "$OUT" "$TMPDIR/site-shots"
 WORK="$TMPDIR/site-shots"
+export KMX_FONT_SIZE=${KMX_FONT_SIZE:-16}   # the panel and strip shots are drawn bigger than a terminal shows them, so they stay sharp when the page scales them
 
 for theme in dark light; do
   bash "$HOME_DIR/tests/shot_bar.sh" "$theme" "$OUT/bar-$theme.png"
@@ -16,8 +17,8 @@ for theme in dark light; do
   bash "$HOME_DIR/tests/shot_agents.sh" "$theme" "$WORK/agents-$theme.png" 38 30
   convert "$WORK/agents-$theme.png" -trim +repage -bordercolor "$(convert "$WORK/agents-$theme.png" -format '%[pixel:p{2,2}]' info:)" -border 6 "$OUT/panel-agents-$theme.png"
   # the cards, without the empty rest of a tall panel
-  convert "$WORK/panel-$theme/usage-codex.png" -crop "x500+0+0" +repage "$OUT/panel-usage-$theme.png"
-  convert "$WORK/panel-$theme/inbox-needs.png" -crop "x500+0+0" +repage "$OUT/panel-inbox-$theme.png"
+  convert "$WORK/panel-$theme/usage-codex.png" -crop "x720+0+0" +repage "$OUT/panel-usage-$theme.png"
+  convert "$WORK/panel-$theme/inbox-needs.png" -crop "x780+0+0" +repage "$OUT/panel-inbox-$theme.png"
   bash "$HOME_DIR/tests/shot_plain_tabs.sh" "$theme" "$OUT/plain-tabs-$theme.png"
   bash "$HOME_DIR/tests/shot_panes.sh" "$theme" "$WORK/panes-$theme"
   for n in layout numbers resized equalized; do
