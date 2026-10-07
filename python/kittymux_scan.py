@@ -420,6 +420,8 @@ def refresh_bar(tm) -> None:
 
 
 def scan_all(timer_id=None) -> None:
+    if timer_id is not None and timer_id != _RT.scan_timer:
+        return                                               # a tick of a timer that was removed in the same batch (see kittymux_timers): not ours any more
     try:
         from kitty.fast_data_types import get_boss
         boss = get_boss()
@@ -549,7 +551,15 @@ def _trace(msg: str) -> None:
         pass
 
 
+def _timers():
+    _ensure_path()
+    import kittymux_timers
+    return kittymux_timers
+
+
 def _spin_tick(timer_id) -> None:
+    if timer_id is not None and timer_id != _RT.spin_timer:
+        return                                               # a tick of a timer that was removed in the same batch (see kittymux_timers): not ours any more
     try:
         tms = _working_tms() if _motion_on() else []         # switched off while a spinner ran: the timer ends with its next beat
         _trace(f"spin_tick tms={len(tms)}")
@@ -598,8 +608,7 @@ def _sync_spinner() -> None:
     try:
         working = any(v.get("state") == "working" for v in _RT.verdicts.values()) and _motion_on()
         if working and _RT.spin_timer is None:
-            from kitty.fast_data_types import add_timer
-            _RT.spin_timer = add_timer(_spin_tick, SPIN_INTERVAL, True)
+            _RT.spin_timer = _timers().add(__name__, "_spin_tick", SPIN_INTERVAL, True)
         elif not working:
             _stop_spinner()
     except Exception:
@@ -1093,10 +1102,10 @@ def _retime(interval: float) -> None:
     if _RT.scan_timer is not None and interval == _RT.interval:
         return
     try:
-        from kitty.fast_data_types import add_timer, remove_timer
+        from kitty.fast_data_types import remove_timer
         if _RT.scan_timer is not None:
             remove_timer(_RT.scan_timer)
-        _RT.scan_timer = add_timer(scan_all, interval, True)
+        _RT.scan_timer = _timers().add(__name__, "scan_all", interval, True)       # a STABLE callable: see kittymux_timers (a freed one crashed kitty)
         _RT.interval = interval
     except Exception:
         _RT.scan_timer = None
@@ -1121,9 +1130,12 @@ def _socket_link() -> None:
         if not kittymux_features.enabled("socketlink", state_dir()):
             _record("socketlink", "-", "", outcome="switched off")
             return
-        legacy = os.environ.get("KITTYMUX_LEGACY_SOCKET_DIR") or "/tmp"
-        runtime = os.path.dirname(listening[5:]) if listening.startswith("unix:/") else None
-        pruned = kittymux_sockets.prune_links(legacy, runtime)
+        override = os.environ.get("KITTYMUX_LEGACY_SOCKET_DIR")                  # a test hook: the rigs point the "old place" at a private directory
+        legacy = override or "/tmp"
+        if not override and os.path.dirname(listening[5:]) != f"/run/user/{os.getuid()}":
+            _record("socketlink", "-", "", outcome="not needed: the socket is not in the user's runtime directory")      # a private test kitty leaves /tmp alone
+            return
+        pruned = kittymux_sockets.prune_links(legacy)
         _record("socketlink", "-", "", outcome=kittymux_sockets.legacy_link(listening, legacy), pruned=len(pruned))
     except Exception:
         _debug()

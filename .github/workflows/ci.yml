@@ -98,3 +98,24 @@ jobs:
         run: bash tests/smoke_workflows.sh
       - name: an upgraded, running kitty draws cleanly after two reloads
         run: bash tests/smoke_reload.sh
+      - name: kitty survives a timer being removed inside a timer callback (the 2026-10-07 crash), with a control that proves the rig can see it
+        run: bash tests/smoke_timers.sh
+      - name: scripts written for /tmp/mykitty-<pid> still find kitty when its socket lives in a private directory
+        run: bash tests/smoke_legacy_socket.sh
+      - name: a plain terminal waiting on you (sudo, ssh, pacman) is announced once
+        run: bash tests/smoke_prompts.sh
+      - name: command palette and quick look (real keys and mouse)
+        run: |
+          bash tests/smoke_palette.sh
+          bash tests/smoke_peek.sh
+      - name: tab titles, pane title bars, native pane controls
+        run: |
+          bash tests/smoke_titles.sh
+          bash tests/smoke_panetitle.sh
+          bash tests/smoke_pane_ux.sh
+      - name: join tabs (CLI and picker), exit save, workflow argv
+        run: |
+          bash tests/smoke_join.sh
+          bash tests/smoke_join_ui.sh
+          bash tests/smoke_exit_save.sh
+          bash tests/smoke_workflow_argv.sh

@@ -112,18 +112,26 @@ def legacy_link(listening_on, legacy_dir="/tmp"):
         return f"could not link: {type(e).__name__}"
 
 
+def _pid_alive(name):
+    try:
+        return os.path.exists("/proc/" + name.rsplit("-", 1)[1])
+    except Exception:
+        return True
+
+
 def prune_links(legacy_dir="/tmp", runtime_dir=None):
-    """Remove links we made whose kitty has exited (the target is gone). Only symlinks that point into `runtime_dir` are touched."""
+    """Remove the links of kitties that have exited. Only a link of ours is touched: a symlink, owned by us, named <name>-<pid> and pointing at a
+    file of that SAME name (what legacy_link makes), whose target is gone and whose pid is no longer running. Anything else is left alone."""
     removed = []
     try:
-        runtime_dir = os.path.normpath(runtime_dir) if runtime_dir else None
         for name in sorted(os.listdir(legacy_dir)):
             if not _NAME.match(name):
                 continue
             path = os.path.join(legacy_dir, name)
-            if not os.path.islink(path) or os.path.exists(path):
+            info = os.lstat(path)
+            if not stat.S_ISLNK(info.st_mode) or info.st_uid != os.getuid() or os.path.exists(path):
                 continue
-            if runtime_dir is None or os.path.dirname(os.readlink(path)) != runtime_dir:
+            if os.path.basename(os.readlink(path)) != name or _pid_alive(name):
                 continue
             os.unlink(path)
             removed.append(name)

@@ -1,0 +1,66 @@
+import gc
+import os
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
+
+import kittymux_scan as KS  # noqa: E402
+from test_scan import FakeWindow, ScanBase  # noqa: E402
+
+
+class BoundedStateTests(ScanBase):
+    """The scanner lives as long as kitty. Windows come and go all day; nothing it keeps may grow with the number of windows it has EVER seen."""
+
+    def sizes(self):
+        rt = vars(KS._RT)
+        out = {}
+        for name, value in rt.items():
+            if isinstance(value, (dict, set, list)):
+                out[name] = len(value)
+        return out
+
+    def churn(self, n, prompt=True):
+        """n windows open, are scanned a few times in various states, and close."""
+        for i in range(1, n + 1):
+            screens = ("• Working (3s • esc to interrupt)\n", "Do you want to proceed?\n❯ 1. Yes\n", "You've hit your usage limit. Try again at 9:21 PM.\n", "› Ask Codex\n")
+            w = FakeWindow(i, "codex", screens[i % 4])
+            self.add(w)
+            for _ in range(3):
+                KS.scan_all()
+            if prompt:
+                plain = FakeWindow(100000 + i, None, "[sudo] password for x: ")
+                self.add(plain)
+                with mock.patch.object(KS, "fg_job", return_value=(["sudo"], True)):
+                    KS.scan_prompt(plain, float(i))
+            self.k.boss.all_windows[:] = []
+            self.k.boss.window_id_map.clear()
+            KS.scan_all()                                         # the closed windows are noticed and forgotten
+
+    def test_nothing_grows_with_the_number_of_windows_ever_seen(self):
+        with mock.patch.object(KS, "_notify", return_value="sent"):
+            self.churn(40)
+            gc.collect()
+            small = self.sizes()
+            self.churn(400)
+            gc.collect()
+            big = self.sizes()
+        grown = {k: (small.get(k, 0), big[k]) for k in big if big[k] > small.get(k, 0) + 2 and k not in ("decisions", "notify_log")}
+        self.assertEqual(grown, {}, "these containers grew with window churn: " + repr(grown))
+
+    def test_the_decision_log_and_the_notification_log_are_capped(self):
+        with mock.patch.object(KS, "_notify", return_value="sent"):
+            self.churn(150)
+        self.assertLessEqual(len(vars(KS._RT).get("decisions", [])), 300)
+        self.assertLessEqual(len(vars(KS._RT).get("notify_log", [])), 64)
+
+    def test_the_unread_set_forgets_windows_that_closed(self):
+        with mock.patch.object(KS, "_notify", return_value="sent"):
+            self.churn(30)
+        self.assertEqual(len(vars(KS._RT).get("unread", ())), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

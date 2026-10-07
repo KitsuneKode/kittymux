@@ -372,7 +372,8 @@ class FileTests(ScanBase):
         self.add(FakeWindow(1, "claude", PERMISSION))
         KS.scan_all()
         self.assertEqual(stat.S_IMODE(os.stat(KS.scan_path()).st_mode), 0o600)
-        data = json.load(open(KS.scan_path()))
+        with open(KS.scan_path()) as f:
+            data = json.load(f)
         self.assertEqual(data["1"]["state"], "waiting")
         self.assertFalse([n for n in os.listdir(self.state) if n.endswith(".tmp")])
 
@@ -535,7 +536,8 @@ class PromptTests(ScanBase):
         w = FakeWindow(1, None, "")
         self.add(w)
         self.seen_then(w, self.SUDO, 1.0, 2.5)
-        raw = json.dumps(self.events()) + open(KS._inbox().store_path(self.state)).read()
+        with open(KS._inbox().store_path(self.state)) as f:
+            raw = json.dumps(self.events()) + f.read()
         self.assertNotIn("someone-private", raw)
         self.assertIn("sudo is asking for your password", raw)
 
@@ -816,9 +818,18 @@ class SocketLinkTests(ScanBase):
         self.assertTrue(os.path.islink(self.link()))
 
     def test_links_of_kitties_that_exited_are_removed(self):
-        os.symlink(os.path.join(self.run, "mykitty-1"), os.path.join(self.legacy, "mykitty-1"))
+        dead = "mykitty-2000000000"
+        os.symlink(os.path.join(self.run, dead), os.path.join(self.legacy, dead))
         KS.ensure_started()
         self.assertEqual(sorted(os.listdir(self.legacy)), ["mykitty-4242"])
+
+    def test_a_private_test_kitty_leaves_the_real_tmp_alone(self):
+        del os.environ["KITTYMUX_LEGACY_SOCKET_DIR"]
+        with mock.patch.object(KS.os, "getuid", return_value=987654):
+            KS.ensure_started()
+        self.assertEqual(os.listdir(self.legacy), [])
+        rows = [r["outcome"] for r in vars(KS._RT).get("decisions", []) if r.get("kind") == "socketlink"]
+        self.assertTrue(rows and rows[-1].startswith("not needed"), rows)
 
 
 class InboxIntegrationTests(ScanBase):

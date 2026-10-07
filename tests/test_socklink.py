@@ -87,13 +87,19 @@ class LinkTests(unittest.TestCase):
     def test_dead_links_are_pruned_and_nothing_else_is(self):
         live = self.sock("mykitty-1")
         S.legacy_link("unix:" + live, self.legacy)
-        gone = os.path.join(self.run, "mykitty-2")
-        os.symlink(gone, os.path.join(self.legacy, "mykitty-2"))                  # its kitty exited: the target is gone
-        os.symlink("/nonexistent/x", os.path.join(self.legacy, "mykitty-3"))      # dangling but not into our dir: not ours to remove
-        open(os.path.join(self.legacy, "mykitty-4"), "w").close()                 # a regular file
-        removed = S.prune_links(self.legacy, self.run)
-        self.assertEqual(removed, ["mykitty-2"])
-        self.assertEqual(sorted(os.listdir(self.legacy)), ["mykitty-1", "mykitty-3", "mykitty-4"])
+        dead = 2_000_000_000                                                     # no such pid
+        os.symlink(os.path.join(self.run, f"mykitty-{dead}"), os.path.join(self.legacy, f"mykitty-{dead}"))    # its kitty exited: the target is gone
+        elsewhere = os.path.join(self.root, "somewhere-else", f"mykitty-{dead + 1}")                          # a link of ours into another (now deleted) directory is pruned too
+        os.symlink(elsewhere, os.path.join(self.legacy, f"mykitty-{dead + 1}"))
+        os.symlink("/nonexistent/x", os.path.join(self.legacy, "mykitty-3"))      # dangling but not a link of ours (different name at the end): left alone
+        os.symlink(os.path.join(self.run, "mykitty-4"), os.path.join(self.legacy, "mykitty-4"))     # dangling, ours, but pid 4 ... may be a live process? only dead pids go
+        open(os.path.join(self.legacy, f"mykitty-{dead + 2}"), "w").close()      # a regular file
+        removed = S.prune_links(self.legacy)
+        self.assertEqual(removed, [f"mykitty-{dead}", f"mykitty-{dead + 1}"])
+        self.assertIn("mykitty-1", os.listdir(self.legacy))
+        self.assertIn("mykitty-3", os.listdir(self.legacy))
+        self.assertIn(f"mykitty-{dead + 2}", os.listdir(self.legacy))
+        os.unlink(os.path.join(self.legacy, "mykitty-4"))
 
     def test_one_kitty_is_listed_once_whichever_path_finds_it(self):
         real = self.sock()

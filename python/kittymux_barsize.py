@@ -169,8 +169,15 @@ def _end_capture(boss, finalize: bool = False) -> None:
     _S.drag = None
 
 
+def _timers():
+    import kittymux_timers
+    return kittymux_timers
+
+
 def _watchdog(timer_id) -> None:
     """No event for _WATCHDOG_S while dragging → assume the release was lost; restore the mouse."""
+    if timer_id is not None and timer_id != _S.watchdog:
+        return                                  # a tick of a timer that was removed in the same batch (see kittymux_timers)
     _S.watchdog = None
     if _S.drag is None:
         return
@@ -188,8 +195,7 @@ def _watchdog(timer_id) -> None:
 
 def _arm_watchdog() -> None:
     try:
-        from kitty.fast_data_types import add_timer
-        _S.watchdog = add_timer(_watchdog, _WATCHDOG_S, False)
+        _S.watchdog = _timers().add(__name__, "_watchdog", _WATCHDOG_S, False)
     except Exception:
         _S.watchdog = None
 
@@ -206,8 +212,7 @@ def _drag_to(boss) -> None:
     if when > 0:
         if _S.trail is None:
             try:
-                from kitty.fast_data_types import add_timer
-                _S.trail = add_timer(_trail, when, False)
+                _S.trail = _timers().add(__name__, "_trail", when, False)
             except Exception:
                 _S.trail = None
         return
@@ -220,6 +225,8 @@ def _drag_to(boss) -> None:
 
 
 def _trail(timer_id) -> None:
+    if timer_id is not None and timer_id != _S.trail:
+        return
     _S.trail = None
     try:
         from kitty.fast_data_types import get_boss
@@ -282,11 +289,21 @@ def _toggle_collapsed(tm) -> None:
     """The sidebar's collapse button: save the toggled layout for this kitty and reload its config
     (the layout include reads it). Deferred one tick so we are out of the mouse handler."""
     try:
-        from kitty.fast_data_types import add_timer, get_boss
         sdir, pid = L.state_dir(), os.getpid()
         base = L.load(sdir, pid) or _live_layout(tm)
         L.save(sdir, pid, L.toggle_collapsed(base))
-        add_timer(lambda _id: get_boss().load_config_file(), 0.01, False)
+        _timers().add(__name__, "_reload_config", 0.01, False)
+    except Exception:
+        import traceback
+        _debug(traceback.format_exc())
+
+
+def _reload_config(timer_id) -> None:
+    """The collapse button's deferred reload (a timer, so it runs outside the mouse handler). A reload re-executes the helper modules and replaces the scanner's
+    timers from inside THIS callback: that is exactly the case kittymux_timers exists for."""
+    try:
+        from kitty.fast_data_types import get_boss
+        get_boss().load_config_file()
     except Exception:
         import traceback
         _debug(traceback.format_exc())
