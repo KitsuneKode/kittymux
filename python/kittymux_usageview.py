@@ -239,7 +239,9 @@ def _detail_rows(kit: U.Kit, provider: dict, data, inner: int, bg: int) -> list:
         for chunk in kittymux_deck.wrap_detail(kittymux_place.clean(str(note)[:1024])[:600], inner, kit.cells)[:6]:
             rows.append(kit.fit_line([U.S(chunk, kit.ink(kit.p.muted, bg), bg)], inner, bg))
     if not (isinstance(data, dict) and data.get("live")):
-        rows.append(kit.fit_line([U.S("live quotas: KITTYMUX_USAGE_LIVE=1", kit.ink(kit.p.faint, bg, 3.0), bg)], inner, bg))
+        label, name = "live quotas:", "KITTYMUX_USAGE_LIVE=1"
+        for chunk in ([f"{label} {name}"] if kit.cells(f"{label} {name}") <= inner else [label, name]):       # the name stays in one piece: it is the point
+            rows.append(kit.fit_line([U.S(chunk, kit.ink(kit.p.faint, bg, 3.0), bg)], inner, bg))
     return rows
 
 

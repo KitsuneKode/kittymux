@@ -352,6 +352,11 @@ class PortedFromTheTextDashboardTests(unittest.TestCase):
         self.assertIn("KITTYMUX_USAGE_LIVE=1", on)
         self.assertIn("plus", on)                            # codex's note
 
+    def test_the_live_hint_in_details_is_wrapped_not_cut_at_narrow_widths(self):
+        for cols in (26, 30, 38):                                    # the name is 21 characters: the narrowest card interior that can hold it is 22 columns of panel
+            body = text(V.view(data(), HISTORY, cols, 0, kit(), NOW, TODAY, details=True))
+            self.assertIn("KITTYMUX_USAGE_LIVE=1", body, cols)
+
     def test_huge_cached_fields_have_a_bounded_render(self):
         big = {"ts": NOW, "providers": [{"name": "codex", "note": "n" * 200000, "live_error": "e" * 200000,
                                           "rows": [{"label": "note", "text": "x" * 200000, "pct": 50.0}] * 5000}]}
