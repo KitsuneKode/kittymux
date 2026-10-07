@@ -168,14 +168,28 @@ def summary_row(kit: U.Kit, tabs: int, waiting: int, working: int, width: int, a
 # ── the action bar: keycaps you can click ───────────────────────────────────
 
 def action_bar(kit: U.Kit, pairs: list, width: int, hot: int | None = None, on: int | None = None):
-    """pairs: [(key label, text, token | None)]. Returns (line, regions): regions are (x0, x1, token) for the pairs that were drawn whole and have a
-    token. The hot one (the pointer is on it) lights up in the accent, so a button looks like a button before it is pressed."""
+    """pairs: [(key label, text, token | None[, short text])]. Returns (line, regions): regions are (x0, x1, token, index) for the pairs that were drawn whole and
+    have a token. The hot one (the pointer is on it) lights up in the accent, so a button looks like a button before it is pressed.
+    A pair may carry a SHORT text: when the long wording would push a button off the end, the bar uses the short one if that shows more buttons (a
+    narrow panel keeps `d info` before it loses `d details` altogether); the long wording wins a tie."""
+    best = None
+    for use_short in (False, True) if any(len(pr) > 3 and pr[3] for pr in pairs) else (False,):
+        line, regions = _bar(kit, pairs, width, hot, on, use_short)
+        if best is None or len(regions) > len(best[1]):
+            best = (line, regions)
+    return best
+
+
+def _bar(kit: U.Kit, pairs: list, width: int, hot, on, use_short: bool):
     p = kit.p
     on = p.bar if on is None else on
     out: list = []
     regions: list = []
     used = 0
-    for i, (key, label, token) in enumerate(pairs):
+    for i, pair in enumerate(pairs):
+        key, label, token = pair[0], pair[1], pair[2]
+        if use_short and len(pair) > 3 and pair[3]:
+            label = pair[3]
         k = f" {kittymux_place.clean(str(key))} "
         lab = f" {kittymux_place.clean(str(label))} "
         need = kit.cells(k) + kit.cells(lab) + (1 if out else 0)

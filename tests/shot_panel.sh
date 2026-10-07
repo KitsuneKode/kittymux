@@ -181,7 +181,7 @@ if [ "$COLS" -ge 32 ]; then      # narrower panels drop the countdown on purpose
 fi
 shot usage-codex
 
-read -r DC DR <<<"$(cell details)"                              # the details button
+read -r DC DR <<<"$(cell details)"; [ -n "${DC:-}" ] || read -r DC DR <<<"$(cell info)"          # the details button ("info" in a narrow panel)
 [ -n "${DC:-}" ] || fail "Usage: no details button in the footer"
 point "$DC" "$DR"; X click 1; sleep 0.8
 screen | grep -q "KITTYMUX_USAGE_LIVE" || fail "Usage: clicking details did not show the source notes"

@@ -589,7 +589,7 @@ class Sidebar(Handler):
     def _footer(self, lead: list, pairs: list, width: int) -> str:
         """Clickable keycaps after an optional lead (e.g. "+3 more"). Records where each drew so a click or a hover can find it; the one the
         pointer is on lights up."""
-        pairs = [x if len(x) == 3 else (x[0], x[1], None) for x in pairs]          # (key, label[, token]): no token = a hint, not a button
+        pairs = [x if len(x) >= 3 else (x[0], x[1], None) for x in pairs]          # (key, label[, token[, short label]]): no token = a hint, not a button
         lead_w = kittymux_ui.line_cells(lead, self.kit.cells)
         hot = getattr(self, "_foot_hot", None)
         help_cap, help_w = [], 0
@@ -646,7 +646,7 @@ class Sidebar(Handler):
                                     details=self._usage_details)
         self._usage_sel = v.sel
         self._usage_scroll = self._draw_body(cols, height, v.header, v.lines, getattr(self, "_usage_scroll", 0),
-                                             [("r", "refresh", "R"), ("d", "details" if not self._usage_details else "hide", "D"), ("←→", "pick"), ("a", "agents", "A")])
+                                             [("r", "refresh", "R"), ("d", "details" if not self._usage_details else "hide", "D", "info" if not self._usage_details else "hide"), ("←→", "pick"), ("a", "agents", "A")])
         self._usage_regions = [(x0, x1, y0 - self._usage_scroll + 2, y1 - self._usage_scroll + 2, idx) for x0, x1, y0, y1, idx in v.tiles]
 
     def _draw_inbox(self, cols, height):

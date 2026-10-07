@@ -218,6 +218,21 @@ class ActionBarTests(unittest.TestCase):
         self.assertEqual(seen, sorted(seen))                                      # more room never shows fewer buttons
         self.assertEqual(seen[-1], len(self.PAIRS))
 
+    def test_a_short_label_keeps_a_button_that_the_long_one_would_push_off(self):
+        k = next(kits())
+        pairs = [("r", "refresh", "R"), ("d", "details", "D", "info"), ("a", "agents", "A")]
+        _l, wide_regions = V.action_bar(k, pairs, 60)
+        self.assertEqual([r[2] for r in wide_regions], ["R", "D", "A"])
+        self.assertIn("details", text(V.action_bar(k, pairs, 60)[0]))                   # room: the long wording
+        for w in range(20, 40):
+            line, regions = V.action_bar(k, pairs, w)
+            long_only, long_regions = V.action_bar(k, [p[:3] for p in pairs], w)
+            self.assertGreaterEqual(len(regions), len(long_regions), w)               # never fewer buttons than without short labels
+        line, regions = V.action_bar(k, pairs, 22)
+        self.assertEqual([r[2] for r in regions], ["R", "D"])
+        self.assertIn(" info ", text(line))
+        self.assertNotIn("details", text(line))
+
     def test_the_hot_button_lights_up_in_the_accent_and_a_hint_never_does(self):
         k = next(kits())
         cold, _ = V.action_bar(k, self.PAIRS, 60)

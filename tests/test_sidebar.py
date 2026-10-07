@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 import queue
 import time
@@ -213,9 +214,53 @@ class SidebarTests(unittest.TestCase):
         self.assertEqual(len([k for k in self.kinds(s) if k[0] == "pane"]), 3)
         s.finalize()
 
+    # ---- what the collector puts in a row: the title, the raw title, the project, the age -------------------------------------------
+    def ls_json(self, title, cwd="/tmp/x/myproj", agent=True, extra_win=False):
+        def win(i):
+            return {"id": i, "title": title, "cwd": cwd, "pid": 0, "is_focused": i == 21, "cmdline": ["sh"],
+                    "foreground_processes": [{"cmdline": ["claude"] if agent else ["zsh"]}]}
+        wins = [win(21)] + ([win(22)] if extra_win else [])
+        return json.dumps([{"id": 1, "is_focused": True, "tabs": [{"id": 2, "is_active": True, "title": title, "windows": wins,
+                                                                  "active_window_history": [21]}]}])
+
+    def collect(self, title, panes=None, tidy=True, **kw):
+        c = self.m.Collector()
+        with patch.object(self.m, "_rc", return_value=self.ls_json(title, **kw)), patch.object(self.m, "_panes_state", return_value=panes or {}), \
+             patch.object(self.m, "_proc_ppids", return_value={}), patch.object(self.m, "_listeners", return_value=[]), \
+             patch.object(self.m.kittymux_features, "enabled", return_value=tidy):
+            return c.collect().rows[0]
+
+    def test_a_reply_used_as_a_title_is_shown_as_the_project_but_stays_searchable(self):
+        r = self.collect("I can't do that. I don't have access to the files")
+        self.assertEqual(r.title, "myproj")
+        self.assertEqual(r.raw_title, "I can't do that. I don't have access to the files")
+        self.assertTrue(self.m.deck.matches(r, ["access"]))                          # the `/` search still finds it by what the agent said
+
+    def test_a_real_title_is_cleaned_and_the_product_name_alone_is_the_project(self):
+        self.assertEqual(self.collect("**Fix** the login redirect.").title, "Fix the login redirect")
+        self.assertEqual(self.collect("Claude Code").title, "myproj")
+        self.assertEqual(self.collect("Port Hyprland configs to Lua").title, "Port Hyprland configs to Lua")
+
+    def test_with_the_switch_off_the_title_is_the_old_one(self):
+        r = self.collect("I can't do that. I don't have access", tidy=False)
+        self.assertEqual(r.title, "I can't do that. I don't have access")
+
+    def test_a_plain_shell_tab_is_not_called_anything_but_what_it_says(self):
+        r = self.collect("zsh", agent=False)
+        self.assertEqual(r.title, "zsh")                                              # no agent: a program's own title is not a reply
+
+    def test_how_long_an_agent_has_waited_reaches_the_row(self):
+        now = time.monotonic()
+        panes = {"21": {"state": "waiting", "agent": "claude", "ts_scan": now, "ts_state": now - 300, "wid": "21"}}
+        r = self.collect("Fix login", panes=panes)
+        self.assertEqual(r.status, "waiting")
+        self.assertEqual(r.age, "5m")
+        fresh = {"21": {"state": "waiting", "agent": "claude", "ts_scan": now, "ts_state": now - 5, "wid": "21"}}
+        self.assertEqual(self.collect("Fix login", panes=fresh).age, "")              # under a minute is not news
+
     # ---- the ? card -----------------------------------------------------------------------------------------------------------------
     def test_question_mark_opens_the_card_and_any_key_closes_it_and_a_view_switch_clears_it(self):
-        s = self.applied()
+        s = self.quiet(self.applied())                                   # a real _request_usage would run the collector against the real state dir
         s.draw_screen = Mock()
         s.on_key_event(self.key("?"))
         self.assertTrue(s._help)
