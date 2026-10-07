@@ -1,6 +1,6 @@
 import { createGetUrl } from 'fumadocs-core/source';
 
-export const appName = 'Tanstack Start';
+export const appName = 'kittymux';
 export const docsRoute = '/docs';
 export const docsImageRoute = '/og/docs';
 

@@ -1,6 +1,58 @@
 @import 'tailwindcss';
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';
+@import '@fontsource-variable/epilogue';
+@import '@fontsource-variable/jetbrains-mono';
+@import './tokens.css';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --font-sans: 'Epilogue Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace;
+  --color-page: var(--bg);
+  --color-ink: var(--fg);
+  --color-mute: var(--muted);
+  --color-card: var(--surface);
+  --color-card-hi: var(--surface-hi);
+  --color-brand: var(--red);
+  --color-link: var(--link);
+  --color-onred: var(--on-red);
+  --color-onred-soft: var(--on-red-soft);
+  --color-line: var(--line);
+}
+
+/* Fumadocs' own variables, pointed at our tokens. Declared on :root AND .dark so the preset's own .dark values never win;
+   the sidebar override in the preset (.dark #nd-sidebar) is answered below. */
+:root, .dark {
+  --color-fd-background: var(--bg);
+  --color-fd-foreground: var(--fg);
+  --color-fd-muted: var(--surface-hi);
+  --color-fd-muted-foreground: var(--muted);
+  --color-fd-popover: var(--surface);
+  --color-fd-popover-foreground: var(--fg);
+  --color-fd-card: var(--surface);
+  --color-fd-card-foreground: var(--fg);
+  --color-fd-border: var(--line);
+  --color-fd-primary: var(--link);
+  --color-fd-primary-foreground: var(--bg);
+  --color-fd-secondary: var(--surface-hi);
+  --color-fd-secondary-foreground: var(--fg);
+  --color-fd-accent: var(--surface-hi);
+  --color-fd-accent-foreground: var(--fg);
+  --color-fd-ring: var(--fg);
+}
+.dark #nd-sidebar {
+  --color-fd-muted: var(--surface-hi);
+  --color-fd-secondary: var(--surface-hi);
+  --color-fd-muted-foreground: var(--muted);
+}
+
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; font-family: var(--font-sans); }
+::selection { background: var(--red); color: var(--on-red); }
+:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; border-radius: 2px; }
+[data-red] :focus-visible { outline-color: var(--on-red); }
+[data-red] ::selection { background: var(--on-red); color: var(--red); }
 
 html {
   scrollbar-gutter: stable;

@@ -14,7 +14,7 @@ export const Route = createRootRoute({
         content: 'width=device-width, initial-scale=1',
       },
       {
-        title: 'Fumadocs on TanStack Start',
+        title: 'kittymux',
       },
     ],
     links: [{ rel: 'stylesheet', href: appCss }],
@@ -24,12 +24,12 @@ export const Route = createRootRoute({
 
 function RootComponent() {
   return (
-    <html suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
       <body className="flex flex-col min-h-screen">
-        <RootProvider>
+        <RootProvider theme={{ defaultTheme: 'system', enableSystem: true, attribute: 'class', storageKey: 'kittymux-theme' }}>
           <Outlet />
         </RootProvider>
         <Scripts />

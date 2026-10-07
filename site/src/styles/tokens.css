@@ -1,0 +1,34 @@
+/* The kittymux site's palette. Light is cream/red/ink (from the gamusa prototype); dark is a full second theme, not an inversion.
+   Every text pair is checked by src/lib/contrast.test.ts: change a value here and that test tells you if it still reads. */
+:root {
+  --bg: #F7F3EA;
+  --fg: #141414;
+  --muted: #6B655C;
+  --surface: #FFFDF8;
+  --surface-hi: #EFE9DB;
+  --link: #B3261E;
+  --red: #B3261E;
+  --on-red: #F7F3EA;
+  --on-red-soft: #F5D6D2;
+  --code-bg: #1B1917;
+  --code-fg: #F4EFE4;
+  --line: rgb(20 20 20 / 0.12);
+  --ease: cubic-bezier(0.23, 1, 0.32, 1);
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #121110;
+  --fg: #F4EFE4;
+  --muted: #B5AC9F;
+  --surface: #1B1917;
+  --surface-hi: #25221F;
+  --link: #F27A70;
+  --red: #B3261E;
+  --on-red: #F7F3EA;
+  --on-red-soft: #F5D6D2;
+  --code-bg: #0D0C0B;
+  --code-fg: #F4EFE4;
+  --line: rgb(244 239 228 / 0.14);
+  color-scheme: dark;
+}
