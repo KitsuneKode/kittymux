@@ -113,17 +113,17 @@ point() {                     # point COL ROW: the pointer to the middle of that
   px=$(( ($1 * GW + GW / 2) / COLS + GX )); py=$(( ($2 * GH + GH / 2) / LINES_N + GY ))
   X mousemove $((px - 8)) $((py - 3)); sleep 0.15; X mousemove $((px - 3)) $((py - 1)); sleep 0.15; X mousemove "$px" "$py"; sleep 0.6
 }
-read -r JC JR <<<"$(cell join)"
-[ -n "${JC:-}" ] || fail "Agents: the action bar (jump / join / detach / find) is not drawn"
+read -r JC JR <<<"$(cell find)"                               # jump and find fit even in a 26-column panel; join and detach are dropped there on purpose
+[ -n "${JC:-}" ] || fail "Agents: the action bar (jump / find / join / detach) is not drawn"
+cell jump | grep -q . || fail "Agents: the jump button is not drawn"
 point "$JC" "$JR"
 redraw_keep_pointer() { sleep 0.3; }
 DISPLAY=$DISP import -window root -crop "${GW}x${GH}+${GX}+${GY}" +repage "$OUT/agents-hover.png" 2>/dev/null
 hex=$(convert "$OUT/agents-hover.png" -format '%[hex:u.p{'"$(( ((JC - 1) * GW + GW / 2) / COLS ))"','"$(( (JR * GH + GH / 4) / LINES_N ))"'}]' info: 2>/dev/null)   # the padding cell left of the label: no letter antialiasing in it
 echo "hovered keycap pixel: $hex"
-[ "$hex" = "F08FB8" ] || fail "Agents: the keycap under the pointer did not light up in the accent (pixel $hex)"
-read -r FC FR <<<"$(cell find)"
-[ -n "${FC:-}" ] || fail "Agents: no find button"
-point "$FC" "$FR"; X click 1; sleep 0.8
+ACCENT=$([ "$THEME" = light ] && echo 1E66F5 || echo F08FB8)          # the active_border_color each theme above sets
+[ "$hex" = "$ACCENT" ] || fail "Agents: the keycap under the pointer did not light up in the accent (pixel $hex)"
+point "$JC" "$JR"; X click 1; sleep 0.8                           # the find button, hovered above: a click opens the search
 screen | grep -q "▏" || fail "Agents: clicking the find button did not open the search"
 key Escape
 screen | grep -q "▏" && fail "Agents: Esc did not close the search"
