@@ -68,21 +68,50 @@ The same mover also runs from the deck. Open it with `ctrl+alt+b`, select a tab 
 
 ## Number, focus and swap panes
 
-kittymux follows tmux's `display-panes`: press a key and every pane shows a digit.
+Every pane in a tab has a number, counted in the order the tab lists them. kittymux follows tmux's `display-panes`: press one key and every pane shows its digit.
+
+![A tab with four panes: a large one on the left, one on the top right and two beneath it. Pane 1 has a pink border because it is focused.](/assets/panes-layout-dark.png)
+
+Press `ctrl+alt+e` and kitty draws a large digit over every pane except the one you are in. Press that digit to go there. With only two panes it jumps straight over.
+
+![The same tab after ctrl+alt+e: large digits 2, 3 and 4 sit over the three other panes.](/assets/panes-numbers-dark.png)
+
+You do not need the overlay once you know the numbers. `ctrl+alt+3` goes straight to pane 3. Every pane in these screenshots says which key reaches it.
 
 | To                                          | Keys                                                                 |
 | ------------------------------------------- | -------------------------------------------------------------------- |
 | Show digits, then focus a pane              | `ctrl+alt+e`, then the digit. With two panes it jumps straight over. |
-| Focus pane N directly                       | `ctrl+alt+1` to `9`, using the same numbers. `ctrl+alt+0` is the last pane. |
-| Open native pane controls                  | `ctrl+alt+shift+semicolon` (the semicolon key).                        |
+| Focus pane N directly                       | `ctrl+alt+1` to `9`, using the same numbers.                         |
+| Focus the last pane                         | `ctrl+alt+0`                                                         |
+| Go back to the pane you were in before      | `ctrl+alt+o`                                                         |
+| Open native pane controls                   | `ctrl+alt+shift+semicolon` (the semicolon key).                      |
 | Show digits, then swap with a pane          | `ctrl+alt+shift+y`, then the digit.                                  |
 | Move focus to a neighbour                   | `ctrl+alt+h` `j` `k` `l`, or `shift+alt+` an arrow key.              |
-| Go to the last pane                         | `ctrl+alt+o`                                                         |
 | Split below, and split to the right         | `ctrl+alt+enter` and `ctrl+shift+enter`.                             |
-| Zoom a pane, then equalize                  | `ctrl+alt+z`, `alt+shift+=`                                          |
-| Resize a pane (about 3 columns a press)     | `alt+shift+h` `j` `k` `l`                                            |
+| Zoom a pane                                 | `ctrl+alt+z`                                                         |
+
+Tabs use `alt` where panes use `ctrl+alt`: `alt+1` to `9` jump to tab N and `alt+0` goes to the last tab.
 
 If you prefer letters to digits, set `visual_window_select_characters asdfghjkl` in your `kitty.conf`. The direct keys stay numeric.
+
+### Resize and equalize
+
+Hold `alt` and `shift` and press `h`, `j`, `k` or `l` to move the focused pane's edge: `h` narrower, `l` wider, `j` taller, `k` shorter. Each press moves it about three columns, so six presses of `l` take pane 1 below from 50 columns to 70.
+
+![The same four panes after six presses of alt+shift+l: pane 1 is much wider and the other three are squeezed to the right.](/assets/panes-resized-dark.png)
+
+**Equalize** makes every split in the tab the same size again. It is `alt+shift+=`: hold `alt` and `shift` and press the `=` key (the `+` key on a US keyboard). It is the way back after resizing, closing a pane or zooming, and it replaces the old `ctrl+alt+0`, which now focuses the last pane. The same keys with `ctrl` in place of `shift` already belong to Hyprland's own column resizing, which is why a `ctrl` chord is not used here.
+
+![The same tab after alt+shift+=: panes 1 and 2 are both 50 columns wide again, and panes 3 and 4 share the bottom half equally.](/assets/panes-equalized-dark.png)
+
+| To                                           | Keys                                      |
+| -------------------------------------------- | ----------------------------------------- |
+| Narrower, wider, taller, shorter             | `alt+shift+h`, `l`, `j`, `k`              |
+| Make every split the same size again         | `alt+shift+=`                             |
+| Resize with the mouse                        | Drag the border between two panes.        |
+| Resize in a mode, one key at a time          | kitty's own `ctrl+shift+r`, then `h` `j` `k` `l`, and `esc` to leave. |
+
+The screenshots are taken by `tests/shot_panes.sh`, which presses these keys in a real kitty on made-up panes, so they show what the keys do and not a mock-up.
 
 Press the pane-controls chord, then `h/j/k/l` to swap with a neighbour, `r` to rotate the current split, `s` to exchange its sides, `e` to equalize or `a` to choose a swap target. These use kitty’s own actions, preserving processes and pane identity. Rotation and equalization apply to the splits layout; a nested split rotates its current group. Escape cancels; the opening chord also dismisses the picker.
 
