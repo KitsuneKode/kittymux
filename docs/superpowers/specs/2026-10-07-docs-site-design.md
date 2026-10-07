@@ -1,6 +1,6 @@
 # kittymux documentation site: design
 
-Status: **draft for review.** Nothing is scaffolded or installed until this is approved.
+Status: **approved with answers (2026-10-07).** Decisions from review are marked **DECIDED**. Implementation starts from the plan, not from this file.
 
 ## What this is for
 
@@ -17,11 +17,12 @@ fix they are looking for in two moves; (3) it is honest about what is verified a
 | You said | I assumed (correct me) |
 | --- | --- |
 | Use TanStack Start for a docs site | Fumadocs on TanStack Start (what the docs were already written for); static output, no server needed |
-| Use the gamusa theme and its styles | Palette, type, motifs and motion are borrowed. **No** ICT logo, photos, copy or "gamusa" wording; the weave band is kept only as an abstract diamond divider |
+| Use the gamusa theme and its styles | **DECIDED: everything in the reference is yours, so the palette, type, woven band and motion are used as they are.** The ICT logo, photos and copy stay out only because they are about something else |
 | Better use of shadcn, typography, better-ui, frontend-design, make-interfaces-feel-better | shadcn components for the landing page and chrome; Fumadocs UI for the reading experience, restyled by tokens |
 | "typeset" | Read as typography: a real type scale and prose styles, not a plugin by that name |
-| (not said) | Light (cream) is the default; a dark (ink) mode exists because people read docs at night |
+| "system as default, and a darker version of it with the best support of things" | **DECIDED:** three states: System (default, follows the OS), Light (cream) and Dark (ink). Dark is a full second theme, not an inversion: code colours, callouts, search, tables, focus rings and screenshots each have a dark counterpart |
 | (not said) | The site lives in `site/` in this repo; `docs/` stays the single source of content |
+| "a screenshot and a tagline… a marketing genius… the home page is a marketing page as well, and the docs are there as well" | **DECIDED:** the home page sells first and is also the docs hub: a search box, the four things people look for, and the popular pages sit on it. Tagline and copy below |
 | (not said) | Nothing is deployed or published without your explicit go |
 
 ## Approaches considered
@@ -53,19 +54,34 @@ TanStack Start (Vite, React 19) + `fumadocs-core` / `fumadocs-ui` / `fumadocs-md
 | `/llms.txt`, `/llms-full.txt` | The docs for agents to read (this tool's users run agents all day) |
 | `/api/search` | Static search index; `⌘K` / `/` opens it everywhere |
 
+### Voice and copy (DECIDED direction; final wording is yours to veto)
+
+The promise is one thing: **you always know which agent needs you.** Everything else (panes, sessions, the palette) is how.
+
+- **Headline:** *Know which agent needs you.*
+- **Subhead:** *kittymux turns kitty into a multiplexer for AI coding agents. One glance at the tab bar says who is working, who is waiting for you and who has finished, and one click takes you there.*
+- **Primary action:** `Try the demo`, with the line *Opens its own window. Your config is never touched.* **Secondary:** `Read the docs`.
+- **Proof line under the hero**, every item true and checkable: *Eight agents recognised · Local only, no daemon · Never types into an agent · Silence is never "waiting"*.
+- **Alternatives kept in reserve** for the share image and the repository description: *Eight agents running. One glance tells you who's waiting.* and *Stop hunting through tabs.*
+- **Rules for all copy:** no "blazing", "seamless", "revolutionary"; verbs and numbers instead of adjectives; every number is generated from the repository (agents, chords, features) or omitted; the honest-limits section stays on the front page because it is the strongest trust signal the product has.
+
 ### Landing page, section by section
 
-1. **Hero (red field).** One line: *Run many agents in kitty. Know which one needs you.* Subline in the tinted cream. Two actions: `Try the demo` (shows `kittymux demo` with a copy button) and `Read the docs`. On the right, a real screenshot of the bar and panel in a dark terminal window.
+1. **Hero (red field).** The headline and subhead above, a docs search field styled as part of the hero (`⌘K`), the two actions, and on the right a real screenshot of the bar and panel in a terminal window. The proof line sits under it.
+1b. **The problem, in one screen.** A crowded tab strip with an "Is it done? Is it stuck? Is it asking me?" caption, then the same strip as kittymux draws it. Before and after, both real screenshots.
 2. **Three ideas**, each with a real screenshot: **See** (the tab bar says what every agent is doing), **Act** (the panel, the palette, one click to answer), **Come back** (sessions restore and ask before resuming).
 3. **How it knows.** The state table (`limited`, `waiting`, `working`, `done`, `idle`) with the rule that silence is never "waiting". This is the trust section.
 4. **Install in three steps** with copy buttons and the `doctor` output people should expect.
 5. **Keys at a glance:** the twelve chords people use most, then a link to `/keys`.
+5b. **The docs hub.** Because this page is also the way into the docs: four large entries (*Getting started*, *Shortcuts*, *Troubleshooting*, *CLI reference*), a row of the most-read pages, and the search field repeated. A visitor who came for a fix must not have to scroll past a pitch to find it, so a `Docs` link stays in the header and the hub is reachable by one anchor.
+5c. **Questions people ask first** as an accordion: *Does it send my data anywhere? Will it type into my agents? Which agents? Do I have to leave tmux? Does it need Wayland?*
+6b. **Final call to action** on a red field: the install command and the demo command.
 6. **What it does not do.** Platform support and the "not verified" list, taken from `platforms.mdx`.
 7. **Footer:** repository, changelog, licence, version (from `git describe` at build).
 
-### Visual system (from the reference, adapted)
+### Visual system (from the reference)
 
-- **Colour, committed.** Cream `#F7F3EA`, red `#B3261E`, ink `#141414`, soft red `#F5D6D2`, muted `#6B655C`, hairline ink at 12%. Red carries about 40% of the landing page (hero, install band, borders, primary action); docs pages are mostly cream with red used for links, the active nav item and one accent per page. **Dark mode:** ink `#141414` ground, cream text, red lifted to keep 4.5:1 on ink, the red field used sparingly. Every pair is contrast-checked in a test.
+- **Colour, committed.** Cream `#F7F3EA`, red `#B3261E`, ink `#141414`, soft red `#F5D6D2`, muted `#6B655C`, hairline ink at 12%. Red carries about 40% of the landing page (hero, install band, borders, primary action); docs pages are mostly cream with red used for links, the active nav item and one accent per page. **Dark:** ink ground, cream text, the red lifted to keep 4.5:1 on ink, the red field kept for the hero and the final call to action only, surfaces a step lighter than the ground, hairlines cream at 14%. **System** is the default: the first paint follows `prefers-color-scheme` through an inline script, and the toggle cycles System, Light, Dark and remembers the choice. Every foreground/background pair of both themes is contrast-checked in a test.
 - **Type.** Epilogue 700 for display at `-0.03em`, balanced; 400/500 for body at 16–17 px with `text-wrap: pretty`; a 60–72 character measure for prose; `tabular-nums` on numbers; real quotes, dashes and ellipses; JetBrains Mono for code and keys.
 - **Shape.** Pills for actions, one radius family with concentric inner radii, layered transparent shadows for lift, 1 px ink-12% hairlines for structure, image outlines in pure black or white at 10%.
 - **Motion.** One easing, `cubic-bezier(0.23, 1, 0.32, 1)`. Hero entrance staggered 80 ms; the primary action's clip-path wipe; press scale `0.96`; nothing animates on high-frequency actions (search open, sidebar toggle); everything is gated by `prefers-reduced-motion`, with an opacity cross-fade as the fallback.
@@ -111,8 +127,8 @@ Deploying or choosing a domain, analytics, i18n, versioned docs, a blog, a newsl
 6. Polish pass (typography, surfaces, motion), then accessibility and performance checks.
 7. CI job and deployment config, not deployed.
 
-## Questions for you
+## Decided in review
 
-1. Is "tokens and motifs only, nothing of ICT's" the right line, and is the diamond band fine as a divider?
-2. Light as the default with a dark mode, or one committed look (light only)?
-3. Anything you want the front page to say that is not in the README (a tagline, a screenshot you prefer, a link)?
+1. Everything in the reference is the owner's: its tokens, woven band and motion are used as they are.
+2. System is the default theme, with a full dark version and a three-way toggle.
+3. The front page is a marketing page and the docs hub at once; headline, subhead and proof line are as written above.
