@@ -37,6 +37,7 @@ FEATURE_TEXT = {
     "sudo": "A notification when sudo, doas, su or pkexec waits for your password in a pane you are not looking at.",
     "loginprompt": "The same for ssh and git asking for a passphrase, a password or to trust a host.",
     "pkgprompt": "The same for pacman, paru, yay, apt and dnf waiting for a yes or a no.",
+    "socketlink": "A link at /tmp/mykitty-<pid> to the real control socket, so scripts that look there still find kitty.",
 }
 
 

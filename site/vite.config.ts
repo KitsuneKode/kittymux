@@ -17,6 +17,8 @@ export default defineConfig({
         enabled: true,
         crawlLinks: true,
         failOnError: true,
+        // the crawler follows #anchor links as if they were pages: it then writes the SAME file from several tasks at once and can leave it empty (it did)
+        filter: (page: { path: string }) => !page.path.includes('#'),
       },
       // not linked from any page, so the crawler would never find them: the search index and the llms.txt files are static assets
       pages: [{ path: '/api/search' }, { path: '/llms.txt' }, { path: '/llms-full.txt' }],

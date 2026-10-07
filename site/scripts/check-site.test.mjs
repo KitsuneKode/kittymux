@@ -46,3 +46,10 @@ test('a link to a static file (llms.txt) is fine', () => {
   const dir = site({ 'index.html': html('<h1>x</h1><a href="/llms.txt">l</a>'), 'llms.txt': 'x' })
   expect(crawl(dir, 1).errors).toEqual([])
 })
+
+test('an empty html file is reported by name instead of as four missing tags', () => {
+  const dir = site({ 'index.html': html('<h1>x</h1>'), 'docs/index.html': '' })
+  const msg = crawl(dir, 2).errors.join('\n')
+  expect(msg).toContain('/docs: the file is EMPTY')
+  expect(msg).not.toContain('no <title>')
+})

@@ -17,6 +17,7 @@ export function crawl(dir, expectedPages) {
   if (files.length !== expectedPages) errors.push(`expected ${expectedPages} pages, found ${files.length}`)
 
   for (const [url, html] of byUrl) {
+    if (html.length === 0) { errors.push(`${url}: the file is EMPTY (a prerender race can write one)`); continue }
     const h1 = (html.match(/<h1\b/g) ?? []).length
     if (h1 !== 1) errors.push(`${url}: has ${h1} <h1> (want exactly one)`)
     else if (!/<h1\b[^>]*>(?:\s|<[^>]+>)*[^\s<][\s\S]*?<\/h1>/.test(html)) errors.push(`${url}: the <h1> is empty in the static HTML`)

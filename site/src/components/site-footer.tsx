@@ -1,9 +1,10 @@
 import { Link } from '@tanstack/react-router';
 import { facts } from '@/lib/facts';
 import { gitConfig } from '@/lib/shared';
+import { ThemeToggle } from './theme-toggle';
 import { WeaveBand } from './weave-band';
 
-export function SiteFooter() {
+export function SiteFooter({ themeToggle = false }: { themeToggle?: boolean }) {
   return (
     <footer className="mt-24">
       <WeaveBand id="foot" />
@@ -17,6 +18,7 @@ export function SiteFooter() {
           <Link to="/changelog" className="py-2 hover:text-ink">Changelog</Link>
           <a href={`https://github.com/${gitConfig.user}/${gitConfig.repo}`} className="py-2 hover:text-ink">GitHub</a>
         </nav>
+        {themeToggle && <ThemeToggle />}
       </div>
     </footer>
   );

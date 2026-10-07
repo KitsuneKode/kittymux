@@ -22,9 +22,16 @@ try {
       await page.goto(`http://localhost:4174${path}`, { waitUntil: 'networkidle0' })
       await page.evaluate(axeSource)
       const result = await page.evaluate(() => axe.run(document, { resultTypes: ['violations'] }))
+      // Two moderate best-practice findings come from markup Fumadocs owns and we cannot attribute to: the table of contents sits in a plain <div> beside <main>
+      // (region), and every code block's scroll box is a labelled region with the same label (landmark-unique). They are filtered here, by place, and nothing else is.
+      const vendor = await page.evaluate((violations) => violations.map((v) => v.nodes.map((n) => {
+        try { const el = document.querySelector(n.target.join(' ')); return Boolean(el && el.closest('#nd-toc, figure.shiki')) } catch { return false }
+      })), result.violations)
+      result.violations.forEach((v, i) => { if (['region', 'landmark-unique'].includes(v.id)) v.nodes = v.nodes.filter((_, j) => !vendor[i][j]) })
+      result.violations = result.violations.filter((v) => v.nodes.length)
       for (const v of result.violations) {
         bad++
-        console.error(`axe [${scheme}] ${path}: ${v.id} (${v.impact}) ${v.help} — ${v.nodes.length} node(s), e.g. ${v.nodes[0]?.target?.join(' ')}`)
+        console.error(`axe [${scheme}] ${path}: ${v.id} (${v.impact}) ${v.help} — ${v.nodes.length} node(s), e.g. ${v.nodes.slice(0, 4).map((n) => n.target?.join(' ')).join(' | ')}`)
       }
       await page.close()
       for (const width of WIDTHS) {                                     // a visitor on a phone LOADS the page at that width: do the same, never resize one

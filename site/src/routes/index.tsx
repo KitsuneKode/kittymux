@@ -11,7 +11,6 @@ import { Limits } from '@/components/landing/limits';
 import { Problem } from '@/components/landing/problem';
 import { ProofLine } from '@/components/landing/proof-line';
 import { SiteFooter } from '@/components/site-footer';
-import { ThemeToggle } from '@/components/theme-toggle';
 
 const TITLE = 'kittymux — know which agent needs you';
 const DESCRIPTION = 'kittymux turns kitty into a multiplexer for AI coding agents: one glance at the tab bar says who is working, who is waiting for you and who has finished.';
@@ -44,10 +43,7 @@ function Home() {
       <Limits />
       <Faq />
       <FinalCta />
-      <div className="mx-auto flex w-full max-w-[1280px] justify-end px-5 pt-8 md:px-8">
-        <ThemeToggle />
-      </div>
-      <SiteFooter />
+      <SiteFooter themeToggle />
     </div>
   );
 }
