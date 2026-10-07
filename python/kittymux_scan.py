@@ -261,6 +261,28 @@ def scan_prompt(window, now: float) -> None:
         _debug()
 
 
+def _wall() -> float:
+    return time.time()
+
+
+def _tz() -> float:
+    return float(time.localtime().tm_gmtoff or 0)
+
+
+LIMIT_SAME_S = 120.0          # two reset times this close are the same limit (a retry re-prints the message)
+LIMIT_UNKNOWN_S = 600.0       # a limit message with NO time: one episode for this long
+
+
+def _same_limit_episode(book: dict, reset, wall: float) -> bool:
+    """Was this usage limit already announced? A retry re-prints the same message (limited → working → limited), and each flip used to be a new popup."""
+    last = book.get("limit_announced")
+    if not last:
+        return False
+    if reset is not None and last.get("reset") is not None:
+        return abs(reset - last["reset"]) <= LIMIT_SAME_S
+    return reset is None and last.get("reset") is None and wall - last.get("t", 0) < LIMIT_UNKNOWN_S
+
+
 def scan_window(window, now: float) -> bool:
     """Re-resolve one window. True if its verdict changed (so its tab bar needs a redraw)."""
     agents, st = _mods()
@@ -278,12 +300,13 @@ def scan_window(window, now: float) -> bool:
         _RT.verdicts.pop(wid, None)
         return False
 
-    marker, line = "", ""
+    marker, line, text = "", "", ""
     if agent in st.SCREEN_AGENTS:
         try:
-            marker, line = st.classify_screen(window.as_text())
+            text = window.as_text()
+            marker, line = st.classify_screen(text)
         except Exception:
-            marker, line = "", ""
+            marker, line, text = "", "", ""
     entry = dict(_panes().get(wid) or {})
     book = _RT.book.setdefault(wid, {})
     view = {**entry, **book}
@@ -292,6 +315,20 @@ def scan_window(window, now: float) -> bool:
     if adt and adt > float(view.get("ts_status") or 0):
         view["status"], view["ts_status"] = "done", adt        # the agent's own "finished" notification counts like its Stop hook
     new = st.resolve(view, agent, marker, now, focused)
+    wall = _wall()
+    reset_at = book.get("limit_reset")
+    if marker == "limited":
+        found, relative, hint = st.limit_hint(text, wall, _tz())
+        if found is not None:
+            if relative:                                           # "resets in 2h": its epoch moves with the clock, so take it once per MESSAGE
+                if book.get("limit_hint") != hint:
+                    reset_at, book["limit_reset"], book["limit_hint"] = found, found, hint
+            elif reset_at is None or abs(found - reset_at) > LIMIT_SAME_S:
+                reset_at = book["limit_reset"] = found             # a new episode, or the first time its end is known
+                book.pop("limit_hint", None)
+    if new == "limited" and reset_at is not None and wall >= reset_at:
+        new = "idle"                                               # the limit has lifted: the message on screen is old news until a fresh one appears
+        view["why"] = "its usage limit has reset; the old message is still on screen"
     if new != prev.get("state", "") or wid not in _journal_rt()["keys"]:
         _journal_note(window, new)
     for k in _PRIVATE:
@@ -305,6 +342,8 @@ def scan_window(window, now: float) -> bool:
     why = view.get("why", "")
     _RT.verdicts[wid] = {"state": new, "reason": reason, "agent": agent, "why": why,
                          "ts_state": now if changed else prev.get("ts_state", now), "ts_scan": now}
+    if reset_at is not None and (marker == "limited" or new == "limited"):
+        _RT.verdicts[wid]["reset_at"] = int(reset_at)
     if new != old_state:
         _record("state", wid, agent, frm=old_state, to=new, why=why)
         if new == "working" and old_state in ("idle", "done"):
@@ -320,10 +359,15 @@ def scan_window(window, now: float) -> bool:
         else:
             kind = _inbox().classify_text("", text)[0]
             kind = kind if kind in ("permission", "question") else "permission"
-        reset = _inbox().parse_reset(text, time.time(), float(time.localtime().tm_gmtoff or 0)) if kind == "limit" else None
+        reset = reset_at if kind == "limit" else None
         source = "hook" if "hook" in why else "screen"
-        _record("notify", wid, agent, state=new, source=source,
-                outcome=_announce(window, kind, agent, source, text, confidence="high" if source == "hook" else "low", reset_at=reset))
+        if kind == "limit" and _same_limit_episode(book, reset, wall):
+            outcome = "suppressed: the same usage-limit episode was already announced"
+        else:
+            outcome = _announce(window, kind, agent, source, text, confidence="high" if source == "hook" else "low", reset_at=reset)
+            if kind == "limit":
+                book["limit_announced"] = {"reset": reset, "t": wall}
+        _record("notify", wid, agent, state=new, source=source, outcome=outcome)
         _record("attention", wid, agent, outcome=_alert(window))
     elif changed and not old_state and new in agents.NEEDS_YOU:
         _record("notify", wid, agent, state=new, outcome="suppressed: first sight of this window (a scanner restart must not replay old events)")

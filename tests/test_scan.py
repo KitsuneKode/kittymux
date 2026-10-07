@@ -135,7 +135,9 @@ class VerdictTests(ScanBase):
 
     def test_limit_screen(self):
         self.add(FakeWindow(3, "claude", "Claude usage limit reached. Your limit will reset at 5pm.\n"))
-        KS.scan_all()
+        morning = 1_790_000_000 - (1_790_000_000 % 86400) + 10 * 3600          # 10:00 UTC: 5pm is still ahead (the verdict must not depend on the hour the suite runs)
+        with mock.patch.object(KS, "_wall", return_value=morning), mock.patch.object(KS, "_tz", return_value=0.0):
+            KS.scan_all()
         self.assertEqual(KS._RT.verdicts["3"]["state"], "limited")
 
     def test_idle_agent_has_a_verdict_but_it_is_idle(self):
@@ -638,6 +640,125 @@ class PromptTests(ScanBase):
         self.add(w)
         KS.scan_prompt(w, 0.0)
         KS.scan_prompt(w, 3.0)
+
+
+class LimitEpisodeTests(ScanBase):
+    """A usage limit is an EPISODE with a reset time (t3code models it as a run state with resetAt): the verdict carries when it lifts,
+    the state ends at that time even while the old message is still on screen, and one episode is announced once however often the
+    pane flips between a retry and the message again (the live log showed limited⇄working five times in six minutes, a popup each)."""
+    DAY = 1_790_000_000 - (1_790_000_000 % 86400)
+    MSG = "You've hit your usage limit. Upgrade to Pro, or try again at 9:21 PM.\n› Ask Codex to do anything\n"
+    RETRY = "• Working (1s • esc to interrupt)\n› Ask Codex to do anything\n"
+
+    def setUp(self):
+        super().setUp()
+        self.wall = self.DAY + 21 * 3600            # 21:00, UTC offset 0
+        self._w = mock.patch.object(KS, "_wall", side_effect=lambda: self.wall)
+        self._z = mock.patch.object(KS, "_tz", return_value=0.0)
+        self._w.start()
+        self._z.start()
+
+    def tearDown(self):
+        self._w.stop()
+        self._z.stop()
+        super().tearDown()
+
+    def verdict(self):
+        return KS._RT.verdicts["1"]
+
+    def test_the_verdict_says_when_the_limit_lifts(self):
+        self.add(FakeWindow(1, "codex", self.MSG))
+        KS.scan_all()
+        self.assertEqual(self.verdict()["state"], "limited")
+        self.assertEqual(self.verdict()["reset_at"], self.DAY + 21 * 3600 + 21 * 60)
+
+    def test_after_the_reset_the_old_message_no_longer_counts(self):
+        w = FakeWindow(1, "codex", self.MSG)
+        self.add(w)
+        KS.scan_all()
+        self.wall = self.DAY + 21 * 3600 + 22 * 60            # 21:22
+        KS.scan_all()
+        self.assertEqual(self.verdict()["state"], "idle")
+        self.assertIn("reset", self.verdict()["why"])
+        self.assertEqual(self.verdict()["reset_at"], self.DAY + 21 * 3600 + 21 * 60)
+
+    def test_a_fresh_message_with_a_later_time_is_limited_again(self):
+        w = FakeWindow(1, "codex", self.MSG)
+        self.add(w)
+        KS.scan_all()
+        self.wall = self.DAY + 21 * 3600 + 25 * 60
+        KS.scan_all()
+        self.assertEqual(self.verdict()["state"], "idle")
+        w.screen = self.MSG.replace("9:21 PM", "11:40 PM")
+        KS.scan_all()
+        self.assertEqual(self.verdict()["state"], "limited")
+        self.assertEqual(self.verdict()["reset_at"], self.DAY + 23 * 3600 + 40 * 60)
+
+    def test_without_a_time_the_limit_stays_until_the_screen_changes(self):
+        self.add(FakeWindow(1, "claude", "Claude usage limit reached.\n"))
+        KS.scan_all()
+        self.wall += 5 * 3600
+        KS.scan_all()
+        self.assertEqual(self.verdict()["state"], "limited")
+        self.assertNotIn("reset_at", self.verdict())
+
+    def test_a_relative_time_is_taken_once_per_message_not_pushed_back_every_scan(self):
+        w = FakeWindow(1, "claude", "Claude usage limit reached. Resets in 2h 30m\n")
+        self.add(w)
+        KS.scan_all()
+        first = self.verdict()["reset_at"]
+        self.assertEqual(first, self.wall + 9000)
+        for _ in range(5):
+            self.wall += 600
+            KS.scan_all()
+        self.assertEqual(self.verdict()["reset_at"], first)
+        self.assertEqual(self.verdict()["state"], "limited")
+        self.wall = first + 5
+        KS.scan_all()
+        self.assertEqual(self.verdict()["state"], "idle")
+        w.screen = "Claude usage limit reached. Resets in 1h 10m\n"           # a NEW message: limited again, with its own end
+        KS.scan_all()
+        self.assertEqual(self.verdict()["state"], "limited")
+        self.assertEqual(self.verdict()["reset_at"], self.wall + 4200)
+
+    def test_a_retry_that_hits_the_same_limit_is_not_announced_again(self):
+        w = FakeWindow(1, "codex", self.RETRY)
+        self.add(w)
+        KS.scan_all()
+        with mock.patch.object(KS, "_notify", return_value="sent") as notify:
+            for screen in (self.MSG, self.RETRY, self.MSG, self.RETRY, self.MSG):
+                w.screen = screen
+                self.wall += 40
+                KS.scan_all()
+        self.assertEqual(notify.call_count, 1)
+        self.assertEqual([e["kind"] for e in KS._inbox().load(self.state)], ["limit"])
+        self.assertEqual(self.verdict()["state"], "limited")
+
+    def test_a_different_episode_is_announced(self):
+        w = FakeWindow(1, "codex", self.RETRY)
+        self.add(w)
+        KS.scan_all()
+        with mock.patch.object(KS, "_notify", return_value="sent") as notify:
+            w.screen = self.MSG
+            KS.scan_all()
+            w.screen = self.RETRY
+            self.wall = self.DAY + 22 * 3600
+            KS.scan_all()
+            w.screen = self.MSG.replace("9:21 PM", "11:40 PM")
+            KS.scan_all()
+        self.assertEqual(notify.call_count, 2)
+
+    def test_the_decision_log_says_why_it_stayed_quiet(self):
+        w = FakeWindow(1, "codex", self.RETRY)
+        self.add(w)
+        KS.scan_all()
+        with mock.patch.object(KS, "_notify", return_value="sent"):
+            for screen in (self.MSG, self.RETRY, self.MSG):
+                w.screen = screen
+                self.wall += 30
+                KS.scan_all()
+        outcomes = [r.get("outcome", "") for r in vars(KS._RT).get("decisions", []) if r.get("kind") == "notify"]
+        self.assertTrue(any("same usage-limit episode" in o for o in outcomes), outcomes)
 
 
 class InboxIntegrationTests(ScanBase):

@@ -299,7 +299,7 @@ class Collector:
                     agent=name or "", branch=branch, cwd=cwd,
                     panes=len(wins), status=status, unread=unread, current=current,
                     msg=kittymux_agents.resolve_msg(panes.get(str(deciding or aw["id"])), st) if st else "",
-                    age=kittymux_agents.state_age(st, (panes.get(str(deciding or aw["id"])) or {}).get("ts_state"), now) if st else "",
+                    age=(lambda e: kittymux_agents.state_age(st, e.get("ts_state"), now, reset_at=e.get("reset_at"), wall=time.time()))(panes.get(str(deciding or aw["id"])) or {}) if st else "",
                     pr=self._pr.get(cwd, branch), ports=ports, pane_rows=pane_rows,
                     win_ids=tuple(w["id"] for w in wins)))
         return Snapshot(rows, current_session)

@@ -34,6 +34,9 @@ A false "finished" is worse than none, so the rules are strict.
 
 - **The agent's own word wins.** When a hook announced the turn, only the agent's `Stop` hook ends it. A quiet screen between tool calls, a repaint or an `esc` interrupt is not a completion. Agents without hooks are judged by the screen alone.
 - **An answered permission request is not "done".** It is why the agent paused.
+- **A limit ends when its reset time does.** When the message names a time ("try again at 9:21 PM", "resets in 2h 30m"), the tab says when it lifts (`↻12m`, "resets in 12m" in the panel) and stops being limited at that time, even while the old message is still on screen. A fresh message with a new time is a new limit. With no time in the message, the tab stays limited until the screen changes.
+- **One limit, one notification.** An agent that you retry prints the same limit message again, and the tab flips between working and limited. That is one episode: it is announced once, not once per retry.
+- **A busy line above an idle prompt is old output.** Devin shows "Ask Devin to build features" only when it is idle. A line such as `Working (1s • esc to interrupt)` printed above it, for example a pasted log, does not make the tab work.
 - **Prose is not a prompt.** Text like `(y/n)` or "usage limit reached" inside the agent's own reply, above a live spinner, is ignored. A real dialog, which has `esc to cancel` chrome, still wins.
 - **A completion has to settle and be known.** It counts only after the pane stays finished for five seconds, and it notifies only when kittymux saw it work for at least 15 seconds.
 

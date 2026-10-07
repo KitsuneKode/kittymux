@@ -7,6 +7,22 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
 import kittymux_agents as A  # noqa: E402
 
 
+class ResetCountdownTests(unittest.TestCase):
+    def test_a_limited_tab_with_a_known_reset_counts_down_to_it(self):
+        self.assertEqual(A.state_age("limited", 0.0, 1000.0, reset_at=1000 + 12 * 60 + 5, wall=1000), "\u21bb12m")
+        self.assertEqual(A.state_age("limited", 0.0, 1000.0, reset_at=1000 + 3 * 3600 + 100, wall=1000), "\u21bb3h")
+        self.assertEqual(A.state_age("limited", 0.0, 1000.0, reset_at=1000 + 20, wall=1000), "\u21bb1m")      # never "0m": it is about to lift
+
+    def test_without_a_reset_or_once_it_has_passed_it_is_how_long_ago_as_before(self):
+        self.assertEqual(A.state_age("limited", 100.0, 100.0 + 600), "10m")
+        self.assertEqual(A.state_age("limited", 100.0, 100.0 + 600, reset_at=None, wall=5), "10m")
+        self.assertEqual(A.state_age("limited", 100.0, 100.0 + 600, reset_at=3, wall=5), "10m")
+        self.assertEqual(A.state_age("limited", 100.0, 100.0 + 600, reset_at="x", wall=5), "10m")
+
+    def test_other_states_ignore_a_reset(self):
+        self.assertEqual(A.state_age("waiting", 100.0, 100.0 + 600, reset_at=10**10, wall=5), "10m")
+
+
 class AgentTests(unittest.TestCase):
     def test_finds_agent_by_basename(self):
         self.assertEqual(A.agent_in(["/usr/bin/node", "/home/u/.local/bin/claude"]), "claude")

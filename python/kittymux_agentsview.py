@@ -96,6 +96,8 @@ def context_row(kit: U.Kit, r, selected: bool, hovered: bool, width: int, home: 
     word = "needs you" if r.status == "waiting" else "limit hit" if r.status == "limited" else "done" if r.status == "done" and r.age else ""
     short = "needs" if r.status == "waiting" else "limit" if r.status == "limited" else "done"
     variants = [f"{word} {r.age}".strip(), f"{short} {r.age}".strip(), r.age] if word else []
+    if r.status == "limited" and r.age.startswith("\u21bb"):        # a known reset: say when it lifts, not how long ago it hit
+        variants = [f"resets in {r.age[1:]}", f"\u21bb{r.age[1:]}"]
     tail_style = (kit.ink(_state_color(p, r.status), bg), True) if needs else (kit.ink(p.faint, bg, 3.0), False)
     marker = U.S(" " if open_state is None else "\u25be" if open_state else "\u25b8", kit.ink(p.accent if lit else p.muted, bg, 3.0), bg)
     left = [rail, U.S(" ", None, bg), marker, U.S(" ", None, bg)]

@@ -100,6 +100,11 @@ class QuietByDefaultTests(unittest.TestCase):
         k = next(kits())
         self.assertIn("needs you 4m", text(V.context_row(k, row(status="waiting", age="4m"), False, False, 40)))
         self.assertIn("limit hit 1h", text(V.context_row(k, row(status="limited", age="1h"), False, False, 40)))
+        # with a known reset the row says when it lifts, not how long ago it hit
+        got = text(V.context_row(k, row(status="limited", age="\u21bb12m"), False, False, 40))
+        self.assertIn("resets in 12m", got)
+        self.assertNotIn("limit hit", got)
+        self.assertIn("\u21bb12m", text(V.context_row(k, row(status="limited", age="\u21bb12m"), False, False, 26)))
         self.assertIn("done 3m", text(V.context_row(k, row(status="done", age="3m"), False, False, 40)))
         self.assertNotIn("done", text(V.context_row(k, row(status="done", age=""), False, False, 40)))          # under a minute is not news
         self.assertNotIn("4m", text(V.context_row(k, row(status="working", age="4m"), False, False, 40)))

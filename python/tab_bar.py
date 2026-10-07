@@ -1138,7 +1138,9 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     state_fg = _state_color(state, pal)
 
     # insights beside the state glyph: how long it has been waiting / working / done-unseen (the scanner and this bar share one monotonic clock)
-    age = "" if compact else kittymux_agents.state_age(state, (_tab_verdict(tab.tab_id)[1] or {}).get("ts_state"), time.monotonic())
+    verdict_entry = _tab_verdict(tab.tab_id)[1] or {}
+    age = "" if compact else kittymux_agents.state_age(state, verdict_entry.get("ts_state"), time.monotonic(),
+                                                       reset_at=verdict_entry.get("reset_at"), wall=time.time())
     risky = (not compact) and _runs_without_approvals(info, foreground)
 
     subtitle: list = []

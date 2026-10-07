@@ -71,6 +71,11 @@ WORKING_RE = re.compile(
     _I)
 
 
+# Text only an agent's IDLE composer draws. Devin swaps its input placeholder with its state ("Ask Devin to build features…"
+# when idle, "Guide Devin while it works" while busy), so a busy marker printed ABOVE the idle placeholder is old output (a quoted
+# Codex log, a pasted screen), never live work: what is drawn below it says the turn is over.
+_IDLE_COMPOSER_RE = re.compile(r"\bask\s+devin\s+to\s+build\s+features\b", _I)
+
 # chrome only a real dialog draws: if one of these sits at or below a question, it IS the dialog even with a spinner nearby
 _DIALOG_CHROME_RE = re.compile(
     r"\(esc\)|esc\s+to\s+cancel|enter\s+to\s+(?:confirm|select)|tab\s+to\s+amend|don(?:'|’)t\s+ask\s+again", _I)
@@ -88,11 +93,16 @@ def classify_screen(text: str) -> tuple[str, str]:
     request for you."""
     lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()][-_TAIL_LINES:]
     working_at = next((i for i in range(len(lines) - 1, -1, -1) if WORKING_RE.search(lines[i])), -1)
+    idle_at = next((i for i in range(len(lines) - 1, -1, -1) if _IDLE_COMPOSER_RE.search(lines[i])), -1)
+    if idle_at > working_at:
+        working_at = -1                            # the busy marker is stale: the idle composer is drawn below it
     for marker, rx in (("limited", LIMITED_RE), ("waiting", WAITING_RE), ("working", WORKING_RE)):
         # a prompt's question sits above its options, so the first match is the reason to show;
         # for activity hints the nearest-the-bottom one is the live one
         for i in (range(len(lines)) if marker == "waiting" else range(len(lines) - 1, -1, -1)):
             if rx.search(lines[i]):
+                if marker == "working" and idle_at > i:
+                    break                          # stale: an idle composer is drawn below this busy marker
                 if marker != "working" and working_at > i and not any(_DIALOG_CHROME_RE.search(x) for x in lines[i:]):
                     break                          # activity below it: that text is stale output, not a prompt
                 return marker, lines[i][:160]
@@ -107,6 +117,42 @@ _REQUEST_RE = re.compile(r"permission|approv|confirm|needs\s+your|\ballow\b|proc
 
 def is_request(msg: str) -> bool:
     return bool(msg and _REQUEST_RE.search(msg) and not re.search(r"waiting\s+for\s+your\s+input", msg, _I))
+
+
+_RESET_IN_RE = re.compile(r"(?:resets?|available|try\s+again)\s+in\s+((?:\d+\s*[dhms]\s*)+)", _I)
+_RESET_AT_RE = re.compile(r"(?:resets?|available|try\s+again)\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", _I)
+_UNIT_S = {"d": 86400, "h": 3600, "m": 60, "s": 1}
+
+
+def limit_hint(text, now: float, tz_offset_s: float = 0.0):
+    """(epoch, relative, hint) for the bottom-most reset hint in `text`, or (None, False, ""). `relative` is True for "in 2h 30m": its epoch
+    moves with the clock, so the caller must take it ONCE per message (`hint` is the matched words, to tell one message from the next).
+    A clock time ("try again at 9:21 PM") read at 9:30 PM is the reset that already happened, not tomorrow's: it resolves to the occurrence
+    NEAREST to `now`, since a clock-time limit never lasts more than 12 hours. Never raises; best effort by design."""
+    try:
+        flat = " ".join(str(text or "")[-4000:].split())
+        best, found = -1, (None, False, "")
+        for m in _RESET_IN_RE.finditer(flat):
+            total = sum(int(n) * _UNIT_S[u.lower()] for n, u in re.findall(r"(\d+)\s*([dhms])", m.group(1), _I))
+            if total > 0 and m.start() > best:
+                best, found = m.start(), (now + total, True, m.group(0).lower())
+        for m in _RESET_AT_RE.finditer(flat):
+            hour, minute = int(m.group(1)), int(m.group(2) or 0)
+            if not 1 <= hour <= 12 or minute > 59 or m.start() <= best:
+                continue
+            hour = hour % 12 + (12 if m.group(3).lower() == "pm" else 0)
+            local = now + tz_offset_s
+            target = local - (local % 86400) + hour * 3600 + minute * 60
+            candidates = (target - 86400, target, target + 86400)
+            best, found = m.start(), (min(candidates, key=lambda c: abs(c - local)) - tz_offset_s, False, m.group(0).lower())
+        return found
+    except Exception:
+        return None, False, ""
+
+
+def limit_reset(text, now: float, tz_offset_s: float = 0.0) -> float | None:
+    """When the usage limit named in `text` lifts, as epoch seconds, or None (see limit_hint)."""
+    return limit_hint(text, now, tz_offset_s)[0]
 
 
 def _why(entry: dict, state: str, text: str) -> str:

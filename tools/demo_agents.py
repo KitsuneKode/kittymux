@@ -31,7 +31,7 @@ def rows():
         deck.RowData(4, 41, title=shown("Followup PRs and provider reliability audit for the web app", "devin", "web"), glyph="\ue0a0", agent="devin",
                      branch="fix/provider-reliability-audit", cwd="/home/u/web", pr="#118", status="", index=4, panes=2,
                      pane_rows=(P(41, "\ue0a0", "devin", False, "", "Followup PRs"), P(42, "\ue0a0", "devin", False, "", "devin: I can't access"))),
-        deck.RowData(5, 51, title=shown("Claude Code", "claude", "hypr"), glyph="\ue0a0", agent="claude", branch="", cwd="/home/u/.config/hypr", ports=(33649,), status="limited", age="1h", index=5),
+        deck.RowData(5, 51, title=shown("Claude Code", "claude", "hypr"), glyph="\ue0a0", agent="claude", branch="", cwd="/home/u/.config/hypr", ports=(33649,), status="limited", age="\u21bb42m", index=5),
         deck.RowData(6, 61, title=shown("\u2733 Session continuation and next steps", "claude", "kittymux"), glyph="\ue0a0", agent="claude", branch="main", cwd="/home/u/kittymux",
                      status="working", index=6),
         deck.RowData(7, 71, title="~", glyph="", agent="", branch="", cwd="/home/u", panes=2, status="", index=7),

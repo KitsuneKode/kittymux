@@ -55,11 +55,19 @@ def compact_age(seconds) -> str:
 _AGED_STATES = ("waiting", "limited", "done", "working")
 
 
-def state_age(state: str, ts_state, now: float, minimum: float = 60.0) -> str:
+def state_age(state: str, ts_state, now: float, minimum: float = 60.0, reset_at=None, wall=None) -> str:
     """How long the tab has been in its current state, as compact text — only for states where it matters (waiting / limited / done / working) and from `minimum` seconds on (a
-    reply that took 8 s is not news). `ts_state` and `now` are the same monotonic clock (the scanner runs inside the kitty that draws the bar)."""
+    reply that took 8 s is not news). `ts_state` and `now` are the same monotonic clock (the scanner runs inside the kitty that draws the bar).
+    A LIMITED tab whose reset time is known says when it lifts instead ("↻12m": what you can act on, not how long ago it hit); `reset_at` and `wall` are epoch seconds."""
     if state not in _AGED_STATES:
         return ""
+    if state == "limited" and reset_at is not None and wall is not None:
+        try:
+            remaining = float(reset_at) - float(wall)
+        except (TypeError, ValueError):
+            remaining = 0.0
+        if remaining > 0:
+            return "\u21bb" + compact_age(max(remaining, 60.0))
     try:
         age = float(now) - float(ts_state)
     except (TypeError, ValueError):
@@ -208,7 +216,7 @@ def merge_scan(panes: dict | None, scan: dict | None) -> dict:
             continue
         e = out.setdefault(str(wid), {})
         e["wid"] = str(wid)                                  # consumers that only hold the entry (the bar) can look the window up elsewhere
-        for k in ("state", "reason", "agent", "ts_scan", "ts_state"):
+        for k in ("state", "reason", "agent", "ts_scan", "ts_state", "reset_at"):
             if k in v:
                 e[k] = v[k]
     return out

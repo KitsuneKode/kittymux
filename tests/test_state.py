@@ -29,6 +29,25 @@ CLAUDE_WORKING_NEW = ("· Undulating… (6m 52s · ↓ 35.8k tokens)\n  ⎿  Tip
 CODEX_WORKING = "• Working (3s • esc to interrupt)\n"
 CODEX_APPROVAL = "Would you like to run the following command?\nPress enter to confirm or esc to cancel\n"
 LIMIT = "Claude usage limit reached. Your limit will reset at 5pm.\n"
+DEVIN_IDLE_AFTER_CODEX_LOG = """\
+ │   > • Working (1s • esc to interrupt)
+ └ Exited with code 0
+ Done — 9:23 PM tonight, continue to sweep only, 2 minutes after their 9:21 PM reset.
+ Log: ~/.local/state/codex-continue/run.log .
+❭ rihgt
+ ✱ Canceled. What should Devin do?
+─ ~/Projects/cli-tools/sweep ──────────── (bypass permissions on) ─
+❭ Ask Devin to build features, fix bugs, or work on your code
+──────────────────────────────────────────────────────────────────
+SWE-2 Max                               ctrl+v to paste image in clipboard
+"""
+DEVIN_WORKING_COMPOSER = """\
+  Read last 25 lines in ./a.ts
+─ ~/Projects/x ──────────── (bypass permissions on) ─
+❭ Guide Devin while it works
+──────────────────────────────────────────────────────
+SWE-2 Max
+"""
 IDLE_PROMPT = "╭──────╮\n│ > Try \"fix lint errors\" │\n╰──────╯\n  ? for shortcuts\n"
 
 
@@ -36,9 +55,62 @@ def marker(text):
     return S.classify_screen(text)[0]
 
 
+DAY = 1_790_000_000 - (1_790_000_000 % 86400)          # a UTC midnight; tz offset 0 in these tests
+
+
+def at(h, m=0):
+    return DAY + h * 3600 + m * 60
+
+
+class LimitResetTests(unittest.TestCase):
+    CODEX = "You've hit your usage limit. Upgrade to Pro, visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 9:21 PM."
+
+    def test_a_clock_time_just_passed_is_the_reset_that_already_happened_not_tomorrow(self):
+        self.assertEqual(S.limit_reset(self.CODEX, at(21, 30)), at(21, 21))
+
+    def test_a_clock_time_ahead_is_today(self):
+        self.assertEqual(S.limit_reset(self.CODEX, at(21, 0)), at(21, 21))
+
+    def test_the_nearest_occurrence_wins_across_midnight(self):
+        self.assertEqual(S.limit_reset(self.CODEX, DAY + 86400 + 2 * 3600), at(21, 21))          # 02:00: last evening, not tonight
+        self.assertEqual(S.limit_reset("Your limit will reset at 1am", at(23, 30)), DAY + 86400 + 3600)
+
+    def test_a_relative_time(self):
+        self.assertEqual(S.limit_reset("Usage limit reached. Resets in 2h 30m", at(10)), at(10) + 9000)
+
+    def test_the_bottom_most_message_wins(self):
+        text = "limit reached, try again at 5:00 PM\n...retried...\nlimit reached, try again at 9:21 PM"
+        self.assertEqual(S.limit_reset(text, at(21, 0)), at(21, 21))
+
+    def test_a_message_wrapped_over_lines_still_parses(self):
+        self.assertEqual(S.limit_reset("purchase more credits or try again\nat 9:21 PM.", at(21, 0)), at(21, 21))
+
+    def test_no_hint_no_answer_and_nonsense_never_raises(self):
+        for text in ("", None, "usage limit reached", "resets at 25pm", "try again at 13:99 PM", "x" * 100000):
+            self.assertIsNone(S.limit_reset(text, at(10)))
+
+    def test_the_local_offset_is_applied(self):
+        self.assertEqual(S.limit_reset("try again at 9:21 PM", at(19, 30), 2 * 3600), at(19, 21))      # UTC+2: 9:21 PM local is 19:21 UTC
+
+
 class ClassifyTests(unittest.TestCase):
     def test_devin_thinking_is_working_not_waiting(self):      # the bug in the screenshot
         self.assertEqual(marker(DEVIN_THINKING), "working")
+
+    def test_a_busy_marker_quoted_above_devins_idle_composer_is_stale_not_work(self):
+        # pane 31 of a real session: Devin printed a Codex log ("Working (1s • esc to interrupt)") and then finished;
+        # its composer reads "Ask Devin to build features" only when it is idle
+        self.assertEqual(marker(DEVIN_IDLE_AFTER_CODEX_LOG), "")
+
+    def test_devin_that_really_works_still_reads_as_working(self):
+        self.assertEqual(marker(DEVIN_WORKING_COMPOSER), "working")
+        self.assertEqual(marker(DEVIN_THINKING), "working")
+        # a spinner drawn BELOW the idle composer text is live work (the order on screen is what counts)
+        self.assertEqual(marker("❭ Ask Devin to build features\n  Thinking · 3s (esc twice to interrupt)\n"), "working")
+
+    def test_the_idle_composer_does_not_hide_a_limit_or_a_prompt_above_it(self):
+        self.assertEqual(marker("You've hit your usage limit. Try again at 9:21 PM.\n❭ Ask Devin to build features, fix bugs\n"), "limited")
+        self.assertEqual(marker("Do you want to proceed?\n❯ 1. Yes\n❭ Ask Devin to build features\n"), "waiting")
 
     def test_permission_prompt_is_waiting(self):
         self.assertEqual(marker(CLAUDE_PERMISSION), "waiting")
