@@ -62,3 +62,33 @@ html > body[data-scroll-locked] {
   margin-right: 0px !important;
   --removed-body-scroll-bar-size: 0px !important;
 }
+
+/* Reading typography: a 60-72 character measure, relaxed leading, pretty wrapping. */
+.prose :where(p, li) { text-wrap: pretty; line-height: 1.65; }
+.prose :where(h1, h2, h3) { text-wrap: balance; letter-spacing: -0.02em; font-weight: 700; }
+.prose :where(h1) { letter-spacing: -0.03em; }
+.prose :where(td, th) { font-variant-numeric: tabular-nums; }
+.prose :where(a):not([data-card]) { text-underline-offset: 0.2em; text-decoration-thickness: from-font; }
+/* Code blocks stay dark in both themes (one frame, the figure): they sit well on cream and match the terminal screenshots. */
+figure.shiki { background: var(--code-bg); color: var(--code-fg); border-color: transparent; border-radius: 0.75rem; outline: 1px solid rgb(0 0 0 / 0.1); outline-offset: -1px; box-shadow: none; }
+.dark figure.shiki { outline-color: rgb(255 255 255 / 0.1); }
+figure.shiki pre { background: transparent !important; }
+.prose :where(code):not(pre code) { font-family: var(--font-mono); font-size: 0.875em; background: var(--surface-hi); padding: 0.1em 0.35em; border-radius: 0.35rem; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* Motion: one easing, a press scale of 0.96, a clip-path wipe on the primary action; all of it off under reduced motion. */
+[data-press] { transition-property: transform, background-color, color, border-color, opacity; transition-duration: 200ms; transition-timing-function: var(--ease); }
+[data-press]:active { transform: scale(0.96); }
+[data-cta] { position: relative; isolation: isolate; overflow: hidden; background: var(--on-red); color: var(--red); }
+[data-cta]::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--fg); clip-path: inset(0 100% 0 0); transition: clip-path 220ms var(--ease); }
+[data-cta]:hover { color: var(--bg); }
+[data-cta]:hover::before { clip-path: inset(0); }
+@keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+[data-rise] { animation: rise 800ms var(--ease) both; }
+@media (prefers-reduced-motion: reduce) {
+  [data-rise] { animation: none; }
+  [data-press], [data-cta]::before { transition: none; }
+  [data-press]:active { transform: none; }
+}
+@media (hover: none) { [data-cta]:hover::before { clip-path: inset(0 100% 0 0); } [data-cta]:hover { color: var(--red); } }
+@media (forced-colors: active) { [data-cta], [data-press] { border: 1px solid CanvasText; } }

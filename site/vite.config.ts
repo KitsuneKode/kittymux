@@ -18,6 +18,8 @@ export default defineConfig({
         crawlLinks: true,
         failOnError: true,
       },
+      // not linked from any page, so the crawler would never find them: the search index and the llms.txt files are static assets
+      pages: [{ path: '/api/search' }, { path: '/llms.txt' }, { path: '/llms-full.txt' }],
     }),
     react(),
     // please see https://tanstack.com/start/latest/docs/framework/react/guide/hosting#nitro for guides on hosting
