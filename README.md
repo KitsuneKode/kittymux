@@ -55,7 +55,7 @@ If `kittymux` is "not found", `~/.local/bin` is not on your `PATH`: add `export 
 - **A docked sidebar panel** (`ctrl+alt+shift+b`, Wayland). The deck as a persistent left column via
   `kitten panel`: the compositor reserves its width so tiled windows sit beside it — the cmux-style
   always-visible sidebar. ~1% CPU idle. Three views behind a strip of pills (`a` Agents, `u` Usage, `i` Inbox): **Usage** is a row of provider
-  tiles and one card (thin gauges with a pace tick and a reset countdown, a big token number with a week of bars, state chips); **Inbox** is every
+  tiles and one card (thin gauges with a pace notch and a reset countdown, a big token number with a week of bars, state chips); **Inbox** is every
   typed event as a card with Jump and Dismiss. All of it is drawn from your theme's colours by one shared kit.
 - **An attention queue** (`ctrl+alt+y`). One key jumps to the agent that has been waiting the
   longest — across sessions and OS windows. A desktop notification fires when an unfocused

@@ -23,6 +23,8 @@ import kittymux_theme as T
 CAP_L, CAP_R = "", ""            # Powerline round caps
 HALF_CAP_L, HALF_CAP_R = "▐", "▌"
 LOWER, UPPER = "▄", "▀"
+NOTCH = "▆"            # the pace mark on a gauge: taller than the bar (lower three-quarters), so it reads as a notch on it, not a hole in it
+STRIPE = "▌"           # the selection / needs-you stripe down the left of a row or card (the same cell the Agents rows use)
 TOP_L, TOP_R, BOT_L, BOT_R = "▗", "▖", "▝", "▘"
 EIGHTHS = " ▁▂▃▄▅▆▇█"                          # vertical eighths, bottom up
 WIDE_GAUGE_LIMIT = 100                         # a gauge past this many cells is a bug in the caller, not a bar
@@ -204,8 +206,9 @@ class Kit:
 
     # ── gauges and charts ────────────────────────────────────────────────────
     def gauge(self, pct, width: int, on: int | None = None, tone: str | None = None, pace=None) -> Line:
-        """A thin bar (lower-half blocks) `width` cells wide. `pace` (0..100) puts a tick where an even spend would be; the tick takes its cell
-        whole, so the bar has a one-cell gap there: a marker, not a stripe. No `pct` draws a dotted groove (nothing to measure)."""
+        """A thin bar (lower-half blocks) `width` cells wide. `pace` (0..100) puts a notch where an even spend would be: one bright, slightly
+        taller cell on the bar itself (the bar keeps every cell; an earlier tick left a hole that read as a broken bar). No `pct` draws a
+        dotted groove (nothing to measure)."""
         p = self.p
         on = p.card if on is None else on
         width = max(0, min(int(width), WIDE_GAUGE_LIMIT))
@@ -226,7 +229,7 @@ class Kit:
         out: Line = []
         for i in range(width):
             if i == tick:
-                out.append(S("▏", p.text, on))
+                out.append(S(NOTCH, p.text, on))
             elif i < fill:
                 out.append(S(LOWER, color, on))
             else:
@@ -350,15 +353,15 @@ class Kit:
     def card(self, rows: list, width: int, on: int | None = None, selected: bool = False, margin: int = 1, padx: int = 1,
              accent: bool = False) -> list:
         """Rows (lines already built on `p.card`, or `p.card_hi` when selected) become a card: half a row of padding above and below, quadrant
-        corners, `padx` cells inside and `margin` cells of the surface around it. `accent` draws the top edge in the accent colour, the way a
-        selected tile shows which one is picked."""
+        corners, `padx` cells inside and `margin` cells of the surface around it. `accent` draws a stripe in the accent colour down the left
+        edge, the way a needs-you row in the Agents view is marked (an accent band along the TOP edge looked like a detached hat)."""
         p = self.p
         on = p.bar if on is None else on
         bg = p.card_hi if selected else p.card
         inner = self.inner_width(width, margin, padx)
         if inner < 3:
             return [self.blank(width, on) for _ in rows]
-        edge_top = p.accent if accent else bg
+        edge_top = bg
         top = [S(" " * margin, None, on), S(TOP_L, edge_top, on), S(LOWER * (inner + 2 * padx - 2), edge_top, on), S(TOP_R, edge_top, on),
                S(" " * margin, None, on)]
         bottom = [S(" " * margin, None, on), S(BOT_L, bg, on), S(UPPER * (inner + 2 * padx - 2), bg, on), S(BOT_R, bg, on),
@@ -366,7 +369,8 @@ class Kit:
         out = [self.fit_line(top, width, on)]
         for r in rows:
             body = self.fit_line(r, inner, bg)
-            out.append([S(" " * margin, None, on), S(" " * padx, None, bg)] + body + [S(" " * padx, None, bg), S(" " * margin, None, on)])
+            lead = [S(STRIPE, p.accent, bg)] + ([S(" " * (padx - 1), None, bg)] if padx > 1 else []) if accent and padx >= 1 else [S(" " * padx, None, bg)]
+            out.append([S(" " * margin, None, on)] + lead + body + [S(" " * padx, None, bg), S(" " * margin, None, on)])
         out.append(self.fit_line(bottom, width, on))
         return out
 

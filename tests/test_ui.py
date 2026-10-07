@@ -133,13 +133,17 @@ class GaugeTests(unittest.TestCase):
         self.assertEqual(kit.ramp(None), "muted")
         self.assertEqual(kit.ramp(float("nan")), "muted")
 
-    def test_pace_tick_lands_where_asked_and_costs_one_cell(self):
+    def test_pace_notch_lands_where_asked_and_never_cuts_the_bar(self):
         kit = U.Kit(T.from_colors(TOKYO))
         line = kit.gauge(99, 25, pace=24)
         text = U.plain(line)
-        self.assertEqual(text.index("▏"), 6)
-        self.assertEqual(text.count("▏"), 1)
-        self.assertNotIn("▏", U.plain(kit.gauge(99, 25)))
+        self.assertEqual(len(text), 25)                                # the bar keeps every cell: a notch, not a hole
+        self.assertEqual(text.index(U.NOTCH), 6)
+        self.assertEqual(text.count(U.NOTCH), 1)
+        self.assertEqual(set(text) - {U.NOTCH}, {U.LOWER})             # everything else is bar
+        self.assertNotIn(U.NOTCH, U.plain(kit.gauge(99, 25)))
+        notch = next(sp for sp in line if U.NOTCH in sp.text)
+        self.assertEqual(notch.fg, kit.p.text)                         # bright, on the bar's own ground: visible over the fill and over the track
 
     def test_no_value_is_a_dotted_groove_not_an_empty_bar(self):
         kit = U.Kit(T.from_colors(TOKYO))
@@ -158,13 +162,18 @@ class CardTests(unittest.TestCase):
         self.assertEqual((top[0], top[-1]), (U.TOP_L, U.TOP_R))
         self.assertEqual((bottom[0], bottom[-1]), (U.BOT_L, U.BOT_R))
 
-    def test_selected_card_sits_on_the_hover_layer_and_accent_marks_the_top_edge(self):
+    def test_selected_card_sits_on_the_hover_layer_and_accent_is_a_stripe_not_a_hat(self):
         kit = U.Kit(T.from_colors(TOKYO))
-        card = kit.card([[U.S("x", None, kit.p.card_hi)]], 20, selected=True, accent=True)
-        self.assertEqual(card[0][1].fg, kit.p.accent)
+        card = kit.card([[U.S("x", None, kit.p.card_hi)], [U.S("y", None, kit.p.card_hi)]], 20, selected=True, accent=True)
         self.assertEqual(card[1][1].bg, kit.p.card_hi)
+        for body in card[1:-1]:                                        # a stripe down the left of every body row, like a needs-you row
+            self.assertEqual((body[1].text, body[1].fg), (U.STRIPE, kit.p.accent))
+        self.assertEqual(card[0][1].fg, kit.p.card_hi)                 # the top edge is the card's own: no pink band above it
+        self.assertEqual(U.plain(card[0]).strip()[0], U.TOP_L)
         plainer = kit.card([[U.S("x")]], 20)
         self.assertEqual(plainer[0][1].fg, kit.p.card)
+        self.assertNotIn(U.STRIPE, U.plain(plainer[1]))
+        self.assertEqual({U.line_cells(r, kit.cells) for r in card}, {20})      # still exactly as wide as asked
 
 
 class TabsTests(unittest.TestCase):

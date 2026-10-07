@@ -138,7 +138,7 @@ class TileTests(unittest.TestCase):
                 x += w
             return out
 
-        marked = [r[4] for r in v.tiles if k.p.accent in colours_at(v.lines[r[2]], r[0], r[1])]
+        marked = [r[4] for r in v.tiles if k.p.accent in colours_at(v.lines[r[2] + 1], r[0], r[1])]       # the stripe is down the card's body, not a band on top
         self.assertEqual(marked, [1])
 
 
@@ -147,7 +147,7 @@ class MeterDrawingTests(unittest.TestCase):
         body = text(V.view(data(), None, 38, 0, kit(), NOW, TODAY))
         for want in ("5h", "↻ 3h 50m", "99%", "wk", "↻ 4d 19h", "63%", "plus"):
             self.assertIn(want, body)
-        self.assertEqual(body.count("▏"), 2)                          # a pace tick on each quota that knows its window
+        self.assertEqual(body.count(U.NOTCH), 2)                       # a pace notch on each quota that knows its window
 
     def test_the_share_survives_any_panel_width_and_the_countdown_gives_way_first(self):
         k = kit()
