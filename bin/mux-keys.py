@@ -131,6 +131,8 @@ def _humanize(rest: str) -> str:
             elif tail and re.fullmatch(r"\d+", tail):
                 suffix = " " + tail
             return label + suffix
+    if action == "nth_window" and len(parts) == 2 and re.fullmatch(r"\d+", parts[1]):
+        return f"focus pane {int(parts[1]) + 1}"                    # kitty counts from 0, the digit on screen from 1
     label = _ACTION_LABELS.get(action, "")
     if label:
         if action == "launch":

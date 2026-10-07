@@ -33,20 +33,28 @@ ids() { kitty @ --to "$SOCK" ls | python3 -c 'import sys,json;print(" ".join(str
 read -ra IDS <<<"$(ids)"
 [ "${#IDS[@]}" -eq 4 ] || fail "expected 4 panes, got ${#IDS[@]}"
 for n in 1 2 3 4; do
+    X key --clearmodifiers "ctrl+alt+$n"; sleep 0.5
+    got=$(focused); want=${IDS[$((n-1))]}
+    [ "$got" = "$want" ] || fail "ctrl+alt+$n focused window $got, wanted pane $n (window $want)"
+done
+for n in 4 3 2 1; do                                          # the older chord is the same key
     X key --clearmodifiers "ctrl+alt+shift+$n"; sleep 0.5
     got=$(focused); want=${IDS[$((n-1))]}
     [ "$got" = "$want" ] || fail "ctrl+alt+shift+$n focused window $got, wanted pane $n (window $want)"
 done
+# alt+N is still a TAB jump, not a pane jump: with one session and a single tab it must leave the focused pane alone
+before=$(focused); X key --clearmodifiers "alt+3"; sleep 0.6
+[ "$(focused)" = "$before" ] || fail "alt+3 moved the focus inside the tab (it is a tab jump now)"
 # the overview's digits agree with the direct keys
 for n in 1 2 3 4; do
-    X key --clearmodifiers "ctrl+alt+shift+1"; sleep 0.4
+    X key --clearmodifiers "ctrl+alt+1"; sleep 0.4
     X key --clearmodifiers ctrl+alt+e; sleep 0.6
     X key --clearmodifiers "$n"; sleep 0.6
     got=$(focused); want=${IDS[$((n-1))]}
     [ "$got" = "$want" ] || fail "overview digit $n focused window $got, direct key says $want"
 done
 # keyboard scrolling: a page up moves the view into the history, End returns to the live screen
-kitty @ --to "$SOCK" send-text --match "id:${IDS[0]}" $'seq 1 300\n'; X key --clearmodifiers "ctrl+alt+shift+1"; sleep 1
+kitty @ --to "$SOCK" send-text --match "id:${IDS[0]}" $'seq 1 300\n'; X key --clearmodifiers "ctrl+alt+1"; sleep 1
 top() { kitty @ --to "$SOCK" get-text --match "id:${IDS[0]}" --extent screen | grep -m1 -E '^[0-9]+$'; }
 live=$(top); [ -n "$live" ] || fail "no seq output on the first pane"
 X key --clearmodifiers ctrl+alt+Prior; sleep 0.8; up=$(top)
@@ -55,4 +63,4 @@ X key --clearmodifiers ctrl+alt+Home; sleep 0.8; home=$(top)
 [ -n "$home" ] && [ "$home" -lt "$up" ] || fail "ctrl+alt+Home did not go further back ($home vs $up)"
 X key --clearmodifiers ctrl+alt+End; sleep 0.8; back=$(top)
 [ "$back" = "$live" ] || fail "ctrl+alt+End did not return to the live screen ($back vs $live)"
-echo "PASS: ctrl+alt+shift+1..4 and the ctrl+alt+e overview agree on pane numbers; ctrl+alt+PgUp/Home/End scroll the scrollback"
+echo "PASS: ctrl+alt+1..4 (and the ctrl+alt+shift alias) and the ctrl+alt+e overview agree on pane numbers; ctrl+alt+PgUp/Home/End scroll the scrollback"

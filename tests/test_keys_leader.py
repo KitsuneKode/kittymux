@@ -93,10 +93,21 @@ class OverlayTests(unittest.TestCase):
         import re
         return [re.sub(r"\033\[[0-9;]*m", "", l) for l in lines]
 
+    def test_pane_and_tab_number_chords_are_described_by_what_they_do(self):
+        rows = {}
+        for n, rs in self.sections:
+            for k, d in rs:
+                rows[k] = (n, d)
+        self.assertEqual(rows["ctrl+alt+1…9"], ("PANES", "focus pane"))
+        self.assertEqual(rows["ctrl+alt+shift+1…9"], ("PANES", "focus pane"))
+        self.assertEqual(rows["alt+1…9"][0], "TABS")
+        self.assertEqual(self.mod._humanize("nth_window 3"), "focus pane 4")
+        self.assertEqual(self.mod._humanize("nth_window -1"), "last pane")
+
     def test_everything_kittymux_does_is_listed(self):
         text = " ".join(f"{n} {k} {d}" for n, rows in self.sections for k, d in rows)
         for want in ("DECK", "TAB BAR", "COMMANDS", "NOTIFICATIONS", "FILE REFERENCES", "dim on|off", "screenshot",
-                     "promote the pane", "right-click a tab", "ctrl+alt+shift+1", "ctrl+alt+e"):
+                     "promote the pane", "right-click a tab", "ctrl+alt+1", "ctrl+alt+e"):
             self.assertIn(want, text)
 
     def test_search_filters_by_every_word_across_section_key_and_description(self):

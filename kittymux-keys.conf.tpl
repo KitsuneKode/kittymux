@@ -28,17 +28,7 @@ map ctrl+alt+n           new_os_window_with_cwd
 
 map shift+left           launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh prev
 map shift+right          launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh next
-map ctrl+alt+1           launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 1
-map ctrl+alt+2           launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 2
-map ctrl+alt+3           launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 3
-map ctrl+alt+4           launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 4
-map ctrl+alt+5           launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 5
-map ctrl+alt+6           launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 6
-map ctrl+alt+7           launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 7
-map ctrl+alt+8           launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 8
-map ctrl+alt+9           launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 9
-# alt+N — one-hand aliases (WezTerm/mux convention), session-scoped same as
-# ctrl+alt+N. Costs readline's alt-digit repeat-arg — a fair trade.
+# alt+1..9 — jump to tab N within the session (WezTerm/mux convention). Costs readline's alt-digit repeat-arg — a fair trade.
 map alt+1                launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 1
 map alt+2                launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 2
 map alt+3                launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 3
@@ -80,7 +70,17 @@ map ctrl+alt+d           detach_window new-tab-right
 map ctrl+alt+shift+d     detach_window ask
 # ctrl+alt+e — number every pane on screen, then press its digit to focus it (tmux's display-panes; two panes: jumps straight over)
 map ctrl+alt+e           focus_visible_window
-# ctrl+alt+shift+1..9 — focus pane N of this tab directly (the number ctrl+alt+e shows on each pane; ctrl+alt+1..9 are tabs)
+# ctrl+alt+1..9 — focus pane N of this tab straight away (the digit ctrl+alt+e draws on each pane; alt+1..9 are tabs)
+map ctrl+alt+1           nth_window 0
+map ctrl+alt+2           nth_window 1
+map ctrl+alt+3           nth_window 2
+map ctrl+alt+4           nth_window 3
+map ctrl+alt+5           nth_window 4
+map ctrl+alt+6           nth_window 5
+map ctrl+alt+7           nth_window 6
+map ctrl+alt+8           nth_window 7
+map ctrl+alt+9           nth_window 8
+# ctrl+alt+shift+1..9 — the same as ctrl+alt+1..9 (focus pane N), kept so the older chord still works
 map ctrl+alt+shift+1   nth_window 0
 map ctrl+alt+shift+2   nth_window 1
 map ctrl+alt+shift+3   nth_window 2

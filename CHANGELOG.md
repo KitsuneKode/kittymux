@@ -4,6 +4,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 
 ## [Unreleased]
 
+### Changed
+- **`ctrl+alt+1..9` now focuses pane N** of the tab (the digit `ctrl+alt+e` draws on each pane). Tabs are on `alt+1..9`, which was already an alias for them. `ctrl+alt+shift+1..9` still works and does the same as `ctrl+alt+1..9`. The keymap overlay lists them under PANES as "focus pane".
+
 ### Added
 - **Agents view redesign.** One bright thing per row (the title), a state mark at the right edge, a stripe and a faint warm tint on rows that need you, and detail (PR, ports) only on the picked or hovered row. Rows are drawn by a pure module, `kittymux_agentsview`, tested at every width in both themes.
 - **Clickable buttons in every panel view.** A row of keycaps under the list (`⏎ jump`, `/ find`, `a join`, `t detach`; `r`/`d` in Usage; `⏎`/`x`/`tab` in Inbox) does what its key does when clicked, and lights up under the pointer. Narrow panels drop buttons from the right, so the most useful stay.

@@ -682,7 +682,7 @@ def demo(argv: list[str]) -> int:
     print(f"    {c('1', 'ctrl+alt+/')}       every key, gesture and command — just type to search, esc closes")
     print(f"    {c('1', 'ctrl+space')} then {c('1', '?')}   leader mode card")
     print(f"  in the {c('1', 'panes')} tab:")
-    print(f"    {c('1', 'ctrl+alt+e')}       number every pane, press a digit    {c('1', 'ctrl+alt+shift+1..4')}  jump straight to pane N")
+    print(f"    {c('1', 'ctrl+alt+e')}       number every pane, press a digit    {c('1', 'ctrl+alt+1..4')}        jump straight to pane N")
     print(f"    {c('1', 'ctrl+alt+d')}       turn the focused pane into its own tab    {c('1', 'ctrl+alt+shift+c')}  show pane title bars (drag them)")
     print(f"  in the {c('1', 'file-refs')} tab: {c('1', 'ctrl+shift+click')} src/app.py:42:7 — opens your editor at that line")
     print(f"  in the two {c('1', 'app')} tabs: the same title, different projects — the bar says which (`kittymux features` turns pieces off)")

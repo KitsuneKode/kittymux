@@ -134,10 +134,10 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+t` / `+shift` | new tab beside / at end |
 | `shift+←` / `shift+→` | prev / next tab (session-scoped) |
 | `ctrl+alt+shift+←/→` · `↑/↓` | move the tab — arrows follow the bar: ←/→ on a horizontal bar, ↑/↓ on a vertical one (both always work) |
-| `ctrl+alt+1..9` · `alt+1..9` | jump to tab N (session-scoped) |
+| `alt+1..9` | jump to tab N (session-scoped) |
 | `ctrl+alt+\`` | flip to previously active tab (MRU) |
 | `ctrl+alt+h j k l` | pane nav (`shift+alt+arrows`) · `ctrl+alt+o` last pane |
-| `ctrl+alt+shift+1..9` | focus pane **N** of this tab straight away (the digit `ctrl+alt+e` draws on each pane) |
+| `ctrl+alt+1..9` (also `ctrl+alt+shift+1..9`) | focus pane **N** of this tab straight away (the digit `ctrl+alt+e` draws on each pane) |
 | `ctrl+alt+shift+space` | **command palette**: one searchable list of what needs you, every tab, conversations to reopen, a new agent (with its provider's quota headroom) and a few actions — `⏎` does it, a click does it, `esc` clears the filter then closes (`kittymux palette` from a shell) |
 | `ctrl+alt+shift+j` | **join**: move this tab's panes into another tab as splits, keeping their shape — you pick the tab in a list (its keys are in its footer; `kittymux join` from a shell) |
 | `ctrl+alt+shift+semicolon` | pane controls: `h/j/k/l` swap neighbours · `r` rotate · `s` swap split sides · `e` equalize · `a` choose a pane; Escape cancels |
@@ -495,7 +495,7 @@ Every key, mouse gesture and `kittymux` command in one place, read live from you
 section / key / description), `↑↓ j k` or the wheel scroll, `PgUp/PgDn`/space/`b` page, `g`/`G` ends, **`esc` clears the search first and then closes**, as do `q` and pressing
 `ctrl+alt+/` again. 1, 2 or 3 columns by width. kitty can only bind a *chord*, never a held modifier, so there is no "hold ctrl+alt to show it" — the overlay is one chord away.
 
-**Panes by number:** `ctrl+alt+e` draws a digit on every pane of the tab (tmux's display-panes) and the digit focuses it; `ctrl+alt+shift+1..9` jumps straight to pane N without the
+**Panes by number:** `ctrl+alt+e` draws a digit on every pane of the tab (tmux's display-panes) and the digit focuses it; `ctrl+alt+1..9` (or `ctrl+alt+shift+1..9`) jumps straight to pane N without the
 overlay (same numbers). Want letters instead? `visual_window_select_characters asdfghjkl` in your kitty.conf; the direct keys stay numeric.
 
 ## Upgrading

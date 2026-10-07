@@ -13,7 +13,7 @@ It opens ten tabs. What to do in each:
 | Tab | Try | You should see |
 |---|---|---|
 | **panes** (4 panes) | `ctrl+alt+e` | a digit drawn on every pane; press one and that pane takes focus |
-| | `ctrl+alt+shift+1` … `4` | focus jumps straight to pane N (same numbers as the overlay) |
+| | `ctrl+alt+1` … `4` | focus jumps straight to pane N (same numbers as the overlay) |
 | | `ctrl+alt+shift+y`, then a digit | swap the focused pane with that one |
 | | `ctrl+alt+d` | the focused pane becomes its own tab |
 | | `ctrl+alt+shift+c`, then drag a pane's title bar onto the bar | the split moves into that tab (or onto empty space → its own tab); press the key again to hide titles |
@@ -53,7 +53,7 @@ Your running kitties keep the binary they started with. If kitty was updated whi
 | Feature | In a running (old-binary) kitty | After you restart it |
 |---|---|---|
 | No false "finished" notifications, answered-permission fix | works (the scanner reloaded) | works |
-| `ctrl+alt+e`, `ctrl+alt+shift+1..9`, scroll keys, keymap overlay | works (keys are re-read on reload) | works |
+| `ctrl+alt+e`, `ctrl+alt+1..9`, scroll keys, keymap overlay | works (keys are re-read on reload) | works |
 | Bar resize catching up with the pointer, two-tone divider, header fix | works (modules reload) | works |
 | `kittymux` on your PATH | works | works |
 | Clickable `file:line`, `kittymux dim`, `kittymux screenshot` | **off** (needs the 0.49.2 process) | works |

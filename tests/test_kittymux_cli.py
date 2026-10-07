@@ -64,6 +64,20 @@ class ConflictTests(unittest.TestCase):
         binds = [{"modmask": 12, "key": k} for k in reserved]
         self.assertEqual(self.m.conflicts_from_binds(binds, tpl), [])
 
+    def test_number_chords_are_panes_with_ctrl_alt_and_tabs_with_alt(self):
+        """ctrl+alt+N focuses pane N (the digit ctrl+alt+e draws), its ctrl+alt+shift alias does the same, alt+N jumps tabs."""
+        tpl = open(os.path.join(ROOT, "kittymux-keys.conf.tpl"), encoding="utf-8").read()
+        maps = {}
+        for line in tpl.splitlines():
+            parts = line.split(None, 2)
+            if len(parts) == 3 and parts[0] == "map" and not parts[1].startswith("-"):
+                maps[parts[1]] = parts[2].strip()
+        for n in range(1, 10):
+            self.assertEqual(maps[f"ctrl+alt+{n}"], f"nth_window {n - 1}")
+            self.assertEqual(maps[f"ctrl+alt+shift+{n}"], f"nth_window {n - 1}")
+            self.assertTrue(maps[f"alt+{n}"].endswith(f"mux-nav.sh {n}"), maps[f"alt+{n}"])
+        self.assertEqual(maps["ctrl+alt+e"], "focus_visible_window")
+
     def test_real_template_parses(self):
         tpl = open(os.path.join(ROOT, "kittymux-keys.conf.tpl"), encoding="utf-8").read()
         self.assertEqual(self.m.conflicts_from_binds([], tpl), [])
