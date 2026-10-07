@@ -248,6 +248,9 @@ Every optional piece is its own switch — use all of it, some of it, or none (t
 | `panetitle` | the same line in each pane's title bar, then the pane's own title (`ctrl+alt+shift+c` shows the bars; kitty ≥ 0.49.2) | on |
 | `titles` | a tab is called by its task, or by its project when the title is only a product name or an agent's reply; titles are cut at a word | on |
 | `motion` | the working spinner turns (off: one still frame in the bar and the panel, and no timer redraws a bar just to animate it) | on |
+| `sudo` | a notification when `sudo`/`doas`/`su`/`pkexec` waits for your password in a pane you are not looking at (fixed text; the line on screen is never stored) | on |
+| `loginprompt` | the same for `ssh` and `git` asking for a passphrase, a password or to trust a host | on |
+| `pkgprompt` | the same for `pacman`/`paru`/`yay`/`apt`/`dnf` waiting for a yes or a no | on |
 
 ```bash
 kittymux features                 # what is on, and where each setting comes from

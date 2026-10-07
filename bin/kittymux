@@ -2186,6 +2186,9 @@ FEATURE_HELP = {
     "hover": "(planned — not built yet) open the sheet on hover, inside the sheet only: kitty sends the bar no idle motion",
     "panetitle": "the same line in each pane's title bar, plus the pane's own title (ctrl+alt+shift+c shows the bars; kitty ≥ 0.49.2)",
     "titles": "a tab is called by its task or its project, never by an agent's reply or its product name; long titles are cut at a word",
+    "sudo": "a desktop notification when sudo, doas, su or pkexec waits for your password in a pane you are not looking at",
+    "loginprompt": "the same for ssh and git asking for a passphrase, a password or to trust a host",
+    "pkgprompt": "the same for pacman, paru, yay, apt and dnf waiting for a yes or a no",
     "motion": "the working spinner turns (off: one still frame, and nothing redraws a bar just to animate it)",
 }
 
@@ -2232,7 +2235,7 @@ def features_cmd(argv: list[str]) -> int:
         if cmd in ("list", "status") and len(argv) <= 1:
             for name in KF.FEATURES:
                 on, where = KF.source(name, sdir)
-                print(f"  {name:<10} {'on ' if on else 'off'}  {c('2', where):<18} {FEATURE_HELP[name]}")
+                print(f"  {name:<12} {'on ' if on else 'off'}  {c('2', where):<18} {FEATURE_HELP[name]}")
             print(c("2", "\n  presets: minimal (folder only) · default · full     kittymux features off hue"))
             return 0
     except ValueError as e:

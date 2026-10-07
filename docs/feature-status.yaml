@@ -29,6 +29,10 @@ features:
     label: Feature switches
     status: shipped
     description: Turn each optional piece of the bar on or off with kittymux features, by flag file or environment.
+  - id: terminal-prompts
+    label: Password and yes/no prompts
+    status: shipped
+    description: A notification and an inbox event when sudo, ssh, git or pacman waits for your password or a yes in a pane you are not looking at; text is fixed and the screen line is never stored.
   - id: pane-title-bars
     label: Pane title bars
     status: shipped

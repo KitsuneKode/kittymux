@@ -490,6 +490,156 @@ class CompletionNotifyTests(ScanBase):
         self.assertTrue(os.access(argv[0], os.X_OK))
 
 
+class PromptTests(ScanBase):
+    """A plain terminal waiting on you (sudo, ssh, pacman…) is announced like an agent that needs you; the verdict is untouched."""
+    SUDO = "resolving dependencies...\n[sudo] password for someone-private: "
+
+    def setUp(self):
+        super().setUp()
+        for attr in ("prompt", "prompt_seen", "unread", "prompt_on"):
+            vars(KS._RT).pop(attr, None)
+        self.job = ["sudo", "pacman", "-Syu"]
+        self._fg = mock.patch.object(KS, "fg_job", side_effect=lambda w: (self.job, True) if self.job else ([], False))
+        self._fg.start()
+
+    def tearDown(self):
+        self._fg.stop()
+        super().tearDown()
+
+    def events(self):
+        return KS._inbox().load(self.state)
+
+    def seen_then(self, w, text, *times):
+        """Scan once on a quiet screen (so the window is no longer 'first sight'), then show `text` and scan at each time."""
+        w.screen = "$ "
+        KS.scan_prompt(w, 0.0)
+        w.screen = text
+        out = []
+        with mock.patch.object(KS, "_notify", return_value="sent") as notify:
+            for t in times:
+                KS.scan_prompt(w, t)
+                out.append(notify.call_count)
+        return out
+
+    def test_it_is_announced_once_after_it_has_stayed_a_moment(self):
+        w = FakeWindow(1, None, "")
+        self.add(w)
+        counts = self.seen_then(w, self.SUDO, 0.5, 1.2, 2.0, 5.0)
+        self.assertEqual(counts, [0, 0, 1, 1])
+        ev = self.events()
+        self.assertEqual([(e["kind"], e["agent"], e["severity"]) for e in ev], [("permission", "sudo", "needs-you")])
+
+    def test_the_text_is_fixed_and_the_user_name_never_stored(self):
+        w = FakeWindow(1, None, "")
+        self.add(w)
+        self.seen_then(w, self.SUDO, 1.0, 2.5)
+        raw = json.dumps(self.events()) + open(KS._inbox().store_path(self.state)).read()
+        self.assertNotIn("someone-private", raw)
+        self.assertIn("sudo is asking for your password", raw)
+
+    def test_a_prompt_answered_at_once_is_never_announced(self):
+        w = FakeWindow(1, None, "")
+        self.add(w)
+        self.seen_then(w, self.SUDO, 0.4)
+        w.screen = "$ "
+        KS.scan_prompt(w, 0.6)
+        self.assertEqual(self.events(), [])
+
+    def test_it_clears_when_the_prompt_is_gone(self):
+        w = FakeWindow(1, None, "")
+        self.add(w)
+        self.seen_then(w, self.SUDO, 1.0, 2.5)
+        self.assertEqual(self.events()[0]["status"], "unread")
+        w.screen = "installing...\n"
+        KS.scan_prompt(w, 4.0)
+        self.assertEqual(self.events()[0]["status"], "read")
+        self.assertNotIn("1", vars(KS._RT)["prompt"])
+
+    def test_a_wrong_password_asks_again_and_is_a_second_occurrence(self):
+        w = FakeWindow(1, None, "")
+        self.add(w)
+        self.seen_then(w, self.SUDO, 1.0, 2.5)
+        w.screen = "Sorry, try again.\n"
+        KS.scan_prompt(w, 3.0)
+        w.screen = self.SUDO
+        with mock.patch.object(KS, "_notify", return_value="sent") as notify:
+            KS.scan_prompt(w, 4.0)
+            KS.scan_prompt(w, 5.5)
+        self.assertEqual(notify.call_count, 1)
+
+    def test_a_window_seen_for_the_first_time_never_announces(self):
+        w = FakeWindow(1, None, self.SUDO)
+        self.add(w)
+        with mock.patch.object(KS, "_notify", return_value="sent") as notify:
+            KS.scan_prompt(w, 0.0)
+            KS.scan_prompt(w, 5.0)
+        self.assertEqual(notify.call_count, 0)
+        self.assertEqual(self.events(), [])
+
+    def test_looking_at_it_acknowledges_it(self):
+        w = FakeWindow(1, None, "", focused=True)
+        self.add(w)
+        self.seen_then(w, self.SUDO, 1.0, 2.5)
+        self.assertEqual(self.events()[0]["status"], "read")
+
+    def test_nothing_runs_in_the_foreground_means_nothing_to_look_at(self):
+        w = FakeWindow(1, None, "")
+        self.add(w)
+        self.job = []
+        w.screen = "$ "
+        KS.scan_prompt(w, 0.0)
+        w.screen = self.SUDO
+        with mock.patch.object(KS, "as_text", create=True):
+            KS.scan_prompt(w, 5.0)
+        self.assertEqual(self.events(), [])
+
+    def test_the_screen_is_not_read_unless_a_command_runs(self):
+        w = FakeWindow(1, None, "")
+        w.as_text = mock.Mock(return_value="$ ")
+        self.add(w)
+        self.job = []
+        KS.scan_prompt(w, 0.0)
+        KS.scan_prompt(w, 3.0)
+        w.as_text.assert_not_called()
+
+    def test_each_kind_has_its_own_switch(self):
+        w = FakeWindow(1, None, "")
+        self.add(w)
+        open(os.path.join(self.state, "sudo-off"), "w").close()
+        self.seen_then(w, self.SUDO, 1.0, 2.5, 3.5)
+        self.assertEqual(self.events(), [])
+        # ...while another kind still works
+        self.job = ["paru", "-Syu"]
+        vars(KS._RT).pop("prompt_on", None)
+        w2 = FakeWindow(2, None, "")
+        self.add(w2)
+        self.seen_then(w2, ":: Proceed with installation? [Y/n] ", 1.0, 2.5)
+        self.assertEqual([e["kind"] for e in self.events()], ["question"])
+
+    def test_the_scan_loop_runs_it_for_plain_windows_only(self):
+        plain, agent = FakeWindow(1, None, self.SUDO), FakeWindow(2, "claude", self.SUDO)
+        self.add(plain, agent)
+        with mock.patch.object(KS, "scan_prompt") as sp:
+            KS.scan_all()
+        self.assertEqual([c[0][0].id for c in sp.call_args_list], [1])
+
+    def test_closed_windows_are_forgotten(self):
+        w = FakeWindow(1, None, "")
+        self.add(w)
+        self.seen_then(w, self.SUDO, 1.0, 2.5)
+        self.k.boss.all_windows.clear()
+        KS.scan_all()
+        self.assertEqual(vars(KS._RT)["prompt"], {})
+        self.assertNotIn("1", vars(KS._RT)["prompt_seen"])
+
+    def test_a_failing_screen_read_never_raises(self):
+        w = FakeWindow(1, None, "")
+        w.as_text = mock.Mock(side_effect=RuntimeError("boom"))
+        self.add(w)
+        KS.scan_prompt(w, 0.0)
+        KS.scan_prompt(w, 3.0)
+
+
 class InboxIntegrationTests(ScanBase):
     def inbox(self):
         return KS._inbox().load(self.state)

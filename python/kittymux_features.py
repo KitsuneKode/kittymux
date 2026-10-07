@@ -7,10 +7,10 @@
 
 import os
 
-FEATURES = ("folder", "hue", "collide", "sheet", "hover", "panetitle", "motion", "titles")
-DEFAULTS = {"folder": True, "hue": True, "collide": True, "sheet": True, "hover": False, "panetitle": True, "motion": True, "titles": True}   # panetitle only shows when pane title bars are on; motion off = a still glyph where a spinner turned
+FEATURES = ("folder", "hue", "collide", "sheet", "hover", "panetitle", "motion", "titles", "sudo", "loginprompt", "pkgprompt")
+DEFAULTS = {"folder": True, "hue": True, "collide": True, "sheet": True, "hover": False, "panetitle": True, "motion": True, "titles": True, "sudo": True, "loginprompt": True, "pkgprompt": True}   # panetitle only shows when pane title bars are on; motion off = a still glyph where a spinner turned
 PRESETS = {
-    "minimal": frozenset({"folder", "motion", "titles"}),
+    "minimal": frozenset({"folder", "motion", "titles", "sudo", "loginprompt", "pkgprompt"}),
     "default": frozenset(name for name, on in DEFAULTS.items() if on),
     "full": frozenset(FEATURES),
 }

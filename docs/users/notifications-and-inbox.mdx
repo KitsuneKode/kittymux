@@ -43,6 +43,25 @@ kittymux reads that option when kitty loads its configuration. When the composit
 
 To keep attention requests on anyway, `touch ~/.local/state/kittymux/attention-on`. Other compositors are not inspected. If a bell steals focus on sway, KDE or GNOME, set `window_alert_on_bell no` in your `kitty.conf`.
 
+### When a plain terminal is waiting for you
+
+Agents are not the only thing that stops and waits. `sudo pacman -Syu` sits at a password prompt, `ssh` asks for a passphrase, `paru` asks `Proceed with installation? [Y/n]`. If you are in another tab, nothing says so. kittymux treats these like an agent that needs you: one notification with **Jump to it**, and one event in the inbox.
+
+It needs two kinds of evidence. The prompt must be the last line on the screen, where a prompt waits. And it must be either wording only that tool prints, such as `[sudo] password for you:`, or printed while that tool leads the terminal, such as `pacman` or `ssh`. The same words in scrollback, in a file you are reading or in an agent's reply are not a prompt.
+
+| Switch | Covers |
+|---|---|
+| `sudo` | `sudo`, `doas`, `su`, `pkexec` waiting for your password |
+| `loginprompt` | `ssh` and `git` asking for a passphrase, a password or to trust a host |
+| `pkgprompt` | `pacman`, `paru`, `yay`, `apt`, `dnf` and similar waiting for a yes or a no |
+
+All three are on by default. `kittymux features off sudo` turns one off.
+
+- It waits one second before announcing, so a password you type at once is not news. It stays quiet for the pane you are looking at.
+- The text is fixed: "sudo is asking for your password". The line on the screen holds your user name or a host, and it is never stored or logged. Nothing you type is read.
+- When the prompt goes away, the event is marked read. A wrong password that asks again is a new event.
+- It does not change the tab's state mark. The notification and the inbox carry it.
+
 ## Quiet things down
 
 Muting quiets the interruption, never the news. Every event still goes to the inbox, the bar and `kittymux pick`.

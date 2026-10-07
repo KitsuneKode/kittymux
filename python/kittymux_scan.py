@@ -42,6 +42,7 @@ SPIN_INTERVAL = 0.1
 HEARTBEAT = 3.0
 AGE_REFRESH = 20.0            # tabs that show "waiting 5m" / "done 2m" are redrawn this often, so the minutes tick (a working tab already redraws with its spinner)
 NOTIFY_EVERY = 10.0
+PROMPT_SETTLE = 1.0           # a password/yes-no prompt is announced once it has STAYED this long: a prompt answered at once is not news
 NOTIFY_DONE_MIN = 15.0        # a completion the AGENT announced (hook / its own notification) pops up after this much work: a quick reply is not news
 NOTIFY_DONE_LOW_MIN = 60.0    # …one inferred from the screen alone only after this much (it is shown in the inbox and the bar either way)
 DONE_SETTLE = 5.0             # ...and only once it has STAYED finished this long: a screen that blinks (a repaint, a popup,
@@ -184,6 +185,82 @@ def agent_of(window):
     return agents.agent_in(args)
 
 
+def fg_job(window):
+    """(argv, True) when a command other than the shell itself runs in the foreground of this window's pty, else ([], False).
+    One tcgetpgrp compared with the shell's pid; /proc is read only when something really is running."""
+    fd = getattr(window.child, "child_fd", None)
+    if fd is None:
+        return [], False
+    pgrp = os.tcgetpgrp(fd)
+    if pgrp <= 0 or pgrp == getattr(window.child, "pid", None):
+        return [], False
+    with open(f"/proc/{pgrp}/cmdline", "rb") as f:
+        return [a.decode("utf-8", "replace") for a in f.read().split(b"\0") if a], True
+
+
+def _prompts():
+    _ensure_path()
+    import kittymux_prompts
+    return kittymux_prompts
+
+
+def _prompt_features(now: float) -> frozenset:
+    """Which prompt kinds are switched on, re-read at most every 2 s (flag files; one stat each)."""
+    cached = vars(_RT).get("prompt_on")
+    if cached and now - cached[0] < 2.0:
+        return cached[1]
+    try:
+        _ensure_path()
+        import kittymux_features
+        names = frozenset(n for n in _prompts().FEATURES if kittymux_features.enabled(n, state_dir()))
+    except Exception:
+        names = frozenset()
+    vars(_RT)["prompt_on"] = (now, names)
+    return names
+
+
+def scan_prompt(window, now: float) -> None:
+    """A plain terminal waiting on you for a password or a yes/no (sudo, ssh, git, pacman…): announce it like an agent
+    that needs you. Evidence is the last screen line plus the program leading the pty (kittymux_prompts); the matched line
+    is never stored (the event text is fixed), and nothing typed is read. Never changes the tab's verdict. Never raises."""
+    try:
+        rt = vars(_RT)
+        table, seen = rt.setdefault("prompt", {}), rt.setdefault("prompt_seen", set())
+        wid = str(window.id)
+        first = wid not in seen
+        seen.add(wid)
+        P = _prompts()
+        rule, argv = None, []
+        enabled = _prompt_features(now)
+        if enabled:
+            argv, job = fg_job(window)
+            if job:
+                rule = P.classify(argv, window.as_text(), enabled)
+        cur = table.get(wid)
+        if rule is None:
+            if cur:
+                table.pop(wid, None)
+                if cur.get("announced"):
+                    _inbox().ack(state_dir(), time.time(), window=wid, pid=os.getpid())
+                    rt.setdefault("unread", set()).discard(wid)
+                _record("prompt", wid, cur["who"], rule=cur["rule"], outcome="cleared: the prompt is gone")
+            return
+        if not cur or cur["rule"] != rule.id:
+            cur = table[wid] = {"rule": rule.id, "who": P.who(rule, argv), "since": now, "announced": bool(first)}
+            if first:
+                _record("prompt", wid, cur["who"], rule=rule.id, outcome="suppressed: first sight of this window (a scanner restart must not replay old prompts)")
+        if not cur["announced"] and now - cur["since"] >= PROMPT_SETTLE:
+            cur["announced"] = True
+            outcome = _announce(window, rule.kind, cur["who"], "screen", f"{cur['who']} {rule.say}")
+            _record("prompt", wid, cur["who"], rule=rule.id, outcome=outcome)
+        unread = rt.get("unread")
+        if getattr(window, "is_focused", False) and unread and wid in unread:
+            unread.discard(wid)                    # you are looking at it
+            _inbox().ack(state_dir(), time.time(), window=wid, pid=os.getpid())
+    except Exception:
+        _debug()
+
+
 def scan_window(window, now: float) -> bool:
     """Re-resolve one window. True if its verdict changed (so its tab bar needs a redraw)."""
     agents, st = _mods()
@@ -309,6 +386,8 @@ def scan_all(timer_id=None) -> None:
             live.add(str(w.id))
             try:
                 changed = scan_window(w, now)
+                if not (_RT.verdicts.get(str(w.id)) or {}).get("state"):
+                    scan_prompt(w, now)
                 dirty = dirty or changed
                 if changed:
                     try:
@@ -327,6 +406,12 @@ def scan_all(timer_id=None) -> None:
                         bars[id(tm)] = tm
             except Exception:
                 _debug()
+        for table in (vars(_RT).get("prompt", {}),):
+            for wid in [k for k in table if k not in live]:
+                table.pop(wid, None)
+        seen = vars(_RT).get("prompt_seen")
+        if seen:
+            seen &= live
         for wid in [k for k in _RT.verdicts if k not in live]:      # closed windows
             _RT.verdicts.pop(wid, None)
             _RT.book.pop(wid, None)
