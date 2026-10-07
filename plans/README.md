@@ -11,11 +11,11 @@ conditions, and update your row when done.
 | [007](007-fix-journal-stale-open-records.md) | Journal: agent exit inside a live window leaves a permanently "open" record | P1 | S | — | DONE (7699a5c; verified regression checks) |
 | [008](008-cleanup-dead-code-and-stale-artifacts.md) | Remove dead code: `_split_window_count`, `include-tab-bar.conf`, `/usr/bin/python3`, collector stat guard | P2 | S | — | DONE (7699a5c; verified regression checks) |
 | [009](009-proc-liveness-guard.md) | Guard `/proc` liveness checks so non-Linux hosts don't delete live state | P2 | XS | — | DONE (7699a5c; verified regression checks) |
-| [010](010-quit-time-autosave.md) | Final session snapshot on kitty quit (`on_quit` watcher) | P2 | S | — | DONE (validated follow-up) |
-| [011](011-changes-diff-view-and-doctor-bundle.md) | `changes --diff` patch view + `doctor --bundle` (T3 Code adoptions) | P3 | M | — | DONE (validated follow-up) |
-| [012](012-consolidate-shell-layer-into-cli.md) | Validated incremental nav/newtab/scratch and session helper ports | P3 | M-L | — | DONE (validated follow-up) |
+| [010](010-quit-time-autosave.md) | Final session snapshot on kitty quit (`on_quit` watcher) | P2 | S | — | DONE (71a1da1; verified and applied) |
+| [011](011-changes-diff-view-and-doctor-bundle.md) | `changes --diff` patch view + `doctor --bundle` (T3 Code adoptions) | P3 | M | — | DONE (71a1da1; verified and applied) |
+| [012](012-consolidate-shell-layer-into-cli.md) | Validated incremental nav/newtab/scratch and session helper ports | P3 | M-L | — | DONE (71a1da1; verified and applied) |
 
-Status values: TODO | DONE (validated follow-up) | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
+Status values: TODO | DONE (71a1da1; verified and applied) | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
 ## Follow-up execution (2026-10-07)
 
@@ -23,10 +23,10 @@ The user approved the remaining work and plan revisions. Plans 010–012 below r
 
 | Plan | Scope | Status |
 |---|---|---|
-| 010 | Native capture on confirmed quit, offline agent rewrite, reload-safe callback registration | DONE (validated follow-up) |
-| 011 | Bounded checkpoint patch view; allowlisted private diagnostics archive | DONE (validated follow-up) |
-| 012 | Validated socket/state/context boundaries; session helper and nav/newtab/scratch ports with shell shims | DONE (validated follow-up) |
-| 013 | Theme-derived Usage cards, distinct filled/empty meters, recorded quota/activity graphs, narrow/detail states | DONE (validated follow-up) |
+| 010 | Native capture on confirmed quit, offline agent rewrite, reload-safe callback registration | DONE (71a1da1; verified and applied) |
+| 011 | Bounded checkpoint patch view; allowlisted private diagnostics archive | DONE (71a1da1; verified and applied) |
+| 012 | Validated socket/state/context boundaries; session helper and nav/newtab/scratch ports with shell shims | DONE (71a1da1; verified and applied) |
+| 013 | Theme-derived Usage cards, distinct filled/empty meters, recorded quota/activity graphs, narrow/detail states | DONE (71a1da1; verified and applied) |
 
 ## Follow-up verification
 
@@ -97,7 +97,7 @@ Selection: the operator said "go ahead" after the review, so plans were written 
 | [005](005-explicit-agent-status-via-hooks.md) | Explicit agent status via hooks → user var → watcher (heuristic as fallback) | P2 | M | 003, 004 | DONE |
 | [006](006-spike-persistent-panel-sidebar.md) | SPIKE: persistent docked `kitten panel` sidebar on Hyprland | P3 | M | 004 | DONE (GO — shipped as bin/mux-panel; see 006-spike-report.md) |
 
-Status values: TODO | DONE (validated follow-up) | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
+Status values: TODO | DONE (71a1da1; verified and applied) | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
 ## Dependency notes
 

@@ -57,4 +57,12 @@ Independent follow-up review identified stale-live freshness/history and named-s
 - Checkpoint patch regressions cover dirty-before baselines, binary files, disabled repository diff/textconv commands, unchanged index/object storage, invalid hashes and output bounds. Session workflow regressions cover quoted/newline paths, parked sessions, stale scratch identity and a closing active tab.
 - No new global chords, polling rate, rendering timer or runtime. Usage skips the unrelated agent/PR/port collector and bounds cache/history reads and output.
 
-Live desktop application is recorded separately after integration. These checks do not establish live-provider API accuracy or support on other compositors/Kitty releases.
+These checks do not establish live-provider API accuracy or support on other compositors/Kitty releases.
+
+### Live application
+
+Integrated commit `71a1da1` into main and ran `kittymux upgrade`: installed helper links refreshed and the existing Kitty reloaded twice. All 13 terminal pane IDs and their tab/OS-window membership matched the pre-application inventory. No terminal restart or session replacement occurred. Doctor reported a live scanner and no bar errors; both bar and sidebar error logs remained empty.
+
+The updated panel was opened on Wayland/Hyprland with on-demand focus. Its native layer occupied 427 × 1042 pixels on the desktop. Visually inspected the actual themed overview; explicit panel-pane key events verified Usage selection, details and paging, Escape back to Agents and return to Usage without closing the panel. Immediate navigation checks preserved desktop focus. The wider before/after application focus addresses differed between two existing OS windows of the same terminal process; this does not establish an unchanged focus across the whole interval. The panel did not own desktop focus. Left it open at the top of Usage overview, with the existing Mod+N toggle verified.
+
+Existing doctor warnings remain: the user config still enables `allow_remote_control yes`, uses a `/tmp` listener and duplicates 39 Kitty chords. This batch adds no new conflicting global chord. Recommended config remains `allow_remote_control socket-only` and `listen_on unix:${XDG_RUNTIME_DIR}/mykitty`; listener migration requires a subsequent terminal start and was not part of this reload.
