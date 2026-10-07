@@ -1,0 +1,247 @@
+"""The panel's Inbox view (pure): typed events in (kittymux_inbox), styled cards and click regions out.
+
+One card per event, newest and most pressing first: a kind badge (`!` permission, `?` question, `⊘` limit, `✓` done, `✕` error), the agent and
+its tab, how long ago, what it said, and for a limit a full gauge with the time to reset. Buttons (Jump, Dismiss) are drawn only on the picked
+card, so the list stays calm. Read events stay under the unread ones, dimmed, until they are dismissed.
+
+What an agent wrote is untrusted: every string is `kittymux_place.clean`ed and bounded before it is drawn. This view never sends anything to an
+agent; Jump focuses its window, Dismiss only changes the event's status."""
+from __future__ import annotations
+
+import time
+from typing import NamedTuple
+
+import kittymux_deck
+import kittymux_ledger as LG
+import kittymux_meters as M
+import kittymux_place
+import kittymux_ui as U
+import kittymux_usageview as V
+
+FILTERS = (("all", "All"), ("needs", "Needs you"), ("done", "Done"), ("limits", "Limits"))
+KIND = {"permission": ("!", "warm"), "question": ("?", "warm"), "limit": ("⊘", "hot"), "done": ("✓", "calm"), "error": ("✕", "hot"),
+        "info": ("·", "muted")}
+SHOWN_MAX = 40
+READ_SHOWN_S = 86400.0                  # a read event stays listed for a day; older ones are history (`kittymux inbox --all`, and the ledger)
+TEXT_ROWS = 2
+
+
+class InboxView(NamedTuple):
+    header: list
+    chips: list            # [(x0, x1, filter)] on the filter row (body y = 0)
+    lines: list            # the body under the tab strip
+    cards: list            # [(y0, y1, index)] body coordinates
+    buttons: list          # [(x0, x1, y, index, action)] body coordinates, only for the picked card
+    sel: int
+    count: int
+
+
+def unread(events) -> int:
+    return sum(1 for e in events if isinstance(e, dict) and e.get("status") == "unread")
+
+
+def needs_you(events) -> int:
+    return sum(1 for e in events if isinstance(e, dict) and e.get("status") == "unread" and e.get("severity") == "needs-you")
+
+
+def _matches(ev: dict, filt: str) -> bool:
+    if ev.get("status") == "dismissed":
+        return False
+    if filt == "needs":
+        return ev.get("status") == "unread" and ev.get("severity") == "needs-you"
+    if filt == "done":
+        return ev.get("kind") == "done"
+    if filt == "limits":
+        return ev.get("kind") == "limit"
+    return True
+
+
+def visible(events, filt: str = "all", now: float | None = None) -> list:
+    """Events to list: not dismissed, filtered, unread first (needs-you before the rest), newest first inside each group. With `now`, a READ event older than a day is left out."""
+    keep = [e for e in events if isinstance(e, dict) and e.get("kind") in KIND and _matches(e, filt)] if isinstance(events, list) else []
+    keep = [e for e in keep if _listed(e, now)]
+    keep.sort(key=lambda e: (e.get("status") != "unread", e.get("severity") != "needs-you", -(M.num(e.get("t")) or 0.0)))
+    return keep[:SHOWN_MAX]
+
+
+def _listed(e, now) -> bool:
+    return now is None or e.get("status") == "unread" or now - (M.num(e.get("t")) or 0.0) <= READ_SHOWN_S
+
+
+def counts(events, now: float | None = None) -> dict:
+    """What each filter chip says: the same events `visible` would list (before its cap)."""
+    return {f: sum(1 for e in events if isinstance(e, dict) and e.get("kind") in KIND and _matches(e, f) and _listed(e, now)) if isinstance(events, list) else 0
+            for f, _ in FILTERS}
+
+
+def _age(t, now: float) -> str:
+    v = M.num(t)
+    if v is None:
+        return ""
+    s = max(0.0, now - v)
+    return "now" if s < 60 else V.fmt_span(s)
+
+
+def _wrap(kit: U.Kit, text: str, width: int, rows: int) -> list:
+    """Greedy word wrap into at most `rows` lines; what does not fit ends the last line with an ellipsis."""
+    if width <= 0 or rows <= 0:
+        return []
+    lines, cur, cut = [], "", False
+    for word in kittymux_place.clean(text).split():
+        word = kittymux_deck.fit(word, width, kit.cells)
+        cand = (cur + " " + word).strip()
+        if kit.cells(cand) <= width:
+            cur = cand
+            continue
+        lines.append(cur)
+        cur = word
+        if len(lines) == rows:
+            cut, cur = True, ""
+            break
+    if cur:
+        lines.append(cur)
+    if cut and lines:
+        lines[-1] = kittymux_deck.fit(lines[-1] + "…", width, kit.cells)
+    return lines[:rows]
+
+
+def _event_rows(kit: U.Kit, ev: dict, inner: int, selected: bool, now: float) -> tuple:
+    """Returns (rows, button_row_index or None, [(x0, x1, action)] for that row relative to the card's inner left edge)."""
+    p = kit.p
+    bg = p.card_hi if selected else p.card
+    glyph, tone = KIND[ev["kind"]]
+    read = ev.get("status") != "unread"
+    dim = read and not selected
+    agent = kittymux_place.clean(str(ev.get("agent") or "agent")).title()
+    tab = kittymux_place.clean(str(ev.get("tab") or ""))
+    head = kit.monogram(glyph, kit.tone(tone), bg) + [U.S(" ", None, bg), U.S(agent, kit.ink(p.muted if dim else p.text, bg), bg, bold=not dim)]
+    if tab and tab.lower() != agent.lower():
+        head.append(U.S(f"  {tab}", kit.ink(p.muted, bg), bg))
+    right = []
+    n = int(M.num(ev.get("count")) or 1)
+    if n > 1:
+        right.append(U.S(f"×{min(n, 99)} ", kit.ink(p.muted, bg), bg))
+    right.append(U.S(_age(ev.get("t"), now), kit.ink(p.faint if dim else p.muted, bg, 3.0), bg))
+    rows = [V._row(kit, head, right, inner, bg)]
+    title = str(ev.get("title") or "")
+    body = kittymux_place.clean(str(ev.get("body") or ""))
+    text = title or body
+    for line in _wrap(kit, text, inner, TEXT_ROWS):
+        rows.append(kit.fit_line([U.S(line, kit.ink(p.muted if dim else p.text, bg), bg)], inner, bg))
+    if body and title and ev["kind"] in ("permission", "question"):
+        rows.append(kit.fit_line([U.S(" " + body + " ", kit.ink(p.text, p.bar), p.bar)], inner, bg))
+    if ev["kind"] == "limit":
+        reset = M.num(ev.get("reset_at"))
+        rows.append(kit.gauge(100.0, inner, bg, tone="hot"))
+        if reset:
+            rows.append(kit.fit_line(kit.chip("↻ " + V.fmt_span(reset - now), "muted", on=bg), inner, bg))
+    button_row, regions = None, []
+    if selected:
+        # the widest set that fits: both with their key hints, both plain, Jump with a compact dismiss, Jump alone
+        tiers = [[("jump", kit.button("Jump", "⏎", primary=True, on=bg)), ("dismiss", kit.button("Dismiss", "x", on=bg))],
+                 [("jump", kit.button("Jump", primary=True, on=bg)), ("dismiss", kit.button("Dismiss", on=bg))],
+                 [("jump", kit.button("Jump", primary=True, on=bg)), ("dismiss", kit.button("✕", on=bg))],
+                 [("jump", kit.button("Jump", primary=True, on=bg))]]
+        for tier in tiers:
+            widths = [U.line_cells(b, kit.cells) for _, b in tier]
+            if sum(widths) + len(tier) - 1 <= inner:
+                line, x = [], 0
+                for (action, button), w in zip(tier, widths):
+                    if line:
+                        line.append(U.S(" ", None, bg))
+                        x += 1
+                    line += button
+                    regions.append((x, x + w, action))
+                    x += w
+                rows.append(kit.fit_line(line, inner, bg))
+                button_row = len(rows) - 1
+                break
+    return rows, button_row, regions
+
+
+GLYPH_LABELS = {"all": "All", "needs": "!", "done": "✓", "limits": "⊘"}
+
+
+def _chips(kit: U.Kit, filt: str, tally: dict, cols: int) -> tuple:
+    """The four filters on one row. The widest wording that fits wins: full words with counts, then glyphs with counts, then glyphs with
+    only the picked one counted, then bare glyphs; all four stay clickable at any panel width a person would use."""
+    p = kit.p
+    tiers = [lambda k, label: f"{label} {tally[k]}" if tally[k] else label,
+             lambda k, label: f"{GLYPH_LABELS[k]} {tally[k]}" if tally[k] else GLYPH_LABELS[k],
+             lambda k, label: f"{GLYPH_LABELS[k]} {tally[k]}" if tally[k] and k == filt else GLYPH_LABELS[k],
+             lambda k, label: GLYPH_LABELS[k]]
+    texts = None
+    for tier in tiers:
+        cand = [(k, tier(k, label)) for k, label in FILTERS]
+        if 1 + sum(kit.chip_width(t) for _, t in cand) + (len(cand) - 1) <= cols:
+            texts = cand
+            break
+    texts = texts or [(k, GLYPH_LABELS[k]) for k, _ in FILTERS]
+    line, regions, x = [U.S(" ", None, p.bar)], [], 1
+    for key, text in texts:
+        active = key == filt
+        chip = kit.chip(text, "text" if active else "muted", on=p.bar, strong=active)
+        w = U.line_cells(chip, kit.cells)
+        if x + w > cols:
+            break
+        line += chip + [U.S(" ", None, p.bar)]
+        regions.append((x, x + w, key))
+        x += w + 1
+    return kit.fit_line(line, cols, p.bar), regions
+
+
+def _ledger(kit: U.Kit, events, cols: int, now: float) -> list:
+    """The wait ledger as a card under the events: how long agents waited on you today, a week of it, the median. Nothing when there is nothing measured."""
+    summ = LG.summary(events, now)
+    if not summ:
+        return []
+    p, bg = kit.p, kit.p.card
+    inner = kit.inner_width(cols)
+    muted = kit.ink(p.muted, bg)
+    label = "waited on you" if inner >= 30 else "waited"                    # the number outlives its label
+    head = V._row(kit, kit.chip(label, "muted", on=bg, strong=True), [U.S(f"median {LG.fmt_dur(summ['median_s'])} ", muted, bg)], inner, bg)
+    n = summ["count_today"]
+    big = [U.S(LG.fmt_dur(summ["today_s"]) or "0s", kit.ink(p.text, bg), bg, bold=True), U.S(" today", muted, bg),
+           U.S(f"  {n} wait{'s' if n != 1 else ''}", kit.ink(p.faint, bg, 3.0), bg)]
+    rows = [head, kit.fit_line(big, inner, bg)] + kit.bars(summ["series"], inner, rows=2, tone="warm", on=bg, labels=V.week_letters(None, LG.DAYS))
+    if summ["ongoing"]:
+        rows.append(kit.fit_line(kit.chip(f"{summ['ongoing']} waiting now", "warm", on=bg), inner, bg))
+    return [kit.blank(cols, p.bar)] + kit.card(rows, cols)
+
+
+def view(events, filt: str, sel: int, cols: int, kit: U.Kit, now: float | None = None) -> InboxView:
+    """Never raises. `sel` indexes the VISIBLE list (clamped); the caller keeps it in range across refreshes."""
+    p = kit.p
+    now = time.time() if now is None else now
+    cols = max(8, int(cols))
+    filt = filt if filt in dict(FILTERS) else "all"
+    events = events if isinstance(events, list) else []
+    items = visible(events, filt, now)
+    tally = counts(events, now)
+    sel = max(0, min(int(sel) if M.num(sel) is not None else 0, max(0, len(items) - 1)))
+    un, ny = unread(events), needs_you(events)
+    left = [U.S(f" {un} unread" if un else " all read", kit.ink(p.muted, p.bar), p.bar)]
+    if ny:
+        left.append(U.S(f"  ! {ny} need{'s' if ny == 1 else ''} you", kit.ink(p.waiting, p.bar), p.bar, bold=True))
+    header = kit.fit_line(left, cols, p.bar)
+    chip_line, chips = _chips(kit, filt, tally, cols)
+    lines = [chip_line, kit.blank(cols, p.bar)]
+    cards, buttons = [], []
+    inner = kit.inner_width(cols)
+    if not items:
+        empty = [kit.fit_line([U.S("✓ ", kit.ink(p.done, p.card), p.card, bold=True), U.S("All clear", kit.ink(p.text, p.card), p.card, bold=True)], inner, p.card),
+                 kit.fit_line([U.S("nothing waits on you" if filt == "all" else "nothing in this filter", kit.ink(p.muted, p.card), p.card)], inner, p.card)]
+        lines += kit.card(empty, cols) + _ledger(kit, events, cols, now)
+        return InboxView(header, chips, lines, [], [], 0, 0)
+    for i, ev in enumerate(items):
+        selected = i == sel
+        rows, button_row, regions = _event_rows(kit, ev, inner, selected, now)
+        card = kit.card(rows, cols, selected=selected, accent=selected)
+        y0 = len(lines)
+        lines += card
+        cards.append((y0, len(lines), i))
+        if button_row is not None:
+            y = y0 + 1 + button_row                              # +1: the card's top edge row
+            buttons += [(2 + a, 2 + b, y, i, act) for a, b, act in regions]      # 2 = margin + padx
+    lines += _ledger(kit, events, cols, now)
+    return InboxView(header, chips, lines, cards, buttons, sel, len(items))

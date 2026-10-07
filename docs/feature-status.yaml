@@ -49,6 +49,26 @@ features:
     label: Docked panel
     status: beta
     description: The deck as an always-visible column on Wayland layer-shell compositors; placement is verified on Hyprland by hand only.
+  - id: command-palette
+    label: Command palette
+    status: shipped
+    description: ctrl+alt+shift+space is one searchable list of what needs you, every tab, conversations to reopen, new agents with their quota headroom and a few actions.
+  - id: wait-ledger
+    label: Wait ledger
+    status: shipped
+    description: How long agents waited on you, from when their event first appeared to when you first looked at it, as a card in the panel's Inbox view and as kittymux inbox ledger.
+  - id: panel-usage
+    label: Usage view in the panel
+    status: shipped
+    description: Provider tiles, limit gauges with a pace tick and a countdown, token counters with a week of bars, and state chips, drawn from one model for every provider.
+  - id: panel-inbox
+    label: Inbox view in the panel
+    status: shipped
+    description: Every typed event as a card with Jump and Dismiss, and filters for what needs you, what finished and limits. A dismissal can be taken back with z for eight seconds.
+  - id: motion-switch
+    label: Still spinner (motion off)
+    status: shipped
+    description: kittymux features off motion holds the working spinner on one frame in the bar and the panel and stops the redraw timers that turn it.
   - id: join
     label: Join a tab into another
     status: shipped
@@ -160,7 +180,7 @@ features:
   - id: workspace-switcher
     label: Workspace switcher
     status: planned
-    description: A recent-first list of sessions and OS windows with their agent states, as one key. The deck and pick already list every tab of every OS window.
+    description: A recent-first list of sessions with their agent states. The command palette and pick list every tab; kitty has its own goto_session list of sessions but no agent states.
   - id: session-rename
     label: Rename a session
     status: planned

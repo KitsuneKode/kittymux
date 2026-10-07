@@ -27,7 +27,7 @@ def collect() -> dict:
         plan = get("cursorAuth/stripeMembershipType") or "?"
         status = get("cursorAuth/stripeSubscriptionStatus") or "?"
         db.close()
-        rows.append({"label": "plan", "text": f"{plan} · {status}"})
+        rows.append({"label": "plan", "text": f"{plan} · {status}", "plan": str(plan), "status": str(status)})
     except sqlite3.Error:
         rows.append({"label": "plan", "text": "?"})
     if tracking.is_file():
@@ -45,7 +45,7 @@ def collect() -> dict:
             tdb.close()
             if added:
                 pct = round(ai / added * 100) if added else 0
-                rows.append({"label": "today", "text": f"{added} lines · {pct}% AI"})
+                rows.append({"label": "today", "text": f"{added} lines · {pct}% AI", "lines": added, "ai_pct": pct})
         except sqlite3.Error:
             pass
     return {"name": "cursor", "rows": rows}

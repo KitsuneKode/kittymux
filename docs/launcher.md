@@ -33,6 +33,8 @@ One searchable list. Most pressing first:
 
 A row of an agent started **without approvals** (`--dangerously-skip-permissions`, `--yolo`, `--auto`, `--permission-mode dangerous`, … — only flags each CLI documents, see `assets/agent-risk.json`) carries `⚠ no approvals`.
 
+Each **new agent** row shows the room its provider has left (`◔ 5h 99% used`, `◔ limit hit, resets 3h 50m`), from the usage cache the panel keeps (`agent-usage.json`; nothing is fetched, and a cache older than 12 hours says nothing). Providers with no limit to measure show no hint.
+
 ```sh
 kittymux pick                      # inside kitty: fzf in an overlay (ctrl+alt+v, leader v) — rofi/fuzzel when fzf is missing
 kittymux pick --menu rofi          # from anywhere: a rofi window; alt+a marks the selected event read without jumping

@@ -582,7 +582,7 @@ def build_detail(p: dict, spin: str = "◐") -> list[tuple[str, str]]:
                          f"{r['pct']:.0f}%{word}{reset}", color))
             rem = r.get("rem_s") or 0
             period = _PERIODS.get(label)
-            if period and rem > 0:
+            if period and rem > 0 and not r.get("clock"):
                 el = max(0.0, min(1.0, 1 - rem / period)) * 100
                 rows.append((f"   {'win':<7} {_bar(el, 12, _ELAPSED)} {el:.0f}% elapsed", C_DIM))
         elif "stack" in r:

@@ -9,7 +9,7 @@
                          layout width [+N|-N|N]   layout preset NAME   layout pick   layout show
                          layout default [clear]   (pin the current layout as the start for new windows; otherwise new kitties start with your last choice)
   kittymux inbox       everything that wants your attention (questions, permissions, usage limits, finished runs), newest first:
-                         inbox [--all] [--json] [--limit N] [--waybar]   inbox ack [ID… | --all]   inbox clear   inbox jump [ID]   inbox watch
+                         inbox [--all] [--json] [--limit N] [--waybar]   inbox ack [ID… | --all]   inbox clear   inbox jump [ID]   inbox watch   inbox ledger [--json]
   kittymux sessions    save/restore sessions WITH the agents' conversations (claude --resume <id>, codex resume <id>, …) and make new ones from templates:
                          sessions [list] | save [NAME] [--all] [--direct] | restore [NAME|last] | autosave | new NAME [--template T] [--agent A] [--cwd DIR] | templates | check | prepare | rewrite FILE|--recent
                          sessions history [--since 7d] [--json]   sessions recover [NAME] [--since 6h]   (every agent session is journaled as it runs)
@@ -34,6 +34,7 @@
   kittymux panel       persistent agent-and-usage panel: panel [toggle|start|stop|status|wider|narrower|width N]
   kittymux usage       provider quotas, resets and local usage: usage [--window] (Mod+N → Usage opens a separate window from any app)
   kittymux peek        the peek card (a right-click on a tab) from the keyboard: peek [TAB_ID | --waiting]  (--waiting: the agent that needs you longest)
+  kittymux palette     one searchable list of what needs you, every tab, agents to reopen or start, and a few actions (ctrl+alt+shift+space): palette
   kittymux join        move this tab's panes into another tab as splits: join [--to TAB_ID] [--side right|below|left|above|auto] [--pane]
   kittymux keys        chords your own kitty config and kittymux both define (kittymux's wins: it loads later): keys [conflicts]
   kittymux dim         dim the panes that are not focused (kitty ≥ 0.49.2): dim [on|off|toggle|show]
@@ -69,6 +70,9 @@ import kittymux_inbox  # noqa: E402
 import kittymux_journal  # noqa: E402
 import kittymux_keymap  # noqa: E402
 import kittymux_launcher  # noqa: E402
+import kittymux_ledger  # noqa: E402
+import kittymux_meters  # noqa: E402
+import kittymux_palette  # noqa: E402
 import kittymux_quiet  # noqa: E402
 import kittymux_resume  # noqa: E402
 import kittymux_layout  # noqa: E402
@@ -556,6 +560,40 @@ focus_tab 1
 """
 
 
+def _demo_world(tmp: str, state: str) -> str | None:
+    """Build tools/demo_world.py's synthetic usage (a fake home the collectors read, a week of history) under `tmp`; returns the fake home, or None when it cannot."""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("kittymux_demo_world", os.path.join(HOME_DIR, "tools", "demo_world.py"))
+        dw = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(dw)
+        from pathlib import Path
+        home, now = Path(tmp) / "world" / "home", time.time()
+        for fn in (dw.codex, dw.claude, dw.cursor, dw.devin):
+            fn(home, now)
+        dw.history(Path(state), now)
+        return str(home)
+    except Exception:
+        return None
+
+
+def _demo_events(sock: str, pid: int, state: str) -> None:
+    """Two inbox events the demo's own agents do not produce by themselves (a limit and a finished run), bound to the demo's real windows so Jump works."""
+    rc, out = _run(["kitty", "@", "--to", sock, "ls"], 4)
+    if rc != 0:
+        return
+    try:
+        data = json.loads(out)
+    except ValueError:
+        return
+    win = {t.get("title"): (t.get("windows") or [{}])[0].get("id") for o in data for t in o.get("tabs", [])}
+    now = time.time()
+    for kind, agent, tab, title, age, extra in (("limit", "codex", "codex", "5h usage limit reached", 540, {"reset_at": now + 3 * 3600 + 50 * 60}),
+                                                  ("done", "agy", "antigravity", "Finished in 4m 12s", 250, {})):
+        if win.get(tab):
+            kittymux_inbox.add(state, kittymux_inbox.make_event(kind, agent, win[tab], "screen", now - age, pid=pid, tab=tab, title=title, **extra))
+
+
 def demo(argv: list[str]) -> int:
     edge = "bottom" if "--bottom" in argv else "left"
     if not shutil.which("kitty"):
@@ -575,6 +613,9 @@ def demo(argv: list[str]) -> int:
         ltpl.replace("@KITTYMUX_HOME@", HOME_DIR).replace("@KITTYMUX_LEADER@", "ctrl+space"))
     open(os.path.join(cfg, "theme.conf"), "w").write(DEMO_THEME)
     env = dict(os.environ, KITTY_CONFIG_DIRECTORY=cfg, KITTYMUX_STATE=state, KITTYMUX_NOTIFY="0")
+    world = _demo_world(tmp, state)                            # synthetic usage for the panel's Usage view: nothing of yours is read or shown
+    if world:
+        env["KITTYMUX_USAGE_HOME"] = world
     fam = _fc_families()
     font_conf = "font_size 12\n"
     for cand in ("JetBrainsMono Nerd Font Mono", "CaskaydiaCove Nerd Font Mono", "FiraCode Nerd Font Mono",
@@ -631,10 +672,13 @@ def demo(argv: list[str]) -> int:
             break
         time.sleep(0.1)
     time.sleep(1.5)
+    _demo_events(sock, proc.pid, state)
 
     print("  try:")
     print(f"    {c('1', 'ctrl+alt+b')}       sidebar deck — hover, click, live preview; / to search, t to promote a pane")
     print(f"    {c('1', 'ctrl+alt+y')}       jump to the agent that is waiting on you")
+    print(f"    {c('1', 'ctrl+alt+shift+space')}  command palette — type to find a tab, an agent that needs you, a conversation or an action; ⏎ does it")
+    print(f"    {c('1', 'ctrl+alt+b')} then {c('1', 'u')} usage (provider tiles, gauges with a pace tick, a week of tokens) · {c('1', 'i')} inbox (Jump, Dismiss) · {c('1', 'a')} back — made-up numbers")
     print(f"    {c('1', 'ctrl+alt+/')}       every key, gesture and command — just type to search, esc closes")
     print(f"    {c('1', 'ctrl+space')} then {c('1', '?')}   leader mode card")
     print(f"  in the {c('1', 'panes')} tab:")
@@ -835,6 +879,13 @@ def inbox(argv: list[str]) -> int:
             print("kittymux inbox: nothing to jump to", file=sys.stderr)
             return 1
         return inbox_jump(target)
+    if cmd == "ledger":
+        summ = kittymux_ledger.summary(kittymux_inbox.load(sdir), now)
+        if "--json" in rest:
+            print(json.dumps(summ, indent=1))
+        else:
+            print(kittymux_ledger.format_text(summ))
+        return 0
     if cmd == "waybar" or "--waybar" in argv:
         print(json.dumps(kittymux_launcher.waybar_status(kittymux_inbox.load(sdir), now), ensure_ascii=False))
         return 0
@@ -856,7 +907,7 @@ def inbox(argv: list[str]) -> int:
         except KeyboardInterrupt:
             return 0
     if cmd != "list":
-        print("usage: kittymux inbox [--all] [--json] [--limit N] | ack | clear | jump | watch", file=sys.stderr)
+        print("usage: kittymux inbox [--all] [--json] [--limit N] | ack | clear | jump | watch | ledger", file=sys.stderr)
         return 2
     show_all, as_json, limit = "--all" in rest, "--json" in rest, 30
     if "--limit" in rest:
@@ -1489,6 +1540,21 @@ def _risk_table() -> dict:
     return kittymux_launcher.load_risk(os.path.join(HOME_DIR, "assets", "agent-risk.json"), user)
 
 
+def _headroom_hints(installed: list) -> dict:
+    """{agent: '5h 99% used'} from the usage cache the panel and the overlay keep (never a network call; a cache older than 12 h says nothing)."""
+    try:
+        path = os.path.join(kittymux_layout.state_dir(), "agent-usage.json")
+        if os.stat(path).st_size > 2 * 1024 * 1024:
+            return {}
+        with open(path) as f:
+            data = json.load(f)
+        if not isinstance(data, dict) or time.time() - float(data.get("ts") or 0) > 12 * 3600:
+            return {}
+        return kittymux_meters.hints_for(data.get("providers"), installed)
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
 _LS_MEMO: dict = {}
 
 
@@ -1792,7 +1858,7 @@ def pick(argv: list[str]) -> int:
         now = time.time()
         events, windows, closed, installed = _pick_data(now)
         rows = kittymux_launcher.build_rows(events, windows, closed, installed, now, home=os.path.expanduser("~"), cwd=_focus_cwd(focused), risk=_risk_table(),
-                                            include_settled=include_settled)
+                                            include_settled=include_settled, headroom=_headroom_hints(installed))
         rows.append({"kind": "utility", "agent": "", "tone": "", "action": {"op": "usage"},
                      "text": "≋  Usage   provider quotas · resets · local activity"})
         if "--json" in argv:
@@ -2119,6 +2185,7 @@ FEATURE_HELP = {
     "sheet": "(planned — not built yet) the side sheet for a tab",
     "hover": "(planned — not built yet) open the sheet on hover, inside the sheet only: kitty sends the bar no idle motion",
     "panetitle": "the same line in each pane's title bar, plus the pane's own title (ctrl+alt+shift+c shows the bars; kitty ≥ 0.49.2)",
+    "motion": "the working spinner turns (off: one still frame, and nothing redraws a bar just to animate it)",
 }
 
 
@@ -2255,6 +2322,68 @@ def peek_cmd(argv: list[str]) -> int:
     kit = os.path.join(HOME_DIR, "python", "peek-kit.py")
     r = subprocess.run(["kitty", "@", "--to", sock, "kitten", "--match", f"id:{win}", kit, str(tab)], stdin=subprocess.DEVNULL, check=False)
     return r.returncode
+
+
+def _pane_to_cover(sock: str) -> str:
+    """The pane an overlay should open over: $KITTY_WINDOW_ID when it is a real pane of that kitty (a shell), else the focused pane (a key-bound background command gets the id
+    of its own hidden window, which is no pane of any tab)."""
+    panes = [w for o in (_ls(sock) or []) for t in o.get("tabs", []) for w in t.get("windows", [])]
+    mine = os.environ.get("KITTY_WINDOW_ID", "")
+    return mine if mine.isdigit() and any(w.get("id") == int(mine) for w in panes) else next((str(w["id"]) for w in panes if w.get("is_focused")), "")
+
+
+def palette_cmd(argv: list[str]) -> int:
+    """`kittymux palette` — the command palette over this pane (what ctrl+alt+shift+space opens): type to find a tab, an agent that needs you, a conversation to
+    reopen, a new agent or a fixed action; ⏎ does it. It acts on the kitty it was started inside."""
+    if argv:
+        print("usage: kittymux palette", file=sys.stderr)
+        return 2
+    sock = _own_kitty_socket()
+    if sock is None:
+        print("kittymux palette: run it from a pane of the kitty you want to use "
+              "(needs allow_remote_control socket-only and listen_on unix:${XDG_RUNTIME_DIR}/mykitty)", file=sys.stderr)
+        return 1
+    win = _pane_to_cover(sock)
+    if not win:
+        print("kittymux palette: no focused pane in this kitty to open it over", file=sys.stderr)
+        return 1
+    kit = os.path.join(HOME_DIR, "python", "palette-kit.py")
+    return subprocess.run(["kitty", "@", "--to", sock, "kitten", "--match", f"id:{win}", kit], stdin=subprocess.DEVNULL, check=False).returncode
+
+
+def act_cmd(argv: list[str]) -> int:
+    """`kittymux act JSON` — do ONE command-palette action. The palette's kitten calls it after it closes; it is not meant to be typed. The action is validated again (a tab id,
+    an agent that is installed, one of a few fixed ids): anything else is refused and nothing runs."""
+    if len(argv) != 1:
+        print("usage: kittymux act JSON   (what the command palette runs; see `kittymux palette`)", file=sys.stderr)
+        return 2
+    try:
+        obj = json.loads(argv[0])
+    except ValueError:
+        print("kittymux act: not JSON", file=sys.stderr)
+        return 2
+    a = kittymux_palette.validate_action(obj, known_agents=tuple(_installed_agents()))
+    if a is None:
+        print("kittymux act: not an action the palette can run", file=sys.stderr)
+        return 2
+    sock = _own_kitty_socket() or _focused_socket()
+    op = a["op"]
+    if op == "focus-tab":
+        if not sock:
+            print("kittymux act: no kitty to act on", file=sys.stderr)
+            return 1
+        rc, _ = _run(["kitty", "@", "--to", sock, "focus-tab", "--match", f"id:{a['tab']}"], 4)
+        if rc == 0:
+            _focus_wm(_socket_pid(sock))
+        return 0 if rc == 0 else 1
+    if op == "jump":
+        rc = inbox_jump({"pid": a["pid"], "w": a["w"]})
+        if rc == 0 and a.get("ack"):
+            kittymux_inbox.ack(kittymux_layout.state_dir(), time.time(), ids=[a["ack"]])
+        return rc
+    if op == "run":
+        return subprocess.run([os.path.join(HOME_DIR, "bin", "kittymux"), *kittymux_palette.ACTIONS[a["id"]][2]], check=False).returncode
+    return _do_row({"action": a}, "open", sock)               # reopen | spawn | usage: the same code `pick` runs
 
 
 def panel_cmd(argv: list[str]) -> int:
@@ -2841,6 +2970,10 @@ def main(argv: list[str]) -> int:
         return usage_cmd(argv[1:])
     if cmd == "peek":
         return peek_cmd(argv[1:])
+    if cmd == "palette":
+        return palette_cmd(argv[1:])
+    if cmd == "act":
+        return act_cmd(argv[1:])
     if cmd == "fanout":
         return fanout(argv[1:])
     if cmd == "checkpoint":

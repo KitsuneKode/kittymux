@@ -85,15 +85,28 @@ class SidebarTests(unittest.TestCase):
             s.quit_loop.assert_not_called()
         s.finalize()
 
-    def test_narrow_usage_navigation_click_has_the_same_hit_boundary_as_drawing(self):
+    def test_narrow_tab_strip_click_has_the_same_hit_boundary_as_drawing(self):
         s = self.sidebar()
-        s.screen_size.cols = 16
-        s._view = "usage"
-        labels = s._navigation_labels(16)
-        self.assertLessEqual(sum(len(t) for t in labels), 16)
-        with patch.object(s, "_set_view") as select:
-            s.on_click(types.SimpleNamespace(cell_y=1, cell_x=len(labels[0])))
-            select.assert_called_once_with("usage")
+        for cols in (16, 20, 26):
+            s.screen_size.cols = cols
+            s._view = "usage"
+            with patch.object(s, "_ansi", return_value=""):
+                s._tabs_line(cols)                               # drawing records the regions a click is tested against
+            self.assertEqual({name for _a, _b, name in s._tab_regions}, {"agents", "usage", "inbox"})
+            for x0, x1, name in s._tab_regions:
+                self.assertLessEqual(x1, cols)
+                for x in (x0, x1 - 1):
+                    with patch.object(s, "_set_view") as select:
+                        s.on_click(types.SimpleNamespace(cell_y=1, cell_x=x))
+                        if name == "usage":
+                            select.assert_not_called()           # already there
+                        else:
+                            select.assert_called_once_with(name)
+            last = max(b for _a, b, _n in s._tab_regions)
+            if last < cols:
+                with patch.object(s, "_set_view") as select:
+                    s.on_click(types.SimpleNamespace(cell_y=1, cell_x=last))
+                    select.assert_not_called()                   # past the pills is not a pill
         s.finalize()
 
     def test_periodic_snapshot_keeps_hovered_pane_by_identity(self):
@@ -359,6 +372,259 @@ class SidebarTests(unittest.TestCase):
              patch.object(self.m.kittymux_agents, "load_panes") as load:
             self.assertEqual(self.m._panes_state([]), {})
             load.assert_not_called()
+
+    # ---- the Usage and Inbox views -------------------------------------------------------------------------------------------------
+    def quiet(self, s):
+        s._request_usage = Mock()                          # a real one would spawn the collector against the real state dir
+        return s
+
+    def key(self, k, mods=0):
+        return types.SimpleNamespace(type="press", key=k, mods=mods)
+
+    def click(self, x, y):
+        return types.SimpleNamespace(cell_x=x, cell_y=y)
+
+    def providers(self, n=4):
+        return {"ts": time.time(), "providers": [{"name": f"p{i}", "rows": [{"label": "5h", "pct": 10.0 * i}]} for i in range(n)]}
+
+    def inbox_events(self):
+        import kittymux_inbox as I
+        out = []
+        for i, kind in enumerate(("permission", "done", "limit")):
+            e = I.make_event(kind, "claude", 7, "screen", time.time() - 60 * (i + 1), pid=1, tab="web", title=f"{kind} title")
+            e.pop("op")
+            out.append(e)
+        return out
+
+    def test_i_opens_the_inbox_and_escape_or_a_closes_it_without_quitting_the_panel(self):
+        s = self.quiet(self.sidebar())
+        s.quit_loop = Mock()
+        with patch.object(self.m, "_PANEL", True):
+            s.on_key_event(self.key("I"))
+            self.assertEqual(s._view, "inbox")
+            s.on_key_event(self.key("ESCAPE"))
+            self.assertEqual(s._view, "agents")
+            s.on_key_event(self.key("I"))
+            s.on_key_event(self.key("A"))
+            self.assertEqual(s._view, "agents")
+            s.on_key_event(self.key("U"))
+            s.on_key_event(self.key("I"))
+            self.assertEqual(s._view, "inbox")
+            s.on_key_event(self.key("I"))
+            self.assertEqual(s._view, "agents")
+        s.quit_loop.assert_not_called()
+        s.finalize()
+
+    def test_usage_provider_keys_wrap_and_digits_pick(self):
+        s = self.sidebar()
+        s._view, s._usage_data = "usage", self.providers()
+        s.on_key_event(self.key("RIGHT"))
+        self.assertEqual(s._usage_sel, 1)
+        s.on_key_event(self.key("LEFT"))
+        s.on_key_event(self.key("LEFT"))
+        self.assertEqual(s._usage_sel, 3)                                # wrapped
+        s.on_key_event(self.key("L"))
+        self.assertEqual(s._usage_sel, 0)
+        s.on_key_event(self.key("3"))
+        self.assertEqual(s._usage_sel, 2)
+        s.on_key_event(self.key("9"))
+        self.assertEqual(s._usage_sel, 3)                                # past the end: the last one
+        s.finalize()
+
+    def test_usage_pick_with_no_data_does_nothing(self):
+        s = self.sidebar()
+        s._view = "usage"
+        for k in ("RIGHT", "LEFT", "1", "TAB"):
+            s.on_key_event(self.key(k))
+        self.assertEqual(s._usage_sel, 0)
+        s.finalize()
+
+    def test_inbox_navigation_filters_and_clamping(self):
+        s = self.sidebar()
+        s._view, s._inbox = "inbox", self.inbox_events()
+        s.on_key_event(self.key("J"))
+        s.on_key_event(self.key("J"))
+        s.on_key_event(self.key("J"))
+        self.assertEqual(s._inbox_sel, 2)                                # clamped to the last card
+        s.on_key_event(self.key("K"))
+        self.assertEqual(s._inbox_sel, 1)
+        s.on_key_event(self.key("TAB"))
+        self.assertEqual((s._inbox_filter, s._inbox_sel), ("needs", 0))
+        s.on_key_event(self.key("TAB", mods=1))
+        self.assertEqual(s._inbox_filter, "all")
+        s.on_key_event(self.key("4"))
+        self.assertEqual(s._inbox_filter, "limits")
+        s.finalize()
+
+    def test_g_and_shift_g_and_home_end_jump_to_the_ends_of_the_inbox(self):
+        s = self.sidebar()
+        s._view, s._inbox = "inbox", self.inbox_events()
+        s.on_key_event(self.key("G", mods=1))
+        self.assertEqual(s._inbox_sel, 2)
+        s.on_key_event(self.key("G"))
+        self.assertEqual(s._inbox_sel, 0)
+        s.on_key_event(self.key("END"))
+        self.assertEqual(s._inbox_sel, 2)
+        s.on_key_event(self.key("HOME"))
+        self.assertEqual(s._inbox_sel, 0)
+        s.finalize()
+
+    def test_enter_jumps_with_the_cli_and_never_touches_the_agent(self):
+        s = self.sidebar()
+        s._view, s._inbox = "inbox", self.inbox_events()
+        first = s._inbox_items()[0]
+        with patch.object(self.m.subprocess, "Popen") as popen, patch.object(self.m, "_PANEL", True):
+            s.on_key_event(self.key("ENTER"))
+        argv = popen.call_args.args[0]
+        self.assertEqual(argv[1:], ["inbox", "jump", first["id"]])
+        self.assertTrue(argv[0].endswith("bin/kittymux"))
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+        s.finalize()
+
+    def test_x_dismisses_the_picked_event_and_shift_x_every_visible_one(self):
+        s = self.sidebar()
+        s._view, s._inbox = "inbox", self.inbox_events()
+        order = [e["id"] for e in s._inbox_items()]
+        with tempfile.TemporaryDirectory() as d, patch.object(self.m, "_STATE_DIR", Path(d)):
+            s._inbox = self.inbox_events()
+            import kittymux_inbox as I
+            for e in s._inbox:
+                I._append(I.store_path(d), dict(e, op="add"))
+            s._inbox = I.load(d)
+            order = [e["id"] for e in s._inbox_items()]
+            s.on_key_event(self.key("X"))
+            self.assertNotIn(order[0], [e["id"] for e in s._inbox_items()])
+            self.assertEqual(len(s._inbox_items()), 2)
+            s.on_key_event(self.key("X", mods=1))
+            self.assertEqual(s._inbox_items(), [])
+            self.assertEqual(s._inbox_sel, 0)
+        s.finalize()
+
+    def test_a_dismiss_with_nothing_listed_is_a_no_op(self):
+        s = self.sidebar()
+        s._view = "inbox"
+        with patch.object(self.m.kittymux_inbox, "ack") as ack:
+            s.on_key_event(self.key("X"))
+            s.on_key_event(self.key("ENTER"))
+        ack.assert_not_called()
+        s.finalize()
+
+    def test_clicking_the_tab_strip_switches_views_in_every_view(self):
+        s = self.quiet(self.sidebar())
+        s._tab_regions = [(0, 5, "agents"), (5, 12, "usage"), (12, 20, "inbox")]
+        for view in ("agents", "usage", "inbox"):
+            s._view = view
+            s.on_click(self.click(6, 1))
+            self.assertEqual(s._view, "usage")
+            s.on_click(self.click(13, 1))
+            self.assertEqual(s._view, "inbox")
+            s.on_click(self.click(1, 1))
+            self.assertEqual(s._view, "agents")
+        s._view = "usage"
+        s.on_click(self.click(25, 1))                                    # empty part of the strip: nothing
+        self.assertEqual(s._view, "usage")
+        s.finalize()
+
+    def test_clicking_a_provider_tile_picks_it(self):
+        s = self.sidebar()
+        s._view, s._usage_data = "usage", self.providers()
+        s._usage_regions = [(1, 9, 3, 7, 0), (10, 18, 3, 7, 1)]
+        s.on_click(self.click(12, 5))
+        self.assertEqual(s._usage_sel, 1)
+        s.on_click(self.click(12, 9))                                    # below the tiles: nothing
+        self.assertEqual(s._usage_sel, 1)
+        s.finalize()
+
+    def test_clicking_inbox_buttons_chips_and_cards(self):
+        s = self.sidebar()
+        s._view, s._inbox = "inbox", self.inbox_events()
+        s._inbox_regions = ([(1, 8, 2, "all"), (9, 20, 2, "needs")], [(4, 9, 0), (10, 15, 1)], [(2, 8, 7, 1, "jump"), (9, 18, 7, 1, "dismiss")])
+        s.on_click(self.click(10, 2))
+        self.assertEqual(s._inbox_filter, "needs")
+        s.on_click(self.click(3, 12))
+        self.assertEqual(s._inbox_sel, 1)
+        with patch.object(s, "_inbox_act") as act:
+            s.on_click(self.click(3, 7))
+            act.assert_called_once_with("jump", 1)
+        s.finalize()
+
+    def test_a_changed_inbox_redraws_only_when_the_badge_moved_or_the_inbox_is_up(self):
+        s = self.sidebar()
+        events = self.inbox_events()
+        s.draw_screen.reset_mock()
+        s._apply_side(None, events, 5.0)
+        s.draw_screen.assert_called_once()                                # the badge went 0 -> 3
+        s.draw_screen.reset_mock()
+        s._apply_side(None, list(events), 6.0)
+        s.draw_screen.assert_not_called()                                 # same unread count in the deck: no redraw
+        s._view = "inbox"
+        s._apply_side(None, list(events), 7.0)
+        s.draw_screen.assert_called_once()
+        s.finalize()
+
+    def draw_ready(self, s):
+        s._seg = lambda text, fg=None, bg=None, bold=False, dim=False: text
+        s.write, s.flush = Mock(), Mock()
+
+    def drawn(self, s):
+        return "".join(c.args[0] for c in s.write.call_args_list)
+
+    def test_the_usage_view_draws_end_to_end_and_publishes_clickable_regions(self):
+        s = self.sidebar()
+        s.draw_screen = type(s).draw_screen.__get__(s)
+        self.draw_ready(s)
+        s._view, s._usage_data = "usage", self.providers()
+        with patch.object(self.m, "set_cursor_position", lambda x, y: f"@{x},{y}:"):
+            s.draw_screen()
+        out = self.drawn(s)
+        self.assertIn("4 providers", out)
+        self.assertIn("P0", out.upper())
+        self.assertEqual(len(s._usage_regions), 4)
+        for x0, x1, y0, y1, _ in s._usage_regions:
+            self.assertTrue(0 <= x0 < x1 <= s.screen_size.cols and 2 <= y0 < y1 <= s.screen_size.rows)
+        self.assertTrue(s._tab_regions and s._tab_regions[1][2] == "usage")
+        s.finalize()
+
+    def test_the_inbox_view_draws_end_to_end_and_publishes_regions(self):
+        s = self.sidebar()
+        s.draw_screen = type(s).draw_screen.__get__(s)
+        self.draw_ready(s)
+        s._view, s._inbox = "inbox", self.inbox_events()
+        with patch.object(self.m, "set_cursor_position", lambda x, y: f"@{x},{y}:"):
+            s.draw_screen()
+        out = self.drawn(s)
+        self.assertIn("unread", out)
+        self.assertIn("Jump", out)
+        chips, cards, buttons = s._inbox_regions
+        self.assertEqual((len(chips), len(cards), len(buttons)), (4, 3, 2))        # all four filters even in a 32 column panel
+        s.finalize()
+
+    def test_an_empty_inbox_and_empty_usage_draw_without_error(self):
+        s = self.sidebar()
+        s.draw_screen = type(s).draw_screen.__get__(s)
+        self.draw_ready(s)
+        with patch.object(self.m, "set_cursor_position", lambda x, y: f"@{x},{y}:"):
+            for view in ("inbox", "usage"):
+                s._view = view
+                s.draw_screen()
+        self.assertIn("All clear", self.drawn(s))
+        self.assertIn("Collecting local usage", self.drawn(s))
+        s.finalize()
+
+    def test_the_docked_panel_keeps_its_last_column_for_the_resize_handle(self):
+        s = self.sidebar()
+        s.draw_screen = type(s).draw_screen.__get__(s)
+        self.draw_ready(s)
+        s._view, s._usage_data = "usage", self.providers()
+        with patch.object(self.m, "set_cursor_position", lambda x, y: f"@{x},{y}:"), patch.object(s, "_can_drag", return_value=True):
+            s.draw_screen()
+        out = self.drawn(s)
+        self.assertIn(f"@{s.screen_size.cols - 1},0:▕", out)
+        for chunk in out.split("@")[1:]:
+            coords, _, text = chunk.partition(":")
+            if coords.endswith(",0") and coords.startswith("0,"):
+                self.assertEqual(len(text), s.screen_size.cols - 1)
+        s.finalize()
 
     def test_overlay_defaults_to_parent(self):
         with patch.object(self.m, "_TARGET", ""), patch.object(self.m.os, "getppid", return_value=789), \

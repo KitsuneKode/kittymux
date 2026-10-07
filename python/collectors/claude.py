@@ -85,25 +85,30 @@ def collect() -> dict:
         if wend > now:
             elapsed = min(100.0, (now - wstart) / (5 * 3600) * 100)
             rows.append({"label": "5h", "pct": elapsed, "clock": True,
-                         "reset": f"resets {fmt_wait(wend)}"})
+                         "reset": f"resets {fmt_wait(wend)}",
+                         "rem_s": wend - now, "window_s": 5 * 3600})
             cache_note = f" (+{fmt_tokens(wcached)} cached)" if wcached else ""
             rows.append({"label": "win",
-                         "text": f"{fmt_tokens(wfresh)} tok{cache_note} · {wturns} turns"})
+                         "text": f"{fmt_tokens(wfresh)} tok{cache_note} · {wturns} turns",
+                         "tok": wfresh, "cached": wcached, "turns": wturns})
         else:
-            rows.append({"label": "5h", "text": "window closed · next msg opens new"})
+            rows.append({"label": "5h", "text": "window closed · next msg opens new", "state": "closed"})
     else:
         rows.append({"label": "5h", "text": "idle"})
     if week_fresh:
         cache_note = f" (+{fmt_tokens(week_cached)} cached)" if week_cached else ""
         rows.append({"label": "week",
-                     "text": f"{fmt_tokens(week_fresh)} tok{cache_note} · {len(week_sess)} sess"})
+                     "text": f"{fmt_tokens(week_fresh)} tok{cache_note} · {len(week_sess)} sess",
+                     "tok": week_fresh, "cached": week_cached, "sess": len(week_sess)})
     if hit:
         resets, hit_ts = hit
         if resets > now:
             rows.append({"label": "cap", "pct": 100.0,
-                         "reset": f"hit · resets {fmt_wait(resets)}"})
+                         "reset": f"hit · resets {fmt_wait(resets)}",
+                         "rem_s": resets - now})
         elif hit_ts:
-            rows.append({"label": "cap", "text": f"limit hit {fmt_ago(hit_ts)}"})
+            rows.append({"label": "cap", "text": f"limit hit {fmt_ago(hit_ts)}",
+                         "ago_s": max(0.0, now - hit_ts)})
     return {"name": "claude", "rows": rows,
             "daily": {"day": day, "claude_fresh": daily_fresh}}
 

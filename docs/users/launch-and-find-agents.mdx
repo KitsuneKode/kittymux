@@ -44,6 +44,8 @@ One searchable list, most pressing first.
 
 An agent started without approvals, with a flag such as `--dangerously-skip-permissions` or `--yolo`, carries `⚠ no approvals`. Only flags each CLI documents are recognised.
 
+Each **new agent** row also shows how much room its provider has, taken from the usage numbers the panel already keeps: `◔ 5h 99% used`, or `◔ limit hit, resets 3h 50m`. It lets you start the agent that still has room instead of the one you always start. Nothing is fetched for it, and providers with no limit to measure show nothing.
+
 ```sh
 kittymux pick                      # in kitty: fzf in an overlay (ctrl+alt+v). Uses rofi or fuzzel when fzf is missing
 kittymux pick --menu rofi          # from anywhere: a rofi window. alt+a marks the selected event read without jumping
@@ -67,6 +69,21 @@ Two flags on a conversation's journal record, so they outlive the tab.
 - **Settle** with `alt+s`, or `kittymux settle KEY`. A settled conversation folds away behind one row, `⋯ 4 settled conversations — show`. A closed conversation also settles itself after three days untouched (`KITTYMUX_SETTLE_DAYS`, 1 to 365). `kittymux pick --all` shows settled ones. Nothing is deleted. `alt+s` on a settled row brings it back.
 
 Pinning does not reorder the tab bar, because kitty has no pinned tabs. It changes what `pick` offers you.
+
+## The command palette
+
+Press `ctrl+alt+shift+space` for one searchable list of everything you can go to or do, inside kitty. It is the same idea as `pick`, drawn in the kitty you are in, with your tabs and a few actions added.
+
+| Group | What is in it | `⏎` does |
+| --- | --- | --- |
+| Needs you, Inbox | Unread events from the [inbox](/docs/users/notifications-and-inbox), the ones that ask for you first. | Jumps to that agent and marks its events read. |
+| Tabs | Every tab of this kitty, with its state and folder. | Focuses the tab. |
+| Agents | Conversations you closed, and a new agent for the first four installed CLIs with the room its provider has left. Type another agent's name, or `split`, to find the rest. | Reopens it, or starts it. |
+| Actions | A short fixed list: join this tab, a quick look at who has waited longest, show or hide the panel, quiet popups for an hour, bring them back, save the session. | Does it. |
+
+Type to filter. Every word has to match somewhere, and a word that begins a title ranks above one in the middle. `↑` `↓` (or `ctrl+n` and `ctrl+p`) choose, a click does it, `esc` clears the filter and then closes. The chord pressed again closes it too.
+
+The palette only chooses. It hands the choice to `kittymux act`, which checks it again (a tab id, an agent that is installed, one of the fixed actions) before it does anything, and it acts after the overlay has closed so the focus change is not undone. It never types into an agent. kitty has its own command palette on `ctrl+shift+f3` that searches kitty's actions; this one searches your work.
 
 ## Reopen what you closed
 

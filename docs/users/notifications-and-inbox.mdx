@@ -89,9 +89,16 @@ kittymux inbox ack ID           # mark read. "ack --all" marks everything
 kittymux inbox clear            # dismiss unread; "clear --all" dismisses everything
 kittymux inbox jump             # focus the one that needs you most; marks it read
 kittymux inbox watch            # one JSON line per new event, for scripts
+kittymux inbox ledger           # how long agents waited on you; --json prints the numbers
 ```
 
 Focusing a window acknowledges everything it reported.
+
+### How long agents wait for you
+
+An agent that asks for you, with a permission prompt or a question, is waiting from the moment its event first appeared until you first looked at it: you focused its window, marked it read or dismissed it. While it is unread it is waiting now. The **Inbox** view of the [panel](/docs/users/peek-deck-and-panel#the-panels-three-views) shows this as a card under the events: how long agents waited on you today, the median, a week of bars, and how many are waiting right now. `kittymux inbox ledger` prints the same as a sentence.
+
+It measures how fast you got to each agent, not how long an answer took. One wait counts for at most an hour toward a total, so a night away does not swamp a day, and the longest wait is shown as it was. It is only as complete as the inbox, which keeps its newest 200 events, and it is a number for you: nothing is sent anywhere.
 
 ### For widgets
 

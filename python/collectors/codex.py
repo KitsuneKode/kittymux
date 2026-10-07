@@ -6,8 +6,11 @@ windows, plus plan_type. Best data of the bunch — fully offline.
 """
 
 import json
+import time
 
 from _common import HOME, fmt_wait
+
+WINDOWS = {"primary": 5 * 3600, "secondary": 7 * 86400}     # seconds each rate-limit window lasts
 
 
 def collect() -> dict:
@@ -40,5 +43,8 @@ def collect() -> dict:
         if w and isinstance(w.get("used_percent"), (int, float)):
             rows.append({"label": label, "pct": w["used_percent"],
                          "reset": f"resets {fmt_wait(w['resets_at'])}"
-                                  if w.get("resets_at") else ""})
+                                  if w.get("resets_at") else "",
+                         "window_s": WINDOWS[key]})
+            if isinstance(w.get("resets_at"), (int, float)) and not isinstance(w.get("resets_at"), bool):
+                rows[-1]["rem_s"] = max(0.0, w["resets_at"] - time.time())
     return {"name": "codex", "rows": rows, "note": plan}

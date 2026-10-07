@@ -54,7 +54,9 @@ If `kittymux` is "not found", `~/.local/bin` is not on your `PATH`: add `export 
   PR number and listening ports (`:3000`).
 - **A docked sidebar panel** (`ctrl+alt+shift+b`, Wayland). The deck as a persistent left column via
   `kitten panel`: the compositor reserves its width so tiled windows sit beside it — the cmux-style
-  always-visible sidebar. ~1% CPU idle.
+  always-visible sidebar. ~1% CPU idle. Three views behind a strip of pills (`a` Agents, `u` Usage, `i` Inbox): **Usage** is a row of provider
+  tiles and one card (thin gauges with a pace tick and a reset countdown, a big token number with a week of bars, state chips); **Inbox** is every
+  typed event as a card with Jump and Dismiss. All of it is drawn from your theme's colours by one shared kit.
 - **An attention queue** (`ctrl+alt+y`). One key jumps to the agent that has been waiting the
   longest — across sessions and OS windows. A desktop notification fires when an unfocused
   agent starts waiting.
@@ -136,6 +138,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+\`` | flip to previously active tab (MRU) |
 | `ctrl+alt+h j k l` | pane nav (`shift+alt+arrows`) · `ctrl+alt+o` last pane |
 | `ctrl+alt+shift+1..9` | focus pane **N** of this tab straight away (the digit `ctrl+alt+e` draws on each pane) |
+| `ctrl+alt+shift+space` | **command palette**: one searchable list of what needs you, every tab, conversations to reopen, a new agent (with its provider's quota headroom) and a few actions — `⏎` does it, a click does it, `esc` clears the filter then closes (`kittymux palette` from a shell) |
 | `ctrl+alt+shift+j` | **join**: move this tab's panes into another tab as splits, keeping their shape — you pick the tab in a list (its keys are in its footer; `kittymux join` from a shell) |
 | `ctrl+alt+shift+semicolon` | pane controls: `h/j/k/l` swap neighbours · `r` rotate · `s` swap split sides · `e` equalize · `a` choose a pane; Escape cancels |
 | `ctrl+alt+e` · `ctrl+alt+shift+y` | number every pane on screen, press its digit to **focus** it · to **swap** with it (tmux's display-panes) |
@@ -243,6 +246,7 @@ Every optional piece is its own switch — use all of it, some of it, or none (t
 | `sheet` | the side sheet — **planned, no effect yet** | planned |
 | `hover` | open the sheet on hover — **planned, no effect yet**; kitty sends the bar no idle mouse motion, so it can only live inside the sheet | planned |
 | `panetitle` | the same line in each pane's title bar, then the pane's own title (`ctrl+alt+shift+c` shows the bars; kitty ≥ 0.49.2) | on |
+| `motion` | the working spinner turns (off: one still frame in the bar and the panel, and no timer redraws a bar just to animate it) | on |
 
 ```bash
 kittymux features                 # what is on, and where each setting comes from
@@ -527,6 +531,10 @@ kittymux/
     ├── kittymux_barsize.py# drag-to-resize the vertical bar
     ├── kittymux_git.py    # branch/worktree reader (no subprocess)
     ├── kittymux_deck.py   # deck grouping/layout logic (pure, tested)
+    ├── kittymux_ui.py     # the shared look: cards, gauges, chips, tabs, charts (pure, tested)
+    ├── kittymux_meters.py # one model (quota, counter, state, spend) for every provider (pure, tested)
+    ├── kittymux_usageview.py  # the panel's Usage view (pure, tested)
+    ├── kittymux_inboxview.py  # the panel's Inbox view (pure, tested)
     └── collectors/        # usage plugins (_common.py shared helpers)
 ```
 
@@ -564,7 +572,7 @@ to identify those tools.
 
 ### Persistent agents and usage
 
-`kittymux panel toggle` opens the native kitty Wayland panel from any app. Bind it to Mod+N in your window manager. It stays open after jumping, merging or detaching panes. Click **Agents / Usage** or press `u` to switch views; Usage shows provider limits, local activity and reset times, with `↑/↓` to scroll and `r` to refresh. Escape returns to Agents; `q` or the global toggle closes the panel. Its colours follow kitty's theme; quotas marked elapsed describe time, not consumed tokens. Live provider requests remain opt-in (`KITTYMUX_USAGE_LIVE=1`).
+`kittymux panel toggle` opens the native kitty Wayland panel from any app. Bind it to Mod+N in your window manager (a Hyprland snippet, with an optional slide-in rule, is in [Peek, deck and panel](docs/users/peek-deck-and-panel.mdx)). It stays open after jumping, merging or detaching panes. Click **Agents / Usage** or press `u` to switch views; Usage shows provider limits, local activity and reset times, with `↑/↓` to scroll and `r` to refresh. Escape returns to Agents; `q` or the global toggle closes the panel. Its colours follow kitty's theme; quotas marked elapsed describe time, not consumed tokens. Live provider requests remain opt-in (`KITTYMUX_USAGE_LIVE=1`).
 
 `kittymux pick` keeps the searchable agent menu and adds a **Usage** entry. `kittymux usage` opens an overlay inside kitty, or its own window from another app; `--window` always opens a separate window.
 

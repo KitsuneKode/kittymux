@@ -95,6 +95,9 @@ map ctrl+alt+shift+y     swap_with_window
 # ctrl+alt+shift+; — pane controls: h/j/k/l swap with a neighbor · r rotate · s swap split sides · e equalize · a choose a pane · esc cancel
 map ctrl+alt+shift+semicolon kitten @KITTYMUX_HOME@/python/pane-kit.py
 map --when-focus-on title:kittymux-panes ctrl+alt+shift+semicolon close_window
+# ctrl+alt+shift+space — command palette: find a tab, an agent that needs you, a conversation to reopen, a new agent or an action (type to filter · ⏎ does it · esc)
+map ctrl+alt+shift+space kitten @KITTYMUX_HOME@/python/palette-kit.py
+map --when-focus-on cmdline:palette-kit.py ctrl+alt+shift+space close_window
 # ctrl+alt+shift+j — join this tab into another as splits: pick the tab (type to filter · ⏎ joins · tab = side · ctrl+t = whole tab / this pane)
 map ctrl+alt+shift+j     kitten @KITTYMUX_HOME@/python/join-kit.py
 map --when-focus-on cmdline:join-kit.py ctrl+alt+shift+j close_window

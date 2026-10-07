@@ -83,12 +83,14 @@ sleep 1.5
 X key u
 sleep .25
 RC get-text --match cmdline:sidebar-kit.py > "$RUN/usage.txt"
-rg 'Local snapshots' "$RUN/usage.txt" >/dev/null
-rg '100% used' "$RUN/usage.txt" >/dev/null
+# an old-format cache (no numeric sidecars) still draws: two providers, Codex at 100 %, the reset text parsed into a countdown
+rg '2 providers' "$RUN/usage.txt" >/dev/null
+rg '100%' "$RUN/usage.txt" >/dev/null
+rg '42m' "$RUN/usage.txt" >/dev/null
 if [ -n "${SHOT:-}" ]; then RC screenshot "${SHOT}.usage.png" >/dev/null; fi
 X key Escape
 sleep .3
-RC get-text --match cmdline:sidebar-kit.py | rg 'Agents.*Usage' >/dev/null
+RC get-text --match cmdline:sidebar-kit.py | rg 'Agents' >/dev/null
 X key q
 sleep .5
 RC ls | python3 -c 'import json,sys;assert sum(len(t["windows"]) for o in json.load(sys.stdin) for t in o["tabs"])==3'

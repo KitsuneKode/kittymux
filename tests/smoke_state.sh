@@ -147,6 +147,15 @@ if command -v import >/dev/null 2>&1 && command -v md5sum >/dev/null 2>&1 && com
   spinner=$(distinct 420x60+0+20)
   [ "$spinner" -ge 7 ] || fail "spinner is not animating continuously: $spinner distinct frames in 3 s on an idle window (expect ~10)"
   echo "  ok   spinner animates continuously on an idle window ($spinner distinct frames in 3 s)"
+  # the `motion` switch: off holds one still frame (the flag is read live, no reload) and the timer stops; on turns it again
+  touch "$STATE/motion-off"; sleep 2.5
+  still=$(distinct 420x60+0+20)
+  [ "$still" -le 2 ] || fail "motion is off but the spinner still moved: $still distinct frames in 3 s (expect 1)"
+  echo "  ok   motion off: the spinner holds still ($still distinct frame(s) in 3 s)"
+  rm -f "$STATE/motion-off"; sleep 2.5
+  again=$(distinct 420x60+0+20)
+  [ "$again" -ge 7 ] || fail "motion is back on but the spinner did not resume: $again distinct frames in 3 s"
+  echo "  ok   motion on again: the spinner resumes ($again distinct frames in 3 s)"
 fi
 sleep 1
 A=$(ls -l --time-style=+%s%N "$STATE"/scan-*.json | awk '{print $6}')

@@ -107,6 +107,25 @@ class RowTests(unittest.TestCase):
         self.assertEqual(self.kinds(rows).index("closed"), 3 + 3)
         self.assertEqual(self.kinds(rows)[-1], "new")
 
+    def test_new_agents_show_how_much_room_their_provider_has(self):
+        rows = self.rows(headroom={"codex": "5h 99% used"})
+        new = {(r["agent"], r["action"]["where"]): r["text"] for r in rows if r["kind"] == "new"}
+        self.assertIn("◔ 5h 99% used", new[("codex", "tab")])
+        self.assertIn("◔ 5h 99% used", new[("codex", "vsplit")])
+        self.assertNotIn("◔", new[("claude", "tab")])                      # no hint for an agent whose provider has no limit to show
+
+    def test_headroom_text_is_cleaned_and_bounded_and_rows_stay_unique(self):
+        rows = self.rows(headroom={"codex": "5h\x1b[31m 99%\x07" + "x" * 200})
+        for r in rows:
+            self.assertNotIn("\x1b", r["text"])
+            self.assertNotIn("\x07", r["text"])
+        texts = [r["text"] for r in rows]
+        self.assertEqual(len(texts), len(set(texts)))
+
+    def test_without_headroom_the_rows_are_exactly_what_they_were(self):
+        self.assertEqual(self.rows(headroom=None), self.rows())
+        self.assertEqual(self.rows(headroom={}), self.rows())
+
     def test_a_window_with_an_event_is_listed_once_and_events_jump_and_ack(self):
         rows = self.rows(events=[ev("e1", w=3)], windows=[win(3, "waiting", agent="claude")])
         self.assertEqual(self.kinds(rows).count("running"), 0)
