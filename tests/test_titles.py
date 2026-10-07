@@ -69,6 +69,24 @@ class ProductNameOnly(unittest.TestCase):
         self.assertEqual(T.tidy(None, None, "x"), T.Title("x", T.PROJECT))
 
 
+class ProjectSuffix(unittest.TestCase):
+    def test_a_folder_an_agent_appended_is_dropped_only_when_it_is_exactly_the_project(self):
+        for sep in (" | ", " - ", " \u2014 ", " \u00b7 ", " : "):
+            self.assertEqual(T.tidy(f"Port Hyprland configs to Lua{sep}hypr", "codex", "hypr").text, "Port Hyprland configs to Lua", sep)
+        self.assertEqual(T.tidy("Fix login | WEB", "claude", "web").text, "Fix login")                       # case does not matter
+        self.assertEqual(T.tidy("Fix login | other", "claude", "web").text, "Fix login | other")             # another folder: it is part of the title
+        self.assertEqual(T.tidy("Fix login | web app", "claude", "web").text, "Fix login | web app")
+        self.assertEqual(T.tidy("Fix web-login | web", "claude", "web").text, "Fix web-login")             # a hyphen INSIDE a word is no separator
+        self.assertEqual(T.tidy("web-login", "claude", "web").text, "web-login")
+
+    def test_it_never_empties_a_title_or_touches_one_without_a_project(self):
+        self.assertEqual(T.tidy("hypr", "codex", "hypr").text, "hypr")
+        self.assertTrue(T.tidy("| hypr", "codex", "hypr").text)                                              # never emptied, whatever the input
+        self.assertEqual(T.tidy("Port configs | hypr", "codex", "").text, "Port configs | hypr")
+        self.assertEqual(T.drop_project_suffix("", "x"), "")
+        self.assertEqual(T.drop_project_suffix("a | b | hypr", "hypr"), "a | b")                              # only the last segment, once
+
+
 class Cleaning(unittest.TestCase):
     def test_markdown_quotes_and_trailing_punctuation_go(self):
         self.assertEqual(T.clean("**Fix** the `login` redirect."), "Fix the login redirect")
@@ -109,6 +127,13 @@ class Shorten(unittest.TestCase):
     def test_it_cuts_at_a_word_when_that_keeps_most_of_the_room(self):
         self.assertEqual(T.shorten("Audit codebase security and dependencies", 28), "Audit codebase security…")
         self.assertEqual(T.shorten("Audit codebase security and dependencies", 31), "Audit codebase security and…")
+
+    def test_a_cut_never_leaves_a_dangling_separator(self):
+        for text in ("Port the configs | elsewhere entirely", "Port the configs · elsewhere entirely", "Port the configs - elsewhere entirely", "Port the configs: elsewhere entirely"):
+            for w in range(8, 30):
+                out = T.shorten(text, w)
+                body = out[:-1] if out.endswith("…") else out
+                self.assertFalse(body.rstrip().endswith(("|", "·", "-", ":", "–")), (w, out))
 
     def test_a_single_long_word_is_cut_at_the_cell(self):
         self.assertEqual(T.shorten("Supercalifragilistic", 8), "Supercal…"[:8] if False else T.shorten("Supercalifragilistic", 8))

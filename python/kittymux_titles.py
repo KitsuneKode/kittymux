@@ -70,6 +70,22 @@ def first_sentence(text: str) -> str:
     return text[:m.start() + 1].rstrip(_TRAIL) if m else text
 
 
+_SUFFIX_SEP = re.compile(r"\s+[|\u2014\u2013\u00b7:\-]\s+")
+
+
+def drop_project_suffix(text: str, project: str) -> str:
+    """"Port the configs | hypr" in a tab whose project is "hypr" -> "Port the configs": some agents append the folder to their title, and the row's second
+    line already says where the tab is. Only an EXACT, case-insensitive match of the project after a separator goes, and never the whole title."""
+    if not project or not text:
+        return text
+    parts = _SUFFIX_SEP.split(text)
+    if len(parts) < 2 or parts[-1].strip().lower() != project.strip().lower():
+        return text
+    seps = list(_SUFFIX_SEP.finditer(text))
+    head = text[:seps[-1].start()].rstrip(_TRAIL)
+    return head or text
+
+
 def tidy(raw, agent: str | None = None, project: str = "", reply_to_project: bool = True) -> Title:
     """The title to show for a window title `raw` (already stripped of the agent's own name if the caller wants), in a tab whose project is `project`."""
     text = clean(raw)
@@ -79,7 +95,7 @@ def tidy(raw, agent: str | None = None, project: str = "", reply_to_project: boo
         return Title(project, PROJECT) if project else Title(text, PLAIN)
     if reply_to_project and project and looks_like_reply(text):
         return Title(project, REPLY)
-    return Title(text, PLAIN)
+    return Title(drop_project_suffix(text, project), PLAIN)
 
 
 def shorten(text: str, width: int, cells: Callable[[str], int] = len) -> str:
@@ -103,4 +119,4 @@ def shorten(text: str, width: int, cells: Callable[[str], int] = len) -> str:
     space = head.rfind(" ")
     if space >= max(3, int(len(head) * 0.6)):
         head = head[:space]
-    return head.rstrip(_TRAIL + "/") + "…"
+    return head.rstrip(_TRAIL + "/|·–") + "…"        # never a dangling separator in front of the ellipsis
