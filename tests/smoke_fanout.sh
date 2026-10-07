@@ -30,7 +30,7 @@ printf 'allow_remote_control socket-only\nlisten_on unix:${XDG_RUNTIME_DIR}/myki
 for f in "$HOME_DIR"/python/tab_bar.py "$HOME_DIR"/python/kittymux_*.py; do ln -s "$f" "$CFG/$(basename "$f")"; done
 printf 'new_tab main\ncd %s\nlaunch --title shell sh\nnew_tab !scratch\nlaunch sh\nfocus_tab 0\n' "$REPO" > "$T/session"
 export PATH="$T/bin:$PATH"
-env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_RUNTIME_DIR=$RUN KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
+env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_RUNTIME_DIR=$RUN KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
   KITTYMUX_SOCKET_DIRS=$RUN kitty -o linux_display_server=x11 --class kmx-fan --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
 for _ in $(seq 80); do ls "$RUN"/mykitty-* >/dev/null 2>&1 && break; sleep 0.25; done; sleep 2
 SOCK=unix:$(ls "$RUN"/mykitty-* | head -1)

@@ -14,7 +14,7 @@ for n in $(seq 161 199); do [ -e "/tmp/.X$n-lock" ] || { DISP=:$n; break; }; don
 Xvfb "$DISP" -screen 0 1600x900x24 >/dev/null 2>&1 & XPID=$!
 sleep 1; kill -0 "$XPID" 2>/dev/null || { echo "SKIP: Xvfb would not start"; XPID=""; exit 0; }
 mkdir -p "$T/bin"; printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "%s/ed.out"\n' "$T" > "$T/bin/nvim"; chmod +x "$T/bin/nvim"
-env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP VISUAL="$T/bin/nvim" EDITOR="$T/bin/nvim" \
+env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP VISUAL="$T/bin/nvim" EDITOR="$T/bin/nvim" \
   PYTHONUNBUFFERED=1 "$HOME_DIR/bin/kittymux" demo >"$T/demo.out" 2>&1 & DPID=$!
 SOCK=""
 for _ in $(seq 80); do SOCK=$(ls /tmp/mykitty-* 2>/dev/null | while read -r s; do pid=${s##*-}; tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null | grep -q kittymux-demo && echo "$s"; done | head -1); [ -n "$SOCK" ] && break; sleep 0.25; done

@@ -40,7 +40,7 @@ for f in "$HOME_DIR"/python/tab_bar.py "$HOME_DIR"/python/kittymux_*.py; do ln -
 printf 'allow_remote_control socket-only\nlisten_on unix:${XDG_RUNTIME_DIR}/mykitty\ninclude %s/kittymux.conf\ngeninclude %s/python/kittymux_layout.py\ntab_bar_edge left\ntab_bar_min_tabs 1\n' "$HOME_DIR" "$HOME_DIR" > "$CFG/kitty.conf"
 printf 'new_tab agent\ncd %s\nlaunch %s/bin/claude\nnew_tab other\nlaunch\nfocus_tab 1\n' "$REPO" "$T" > "$T/session"      # focus is on ANOTHER tab: the finished run is "done, unseen" and the bar draws its summary
 export PATH="$T/bin:$PATH"
-env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_RUNTIME_DIR=$RUN KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
+env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_RUNTIME_DIR=$RUN KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
   KITTYMUX_SOCKET_DIRS=$RUN kitty -o linux_display_server=x11 --class kmx-chg --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
 for _ in $(seq 80); do ls "$RUN"/mykitty-* >/dev/null 2>&1 && break; sleep 0.25; done
 SOCK=unix:$(ls "$RUN"/mykitty-* | head -1); KP=${SOCK##*-}

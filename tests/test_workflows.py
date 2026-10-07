@@ -21,6 +21,58 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(W.scratch_record(tab), '2\t3\t'+'a'*32)
         tab['title']='unrelated';self.assertIsNone(W.scratch_record(tab))
 
+class LastTests(unittest.TestCase):
+    """alt+0 jumps to the last real tab, ctrl+alt+0 to the last pane."""
+
+    def world(self, scratch=True, session='calm-otter'):
+        def tab(i, wins, title='t', extra=None):
+            ws = [{'id': w, 'is_focused': w == wins[0], 'session_name': session, **(extra or {})} for w in wins]
+            return {'id': i, 'is_active': i == 10, 'title': title, 'windows': ws}
+        tabs = [tab(10, [101, 102, 103]), tab(11, [111]), tab(12, [121])]
+        if scratch:
+            tabs.append(tab(13, [131], '!scratch', {'user_vars': {'kittymux_scratch': 'a' * 32}}))
+        return [{'id': 1, 'is_focused': True, 'tabs': tabs}]
+
+    def run_op(self, args, data, env_id='101'):
+        import tempfile
+        from unittest import mock
+        calls = []
+        def rc(argv, timeout):
+            calls.append(argv)
+            return 0, '[]'
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict('os.environ', {'KITTY_WINDOW_ID': env_id}):
+            status = W.run(args, 'unix:/private', rc, data, d)
+        return status, [c for c in calls if c[4:5] != ['ls']]
+
+    def test_nav_last_skips_the_scratch_tab_and_stays_in_the_session(self):
+        status, calls = self.run_op(['nav', 'last'], self.world())
+        self.assertEqual(status, 0)
+        self.assertEqual(calls, [['kitty', '@', '--to', 'unix:/private', 'focus-tab', '--match', 'id:12']])
+
+    def test_nav_last_with_only_the_scratch_tab_goes_there_and_without_a_session_uses_every_tab(self):
+        data = self.world(scratch=True)
+        data[0]['tabs'] = [t for t in data[0]['tabs'] if t['id'] == 13]
+        status, calls = self.run_op(['nav', 'last'], data, '131')
+        self.assertEqual(calls[-1][-1], 'id:13')
+        bare = self.world(session='')
+        for t in bare[0]['tabs']:
+            for w in t['windows']:
+                w.pop('session_name', None)
+        status, calls = self.run_op(['nav', 'last'], bare)
+        self.assertEqual(calls[-1][-2:], ['--match', 'id:12'])
+
+    def test_pane_last_focuses_the_highest_numbered_pane_of_this_tab_only(self):
+        status, calls = self.run_op(['pane', 'last'], self.world())
+        self.assertEqual(status, 0)
+        self.assertEqual(calls, [['kitty', '@', '--to', 'unix:/private', 'focus-window', '--match', 'id:103']])
+        status, calls = self.run_op(['pane', 'last'], self.world(), '111')
+        self.assertEqual(calls[-1][-1], 'id:111')                      # a one-pane tab: itself
+
+    def test_bad_arguments_change_nothing(self):
+        for args in (['pane'], ['pane', 'first'], ['pane', 'last', 'x'], ['nav', 'last', 'x'], ['nav', '0'], ['nav', '-1']):
+            status, calls = self.run_op(args, self.world())
+            self.assertEqual((status, calls), (2, []), args)
+
 class WorkflowArgvTests(unittest.TestCase):
     def test_empty_active_tab_during_close_fails_before_any_remote_action(self):
         import tempfile

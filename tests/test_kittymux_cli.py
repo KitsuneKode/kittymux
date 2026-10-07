@@ -65,7 +65,7 @@ class ConflictTests(unittest.TestCase):
         self.assertEqual(self.m.conflicts_from_binds(binds, tpl), [])
 
     def test_number_chords_are_panes_with_ctrl_alt_and_tabs_with_alt(self):
-        """ctrl+alt+N focuses pane N (the digit ctrl+alt+e draws), its ctrl+alt+shift alias does the same, alt+N jumps tabs."""
+        """ctrl+alt+N focuses pane N (the digit ctrl+alt+e draws), alt+N jumps tabs; 0 is the LAST of each; no second chord for the same job."""
         tpl = open(os.path.join(ROOT, "kittymux-keys.conf.tpl"), encoding="utf-8").read()
         maps = {}
         for line in tpl.splitlines():
@@ -74,9 +74,25 @@ class ConflictTests(unittest.TestCase):
                 maps[parts[1]] = parts[2].strip()
         for n in range(1, 10):
             self.assertEqual(maps[f"ctrl+alt+{n}"], f"nth_window {n - 1}")
-            self.assertEqual(maps[f"ctrl+alt+shift+{n}"], f"nth_window {n - 1}")
             self.assertTrue(maps[f"alt+{n}"].endswith(f"mux-nav.sh {n}"), maps[f"alt+{n}"])
+            self.assertNotIn(f"ctrl+alt+shift+{n}", maps)                      # the old alias is gone
+        self.assertTrue(maps["alt+0"].endswith("mux-nav.sh last"))
+        self.assertTrue(maps["ctrl+alt+0"].endswith("workflow pane last"))
         self.assertEqual(maps["ctrl+alt+e"], "focus_visible_window")
+
+    def test_equalize_lives_with_the_resize_keys_and_resize_moves_the_edge_by_more_than_a_cell(self):
+        tpl = open(os.path.join(ROOT, "kittymux-keys.conf.tpl"), encoding="utf-8").read()
+        maps = {}
+        for line in tpl.splitlines():
+            parts = line.split(None, 2)
+            if len(parts) == 3 and parts[0] == "map" and not parts[1].startswith("-"):
+                maps[parts[1]] = parts[2].strip()
+        self.assertEqual(maps["alt+shift+equal"], "layout_action equalize")
+        self.assertNotIn("layout_action equalize", maps["ctrl+alt+0"])
+        for key, word in (("h", "narrower"), ("l", "wider"), ("j", "taller"), ("k", "shorter")):
+            action, kind, step = maps[f"alt+shift+{key}"].split()
+            self.assertEqual((action, kind), ("resize_window", word))
+            self.assertGreaterEqual(int(step), 2)
 
     def test_real_template_parses(self):
         tpl = open(os.path.join(ROOT, "kittymux-keys.conf.tpl"), encoding="utf-8").read()

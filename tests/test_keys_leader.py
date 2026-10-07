@@ -99,8 +99,11 @@ class OverlayTests(unittest.TestCase):
             for k, d in rs:
                 rows[k] = (n, d)
         self.assertEqual(rows["ctrl+alt+1…9"], ("PANES", "focus pane"))
-        self.assertEqual(rows["ctrl+alt+shift+1…9"], ("PANES", "focus pane"))
+        self.assertNotIn("ctrl+alt+shift+1…9", rows)
         self.assertEqual(rows["alt+1…9"][0], "TABS")
+        self.assertEqual(rows["alt+0"], ("TABS", "jump to the LAST tab of the session (not the !scratch tab; ctrl+alt+` is the tab you were on before)"))
+        self.assertEqual(rows["ctrl+alt+0"][0], "PANES")
+        self.assertIn("LAST pane", rows["ctrl+alt+0"][1])
         self.assertEqual(self.mod._humanize("nth_window 3"), "focus pane 4")
         self.assertEqual(self.mod._humanize("nth_window -1"), "last pane")
 

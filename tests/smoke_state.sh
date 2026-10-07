@@ -66,7 +66,7 @@ launch --location=vsplit $BIN/opencode
 focus_tab 4
 SESS
 
-env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP \
+env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP \
   KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
   kitty ${SMOKE_KITTY_ARGS:-} -o linux_display_server=x11 --class kmx-state --listen-on "$SOCK" --session "$T/session.kitty" \
   >"$T/kitty.log" 2>&1 &

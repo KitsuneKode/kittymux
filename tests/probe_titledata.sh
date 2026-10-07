@@ -25,7 +25,7 @@ def draw_window_title(data):
 PY
 printf 'allow_remote_control socket-only\nwindow_title_bar_min_windows 1\nwindow_title_template "{custom}"\nconfirm_os_window_close 0\n' > "$T/cfg/kitty.conf"
 printf 'new_tab one\nlaunch sh\nlaunch --location=vsplit sh\n' > "$T/session"
-env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP KITTY_CONFIG_DIRECTORY=$T/cfg \
+env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP KITTY_CONFIG_DIRECTORY=$T/cfg \
   kitty -o linux_display_server=x11 --class kmx-title --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
 for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 3
 if [ -s "$T/title-data.json" ]; then echo "draw_window_title(data) received:"; cat "$T/title-data.json"; echo

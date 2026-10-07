@@ -26,7 +26,7 @@ CONF
 for n in $(seq 380 399); do [ -e "/tmp/.X$n-lock" ] || { DISP=:$n; break; }; done
 Xvfb "$DISP" -screen 0 700x900x24 >/dev/null 2>&1 & XPID=$!
 sleep 1; kill -0 "$XPID" 2>/dev/null || { echo "SKIP: Xvfb would not start"; XPID=""; exit 0; }
-env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_DATA_HOME=$T/data KITTY_CONFIG_DIRECTORY=$CFG \
+env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_DATA_HOME=$T/data KITTY_CONFIG_DIRECTORY=$CFG \
   kitty -o linux_display_server=x11 --class kmx-ag python3 "$HOME_DIR/tools/demo_agents.py" "$COLS" "$THEME" >"$T/k.log" 2>&1 & KPID=$!
 sleep 4
 W=$(DISPLAY=$DISP xdotool search --onlyvisible --class kmx-ag 2>/dev/null | head -1)

@@ -5,7 +5,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 ## [Unreleased]
 
 ### Changed
-- **`ctrl+alt+1..9` now focuses pane N** of the tab (the digit `ctrl+alt+e` draws on each pane). Tabs are on `alt+1..9`, which was already an alias for them. `ctrl+alt+shift+1..9` still works and does the same as `ctrl+alt+1..9`. The keymap overlay lists them under PANES as "focus pane".
+- **Number keys: panes on `ctrl+alt`, tabs on `alt`.** `ctrl+alt+1..9` focuses pane N of the tab (the digit `ctrl+alt+e` draws on each pane) and `ctrl+alt+0` the last pane; `alt+1..9` jumps to tab N and `alt+0` to the last tab (the `!scratch` tab is passed over). The `ctrl+alt+shift+1..9` aliases are gone: one chord per job. New workflow ops `kittymux workflow nav last` and `workflow pane last`.
+- **Equalize moved to `alt+shift+=`** (it was `ctrl+alt+0`), next to the resize keys `alt+shift+h/j/k/l`, which now move the edge about 3 columns a press (they moved about 1). `ctrl+alt+=` stays Hyprland's.
+- **Every rig that starts a private kitty now clears the identity of the kitty you run it from** (`KITTY_WINDOW_ID`, `KITTY_LISTEN_ON`, `KITTY_PID`, `KITTYMUX_TARGET*`), and `smoke_panes.sh` ends with a focus tripwire on every other kitty. A key-bound background process inherits kitty's own environment, so a rig started from a terminal inside a live kitty used to drive that live kitty with the CLI-backed keys.
 
 ### Added
 - **Agents view redesign.** One bright thing per row (the title), a state mark at the right edge, a stripe and a faint warm tint on rows that need you, and detail (PR, ports) only on the picked or hovered row. Rows are drawn by a pure module, `kittymux_agentsview`, tested at every width in both themes.

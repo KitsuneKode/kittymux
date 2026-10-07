@@ -138,12 +138,23 @@ def run(argv, sock, call, snapshot, state_dir):
         parents = [] if status else json.loads(raw) if len(raw.encode()) <= 8 * 1024 * 1024 else []
         parent = next((p for p in contexts(parents) if p.os_id == c.os_id and p.tab_id == c.tab_id and p.window_id != c.window_id), None)
         c = parent or c
+    if op == 'pane':
+        # `pane last`: the highest-numbered pane of this tab (the numbers ctrl+alt+e draws; nth_window counts the same order)
+        if args != ['last']:
+            return 2
+        wins = [w for w in c.tab['windows'] if positive_id(w.get('id'))]
+        return rc('focus-window', '--match', f"id:{wins[-1]['id']}")[0] if wins else 1
     if op == 'nav':
         action = args[0] if args else 'next'
-        if len(args) > 1 or (action not in ('prev', 'next') and (not action.isdecimal() or int(action) < 1)):
+        if len(args) > 1 or (action not in ('prev', 'next', 'last') and (not action.isdecimal() or int(action) < 1)):
             return 2
         name = c.window.get('session_name', '')
         tabs = [t for t in c.host['tabs'] if name and any(w.get('session_name') == name for w in t['windows'])]
+        if action == 'last':
+            # the last REAL tab: the !scratch tab always sits at the end and has its own keys, so it is passed over unless it is all there is
+            pool = tabs or c.host['tabs']
+            real = [t for t in pool if not scratch_record(t)] or pool
+            return rc('focus-tab', '--match', f"id:{real[-1]['id']}")[0] if real else 1
         if not tabs:
             action = 'previous_tab' if action == 'prev' else 'next_tab' if action == 'next' else f'goto_tab {int(action)}'
             return rc('action', '--match', f'id:{c.window_id}', action)[0]

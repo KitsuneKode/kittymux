@@ -38,6 +38,8 @@ map alt+6                launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh
 map alt+7                launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 7
 map alt+8                launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 8
 map alt+9                launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 9
+# alt+0 — jump to the LAST tab of the session (not the !scratch tab; ctrl+alt+` is the tab you were on before)
+map alt+0                launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh last
 # ctrl+alt+` — flip to previously active tab (MRU, like alt-tab)
 map ctrl+alt+grave_accent       goto_tab -1
 
@@ -80,16 +82,8 @@ map ctrl+alt+6           nth_window 5
 map ctrl+alt+7           nth_window 6
 map ctrl+alt+8           nth_window 7
 map ctrl+alt+9           nth_window 8
-# ctrl+alt+shift+1..9 — the same as ctrl+alt+1..9 (focus pane N), kept so the older chord still works
-map ctrl+alt+shift+1   nth_window 0
-map ctrl+alt+shift+2   nth_window 1
-map ctrl+alt+shift+3   nth_window 2
-map ctrl+alt+shift+4   nth_window 3
-map ctrl+alt+shift+5   nth_window 4
-map ctrl+alt+shift+6   nth_window 5
-map ctrl+alt+shift+7   nth_window 6
-map ctrl+alt+shift+8   nth_window 7
-map ctrl+alt+shift+9   nth_window 8
+# ctrl+alt+0 — focus the LAST pane of this tab (the highest number; ctrl+alt+o is the pane you were in before)
+map ctrl+alt+0           launch --type=background @KITTYMUX_HOME@/bin/kittymux workflow pane last
 # ctrl+alt+shift+y — number every pane, press a digit to swap the current pane with that one
 map ctrl+alt+shift+y     swap_with_window
 # ctrl+alt+shift+; — pane controls: h/j/k/l swap with a neighbor · r rotate · s swap split sides · e equalize · a choose a pane · esc cancel
@@ -175,6 +169,7 @@ map ctrl+alt+shift+l     launch --type=overlay @KITTYMUX_HOME@/bin/kittymux layo
 # ctrl+alt+q         — close current pane (confirms if a process runs)
 # ctrl+alt+[ / ]     — jump between shell prompts in scrollback
 # alt+shift+h/l/j/k  — resize pane narrower/wider/taller/shorter
+# alt+shift+=        — equalize: every split gets the same share again (ctrl+alt+= is Hyprland's)
 # ============================================
 map ctrl+alt+slash        launch --type=overlay --title kittymux-keys python3 @KITTYMUX_HOME@/bin/mux-keys.py
 # pressing it again while the overlay is open closes it (otherwise the key would stack a second overlay on top)
@@ -188,18 +183,18 @@ map ctrl+alt+home         scroll_home
 map ctrl+alt+end          scroll_end
 map ctrl+alt+bracketleft  scroll_to_prompt -1
 map ctrl+alt+bracketright scroll_to_prompt 1
-map alt+shift+h           resize_window narrower 1
-map alt+shift+l           resize_window wider 1
-map alt+shift+j           resize_window taller 1
-map alt+shift+k           resize_window shorter 1
+map alt+shift+h           resize_window narrower 3
+map alt+shift+l           resize_window wider 3
+map alt+shift+j           resize_window taller 3
+map alt+shift+k           resize_window shorter 3
+# alt+shift+equal — make every pane in this tab the same size again (what ctrl+alt+0 used to do)
+map alt+shift+equal       layout_action equalize
 
 # ============================================
 # LAYOUTS
 # ============================================
 map ctrl+alt+space       next_layout
 map ctrl+alt+z           layout_action maximize
-# ctrl+alt+0: rebalance (ctrl+alt+equal collides with Hyprland colresize)
-map ctrl+alt+0           layout_action equalize
 
 # ============================================
 # SESSIONS — Kitty Home is the one shortcut to remember
