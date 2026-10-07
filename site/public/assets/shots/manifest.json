@@ -1,0 +1,74 @@
+{
+  "bar-dark.png": {
+    "width": 380,
+    "height": 700
+  },
+  "bar-light.png": {
+    "width": 380,
+    "height": 700
+  },
+  "panel-agents-dark.png": {
+    "width": 354,
+    "height": 432
+  },
+  "panel-agents-light.png": {
+    "width": 354,
+    "height": 432
+  },
+  "panel-inbox-dark.png": {
+    "width": 343,
+    "height": 500
+  },
+  "panel-inbox-light.png": {
+    "width": 343,
+    "height": 500
+  },
+  "panel-usage-dark.png": {
+    "width": 343,
+    "height": 500
+  },
+  "panel-usage-light.png": {
+    "width": 343,
+    "height": 500
+  },
+  "panes-equalized-dark.png": {
+    "width": 1067,
+    "height": 555
+  },
+  "panes-equalized-light.png": {
+    "width": 1067,
+    "height": 555
+  },
+  "panes-layout-dark.png": {
+    "width": 1067,
+    "height": 555
+  },
+  "panes-layout-light.png": {
+    "width": 1067,
+    "height": 555
+  },
+  "panes-numbers-dark.png": {
+    "width": 1067,
+    "height": 555
+  },
+  "panes-numbers-light.png": {
+    "width": 1067,
+    "height": 555
+  },
+  "panes-resized-dark.png": {
+    "width": 1067,
+    "height": 555
+  },
+  "panes-resized-light.png": {
+    "width": 1067,
+    "height": 555
+  },
+  "plain-tabs-dark.png": {
+    "width": 961,
+    "height": 67
+  },
+  "plain-tabs-light.png": {
+    "width": 961,
+    "height": 67
+  }
+}
