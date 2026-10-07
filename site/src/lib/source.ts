@@ -7,6 +7,10 @@ export const docs = defineDocs({
   dir: 'content/docs',
   docs: {
     async: true,
+    mdxOptions: {
+      // kitty config blocks are written ```conf in docs/; Shiki has no such grammar, and ini highlights it the same way
+      rehypeCodeOptions: { langAlias: { conf: 'ini' } },
+    },
     postprocess: {
       includeProcessedMarkdown: true,
     },
