@@ -1,6 +1,6 @@
 # kittymux documentation site
 
-TanStack Start + Fumadocs + Tailwind v4 + shadcn (Base UI), prerendered to static HTML. **Not deployed**: building it needs no account and publishing it needs the owner's go.
+TanStack Start + Fumadocs + Tailwind v4 + shadcn (Base UI), prerendered to static HTML. Live at **https://kittymux.kitsunekode.in** (Vercel project `kittymux-docs`, team `kitsunekode`).
 
 ## Where things come from
 
@@ -44,18 +44,27 @@ Each page carries a title (at most 60 characters), a description (70 to 160), Op
 
 The **public address is a build-time setting**: `VITE_SITE_URL=https://kittymux.kitsunekode.in bun run build`. With it, every page gets a canonical URL and an absolute `og:image`, and the build writes `sitemap.xml` and a `robots.txt` that points to it. Without it the pages carry no canonical URL and there is no sitemap, on purpose: an address that was made up would be trusted by search engines. `llms.txt` and `llms-full.txt` are also published, and every docs page has a Markdown twin at `/docs/<page>.md`.
 
-## Deploying (needs the owner's go; nothing here deploys)
+## Deploying
 
-The build is a Vercel *Build Output* (`.vercel/output`: `static/` plus one function for any address that is not a prerendered page, such as the 404). Two ways:
+Production is a **prebuilt deploy from a clean checkout of `main`** (the build needs Python for `tools/export_facts.py`, so it runs here and not on Vercel's builders):
 
-1. **Vercel's Git integration** (recommended: previews for every pull request). Import the repository; set *Root Directory* to `site`, *Install Command* to `bun install --frozen-lockfile`, *Build Command* to `bun run build`; leave the output directory alone; add the environment variable `VITE_SITE_URL` (set it for Production only: Vercel marks preview deployments `noindex` itself, and without the variable their pages carry no canonical URL pointing at the real site). Then add the domain, and in the registrar point it as Vercel says.
-2. **From a machine**: `cd site && VITE_SITE_URL=https://kittymux.kitsunekode.in bun run build && npx vercel deploy --prebuilt` (add `--prod` for production). `vercel link` once before.
+```bash
+cd site
+bun install --frozen-lockfile
+VITE_SITE_URL=https://kittymux.kitsunekode.in bun run build     # also writes robots.txt and sitemap.xml
+bun run check:crawl && bun run axe && bun run budget            # the same gates CI runs
+vercel deploy --prebuilt --prod                                  # .vercel/ (project link) is git-ignored; `vercel link --project kittymux-docs` once
+```
 
-A host that serves files only (any CDN, GitHub Pages) also works for every page, because docs navigation reads prerendered JSON, but unknown addresses then need the host's own 404 page. After the first deploy: open the site in a private window, check `view-source:` for the canonical URL, request `/sitemap.xml`, add the property in Google Search Console and Bing Webmaster Tools, submit the sitemap, and paste a link into a chat to see the preview card.
+- **Previews are private.** The project's protection is `all_except_custom_domains`: every preview deployment and the `*.vercel.app` addresses ask for a Vercel login; only `kittymux.kitsunekode.in` is public. A preview is `vercel deploy --prebuilt` without `--prod`; read it with `vercel curl <path> --deployment <url>`.
+- **DNS** (Cloudflare, `kitsunekode.in`): one record, `kittymux  CNAME  0bf5b3e5f1d7d49a.vercel-dns-017.com`, DNS only (grey cloud). It is the same target the other `*.kitsunekode.in` sites use; `vercel domains inspect kittymux.kitsunekode.in` says when it verifies. (Vercel's other suggestion, `A kittymux 76.76.21.21`, works too.)
+- The build is a Vercel *Build Output*: `static/` plus one function for any address that is not a prerendered page (the 404). A plain static host also serves every page, because docs navigation reads prerendered JSON.
+- **After a deploy:** view-source for the canonical URL, open `/sitemap.xml`, add the property in Google Search Console and Bing Webmaster Tools and submit the sitemap, and paste the link into a chat to see the preview card.
 
 ## What is left
 
-- **Owner decisions:** the domain (it sets `VITE_SITE_URL`), whether previews are public, and the go to deploy.
+- **Git integration** (a deploy per push, private previews per pull request) is not set up: the build needs Python, so it would need a custom install step. Until then, deploys are by hand as above.
+- **Star count** is read once per build (`scripts/gen-github.mjs`); it is 0 today and the buttons then say "Star" without a number. Rebuild after it grows.
 - **Search index:** about 400 KB gzip, fetched on the first search. Not in the budget yet; a smaller index (titles and headings only) is possible.
 - **Mobile Lighthouse** is 87, not 95: hydration cost of the framework (see above).
 - **`.github/workflows/site.yml`** has not run on GitHub yet; it needs one push to show whether the runner's Chrome path and the Bun version hold.
