@@ -9,10 +9,21 @@ const STEPS = [
   { n: '3', title: 'Check', cmd: 'kittymux doctor', note: 'Lists anything that is off, and how to fix it.' },
 ] as const;
 
+/** Look first, then install, in one line for people who are already sure. */
+export const INSTALL_CMD = 'git clone https://github.com/KitsuneKode/kittymux ~/kittymux && ~/kittymux/install.sh';
+
 export function Install() {
   return (
     <section id="install" aria-labelledby="install-title" className="mx-auto w-full max-w-[1280px] px-5 py-16 md:px-8 lg:py-24">
-      <h2 id="install-title" className="text-balance text-3xl font-semibold tracking-[-0.03em] sm:text-4xl lg:text-5xl">Three commands</h2>
+      <h2 id="install-title" className="text-balance text-3xl font-semibold tracking-[-0.03em] sm:text-4xl lg:text-5xl">Try it, then install it</h2>
+      <p className="mt-4 max-w-[56ch] text-pretty text-lg text-mute">Look first with the demo, which opens its own window and touches nothing of yours. Or, if you already know, install in one line.</p>
+      <div className="mt-8 flex flex-col gap-4 rounded-2xl border border-line bg-card p-5 md:flex-row md:items-center md:gap-6">
+        <div className="min-w-0 flex-1">
+          <h3 className="text-lg font-semibold">Already sure? One line.</h3>
+          <pre className="mt-3 whitespace-pre-wrap rounded-lg bg-[var(--code-bg)] p-4 font-mono text-sm text-[var(--code-fg)] [overflow-wrap:anywhere]"><code>{INSTALL_CMD}</code></pre>
+        </div>
+        <CopyButton text={INSTALL_CMD} label="Copy install line" className="self-start bg-brand text-onred hover:bg-brand/90 md:self-center" />
+      </div>
       <ol className="mt-10 grid gap-6 lg:grid-cols-3">
         {STEPS.map((s) => (
           <li key={s.n} className="flex min-w-0 flex-col gap-4 rounded-2xl border border-line bg-card p-6">

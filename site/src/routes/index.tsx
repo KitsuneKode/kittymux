@@ -10,6 +10,7 @@ import { Install } from '@/components/landing/install';
 import { KeysGlance } from '@/components/landing/keys-glance';
 import { Limits } from '@/components/landing/limits';
 import { Problem } from '@/components/landing/problem';
+import { Support } from '@/components/landing/support';
 import { ProofLine } from '@/components/landing/proof-line';
 import { SiteFooter } from '@/components/site-footer';
 import { THEME_PROPS } from '@/lib/theme-props';
@@ -40,6 +41,7 @@ function Home() {
       <DocsHub />
       <Limits />
       <Faq />
+      <Support />
       <FinalCta />
       </main>
       <SiteFooter themeToggle />

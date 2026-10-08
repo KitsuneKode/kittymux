@@ -68,6 +68,21 @@ try {
     if (!opened) { bad++; console.error('landing: the search button did not open the search dialog') }
   }
   await home.close()
+  // search on a phone: the docs header has a search button (there is no Ctrl K on a touch screen); it opens the dialog and finds a page
+  const phone = await browser.newPage()
+  await phone.setViewport({ width: 390, height: 800, isMobile: true, hasTouch: true })
+  await phone.goto(`${ORIGIN}/docs/users/getting-started`, { waitUntil: 'networkidle0' })
+  const trigger = await phone.$('button[aria-label*="earch" i], [data-search-full], [data-search]')
+  if (!trigger) { bad++; console.error('phone: no search button on a docs page') } else {
+    await trigger.tap()
+    const dialog = await phone.waitForSelector('[role="dialog"] input', { timeout: 8000 }).then(() => true, () => false)
+    if (!dialog) { bad++; console.error('phone: tapping search did not open the dialog') } else {
+      await phone.keyboard.type('palette')
+      const hit = await phone.waitForFunction(() => document.querySelectorAll('[role="dialog"] [role="option"], [role="dialog"] a[href^="/docs"]').length > 0, { timeout: 8000 }).then(() => true, () => false)
+      if (!hit) { bad++; console.error('phone: searching on a phone found nothing') }
+    }
+  }
+  await phone.close()
   // client-side navigation, on a host with NO server (this one): a click must not call an endpoint that only a server has
   const nav = await browser.newPage()
   await nav.setViewport({ width: 1280, height: 900 })

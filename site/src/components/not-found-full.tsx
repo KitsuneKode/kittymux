@@ -6,7 +6,7 @@ import { DocsProvider } from '@/components/docs-provider';
 export default function NotFoundFull() {
   return (
     <DocsProvider>
-      <HomeLayout {...baseOptions()}>
+      <HomeLayout {...baseOptions(true)}>
         <DefaultNotFound />
       </HomeLayout>
     </DocsProvider>

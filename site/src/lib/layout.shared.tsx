@@ -1,9 +1,13 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
-import { IconBrandGithub } from '@tabler/icons-react';
+import { IconHeart } from '@tabler/icons-react';
+import { GitHubStars } from '@/components/github-stars';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { appName, gitConfig } from './shared';
+import { REPO, SPONSOR_URL, stars } from './links';
+import { appName } from './shared';
 
-export function baseOptions(): BaseLayoutProps {
+/** `inList`: the home layout puts secondary links in a <ul> (each needs its <li>); the docs layout does not. */
+export function baseOptions(inList = false): BaseLayoutProps {
+  const stars_ = <GitHubStars repo={REPO} stargazersCount={stars} />;
   return {
     nav: {
       title: (
@@ -20,7 +24,8 @@ export function baseOptions(): BaseLayoutProps {
       { text: 'Docs', url: '/docs', active: 'nested-url' },
       { text: 'Keys', url: '/keys' },
       { text: 'Changelog', url: '/changelog' },
-      { type: 'icon', text: 'GitHub', label: 'kittymux on GitHub', url: `https://github.com/${gitConfig.user}/${gitConfig.repo}`, icon: <IconBrandGithub aria-hidden="true" />, external: true },
+      { type: 'icon', text: 'Sponsor', label: 'Sponsor kittymux on GitHub', url: SPONSOR_URL, icon: <IconHeart aria-hidden="true" />, external: true },
+      { type: 'custom', secondary: true, children: inList ? <li className="list-none">{stars_}</li> : stars_ },
     ],
     slots: { themeSwitch: () => <ThemeToggle /> },
   };

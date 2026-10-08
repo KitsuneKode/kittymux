@@ -30,6 +30,8 @@ different states. Press `ctrl+alt+b` for the deck, `ctrl+alt+y` to jump to the w
 
 More to try (panes by number, clickable `file:line`, scrollback keys, the keymap overlay, resize) and what needs a restart: [docs/try-it.md](docs/try-it.md). The full guides — every key, the tab bar, agents, sessions, troubleshooting — start at [docs/index.mdx](docs/index.mdx).
 
+Docs, the full key list and a changelog: **[kittymux.kitsunekode.in](https://kittymux.kitsunekode.in)**.
+
 Like it? Install:
 
 ```sh
@@ -565,6 +567,10 @@ kittymux uninstall --yes --purge   # …and the state dir (saved layouts, caches
 
 Only the exact lines and links `install.sh` created are touched. Running kitties keep working until
 you reload or restart them.
+
+## Support
+
+kittymux is free and MIT-licensed. If it helps, a [star](https://github.com/KitsuneKode/kittymux) tells other kitty users it is worth a look, [sponsoring](https://github.com/sponsors/KitsuneKode) pays for the slow work of testing new agent CLIs against real sessions, and an [issue](https://github.com/KitsuneKode/kittymux/issues/new) with what was on an agent's screen is how its markers get verified.
 
 ## Brand
 

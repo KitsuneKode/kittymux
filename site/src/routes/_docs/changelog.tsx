@@ -23,7 +23,7 @@ export const Route = createFileRoute('/_docs/changelog')({
 
 function Changelog() {
   return (
-    <HomeLayout {...baseOptions()}>
+    <HomeLayout {...baseOptions(true)}>
       <div className="mx-auto w-full max-w-[860px] px-5 py-12 md:px-8">
         <h1 className="text-balance text-4xl font-bold tracking-[-0.03em] sm:text-5xl">Changelog</h1>
         <p className="mt-4 max-w-[60ch] text-pretty text-lg text-mute">What changed, newest first. Until the first tagged release, everything is listed under “Unreleased”.</p>

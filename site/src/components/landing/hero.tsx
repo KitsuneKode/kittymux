@@ -1,10 +1,11 @@
-import { IconArrowUpRight } from '@tabler/icons-react';
+import { IconHeart } from '@tabler/icons-react';
 import { Link } from '@tanstack/react-router';
 import { DocLink } from '../doc-link';
 import { SearchLauncher } from './search-launcher';
 import { Shot, TerminalWindow } from '../terminal-window';
 import { WeaveBand } from '../weave-band';
-import { gitConfig } from '@/lib/shared';
+import { GitHubStars } from '../github-stars';
+import { REPO, SPONSOR_URL, stars } from '@/lib/links';
 
 /** The weave band and the top bar: outside <main>, so "Skip to content" skips them. */
 export function LandingHeader() {
@@ -19,10 +20,12 @@ export function LandingHeader() {
           </Link>
           <nav aria-label="Primary" className="flex items-center text-sm font-medium sm:gap-5">
             <DocLink className="inline-flex min-h-11 items-center px-2 hover:underline">Docs</DocLink>
-            <Link to="/keys" className="inline-flex min-h-11 items-center px-2 hover:underline">Keys</Link>
+            <Link to="/keys" className="hidden min-h-11 items-center px-2 hover:underline min-[400px]:inline-flex">Keys</Link>
             <Link to="/changelog" className="hidden min-h-11 items-center px-2 hover:underline sm:inline-flex">Changelog</Link>
-            <a href={`https://github.com/${gitConfig.user}/${gitConfig.repo}`} className="inline-flex min-h-11 items-center gap-1 px-2 hover:underline">
-              <span className="max-[359px]:sr-only">GitHub</span><IconArrowUpRight aria-hidden="true" className="size-4" stroke={1.75} />
+            <GitHubStars repo={REPO} stargazersCount={stars} className="text-onred hover:bg-onred/15 hover:text-onred aria-expanded:bg-onred/15" />
+            <a href={SPONSOR_URL} target="_blank" rel="noopener" className="inline-flex min-h-11 items-center gap-1.5 px-2 hover:underline">
+              <IconHeart aria-hidden="true" className="size-4" stroke={1.75} />
+              <span className="max-[479px]:sr-only">Sponsor</span>
             </a>
           </nav>
         </div>
