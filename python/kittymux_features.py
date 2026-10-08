@@ -7,22 +7,22 @@
 
 import os
 
+import kittymux_switches as SW
+
+# The twelve switches `kittymux features` has always listed, in their old order: presets and the CLI list are about these. The full catalog (notifications, safety
+# and recovery, opt-in) lives in kittymux_switches and is reachable through the same functions below.
 FEATURES = ("folder", "hue", "collide", "sheet", "hover", "panetitle", "motion", "titles", "sudo", "loginprompt", "pkgprompt", "socketlink")
-DEFAULTS = {"folder": True, "hue": True, "collide": True, "sheet": True, "hover": False, "panetitle": True, "motion": True, "titles": True, "sudo": True, "loginprompt": True, "pkgprompt": True, "socketlink": True}   # panetitle only shows when pane title bars are on; motion off = a still glyph where a spinner turned
+DEFAULTS = {name: SW.get(name).default for name in FEATURES}      # panetitle only shows when pane title bars are on; motion off = a still glyph where a spinner turned
 PRESETS = {
     "minimal": frozenset({"folder", "motion", "titles", "sudo", "loginprompt", "pkgprompt", "socketlink"}),
     "default": frozenset(name for name, on in DEFAULTS.items() if on),
     "full": frozenset(FEATURES),
 }
-PLANNED = frozenset({"sheet", "hover"})     # settings that are saved but nothing reads yet — the CLI says so
-_OFF = {"0", "off", "false", "no"}
-_ON = {"1", "on", "true", "yes"}
+PLANNED = frozenset(s.id for s in SW.CATALOG if s.status == SW.PLANNED)     # settings that are saved but nothing reads yet: the CLI says so
 
 
 def state_dir(env=None) -> str:
-    env = os.environ if env is None else env
-    return env.get("KITTYMUX_STATE") or os.path.join(
-        env.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"), "kittymux")
+    return SW.state_dir(env)
 
 
 def live() -> frozenset:
@@ -30,34 +30,13 @@ def live() -> frozenset:
     return frozenset(FEATURES) - PLANNED
 
 
-def _check(name: str) -> None:
-    if name not in DEFAULTS:
-        raise ValueError(f"unknown feature {name!r} (known: {', '.join(FEATURES)})")
-
-
-def _flag(sdir: str, name: str, on: bool) -> str:
-    return os.path.join(sdir, f"{name}-{'on' if on else 'off'}")
-
-
 def source(name: str, sdir: str | None = None, env=None) -> tuple[bool, str]:
-    """(on, where) — where is 'env', 'flag' or 'default'."""
-    _check(name)
-    env = os.environ if env is None else env
-    raw = env.get(f"KITTYMUX_{name.upper()}", "").strip().lower()
-    if raw in _OFF:
-        return False, "env"
-    if raw in _ON:
-        return True, "env"
-    sdir = sdir or state_dir(env)
-    if os.path.exists(_flag(sdir, name, False)):
-        return False, "flag"
-    if os.path.exists(_flag(sdir, name, True)):
-        return True, "flag"
-    return DEFAULTS[name], "default"
+    """(on, where) — where is 'env', 'flag' or 'default'. Any switch in the catalog, not only the twelve."""
+    return SW.source(name, sdir, env)
 
 
 def enabled(name: str, sdir: str | None = None, env=None) -> bool:
-    return source(name, sdir, env)[0]
+    return SW.enabled(name, sdir, env)
 
 
 def resolve_all(sdir: str | None = None, env=None) -> dict[str, bool]:
@@ -66,15 +45,7 @@ def resolve_all(sdir: str | None = None, env=None) -> dict[str, bool]:
 
 def set_feature(sdir: str, name: str, on: bool) -> None:
     """Persist the choice as at most one flag file — none when it equals the default."""
-    _check(name)
-    os.makedirs(sdir, mode=0o700, exist_ok=True)
-    for state in (True, False):
-        try:
-            os.unlink(_flag(sdir, name, state))
-        except FileNotFoundError:
-            pass
-    if on != DEFAULTS[name]:
-        open(_flag(sdir, name, on), "a").close()
+    SW.set_switch(sdir, name, on)
 
 
 def apply_preset(sdir: str, preset: str) -> None:
