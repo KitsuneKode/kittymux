@@ -44,6 +44,7 @@ class HygieneTests(unittest.TestCase):
         dead, alive = 2 ** 22 + 777, os.getpid()
         keep = os.path.join(self.dir, f"panes-{os.getppid()}.json")
         for name in (f"panes-{dead}.json", f"panes-{dead}.json.tmp", f"scan-{dead}.json", f"panes-{alive}.json",
+                     f"decisions-{dead}.jsonl", f"changes-{dead}.json", f"decisions-{alive}.jsonl", f"changes-{alive}.json",
                      "agent-usage.json", "keep.txt"):
             open(os.path.join(self.dir, name), "w").close()
         open(keep, "w").close()
@@ -52,6 +53,10 @@ class HygieneTests(unittest.TestCase):
         self.assertNotIn(f"panes-{dead}.json", left)
         self.assertNotIn(f"panes-{dead}.json.tmp", left)
         self.assertNotIn(f"scan-{dead}.json", left)
+        for name in (f"decisions-{dead}.jsonl", f"changes-{dead}.json"):
+            self.assertNotIn(name, left)
+        for name in (f"decisions-{alive}.jsonl", f"changes-{alive}.json"):
+            self.assertIn(name, left)
         for name in (f"panes-{alive}.json", "agent-usage.json", "keep.txt", os.path.basename(keep)):
             self.assertIn(name, left)
 

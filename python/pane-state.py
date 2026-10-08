@@ -62,8 +62,9 @@ def _cleanup_stale() -> None:
         return
     try:
         for name in os.listdir(_STATE_DIR):
-            m = re.fullmatch(r"(?:panes|scan)-(\d+)\.json(?:\.tmp)?", name)
-            if m and int(m.group(1)) != os.getpid() and not os.path.exists(f"/proc/{m.group(1)}"):
+            m = re.fullmatch(r"(?:panes|scan|changes)-(\d+)\.json(?:\.tmp)?|decisions-(\d+)\.jsonl(?:\.tmp)?", name)
+            pid = (m.group(1) or m.group(2)) if m else None
+            if m and int(pid) != os.getpid() and not os.path.exists(f"/proc/{pid}"):
                 try:
                     os.unlink(os.path.join(_STATE_DIR, name))
                 except OSError:
