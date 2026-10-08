@@ -101,6 +101,10 @@ env -u KITTYMUX_TARGET XDG_RUNTIME_DIR="$tmp/run2" KITTY_PID=4242 PATH="$tmp/fak
 check "mux-panel watches the kitty it was started from, not the newest" "unix:$tmp/run2/mykitty-4242" "$(cat "$tmp/target.out")"
 env -u KITTYMUX_TARGET -u KITTY_PID KITTYMUX_TARGET="" XDG_RUNTIME_DIR="$tmp/run2" PATH="$tmp/fakebin:$PATH" "$here/../bin/mux-panel" target > "$tmp/target2.out" 2>/dev/null
 check "started from outside every kitty it falls back to the newest" "unix:$tmp/run2/mykitty-4243" "$(cat "$tmp/target2.out")"
+got="$(KITTYMUX_SOCKET_DIRS="$tmp/run2" XDG_RUNTIME_DIR="$tmp/run" mux_socket_for_pid 4242)"
+check "KITTYMUX_SOCKET_DIRS replaces the default directories (as in the CLI)" "unix:$tmp/run2/mykitty-4242" "$got"
+got="$(KITTYMUX_SOCKET_DIRS="$tmp/nonexistent" mux_socket_for_pid 4242 || printf none)"
+check "an override naming no existing directory finds nothing, not /tmp" none "$got"
 kill "$srv3" 2>/dev/null || true
 
 # private runtime dir

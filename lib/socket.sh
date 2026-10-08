@@ -36,14 +36,26 @@ mux_kitty_sockets() {
     done < <(ls -t /tmp/mykitty-* "${XDG_RUNTIME_DIR:-/nonexistent}"/mykitty-* 2>/dev/null)
 }
 
-# The socket of the kitty with this pid, in either place a socket lives (/tmp, or the private $XDG_RUNTIME_DIR). Fails when there is none we own.
+# Where kitty sockets are looked for, one directory per line, in the same order as bin/kittymux's _socket_dirs(): $KITTYMUX_SOCKET_DIRS (':'-separated, existing
+# directories only: tests, or a setup that keeps its sockets elsewhere) replaces the defaults; otherwise the private $XDG_RUNTIME_DIR first, then /tmp.
+mux_socket_dirs() {
+    local d
+    if [[ -n "${KITTYMUX_SOCKET_DIRS:-}" ]]; then
+        local IFS=:
+        for d in $KITTYMUX_SOCKET_DIRS; do [[ -n "$d" && -d "$d" ]] && printf '%s\n' "$d"; done
+        return 0
+    fi
+    [[ -n "${XDG_RUNTIME_DIR:-}" && -d "$XDG_RUNTIME_DIR" ]] && printf '%s\n' "$XDG_RUNTIME_DIR"
+    printf '%s\n' /tmp
+}
+
+# The socket of the kitty with this pid, in any of those directories. Fails when there is none we own.
 mux_socket_for_pid() {
-    local pid="${1:-}" d s
+    local pid="${1:-}" d
     [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
-    for d in /tmp "${XDG_RUNTIME_DIR:-/nonexistent}"; do
-        s="$d/mykitty-$pid"
-        mux_owned_socket "$s" && { printf 'unix:%s' "$s"; return 0; }
-    done
+    while IFS= read -r d; do
+        mux_owned_socket "$d/mykitty-$pid" && { printf 'unix:%s' "$d/mykitty-$pid"; return 0; }
+    done < <(mux_socket_dirs)
     return 1
 }
 
