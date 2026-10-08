@@ -1299,18 +1299,42 @@ class Sidebar(Handler):
         self._request_preview()
         self.draw_screen()
 
+    def _act(self, *steps: tuple[str, ...]) -> None:
+        """Run remote-control steps for a deck action (promote, absorb, jump), then hand the keyboard back.
+
+        In the docked panel the calls go over a socket with a 4 s timeout EACH and a join takes a moment: on the UI thread that froze every click and key
+        for seconds after a pull. They run on a worker there. The overlay deck talks over its own tty channel, which only the loop thread may use, and it closes
+        itself afterwards, so it runs them inline. The grab goes back afterwards in both cases: focus moved to another window, and an exclusive grab that stays
+        up sends the user's next keys to the panel instead (up to IDLE_DOCK_S of 'my keyboard stopped working')."""
+        if not _PANEL:
+            for step in steps:
+                _rc(*step)
+            self.quit_loop()
+            return
+
+        def work() -> None:
+            try:
+                for step in steps:
+                    _rc(*step)
+            except Exception:
+                _log_error()
+            finally:
+                self._post(self._after_action)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _after_action(self) -> None:
+        if self._alive:
+            self._release_grab()
+            self._request_refresh()
+
     def _promote(self) -> None:
         """`t`: the hovered pane (else the tab's focused pane) of a split tab becomes its own tab — the keyboard/deck
         twin of dragging a pane's title bar onto the bar's empty space."""
         win = deck.promote_target(self.snap.rows, self.sel, self._hover_pane)
         if not win:
             return
-        _rc("detach-window", "--match", f"id:{win}", "--target-tab", "new")
-        _rc("focus-window", "--match", f"id:{win}")
-        if not _PANEL:
-            self.quit_loop()
-        else:
-            self._request_refresh()
+        self._act(("detach-window", "--match", f"id:{win}", "--target-tab", "new"), ("focus-window", "--match", f"id:{win}"))
 
     def _absorb(self) -> None:
         """`a`: the selected tab's panes become splits of the tab you are in (reversible with
@@ -1320,26 +1344,17 @@ class Sidebar(Handler):
             return
         # One `detach-window` for every window splits the same pane again and again (7-column slivers). The join kitten places each pane next to its
         # old neighbour — the same mover `ctrl+alt+shift+j` uses, run from the selected tab's window so it moves THAT tab.
-        _rc("kitten", "--match", f"id:{ids[0]}", _JOIN_KIT, "--to", str(target), "--side", "auto")
-        _rc("focus-window", "--match", f"id:{ids[0]}")
-        if not _PANEL:
-            self.quit_loop()
-        else:
-            self._request_refresh()
+        self._act(("kitten", "--match", f"id:{ids[0]}", _JOIN_KIT, "--to", str(target), "--side", "auto"), ("focus-window", "--match", f"id:{ids[0]}"))
 
     def _jump(self, row: int = -1, pane: int = -1) -> None:
         if not self.snap.rows:
             return
         r = self.snap.rows[self.sel if row < 0 else row]
         win = r.pane_rows[pane].win_id if 0 <= pane < len(r.pane_rows) else r.win_id
-        _rc("focus-tab", "--match", f"id:{r.tab_id}")
+        steps = [("focus-tab", "--match", f"id:{r.tab_id}")]
         if win:
-            _rc("focus-window", "--match", f"id:{win}")
-        if not _PANEL:
-            self.quit_loop()
-        else:
-            self._release_grab()
-            self._request_refresh()
+            steps.append(("focus-window", "--match", f"id:{win}"))
+        self._act(*steps)
 
 
 def _append_log(text: str) -> None:
