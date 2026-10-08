@@ -459,6 +459,9 @@ def scan_all(timer_id=None) -> None:
         seen = vars(_RT).get("prompt_seen")
         if seen:
             seen &= live
+        unread = vars(_RT).get("unread")
+        if unread:
+            unread &= live                  # a window that reported and then closed unseen: its id must not outlive it
         for wid in [k for k in _RT.verdicts if k not in live]:      # closed windows
             _RT.verdicts.pop(wid, None)
             _RT.book.pop(wid, None)

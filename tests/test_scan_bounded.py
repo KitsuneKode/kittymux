@@ -57,9 +57,19 @@ class BoundedStateTests(ScanBase):
         self.assertLessEqual(len(vars(KS._RT).get("notify_log", [])), 64)
 
     def test_the_unread_set_forgets_windows_that_closed(self):
+        """A window that reported something (a question: one event per window) and closed unseen must not stay in `unread` for ever.
+        The old version of this test never announced anything, so the set was always empty and it proved nothing."""
         with mock.patch.object(KS, "_notify", return_value="sent"):
-            self.churn(30)
-        self.assertEqual(len(vars(KS._RT).get("unread", ())), 0)
+            for i in range(1, 9):
+                w = FakeWindow(i, "codex", "› Ask Codex\n")
+                self.add(w)
+                KS.scan_all()
+                KS._announce(w, "question", "codex", "screen", f"q{i}")
+            self.assertEqual(len(vars(KS._RT).get("unread", ())), 8, "the test must really populate the set, or it asserts about nothing")
+            self.k.boss.all_windows[:] = []
+            self.k.boss.window_id_map.clear()
+            KS.scan_all()
+        self.assertEqual(vars(KS._RT).get("unread", set()), set())
 
 
 if __name__ == "__main__":
