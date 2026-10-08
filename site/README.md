@@ -1,6 +1,6 @@
 # kittymux documentation site
 
-TanStack Start + Fumadocs + Tailwind v4 + shadcn (Base UI), prerendered to static HTML. Live at **https://kittymux.kitsunekode.in** (Vercel project `kittymux-docs`, team `kitsunekode`).
+TanStack Start + Fumadocs + Tailwind v4 + shadcn (Base UI), prerendered to static HTML. Live at **https://kittymux.kitsunekode.in** (Vercel project `kittymux`, team `kitsunekode`, connected to this repository).
 
 ## Where things come from
 
@@ -22,7 +22,7 @@ bun run check        # sync + unit tests + typecheck + build + crawl the built s
 bun run axe          # axe-core (light and dark) on key pages, overflow at 320/390/768/1440, search finds a page
 bun run budget       # what a first visit downloads (gzip) and that nothing leaves the site
 bun run shoot        # screenshots of key pages, 3 widths x 2 themes, into .shots/
-bun run og           # redraw public/og.png and the touch icon
+bun run cls          # layout shift on every page, theme and width, slow first visit included (must stay 0)
 bun run tour         # full-page screenshots of one page, light and dark (bun scripts/tour.mjs DIR OUT [path] [width])
 ```
 
@@ -40,32 +40,38 @@ JavaScript on a first visit: **150 KB gzip on the landing page** (React 19 and T
 
 ## Search engines and link previews
 
-Each page carries a title (at most 60 characters), a description (70 to 160), Open Graph and Twitter tags, and a `/og.png` preview (`bun run og` redraws it and `public/apple-touch-icon.png`). The landing page also has `SoftwareApplication` and `FAQPage` structured data; docs pages have `BreadcrumbList`. `scripts/check-site.mjs` fails the build if a title or description is shared, too long, or missing, if the structured data is not JSON, or if a page asks not to be indexed.
+Each page carries a title (at most 60 characters), a description (70 to 160), Open Graph and Twitter tags, and a `/og.png` preview. The preview card, the favicons and the mascot cutout are all derived from the one master image by `python3 tools/build-site-brand.py` (the brand's own social card, cropped; never edit the PNGs). The landing page also has `SoftwareApplication` and `FAQPage` structured data; docs pages have `BreadcrumbList`. `scripts/check-site.mjs` fails the build if a title or description is shared, too long, or missing, if the structured data is not JSON, or if a page asks not to be indexed.
 
 The **public address is a build-time setting**: `VITE_SITE_URL=https://kittymux.kitsunekode.in bun run build`. With it, every page gets a canonical URL and an absolute `og:image`, and the build writes `sitemap.xml` and a `robots.txt` that points to it. Without it the pages carry no canonical URL and there is no sitemap, on purpose: an address that was made up would be trusted by search engines. `llms.txt` and `llms-full.txt` are also published, and every docs page has a Markdown twin at `/docs/<page>.md`.
 
 ## Deploying
 
-Production is a **prebuilt deploy from a clean checkout of `main`** (the build needs Python for `tools/export_facts.py`, so it runs here and not on Vercel's builders):
+**A push to `main` deploys production**; every other branch and pull request gets a private preview. The Vercel project is connected to `KitsuneKode/kittymux` with Root Directory `site` and "include source files outside the Root Directory" on (the build reads `../docs`, `../tools`, `../bin/mux-keys.py`, the key template, `CHANGELOG.md` and `../assets`). `site/vercel.json` holds the rest, so nothing depends on dashboard settings except the root directory and the domain:
 
-```bash
-cd site
-bun install --frozen-lockfile
-VITE_SITE_URL=https://kittymux.kitsunekode.in bun run build     # also writes robots.txt and sitemap.xml
-bun run check:crawl && bun run axe && bun run budget            # the same gates CI runs
-vercel deploy --prebuilt --prod                                  # .vercel/ (project link) is git-ignored; `vercel link --project kittymux-docs` once
-```
+- install `bun install --frozen-lockfile`, build `bun run build` (which first runs `sync`: docs → `content/`, facts from Python, the changelog, the GitHub star count);
+- `VITE_SITE_URL=https://kittymux.kitsunekode.in`, which turns on canonical URLs and the sitemap;
+- an **ignore step**: a push that changes nothing under `site/`, `docs/`, `tools/`, `python/`, `assets/`, `bin/mux-keys.py`, the key template or the changelog does not rebuild the site.
 
-- **Previews are private.** The project's protection is `all_except_custom_domains`: every preview deployment and the `*.vercel.app` addresses ask for a Vercel login; only `kittymux.kitsunekode.in` is public. A preview is `vercel deploy --prebuilt` without `--prod`; read it with `vercel curl <path> --deployment <url>`.
-- **DNS** (Cloudflare, `kitsunekode.in`): one record, `kittymux  CNAME  0bf5b3e5f1d7d49a.vercel-dns-017.com`, DNS only (grey cloud). It is the same target the other `*.kitsunekode.in` sites use; `vercel domains inspect kittymux.kitsunekode.in` says when it verifies. (Vercel's other suggestion, `A kittymux 76.76.21.21`, works too.)
-- The build is a Vercel *Build Output*: `static/` plus one function for any address that is not a prerendered page (the 404). A plain static host also serves every page, because docs navigation reads prerendered JSON.
-- **After a deploy:** view-source for the canonical URL, open `/sitemap.xml`, add the property in Google Search Console and Bing Webmaster Tools and submit the sitemap, and paste the link into a chat to see the preview card.
+What the build produces, and checks:
+
+- Security headers on every response (CSP with same-origin everything, HSTS, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, COOP), set in `vite.config.ts` and applied by Nitro; `scripts/axe.mjs` loads the pages under them and fails on a console error.
+- Cache rules: files whose names carry a content hash are immutable for a year; everything else under `/assets/` revalidates daily (`scripts/patch-routes.mjs` narrows Nitro's "immutable for all of /assets/").
+- **Analytics**: `@vercel/analytics` and `@vercel/speed-insights`, loaded from this site's own `/_vercel/...`, no cookies, skipped for Do Not Track and Global Privacy Control. They only collect once **Web Analytics and Speed Insights are enabled for the project** (done), and the first deployment *after* enabling is the first that serves the scripts: if `/_vercel/insights/script.js` is a 404, redeploy (`vercel redeploy <url> --target production`).
+
+By hand, from a clean checkout of `main` (the same thing Vercel runs): `cd site && bun install --frozen-lockfile && VITE_SITE_URL=https://kittymux.kitsunekode.in bun run build && bun run check:crawl && bun run axe && bun run budget && bun run cls`.
+
+- **Previews are private.** Protection is `all_except_custom_domains`: every preview deployment asks for a Vercel login, and only `kittymux.kitsunekode.in` (and the project's production alias) is public. Read a preview with `vercel curl <path> --deployment <url>`.
+- **DNS** (Cloudflare, `kitsunekode.in`): one record, `kittymux  CNAME  0bf5b3e5f1d7d49a.vercel-dns-017.com`, DNS only (grey cloud), the same target the other `*.kitsunekode.in` sites use.
+- After a deploy: view-source for the canonical URL, open `/sitemap.xml`, add the property in Google Search Console and Bing Webmaster Tools and submit the sitemap, and paste the link into a chat to see the preview card.
 
 ## What is left
 
-- **Git integration** (a deploy per push, private previews per pull request) is not set up: the build needs Python, so it would need a custom install step. Until then, deploys are by hand as above.
 - **Star count** is read once per build (`scripts/gen-github.mjs`); it is 0 today and the buttons then say "Star" without a number. Rebuild after it grows.
 - **Search index:** about 400 KB gzip, fetched on the first search. Not in the budget yet; a smaller index (titles and headings only) is possible.
 - **Mobile Lighthouse** is 87, not 95: hydration cost of the framework (see above).
 - **`.github/workflows/site.yml`** has not run on GitHub yet; it needs one push to show whether the runner's Chrome path and the Bun version hold.
 - **Screenshots** come from the repository's rigs; rerun `bash ../tools/build-site-assets.sh` after the panel or bar changes look.
+
+## Brand and layout stability
+
+The mascot (`assets/brand/mascot.png`) is the brand: the logo tile in every header and the footer, the favicon and touch icon, the link-preview card, and the kitten that sits on the hero window and on the closing band. The palette comes from it (slate-blue field, cream, pink; `src/styles/tokens.css`). The web fonts are the latin subset only, `font-display: optional`, preloaded, with fallbacks shaped to match (`tools/font_fallback.py`), so no font ever lands after first paint and moves the text. `bun run cls` loads every page at two widths and both themes, a slow first visit included, and moves between pages; any shift above 0.02 fails.
