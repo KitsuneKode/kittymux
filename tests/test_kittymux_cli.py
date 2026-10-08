@@ -1547,3 +1547,28 @@ class UsageLaunchTests(unittest.TestCase):
             self.assertEqual(self.m.usage_cmd([]), 0)
         self.assertIn("unix:/own", rc.call_args.args[0])
         self.assertIn("--match", rc.call_args.args[0])
+
+
+class PanelVerbTests(unittest.TestCase):
+    """`kittymux panel summon|dock` are in the usage line and in mux-panel, and the CHANGELOG announces them: the CLI must pass them on (it rejected them with exit 2)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def run_panel(self, argv):
+        with mock.patch.object(self.m.subprocess, "run", return_value=types.SimpleNamespace(returncode=0)) as run:
+            code = self.m.panel_cmd(argv)
+        return code, run
+
+    def test_every_verb_in_the_usage_line_reaches_mux_panel(self):
+        for verb in ("toggle", "start", "stop", "status", "summon", "dock", "wider", "narrower"):
+            code, run = self.run_panel([verb])
+            self.assertEqual(code, 0, verb)
+            self.assertEqual(run.call_args[0][0][1:], [verb])
+
+    def test_unknown_verbs_and_bad_widths_are_usage_errors(self):
+        for argv in (["summoned"], ["dock", "now"], ["width"], ["width", "x"]):
+            code, run = self.run_panel(argv)
+            self.assertEqual(code, 2, argv)
+            run.assert_not_called()

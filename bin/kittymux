@@ -2418,7 +2418,7 @@ def act_cmd(argv: list[str]) -> int:
 
 def panel_cmd(argv: list[str]) -> int:
     action = argv[0] if argv else "toggle"
-    if action not in {"toggle", "start", "stop", "status", "wider", "narrower", "width"} or (action == "width" and (len(argv) != 2 or not argv[1].isdigit())) or (action != "width" and len(argv) > 1):
+    if action not in {"toggle", "start", "stop", "status", "summon", "dock", "wider", "narrower", "width"} or (action == "width" and (len(argv) != 2 or not argv[1].isdigit())) or (action != "width" and len(argv) > 1):
         print("usage: kittymux panel [toggle|start|stop|status|summon|dock|wider|narrower|width N]", file=sys.stderr)
         return 2
     return subprocess.run([os.path.join(HOME_DIR, "bin/mux-panel"), *(argv or ["toggle"])], check=False).returncode
