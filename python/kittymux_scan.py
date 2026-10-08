@@ -776,6 +776,16 @@ def _journal_rt() -> dict:
     return vars(_RT).setdefault("journal", {"recs": {}, "keys": {}, "dirty": False, "flushed": 0.0, "beat": 0.0})
 
 
+def _journal_prune_memory(wall: float) -> None:
+    """The in-memory records obey the file's limits (kittymux_journal.prune: age and count, pinned exempt) and no stricter ones: a record dropped early would come back
+    blank on the next observation and win the merge by its newer `last`. Never raises."""
+    try:
+        J, _ = _journal_mod()
+        J.prune(_journal_rt()["recs"], wall)
+    except Exception:
+        _debug()
+
+
 def _journal_enabled() -> bool:
     return os.environ.get("KITTYMUX_JOURNAL") != "0" and not os.path.exists(os.path.join(state_dir(), "journal-off"))
 
@@ -879,6 +889,7 @@ def _journal_tick(boss, live, wall: float) -> None:
         running = {v for v in rt["keys"].values() if v}
         if J.close_missing(rt["recs"], os.getpid(), running, wall) or gone:
             rt["dirty"] = True
+        _journal_prune_memory(wall)
         if rt["dirty"] and wall - rt["flushed"] >= JOURNAL_FLUSH_GAP:
             rt["flushed"] = wall
             if J.flush(state_dir(), rt["recs"], wall):

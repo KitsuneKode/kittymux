@@ -71,6 +71,20 @@ class BoundedStateTests(ScanBase):
             KS.scan_all()
         self.assertEqual(vars(KS._RT).get("unread", set()), set())
 
+    def test_journal_records_in_memory_stop_at_the_files_limits(self):
+        J, _ = KS._journal_mod()
+        rt = KS._journal_rt()
+        now = 10_000_000.0
+        for i in range(J.RECORD_MAX + 50):                                   # more sessions than the file keeps
+            rt["recs"][f"claude:{i}"] = {"agent": "claude", "last": now - (J.RECORD_MAX + 50 - i), "open": False}
+        rt["recs"]["claude:old"] = {"agent": "claude", "last": now - J.MAX_AGE_S - 1, "open": False}
+        rt["recs"]["claude:pinned-old"] = {"agent": "claude", "last": now - J.MAX_AGE_S - 1, "open": False, "pinned": True}
+        KS._journal_prune_memory(now)
+        self.assertLessEqual(len([r for r in rt["recs"].values() if not r.get("pinned")]), J.RECORD_MAX)
+        self.assertNotIn("claude:old", rt["recs"])
+        self.assertIn("claude:pinned-old", rt["recs"])                       # pinned means keep, in memory too
+        self.assertIn(f"claude:{J.RECORD_MAX + 49}", rt["recs"])             # the newest survive
+
 
 if __name__ == "__main__":
     unittest.main()
