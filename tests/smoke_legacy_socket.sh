@@ -60,8 +60,11 @@ stop
 
 # 3. a link left by a kitty that exited is cleaned up by the next one
 rm -f "$STATE/socketlink-off"
-ln -s "$RUN/mykitty-1" "$LEGACY/mykitty-1"
+# a pid that is NOT running: pid 1 always is (a runner's init), so walk down from pid_max until /proc/<n> does not exist
+DEAD=$(( $(cat /proc/sys/kernel/pid_max) - 1 ))
+while [ -e "/proc/$DEAD" ]; do DEAD=$(( DEAD - 1 )); done
+ln -s "$RUN/mykitty-$DEAD" "$LEGACY/mykitty-$DEAD"
 start
-[ ! -e "$LEGACY/mykitty-1" ] && [ ! -L "$LEGACY/mykitty-1" ] || fail "a link whose kitty exited was left behind"
+[ ! -e "$LEGACY/mykitty-$DEAD" ] && [ ! -L "$LEGACY/mykitty-$DEAD" ] || fail "a link whose kitty exited (pid $DEAD) was left behind"
 echo "  ok   the dead link of an exited kitty is removed"
 echo "PASS: scripts written for /tmp/mykitty-<pid> keep finding kitty when its socket lives in a private directory"
