@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit reads AGENTS.md (and CLAUDE.md) as the project's guidelines, so the rules paid for there are the review's baseline. This file adds what a reviewer
+# cannot get from a diff: which paths matter for which rule, what is generated, and what to leave alone.
+language: "en-US"
+early_access: false
+
+reviews:
+  profile: "assertive"              # this repo's bugs have been the quiet kind (a wrong kitty, a leak, a vacuous test): prefer more findings, less praise
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: true                    # most work here starts as a draft PR; skipping drafts meant nothing was ever reviewed
+    auto_incremental_review: true
+    base_branches:
+      - "main"
+    ignore_title_keywords:
+      - "WIP"
+      - "[skip review]"
+
+  path_filters:
+    - "!**/node_modules/**"
+    - "!site/src/generated/**"          # built from the repository at build time (facts, github.json, CHANGELOG copy)
+    - "!site/.vercel/**"
+    - "!site/.output/**"
+    - "!site/.shots/**"
+    - "!site/bun.lock"
+    - "!**/*.png"
+    - "!**/*.webp"
+    - "!**/*.ttf"
+    - "!**/*.woff2"
+    - "!assets/icons/*.svg"             # brand marks, taken as they are
+    - "!docs/superpowers/**"            # proposals and plans: reviewed by reading, not by line
+
+  path_instructions:
+    - path: "python/**/*.py"
+      instructions: |
+        This code runs inside kitty's embedded interpreter, on kitty's main thread, for as long as kitty runs (weeks). Check, in this order:
+        - Anything on the main thread that can block (a subprocess without a timeout, a lock without a deadline, a file read of unbounded size) is a bug. Timers go through `kittymux_timers.add`, never straight to `add_timer`.
+        - Anything keyed by something that keeps arriving (a window id, an error text, a path) must be bounded (`kittymux_bounded`) or pruned where windows close. `tests/test_bounded_state.py` lists every module-level container.
+        - Long-lived state lives in `sys.modules["_kittymux_scan_rt"]` (or the barsize equivalent), never in plain module globals: a config reload re-executes the module.
+        - No credential or screen text may be logged, stored or shown (the inbox body is bounded and empty in private mode). Text from a program or a directory name is `clean`ed before it is drawn.
+        - A state needs positive evidence; silence is never "waiting". A new state or suppression rule must set a static `why` / outcome.
+        - Pure modules (`kittymux_*` without kitty imports) must stay importable under system python.
+    - path: "bin/kittymux"
+      instructions: |
+        One file, loaded by the tests with SourceFileLoader. A command started inside a kitty acts on THAT kitty (`_own_kitty_socket`), never on "the focused one"; focus-guessing is only for commands started from outside every kitty (`_focused_socket`).
+        Exit 2 is "used wrongly", 1 is "could not do it". Option values come through `kittymux_cliargs.take`. "No kitty" is `_no_socket(cmd)`, one wording. A new command updates the CLI reference page and the usage text in the same change.
+    - path: "{bin/mux-*,lib/*.sh,install.sh}"
+      instructions: |
+        Shell scripts started by a key have no terminal: errors must go somewhere a person can find them. `lib/socket.sh` and `python/kittymux_sockets.py` are two implementations of one rule, pinned by `tests/test_socket_parity.py`: a change to one needs the other. Trust only sockets owned by the current user. Quote everything; never `eval` text that came from a pane or a window title.
+    - path: "kittymux-keys.conf.tpl"
+      instructions: |
+        Every new chord is checked against our template, `kittymux.conf`, the user's own kitty confs (modifier ORDER differs) and the window manager (Hyprland takes several `ctrl+alt` letters). A key change updates the README key table in the same commit. An overlay bind needs a `--title` and a `--when-focus-on title:<t> <same chord> close_window` twin (see `tests/test_keys_leader.py`).
+    - path: "tests/**"
+      instructions: |
+        A test must never touch another kitty on the machine: rigs set `KITTYMUX_SOCKET_DIRS` to their own directory, run under `socket-only`, and end with a tripwire on every other kitty. A test that asserts about an empty container proves nothing: check that it can fail (does the code under test ever populate the thing it asserts about?). A rig needs a control that must fail. Never put a real or credential-shaped value in a fixture: build it at run time from filler.
+    - path: "tests/*.sh"
+      instructions: |
+        CI is a different machine: `sh` is dash there (no `exec -a`, no `[[`), `rg` may be missing, `/tmp` may be shared, runners are slower. Waits are conditions with a deadline, never a fixed sleep that happened to be long enough on a laptop. Compare real artifacts (objects, packs), not directory listings that can hold a lock file.
+    - path: "docs/**/*.mdx"
+      instructions: |
+        Published to the site. Frontmatter `title` and `description`; links start `/docs/`; only Fumadocs components. A command, key or feature change must update its page in the same commit (`tests/test_docs.py` guards chords, the CLI reference and anchors). Do not claim a live-provider or compositor check that was only mocked or run under Xvfb.
+    - path: "CHANGELOG.md"
+      instructions: |
+        User-visible changes only, under `[Unreleased]`, written for the person using kittymux (what they saw, what changed), not for the code.
+    - path: "site/**"
+      instructions: |
+        TanStack Start + Fumadocs + Tailwind v4. Zero layout shift is a requirement (`bun run cls`); landing JavaScript has a budget (`bun run budget`); accessibility is gated (`bun run axe`). No hardcoded colours outside `site/src/styles/tokens.css`. The brand is the mascot; no generic template looks. A page that can break must degrade to the error page, not a blank screen.
+
+  tools:
+    shellcheck:
+      enabled: true
+    gitleaks:
+      enabled: true
+    actionlint:
+      enabled: true
+    yamllint:
+      enabled: true
+    markdownlint:
+      enabled: false                  # the docs are MDX with their own conventions
+
+chat:
+  auto_reply: true

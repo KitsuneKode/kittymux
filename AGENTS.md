@@ -50,8 +50,9 @@ When a page and the code disagree, the code and this file win; fix the page.
 2. **Test first where a test can see the bug**, and give a rig a control that must fail (it proves the rig can see).
 3. **Look at anything visual**: render it, read the PNG, light and dark, narrow.
 4. **Merge** to `main` with a fast-forward, then **reload live kitties only** (`kittymux upgrade`); record `kitty @ ls` window counts before and after. Never restart a live kitty.
-5. **Pushing `main` deploys the docs site**: the Vercel project `kittymux` builds `site/` on every push (previews on other branches are private). Do not push what you would not publish. Nothing else is deployed by a push.
-6. **Say what you did not verify.** A mocked response or an Xvfb run is not a live-provider or a compositor check, and the docs must not claim it.
+5. **Open the PR for review, drafts included.** CodeRabbit reads `.coderabbit.yaml` and this file and comments on every PR to `main` (drafts too). Answer or fix each finding before the merge; a finding you disagree with gets a one-line reply saying why. CI has to be green as well: they check different things.
+6. **Pushing `main` deploys the docs site**: the Vercel project `kittymux` builds `site/` on every push (previews on other branches are private). Do not push what you would not publish. Nothing else is deployed by a push.
+7. **Say what you did not verify.** A mocked response or an Xvfb run is not a live-provider or a compositor check, and the docs must not claim it.
 
 ## Definition of done
 

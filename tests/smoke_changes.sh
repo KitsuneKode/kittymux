@@ -14,10 +14,14 @@ fail() { echo "FAIL: $*"; exit 1; }
 for n in $(seq 171 199); do [ -e "/tmp/.X$n-lock" ] || { DISP=:$n; break; }; done
 Xvfb "$DISP" -screen 0 1200x800x24 >/dev/null 2>&1 & XPID=$!
 sleep 1; kill -0 "$XPID" 2>/dev/null || { echo "SKIP: Xvfb would not start"; XPID=""; exit 0; }
-G="git -c user.email=t@t -c user.name=t -c commit.gpgsign=false"
+# git starts a DETACHED `maintenance run --auto` after a commit; while it runs it keeps objects/maintenance.lock in the repository, and a listing of every file under
+# objects/ then differed by that one transient file: the check below failed once in a while on CI. Maintenance is off for the rig's own git, and the check
+# looks at real objects and packs only (a lock or a temp file is not an object), so it can only fail on a write that matters.
+G="git -c maintenance.auto=false -c gc.auto=0 -c user.email=t@t -c user.name=t -c commit.gpgsign=false"
+repo_objects() { ( cd "$REPO/.git/objects" && find . -type f | grep -E '^\./([0-9a-f]{2}/[0-9a-f]{38}|pack/[^/]+)$' | sort | md5sum ); }
 ( cd "$REPO" && git init -q && printf 'one\ntwo\n' > a.txt && printf 'build/\n' > .gitignore && git add . && $G commit -qm init )
 printf 'dirty before the run\n' > "$REPO/earlier.txt"                       # uncommitted BEFORE the run: not the agent's work
-objs_before=$(find "$REPO/.git/objects" -type f | sort | md5sum)
+objs_before=$(repo_objects)
 cat > "$T/bin/claude" <<PY
 #!/usr/bin/env python3
 import os, sys, time
@@ -84,7 +88,7 @@ raise SystemExit(0 if any(v.get("state") == "done" for v in d.values()) else 1)
 PY
 [ ! -s "$STATE/tab_bar-error.log" ] || { sed 's/^/  | /' "$STATE/tab_bar-error.log" | tail -8; fail "the tab bar logged an error drawing a finished tab with a change summary"; }
 echo "  ok   a finished tab with a summary draws without a tab bar error"
-[ "$(find "$REPO/.git/objects" -type f | sort | md5sum)" = "$objs_before" ] || fail "the repository's object store was written to"
+[ "$(repo_objects)" = "$objs_before" ] || fail "the repository's object store was written to (an object or a pack was added or removed)"
 [ ! -e "$REPO/.git/index.lock" ] || fail "an index lock was left behind"
 echo "  ok   the repository was not written to (no new objects, no lock)"
 [ "$(others)" = "$OTHERS_BEFORE" ] || fail "this rig changed the windows of ANOTHER kitty on this machine"
