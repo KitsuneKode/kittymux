@@ -1679,3 +1679,30 @@ class GuessIsSaidTests(unittest.TestCase):
              mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("KITTYMUX_TARGET", None)
             self.assertEqual(self.said(True, lambda: self.m._target_socket()), "")
+
+
+class OneNoSocketMessageTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def test_the_wording_lives_in_kittymux_diag_only(self):
+        src = open(os.path.join(ROOT, "bin", "kittymux"), encoding="utf-8").read()
+        self.assertEqual(src.count("no kitty remote-control socket found"), 1, "only doctor's warning title may carry the phrase; use _no_socket()")
+        self.assertNotIn("no trusted kitty socket", src)
+
+    def test_no_socket_says_it_in_one_line_and_returns_1(self):
+        with mock.patch.object(self.m, "_socket_dirs", return_value=["/x", "/y"]), mock.patch("sys.stderr") as err:
+            err.isatty.return_value = True
+            self.assertEqual(self.m._no_socket("spawn"), 1)
+        said = "".join(c.args[0] for c in err.write.call_args_list)
+        self.assertIn("kittymux spawn: no kitty remote-control socket found (looked in /x, /y)", said)
+
+    def test_a_command_without_a_terminal_leaves_a_line_doctor_can_show(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(self.m.kittymux_layout, "state_dir", return_value=d), \
+             mock.patch.object(self.m, "_socket_dirs", return_value=["/x"]), mock.patch("sys.stderr") as err:
+            err.isatty.return_value = False
+            self.m._no_socket("workflow nav")
+            import kittymux_diag
+            self.assertEqual(len(kittymux_diag.recent_failures(d)), 1)
+            self.assertIn("workflow nav: no kitty socket", kittymux_diag.recent_failures(d)[0])

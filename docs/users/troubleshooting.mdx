@@ -17,6 +17,7 @@ kittymux doctor
 2. **Another binding replaced it.** kitty uses the last definition of a chord, and kittymux's keys load after yours. Run `kittymux keys` to list every chord both define. See [Your own shortcuts](/docs/users/your-own-shortcuts).
 3. **It is not bound.** Press `ctrl+alt+/` and search for it. If it is missing, run `kittymux upgrade`.
 4. **tmux has focus.** Only the keys tmux really binds pass through to it; everything else stays kitty's.
+5. **The key ran but could not reach kitty.** A key has no terminal to print an error to, so the failure used to be invisible. `kittymux doctor` now lists the last commands that could not reach a kitty (they are also in `cli-errors.log` in the state directory). The usual cause is the setup in [Doctor warns about the remote control socket](#doctor-warns-about-the-remote-control-socket).
 
 **Fix.** Rebind the chord in the template, or put your own `map` below the kittymux `include` lines. See [Resolve a clash](/docs/users/your-own-shortcuts#resolve-a-clash).
 

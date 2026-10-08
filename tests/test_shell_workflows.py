@@ -209,7 +209,7 @@ mux_resolve_socket
         self.env['KITTYMUX_TARGET'] = 'unix:/nonexistent'
         result = self.cli('mux-scratch.sh', check=False)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('no trusted kitty socket', result.stderr)
+        self.assertIn('no kitty remote-control socket found', result.stderr)
         self.assertEqual(self.calls(), [])
 
     def test_scratch_unknown_trigger_aborts_without_launch(self):

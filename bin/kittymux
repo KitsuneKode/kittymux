@@ -65,6 +65,7 @@ sys.path.insert(0, os.path.join(HOME_DIR, "python"))
 import kittymux_agents  # noqa: E402
 import kittymux_changes  # noqa: E402
 import kittymux_cliargs  # noqa: E402
+import kittymux_diag  # noqa: E402
 import kittymux_fanout  # noqa: E402
 import kittymux_features  # noqa: E402
 import kittymux_inbox  # noqa: E402
@@ -383,9 +384,12 @@ def doctor() -> int:
         r.warning(f"state dir {STATE} missing", "it is created on first run of install.sh")
 
     print("\nlive kitty")
+    recent = kittymux_diag.recent_failures(kittymux_layout.state_dir(), 3)
+    if recent:
+        r.warning("recent commands that could not reach a kitty (newest last)", "\n      ".join(recent))
     socks = _sockets()
     if not socks:
-        r.warning("no kitty remote-control socket found", "set  allow_remote_control socket-only  and  listen_on unix:${XDG_RUNTIME_DIR}/mykitty  in kitty.conf and restart kitty")
+        r.warning("no kitty remote-control socket found", kittymux_diag.SETUP_HINT)
     else:
         rc, out = _run(["kitty", "@", "--to", socks[0], "get-colors"])
         if rc == 0:
@@ -743,6 +747,14 @@ def _own_kitty_socket() -> str | None:
     return kittymux_sockets.own(_socket_dirs(), _owned_socket)
 
 
+def _no_socket(cmd: str) -> int:
+    """Say there is no kitty to talk to, in the one wording, and leave a line for a command that had no terminal (a key-bound one). Exit code 1."""
+    print(kittymux_diag.no_socket_message(cmd, _socket_dirs()), file=sys.stderr)
+    if not sys.stderr.isatty():
+        kittymux_diag.log_failure(kittymux_layout.state_dir(), cmd, "no kitty socket")
+    return 1
+
+
 def _target_socket() -> str | None:
     """The kitty instance this command was launched from.
 
@@ -785,9 +797,7 @@ def layout(argv: list[str]) -> int:
     sock = _focused_socket()
     pid = _socket_pid(sock) if sock else None
     if pid is None:
-        print("kittymux layout: no kitty remote-control socket found "
-              "(set allow_remote_control socket-only and listen_on unix:${XDG_RUNTIME_DIR}/mykitty in kitty.conf)", file=sys.stderr)
-        return 1
+        return _no_socket("layout")
     current = kittymux_layout.base_layout(sdir, pid, CFG)
 
     if cmd == "show":
@@ -1126,8 +1136,7 @@ def sessions_save(argv: list[str], directory: str | None = None) -> int:
         return 2
     sock = _focused_socket()
     if not sock:
-        print("kittymux sessions: no kitty remote-control socket found", file=sys.stderr)
-        return 1
+        return _no_socket("sessions")
     sdir = directory or _sessions_dir()
     os.makedirs(sdir, mode=0o700, exist_ok=True)
     plan = sessions_prepare(sock)
@@ -1208,8 +1217,7 @@ def sessions_finalize(argv: list[str]) -> int:
 def sessions_list(argv: list[str]) -> int:
     sock = _focused_socket()
     if not sock:
-        print("kittymux sessions: no kitty remote-control socket found", file=sys.stderr)
-        return 1
+        return _no_socket("sessions")
     plan = _session_plan(sock)
     shown = [dict(e, argv=kittymux_journal.redact_argv(e["argv"]), resume=kittymux_journal.redact_argv(e["resume"]) if e["resume"] else e["resume"]) for e in plan]
     if "--json" in argv:
@@ -1680,8 +1688,7 @@ def spawn(argv: list[str]) -> int:
         return 2
     sock = _focused_socket()
     if not sock:
-        print("kittymux spawn: no kitty remote-control socket found (allow_remote_control socket-only + listen_on unix:${XDG_RUNTIME_DIR}/mykitty)", file=sys.stderr)
-        return 1
+        return _no_socket("spawn")
     source = os.environ.get("KITTY_WINDOW_ID") if os.environ.get("KITTY_WINDOW_ID", "").isdigit() else None
     failed = 0
     for name in names:
@@ -1755,8 +1762,7 @@ def reopen(argv: list[str]) -> int:
         return 1
     sock = _focused_socket()
     if not sock:
-        print("kittymux reopen: no kitty remote-control socket found", file=sys.stderr)
-        return 1
+        return _no_socket("reopen")
     if not reopen_entry(target, sock):
         return 1
     print(f"{OK} reopened {target['agent']} in {target['cwd'].replace(os.path.expanduser('~'), '~')}")
@@ -2072,8 +2078,7 @@ def fanout(argv: list[str]) -> int:
         return 1
     sock = _focused_socket()
     if not sock:
-        print(f"{BAD} kittymux fanout: no kitty remote-control socket found", file=sys.stderr)
-        return 1
+        return _no_socket("fanout")
     items, err = kittymux_fanout.create(repo, name, base, agents)
     if err:
         print(f"{BAD} kittymux fanout: {err}", file=sys.stderr)
@@ -2122,8 +2127,7 @@ def changes_cmd(argv: list[str]) -> int:
     sock = _focused_socket()
     pid = _socket_pid(sock) if sock else None
     if pid is None:
-        print("kittymux changes: no kitty remote-control socket found", file=sys.stderr)
-        return 1
+        return _no_socket("changes")
     sdir = kittymux_layout.state_dir()
     wins = {str(w["id"]): (w, t.get("title", "")) for o in (_ls(sock) or []) for t in o.get("tabs", []) for w in t.get("windows", [])}
     if "--all" in argv:
@@ -2518,8 +2522,7 @@ def snooze(argv: list[str]) -> int:
     sock = _focused_socket()
     pid = _socket_pid(sock) if sock else None
     if not sock or pid is None:
-        print("kittymux snooze: no kitty remote-control socket found", file=sys.stderr)
-        return 1
+        return _no_socket("snooze")
     if not any(str(w.get("id")) == str(wid) for o in (_ls(sock) or []) for t in o.get("tabs", []) for w in t.get("windows", [])):
         print(f"kittymux snooze: kitty has no window {wid}", file=sys.stderr)
         return 1
@@ -2596,8 +2599,7 @@ def explain(argv: list[str]) -> int:
         return 2
     socks = _sockets() if every else ([s] if (s := _focused_socket()) else [])
     if not socks:
-        print("kittymux explain: no kitty remote-control socket found (set allow_remote_control socket-only and listen_on unix:${XDG_RUNTIME_DIR}/mykitty in kitty.conf)", file=sys.stderr)
-        return 1
+        return _no_socket("explain")
     state_dir = kittymux_layout.state_dir()
     report = []
     for sock in socks:
@@ -2689,8 +2691,7 @@ def screenshot(argv: list[str]) -> int:
             rest.append(a)
     sock = _focused_socket()
     if not sock:
-        print("kittymux screenshot: no kitty remote-control socket found", file=sys.stderr)
-        return 1
+        return _no_socket("screenshot")
     out = os.path.abspath(os.path.expanduser(rest[0])) if rest else os.path.join(
         os.environ.get("XDG_PICTURES_DIR") or os.path.expanduser("~/Pictures"), time.strftime("kittymux-%Y%m%d-%H%M%S.png"))
     os.makedirs(os.path.dirname(out), exist_ok=True)
@@ -2833,7 +2834,7 @@ def upgrade(argv: list[str]) -> int:
         print(f"  {OK} symlinks and rendered keys up to date")
     socks = _sockets()
     if not socks:
-        print(f"  {WARN} no kitty remote-control socket found — restart kitty to pick up the update")
+        print(f"  {WARN} no running kitty found — restart kitty to pick up the update")
     for sock in socks:
         ok = all(_run(["kitty", "@", "--to", sock, "load-config"], 8)[0] == 0 for _ in range(2))
         print(f"  {OK if ok else WARN} reloaded {sock}" + ("" if ok else " (failed — reload it with ctrl+shift+alt+r)"))
@@ -2968,13 +2969,14 @@ def workflow_cmd(argv: list[str]) -> int:
         return 0 if argv else 2
     sock = _target_socket()
     if not sock:
-        print("kittymux: no trusted kitty socket (allow_remote_control socket-only + listen_on unix:${XDG_RUNTIME_DIR}/mykitty)", file=sys.stderr)
-        return 1
+        return _no_socket("workflow " + argv[0])
     import kittymux_workflows
     try:
         return kittymux_workflows.run(argv, sock, _run, _ls(sock), kittymux_layout.state_dir())
-    except (OSError, ValueError, TypeError, KeyError):
+    except (OSError, ValueError, TypeError, KeyError) as e:
         print("kittymux workflow: source context unavailable or invalid; no other kitty was selected", file=sys.stderr)
+        if not sys.stderr.isatty():
+            kittymux_diag.log_failure(kittymux_layout.state_dir(), "workflow " + argv[0], f"{type(e).__name__}: {e}")
         return 1
 
 
