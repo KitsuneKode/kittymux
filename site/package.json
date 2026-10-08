@@ -17,7 +17,8 @@
     "check:crawl": "bun scripts/check-site.mjs \"$(cat BUILD_DIR)\" $(( $(find content/docs -name '*.mdx' | wc -l) + 3 ))",
     "check": "bun run sync && bun test && bun run typecheck && bun run build && bun run check:crawl",
     "axe": "bun scripts/axe.mjs \"$(cat BUILD_DIR)\"",
-    "shoot": "bun scripts/shoot.mjs \"$(cat BUILD_DIR)\""
+    "shoot": "bun scripts/shoot.mjs \"$(cat BUILD_DIR)\"",
+    "budget": "bun scripts/budget.mjs \"$(cat BUILD_DIR)\""
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",

@@ -1,0 +1,38 @@
+name: site
+
+on:
+  push:
+    paths: ['docs/**', 'site/**', 'tools/export_facts.py', 'tests/test_export_facts.py', 'tests/test_keys_rows.py', 'bin/mux-keys.py', 'kittymux-keys.conf.tpl', 'assets/**', 'CHANGELOG.md', '.github/workflows/site.yml']
+  pull_request:
+    paths: ['docs/**', 'site/**', 'tools/export_facts.py', 'tests/test_export_facts.py', 'tests/test_keys_rows.py', 'bin/mux-keys.py', 'kittymux-keys.conf.tpl', 'assets/**', 'CHANGELOG.md', '.github/workflows/site.yml']
+
+# The documentation site (site/): built from docs/, checked for links, accessibility and size. Nothing here deploys it.
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0                       # the footer shows `git describe`
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: docs and generated facts (python)
+        run: python3 -m unittest tests.test_docs tests.test_export_facts tests.test_keys_rows
+      - name: install (frozen lockfile)
+        run: bun install --frozen-lockfile
+        working-directory: site
+      - name: sync, unit tests, typecheck, build, crawl (links, anchors, images, h1, title, lang, empty pages)
+        run: bun run check
+        working-directory: site
+      - name: accessibility (axe, light and dark), overflow at 320-1440, search
+        run: bun run axe
+        working-directory: site
+        env:
+          CHROME: /usr/bin/google-chrome
+      - name: first-visit size budget, nothing leaves the site
+        run: bun run budget
+        working-directory: site
+        env:
+          CHROME: /usr/bin/google-chrome

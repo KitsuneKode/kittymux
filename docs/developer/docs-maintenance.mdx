@@ -141,3 +141,7 @@ This section is a plan. The site does not exist yet.
 ## Build boundaries
 
 The docs gate runs with plain Python and needs no network. A change to the CLI, the key template, a provider or `docs/feature-status.yaml` needs a docs check in the same pull request.
+
+## The site
+
+The published site is built from these files by `site/`; `site/README.md` says how. The rule is the same as for every page here: edit `docs/`, never the copy in `site/content/`. The site's build fails, naming the file and line, when a page links to a page that does not exist, uses an image that is not in `assets/`, or lacks a title or description.
