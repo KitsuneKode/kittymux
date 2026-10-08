@@ -17,7 +17,7 @@ function merged(groups: { name: string; items: string[] }[]) {
 const releases = parseChangelog(raw).map((r) => ({ ...r, id: `r-${slug(r.heading)}`, groups: merged(r.groups) }));
 
 export const Route = createFileRoute('/_docs/changelog')({
-  head: () => pageHead({ title: 'Changelog — kittymux', description: 'What changed in kittymux, newest first: new features, changes and fixes, listed under Unreleased until the first tagged release.', path: '/changelog' }),
+  head: () => pageHead({ title: 'Changelog | kittymux', description: 'What changed in kittymux, newest first: new features, changes and fixes, listed under Unreleased until the first tagged release.', path: '/changelog' }),
   component: Changelog,
 });
 

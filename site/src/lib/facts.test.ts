@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { FEATURED_KEYS, GLANCE_TEXT, facts, featuredRows } from './facts'
+import { FEATURED_KEYS, GLANCE_TEXT, facts, featuredGroups, featuredRows } from './facts'
 
 test('every key the front page features still exists in the generated facts', () => {
   const all = new Set(facts.keys.flatMap((s) => s.rows.map((r) => r.key)))
@@ -24,4 +24,11 @@ test('every featured chord has front-page wording, and no wording is left for a 
   expect(FEATURED_KEYS.filter((k) => !(k in GLANCE_TEXT))).toEqual([])
   expect(Object.keys(GLANCE_TEXT).filter((k) => !FEATURED_KEYS.includes(k))).toEqual([])
   for (const text of Object.values(GLANCE_TEXT)) expect(text).not.toMatch(/[`]|\(.*·.*\)/)
+})
+
+test('the three groups hold every featured chord once, in a sensible number', () => {
+  const g = featuredGroups()
+  expect(g.length).toBe(3)
+  expect(g.flatMap((x) => x.rows.map((r) => r.key))).toEqual(FEATURED_KEYS)
+  expect(new Set(FEATURED_KEYS).size).toBe(FEATURED_KEYS.length)
 })

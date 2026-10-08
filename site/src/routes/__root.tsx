@@ -2,7 +2,8 @@ import { createRootRoute, HeadContent, Outlet, Scripts } from '@tanstack/react-r
 import appCss from '@/styles/app.css?url';
 import { Telemetry } from '@/components/telemetry';
 // the two files every page's first paint needs (latin subsets), fetched alongside the CSS instead of after it: the text is set in the right font from the first frame
-import epilogueLatin from '../../node_modules/@fontsource-variable/epilogue/files/epilogue-latin-wght-normal.woff2?url';
+import displayLatin from '../../node_modules/@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-wght-normal.woff2?url';
+import textLatin from '../../node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
 import monoLatin from '../../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2?url';
 
 export const Route = createRootRoute({
@@ -19,7 +20,8 @@ export const Route = createRootRoute({
       { name: 'color-scheme', content: 'light dark' },
     ],
     links: [
-      { rel: 'preload', href: epilogueLatin, as: 'font', type: 'font/woff2', crossOrigin: 'anonymous' },
+      { rel: 'preload', href: displayLatin, as: 'font', type: 'font/woff2', crossOrigin: 'anonymous' },
+      { rel: 'preload', href: textLatin, as: 'font', type: 'font/woff2', crossOrigin: 'anonymous' },
       { rel: 'preload', href: monoLatin, as: 'font', type: 'font/woff2', crossOrigin: 'anonymous' },
       { rel: 'stylesheet', href: appCss },
       { rel: 'icon', href: '/favicon-32.png', sizes: '32x32', type: 'image/png' },

@@ -6,6 +6,7 @@
   mascot-cutout.webp/png   the kitten without its blue background (alpha recovered from the colour distance to the flat background, edges un-mixed so no blue fringe)
   mascot-avatar-{64,128}.png   the master, square, as an avatar tile (keeps its own blue field: this IS the app-icon look)
   favicon-32.png, favicon-64.png, apple-touch-icon.png (180), icon-192.png, icon-512.png   from the avatar
+  agents/<name>.png   the notification tile of each agent (its mark, with the mascot as a badge), 128 px, for the front page's row of supported agents
   og.png   1200x630 link-preview card: the brand's own social card, cropped (the cat grows out of the lower-left corner)
 
 The cutout keeps the master's cropped lower-left edges: place it where an edge meets the edge of something (a window, a section), as the social card does.
@@ -19,6 +20,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "assets" / "brand" / "mascot.png"
 OUT = ROOT / "site" / "public" / "brand"
+AGENT_ROW = ("claude", "codex", "devin", "cursor", "opencode", "gemini", "amp", "antigravity", "droid", "goose", "grok", "qwen")   # the front page row; every other agent is in the docs
 
 
 def cutout(img: Image.Image, size: int) -> Image.Image:
@@ -50,6 +52,11 @@ def main() -> None:
     pub = ROOT / "site" / "public"
     for name, s in (("favicon-32.png", 32), ("favicon-64.png", 64), ("apple-touch-icon.png", 180), ("icon-192.png", 192), ("icon-512.png", 512)):
         rgb.resize((s, s), Image.LANCZOS).save(pub / name, optimize=True)
+    agents = OUT / "agents"
+    agents.mkdir(exist_ok=True)
+    for name in AGENT_ROW:
+        src = ROOT / "assets" / "notify" / f"{name}.png"
+        Image.open(src).convert("RGBA").resize((128, 128), Image.LANCZOS).save(agents / f"{name}.png", optimize=True)
     card = Image.open(ROOT / "assets" / "brand" / "social-preview.png").convert("RGB")                  # 1280x640 -> 1200x630
     w, h = card.size
     card.crop((0, 5, w, h - 5)).resize((1200, 630), Image.LANCZOS).save(pub / "og.png", optimize=True)

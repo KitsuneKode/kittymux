@@ -26,7 +26,7 @@ export function Shot({ name, alt, priority = false, className }: { name: string;
 export function TerminalWindow({ children, caption, className, captionClassName }: { children: React.ReactNode; caption: string; className?: string; captionClassName?: string }) {
   return (
     <figure className={cn('m-0', className)}>
-      <div className="overflow-hidden rounded-xl border border-transparent bg-[var(--code-bg)] shadow-[0_1px_1px_rgb(0_0_0/0.08),0_8px_24px_-6px_rgb(0_0_0/0.28),0_30px_60px_-20px_rgb(0_0_0/0.35)] outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10">
+      <div className="overflow-clip rounded-xl border border-transparent bg-[var(--code-bg)] shadow-[0_1px_1px_rgb(0_0_0/0.08),0_8px_24px_-6px_rgb(0_0_0/0.28),0_30px_60px_-20px_rgb(0_0_0/0.35)] outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10">
         {children}
       </div>
       <figcaption className={cn('mt-3 text-sm text-mute', captionClassName)}>{caption}</figcaption>

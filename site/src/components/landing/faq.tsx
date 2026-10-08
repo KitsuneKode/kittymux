@@ -12,15 +12,15 @@ export const FAQ = [
 export function Faq() {
   return (
     <section aria-labelledby="faq" className="mx-auto w-full max-w-[880px] px-5 py-16 md:px-8 lg:py-24">
-      <h2 id="faq" className="text-balance text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">Questions people ask first</h2>
+      <h2 id="faq" className="t-h2">Questions people ask first</h2>
       <div className="mt-8 divide-y divide-line border-y border-line">
         {FAQ.map(([q, a]) => (
           <details key={q} className="group">
-            <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-4 py-3 text-lg font-semibold marker:hidden [&::-webkit-details-marker]:hidden">
+            <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-4 py-3 t-h3 !text-[1.125rem] marker:hidden [&::-webkit-details-marker]:hidden">
               {q}
               <IconChevronDown aria-hidden="true" className="size-5 shrink-0 text-mute transition-transform duration-150 group-open:rotate-180 motion-reduce:transition-none" stroke={1.75} />
             </summary>
-            <p className="max-w-[60ch] text-pretty pb-4 text-base text-mute">{a}</p>
+            <p className="t-body max-w-[60ch] pb-4 text-mute">{a}</p>
           </details>
         ))}
       </div>

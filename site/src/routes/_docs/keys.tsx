@@ -7,7 +7,7 @@ import { baseOptions } from '@/lib/layout.shared';
 import { pageHead } from '@/lib/seo';
 
 export const Route = createFileRoute('/_docs/keys')({
-  head: () => pageHead({ title: 'Keys — kittymux', description: `Every key kittymux binds (${facts.chords} chords), grouped by what it does and read from the same key template the installer uses.`, path: '/keys' }),
+  head: () => pageHead({ title: 'Keys | kittymux', description: `Every key kittymux binds (${facts.chords} chords), grouped by what it does and read from the same key template the installer uses.`, path: '/keys' }),
   component: Keys,
 });
 

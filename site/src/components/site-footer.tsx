@@ -47,7 +47,7 @@ export function SiteFooter({ themeToggle = false }: { themeToggle?: boolean }) {
           </div>
           <nav aria-label="Footer" className="grid grid-cols-2 gap-8 md:col-span-7">
             <div>
-              <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-ink">Read</h2>
+              <h2 className="t-h3 !text-base">Read</h2>
               <ul className="mt-3 flex flex-col">
                 <li><Link to="/docs/$" params={{ _splat: '' }} className={linkClass}>Documentation</Link></li>
                 <li><Link to="/docs/$" params={{ _splat: 'users/getting-started' }} className={linkClass}>Getting started</Link></li>
@@ -57,7 +57,7 @@ export function SiteFooter({ themeToggle = false }: { themeToggle?: boolean }) {
               </ul>
             </div>
             <div>
-              <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-ink">Project</h2>
+              <h2 className="t-h3 !text-base">Project</h2>
               <ul className="mt-3 flex flex-col">
                 <li><Ext href={REPO_URL}>Source on GitHub</Ext></li>
                 <li><Ext href={ISSUES_URL}>Report an issue</Ext></li>
@@ -73,19 +73,18 @@ export function SiteFooter({ themeToggle = false }: { themeToggle?: boolean }) {
 
         <section aria-labelledby="more-projects">
           <div className="flex flex-wrap items-end justify-between gap-3">
-            <h2 id="more-projects" className="text-xl font-semibold tracking-[-0.02em]">More from KitsuneKode</h2>
+            <h2 id="more-projects" className="t-h3">More from KitsuneKode</h2>
             <Ext href={ALL_PROJECTS_URL}>All projects on GitHub</Ext>
           </div>
-          <ul className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {/* each item is one link (the name's ::after covers it), so a screen reader hears the name, not a paragraph of link text */}
+          <ul className="mt-6 grid gap-x-8 gap-y-7 sm:grid-cols-2 lg:grid-cols-4">
             {PROJECTS.map((p) => (
-              <li key={p.name} className="min-w-0">
-                <a href={p.url} target="_blank" rel="noopener" className="group flex h-full flex-col gap-2 rounded-xl border border-line bg-card p-4 transition-colors duration-150 hover:bg-card-hi motion-reduce:transition-none">
-                  <span className="flex items-start justify-between gap-2">
-                    <span className="text-base font-semibold group-hover:underline">{p.name}</span>
-                    <span className="mt-0.5 shrink-0 rounded-full border border-line px-2 py-0.5 text-xs text-mute">{p.kind}</span>
-                  </span>
-                  <span className="text-pretty text-sm text-mute">{p.blurb}</span>
-                </a>
+              <li key={p.name} className="group relative min-w-0 rounded-md has-[a:focus-visible]:outline has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-8 has-[a:focus-visible]:outline-ink">
+                <span className="flex items-baseline justify-between gap-3">
+                  <a href={p.url} target="_blank" rel="noopener" className="font-semibold underline-offset-4 outline-2 outline-transparent after:absolute after:inset-0 group-hover:underline focus-visible:outline-transparent">{p.name}</a>
+                  <span className="t-caption shrink-0 text-mute">{p.kind}</span>
+                </span>
+                <span className="t-small mt-1 block text-mute">{p.blurb}</span>
               </li>
             ))}
           </ul>

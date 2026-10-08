@@ -44,7 +44,7 @@ export const Route = createFileRoute('/_docs/docs/$')({
     const path = params._splat ? `/docs/${params._splat}` : '/docs';
     const title = loaderData?.title ?? 'Documentation';
     return pageHead({
-      title: `${title} — kittymux`,
+      title: `${title} | kittymux`,
       description: loaderData?.description || 'kittymux documentation',
       path,
       type: 'article',

@@ -11,12 +11,12 @@ import { KeysGlance } from '@/components/landing/keys-glance';
 import { Limits } from '@/components/landing/limits';
 import { Problem } from '@/components/landing/problem';
 import { Support } from '@/components/landing/support';
-import { ProofLine } from '@/components/landing/proof-line';
+import { AgentRow } from '@/components/landing/agent-row';
 import { SiteFooter } from '@/components/site-footer';
 import { THEME_PROPS } from '@/lib/theme-props';
 import { faqLd, pageHead, softwareLd } from '@/lib/seo';
 
-const TITLE = 'kittymux — know which agent needs you';
+const TITLE = 'kittymux: know which agent needs you';
 const DESCRIPTION = 'kittymux turns kitty into a multiplexer for AI coding agents: one glance at the tab bar says who is working, who is waiting for you and who has finished.';
 
 export const Route = createFileRoute('/')({
@@ -32,7 +32,7 @@ function Home() {
       <LandingHeader />
       <main id="main">
       <Hero />
-      <ProofLine />
+      <AgentRow />
       <Problem />
       <Ideas />
       <HowItKnows />

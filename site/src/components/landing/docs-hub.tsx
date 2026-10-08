@@ -1,26 +1,32 @@
-import { IconBook2, IconKeyboard, IconTerminal2, IconTool } from '@tabler/icons-react';
+import { IconArrowRight } from '@tabler/icons-react';
 import { DocLink } from '../doc-link';
+import { SearchLauncher } from './search-launcher';
 
 const HUB = [
-  { slug: 'users/getting-started', title: 'Getting started', text: 'Try the demo, install, check, add hooks.', Icon: IconBook2 },
-  { slug: 'users/shortcuts', title: 'Shortcuts', text: 'Every key, grouped by what it does.', Icon: IconKeyboard },
-  { slug: 'users/troubleshooting', title: 'Troubleshooting', text: 'A key does nothing? A tab says the wrong thing? Start here.', Icon: IconTool },
-  { slug: 'users/cli-reference', title: 'CLI reference', text: 'Every kittymux command and its options.', Icon: IconTerminal2 },
+  { slug: 'users/getting-started', title: 'Getting started', text: 'Try the demo, install, check, add hooks.' },
+  { slug: 'users/shortcuts', title: 'Shortcuts', text: 'Every key, grouped by what it does.' },
+  { slug: 'users/troubleshooting', title: 'Troubleshooting', text: 'A key does nothing? A tab says the wrong thing? Start here.' },
+  { slug: 'users/cli-reference', title: 'CLI reference', text: 'Every kittymux command and its options.' },
 ] as const;
 
+/** Heading and search on the left, the four most-wanted pages as plain large links on the right: no boxes. */
 export function DocsHub() {
   return (
     <section id="docs" aria-labelledby="docs-title" className="border-y border-line bg-card py-16 lg:py-24">
-      <div className="mx-auto w-full max-w-[1280px] px-5 md:px-8">
-        <h2 id="docs-title" className="text-balance text-3xl font-semibold tracking-[-0.03em] sm:text-4xl lg:text-5xl">Looking for something?</h2>
-        <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {HUB.map(({ slug, title, text, Icon }) => (
-            <li key={slug}>
-              <DocLink slug={slug} data-press="" className="flex h-full flex-col gap-3 rounded-2xl border border-line bg-page p-6 hover:border-brand">
-                <Icon aria-hidden="true" className="size-7 text-link" stroke={1.5} />
-                <span className="text-lg font-semibold">{title}</span>
-                <span className="text-pretty text-mute">{text}</span>
+      <div className="mx-auto grid w-full max-w-[1280px] gap-12 px-5 md:px-8 lg:grid-cols-12">
+        <div className="lg:col-span-5">
+          <h2 id="docs-title" className="t-h2">Looking for something?</h2>
+          <p className="t-body mt-4 max-w-[36ch] text-mute">Search every page from here, or start with one of these.</p>
+          <div className="mt-6"><SearchLauncher tone="page" /></div>
+        </div>
+        <ul className="flex flex-col gap-7 lg:col-span-6 lg:col-start-7">
+          {HUB.map(({ slug, title, text }) => (
+            <li key={slug} className="group relative rounded-md has-[a:focus-visible]:outline has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-8 has-[a:focus-visible]:outline-ink">
+              <DocLink slug={slug} className="t-h3 inline-flex items-center gap-2 underline-offset-4 outline-2 outline-transparent after:absolute after:inset-0 group-hover:underline focus-visible:outline-transparent">
+                {title}
+                <IconArrowRight aria-hidden="true" className="size-5 text-link motion-safe:transition-transform motion-safe:duration-150 group-hover:translate-x-1" stroke={1.75} />
               </DocLink>
+              <span className="t-body mt-1 block max-w-[46ch] text-mute">{text}</span>
             </li>
           ))}
         </ul>

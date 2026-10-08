@@ -4,7 +4,7 @@ import * as React from 'react';
 const Opener = React.lazy(() => import('./search-opener'));
 
 /** The hero's search field. The search code arrives on the first click, then the dialog opens; Ctrl K works on every docs page. */
-export function SearchLauncher() {
+export function SearchLauncher({ tone = 'page' }: { tone?: 'page' | 'brand' }) {
   const [opened, setOpened] = React.useState(0);
   return (
     <>
@@ -12,11 +12,11 @@ export function SearchLauncher() {
         type="button"
         data-press=""
         onClick={() => setOpened((n) => n + 1)}
-        className="mt-8 hidden min-h-11 w-full max-w-md items-center gap-3 rounded-full border border-onbrand/40 px-4 text-start text-sm text-onbrand-soft hover:border-onbrand sm:flex"
+        className={tone === 'brand' ? 'mt-8 flex min-h-11 w-full max-w-md items-center gap-3 rounded-full border border-onbrand/40 px-4 text-start text-sm text-onbrand-soft hover:border-onbrand' : 'flex min-h-12 w-full max-w-md items-center gap-3 rounded-full border border-line bg-card px-4 text-start text-sm text-mute hover:border-ink'}
       >
         <IconSearch aria-hidden="true" className="size-4" stroke={1.75} />
         Search the docs
-        <kbd className="ms-auto rounded border border-onbrand/40 px-1.5 py-0.5 font-mono text-xs">Ctrl K</kbd>
+        <kbd className="t-mono ms-auto rounded bg-card-hi px-1.5 py-0.5 text-xs">Ctrl K</kbd>
       </button>
       {opened > 0 && (
         <React.Suspense fallback={null}>

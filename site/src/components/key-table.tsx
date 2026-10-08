@@ -23,7 +23,7 @@ export function KeyTable({ keys }: { keys: Facts['keys'] }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filter: type a key, a word, a section"
-          className="min-h-12 w-full max-w-xl rounded-full border border-line bg-card px-5 text-base text-ink outline-none placeholder:text-mute focus-visible:border-ink"
+          className="min-h-12 w-full max-w-xl rounded-full border border-line bg-card px-5 text-base text-ink  placeholder:text-mute focus-visible:border-ink"
         />
       </label>
       <p className="mt-3 text-sm text-mute" aria-live="polite">

@@ -2,36 +2,33 @@ import { CopyButton } from '../copy-button';
 
 /** The first command: it works before anything is installed, so the final call to action copies it too. */
 export const DEMO_CMD = 'git clone https://github.com/KitsuneKode/kittymux ~/kittymux && ~/kittymux/bin/kittymux demo';
-
-const STEPS = [
-  { n: '1', title: 'Look first', cmd: DEMO_CMD, note: 'Opens its own window with made-up agents. Nothing of yours is read or changed.' },
-  { n: '2', title: 'Install', cmd: '~/kittymux/install.sh', note: 'Checks its dependencies, backs up kitty.conf and adds a few include lines. It never overwrites a key of yours.' },
-  { n: '3', title: 'Check', cmd: 'kittymux doctor', note: 'Lists anything that is off, and how to fix it.' },
-] as const;
-
 /** Look first, then install, in one line for people who are already sure. */
 export const INSTALL_CMD = 'git clone https://github.com/KitsuneKode/kittymux ~/kittymux && ~/kittymux/install.sh';
 
+const ROWS = [
+  { title: 'Look first', cmd: DEMO_CMD, note: 'Opens its own window with made-up agents. Nothing of yours is read or changed.' },
+  { title: 'Install', cmd: '~/kittymux/install.sh', note: 'Checks its dependencies, backs up kitty.conf and adds a few include lines. It never overwrites a key of yours.' },
+  { title: 'Check', cmd: 'kittymux doctor', note: 'Lists anything that is off, and how to fix it.' },
+  { title: 'Or all at once', cmd: INSTALL_CMD, note: 'Clone and install in one go, for when you already know.' },
+] as const;
+
+/** A list of rows, not a set of cards: the commands are the content, so each row is a name and a note on the left and the command, ready to copy, on the right. */
 export function Install() {
   return (
     <section id="install" aria-labelledby="install-title" className="mx-auto w-full max-w-[1280px] px-5 py-16 md:px-8 lg:py-24">
-      <h2 id="install-title" className="text-balance text-3xl font-semibold tracking-[-0.03em] sm:text-4xl lg:text-5xl">Try it, then install it</h2>
-      <p className="mt-4 max-w-[56ch] text-pretty text-lg text-mute">Look first with the demo, which opens its own window and touches nothing of yours. Or, if you already know, install in one line.</p>
-      <div className="mt-8 flex flex-col gap-4 rounded-2xl border border-line bg-card p-5 md:flex-row md:items-center md:gap-6">
-        <div className="min-w-0 flex-1">
-          <h3 className="text-lg font-semibold">Already sure? One line.</h3>
-          <pre className="mt-3 whitespace-pre-wrap rounded-lg bg-[var(--code-bg)] p-4 font-mono text-sm text-[var(--code-fg)] [overflow-wrap:anywhere]"><code>{INSTALL_CMD}</code></pre>
-        </div>
-        <CopyButton text={INSTALL_CMD} label="Copy install line" className="self-start bg-brand text-onbrand hover:bg-brand/90 md:self-center" />
-      </div>
-      <ol className="mt-10 grid gap-6 lg:grid-cols-3">
-        {STEPS.map((s) => (
-          <li key={s.n} className="flex min-w-0 flex-col gap-4 rounded-2xl border border-line bg-card p-6">
-            <span className="text-5xl font-bold tabular text-link">{s.n}</span>
-            <h3 className="text-xl font-semibold">{s.title}</h3>
-            <p className="text-pretty text-mute">{s.note}</p>
-            <pre className="mt-auto whitespace-pre-wrap rounded-lg bg-[var(--code-bg)] p-4 font-mono text-sm text-[var(--code-fg)] [overflow-wrap:anywhere]"><code>{s.cmd}</code></pre>
-            <CopyButton text={s.cmd} label="Copy command" context={s.title} className="self-start border border-line hover:bg-card-hi" />
+      <h2 id="install-title" className="t-h2 max-w-[20ch]">Try it, then install it</h2>
+      <p className="t-lead mt-4 max-w-[52ch] text-mute">The demo opens its own window and touches nothing of yours. When you like it, install takes one command.</p>
+      <ol className="mt-12 flex flex-col gap-10">
+        {ROWS.map((r) => (
+          <li key={r.title} className="grid gap-4 lg:grid-cols-12 lg:gap-10">
+            <div className="lg:col-span-4">
+              <h3 className="t-h3">{r.title}</h3>
+              <p className="t-small mt-2 max-w-[40ch] text-mute">{r.note}</p>
+            </div>
+            <div className="flex min-w-0 flex-col items-start gap-3 lg:col-span-8">
+              <pre className="t-mono w-full whitespace-pre-wrap rounded-xl bg-[var(--code-bg)] p-4 text-[var(--code-fg)] [overflow-wrap:anywhere]"><code>{r.cmd}</code></pre>
+              <CopyButton text={r.cmd} label="Copy command" context={r.title} className="border border-line hover:bg-card-hi" />
+            </div>
           </li>
         ))}
       </ol>

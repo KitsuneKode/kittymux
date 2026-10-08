@@ -1,7 +1,6 @@
 import { IconHeart } from '@tabler/icons-react';
 import { Link } from '@tanstack/react-router';
 import { DocLink } from '../doc-link';
-import { SearchLauncher } from './search-launcher';
 import { Shot, TerminalWindow } from '../terminal-window';
 import { WeaveBand } from '../weave-band';
 import { GitHubStars } from '../github-stars';
@@ -38,24 +37,22 @@ export function Hero() {
   return (
     <>
         <div data-brand="" className="bg-brand text-onbrand">
-          <section aria-labelledby="hero-title" className="mx-auto grid w-full max-w-[1280px] gap-10 px-5 pb-12 pt-8 md:px-8 lg:grid-cols-12 lg:items-center lg:gap-10 lg:pb-24 lg:pt-14">
+          <section aria-labelledby="hero-title" className="mx-auto grid w-full max-w-[1280px] gap-10 px-5 pb-12 pt-8 md:px-8 lg:grid-cols-12 lg:items-center lg:gap-10 lg:pb-24 lg:pt-10">
             <div className="lg:col-span-6">
-              <h1 id="hero-title" data-rise="" className="max-w-[12ch] text-balance text-[2.75rem] font-bold leading-[1.02] tracking-[-0.03em] sm:max-w-[16ch] sm:text-6xl lg:text-[4.25rem]">
+              <h1 id="hero-title" data-rise="" className="t-display max-w-[14ch] sm:max-w-[16ch]">
                 Know which agent needs you.
               </h1>
-              <p data-rise="" className="mt-6 max-w-[40ch] text-pretty text-lg leading-snug text-onbrand-soft [animation-delay:80ms] sm:text-xl">
-                kittymux turns kitty into a multiplexer for AI coding agents. One glance at the tab bar says who is working, who is waiting for you and who has finished, and one click takes you there.
+              <p data-rise="" className="t-lead mt-6 max-w-[36ch] text-onbrand-soft [animation-delay:80ms]">
+                Turn kitty into a multiplexer for AI coding agents. See who is working, waiting or done, and jump straight there.
               </p>
               <div data-rise="" className="mt-8 flex flex-col gap-3 [animation-delay:160ms] sm:flex-row sm:items-center">
                 <a href="#install" data-cta="" data-press="" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full px-6 text-base font-semibold">Try the demo</a>
                 <DocLink data-press="" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-onbrand px-6 text-base font-semibold hover:bg-onbrand hover:text-brand">Read the docs</DocLink>
               </div>
-              <p data-rise="" className="mt-4 text-sm text-onbrand-soft [animation-delay:200ms]">The demo opens its own window. Your configuration is never read or changed.</p>
-              <SearchLauncher />
             </div>
             <div data-rise="" className="relative mx-auto mt-20 w-full max-w-[460px] [animation-delay:240ms] lg:col-span-6 lg:mt-24">
               {/* the kitten sits on the window's top edge: its cropped bottom is hidden behind the frame */}
-              <Mascot priority width={160} className="absolute -top-[100px] right-6 z-0 lg:-top-[100px] lg:right-10" />
+              <Mascot priority width={160} className="absolute -inset-bs-[100px] inset-e-6 z-0 lg:inset-e-10" />
               <TerminalWindow className="relative z-10" captionClassName="text-onbrand-soft" caption="The docked panel on made-up tabs: one needs you, one has a usage limit that resets in 42 minutes.">
                 <Shot
                   name="panel-agents"
