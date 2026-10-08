@@ -208,5 +208,39 @@ class TemplateTests(unittest.TestCase):
                             for l in text.splitlines()))
 
 
+
+class OverlayCloseBindTests(unittest.TestCase):
+    """Pressing an overlay's chord a second time must close it (or at least not stack another): every `--type=overlay` bind and every `kitten` bind needs
+    a `--when-focus-on` twin on the same chord that runs `close_window`."""
+
+    # ctrl+alt+b opens the deck as a `kitten`, but the DOCKED PANEL is the same program (sidebar-kit.py) in a window of its own, and a twin keyed on its command
+    # line would close the panel when ctrl+alt+b is pressed in it. A twin needs a match that tells the two apart (`state:overlay`), checked in a real kitty first.
+    EXEMPT = {"ctrl+alt+b": "the docked panel runs the same program"}
+
+    def binds(self):
+        tpl = open(os.path.join(ROOT, "kittymux-keys.conf.tpl"), encoding="utf-8").read()
+        opens, closes = {}, set()
+        for line in tpl.splitlines():
+            parts = line.split(None, 3)
+            if len(parts) >= 3 and parts[0] == "map" and parts[1] != "--when-focus-on" and parts[1] != "--new-mode" and parts[1] != "--mode":
+                action = line.split(None, 2)[2]
+                if action.startswith("launch --type=overlay") or action.startswith("kitten "):
+                    opens[parts[1]] = action
+            elif len(parts) >= 4 and parts[0] == "map" and parts[1] == "--when-focus-on" and line.rstrip().endswith("close_window"):
+                closes.add(line.split()[3])
+        return opens, closes
+
+    def test_every_overlay_chord_has_a_close_twin(self):
+        opens, closes = self.binds()
+        missing = sorted(chord for chord in opens if chord not in closes and chord not in self.EXEMPT)
+        self.assertEqual(missing, [], "these open an overlay but a second press would stack another: add `map --when-focus-on title:<t> <chord> close_window` and a --title")
+
+    def test_the_exemptions_still_exist(self):
+        opens, closes = self.binds()
+        for chord in self.EXEMPT:
+            self.assertIn(chord, opens)
+            self.assertNotIn(chord, closes)
+
+
 if __name__ == "__main__":
     unittest.main()

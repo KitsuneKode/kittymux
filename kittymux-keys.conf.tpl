@@ -104,13 +104,16 @@ map ctrl+alt+shift+c     toggle_window_title_bars
 # ============================================
 # HUDS — location, agent usage, agent jump
 # ============================================
-map ctrl+alt+i           launch --type=overlay --cwd=current @KITTYMUX_HOME@/bin/mux-cwd.sh
-map ctrl+alt+shift+i     launch --type=overlay --cwd=current @KITTYMUX_HOME@/bin/mux-cwd.sh --detail
+map ctrl+alt+i           launch --type=overlay --title kittymux-cwd --cwd=current @KITTYMUX_HOME@/bin/mux-cwd.sh
+map --when-focus-on title:kittymux-cwd ctrl+alt+i close_window
+map ctrl+alt+shift+i     launch --type=overlay --title kittymux-cwd --cwd=current @KITTYMUX_HOME@/bin/mux-cwd.sh --detail
+map --when-focus-on title:kittymux-cwd ctrl+alt+shift+i close_window
 map ctrl+alt+u           launch --type=overlay --title=kittymux-usage python3 @KITTYMUX_HOME@/bin/mux-usage.py
 map --when-focus-on title:kittymux-usage ctrl+alt+u close_window
 # agent picker: every agent pane across windows/sessions + live preview
 # (ctrl+alt+g, not +a — ctrl+alt+a is Hyprland's swapcol on this setup)
-map ctrl+alt+g           launch --type=overlay @KITTYMUX_HOME@/bin/mux-agents.sh
+map ctrl+alt+g           launch --type=overlay --title kittymux-agents @KITTYMUX_HOME@/bin/mux-agents.sh
+map --when-focus-on title:kittymux-agents ctrl+alt+g close_window
 # ctrl+alt+b — sidebar command deck (hover/click, live preview, jump to tab)
 map ctrl+alt+b           kitten @KITTYMUX_HOME@/python/sidebar-kit.py
 # ctrl+alt+shift+b — toggle the sidebar deck as a persistent docked panel (Wayland)
@@ -118,9 +121,11 @@ map ctrl+alt+shift+b     launch --type=background @KITTYMUX_HOME@/bin/mux-panel 
 # ctrl+alt+y — jump to the next agent waiting on you (round-robin, longest-waiting first)
 map ctrl+alt+y           launch --type=background @KITTYMUX_HOME@/bin/mux-agents.sh --next-waiting
 # ctrl+alt+shift+g — new agent in its own git worktree + tab
-map ctrl+alt+shift+g     launch --type=overlay --cwd=current @KITTYMUX_HOME@/bin/mux-agent-new
+map ctrl+alt+shift+g     launch --type=overlay --title kittymux-agent-new --cwd=current @KITTYMUX_HOME@/bin/mux-agent-new
+map --when-focus-on title:kittymux-agent-new ctrl+alt+shift+g close_window
 # send a prompt to a background agent pane without switching focus
-map ctrl+alt+semicolon   launch --type=overlay @KITTYMUX_HOME@/bin/mux-send.sh
+map ctrl+alt+semicolon   launch --type=overlay --title kittymux-send @KITTYMUX_HOME@/bin/mux-send.sh
+map --when-focus-on title:kittymux-send ctrl+alt+semicolon close_window
 # ctrl+alt+v — pick: what needs you, every agent, closed conversations and a new agent in ONE searchable list (rofi/fuzzel from your WM: `kittymux pick --menu rofi`)
 map ctrl+alt+v           launch --type=overlay --title kittymux-pick @KITTYMUX_HOME@/bin/kittymux pick
 map --when-focus-on title:kittymux-pick ctrl+alt+v close_window
@@ -160,7 +165,8 @@ map ctrl+alt+shift+bracketleft  launch --type=background @KITTYMUX_HOME@/bin/kit
 # ctrl+alt+shift+] — wider sidebar
 map ctrl+alt+shift+bracketright launch --type=background @KITTYMUX_HOME@/bin/kittymux layout width +2
 # ctrl+alt+shift+l — pick a bar layout preset (sidebar, rail, right, bottom, top, zen)
-map ctrl+alt+shift+l     launch --type=overlay @KITTYMUX_HOME@/bin/kittymux layout pick
+map ctrl+alt+shift+l     launch --type=overlay --title kittymux-layout @KITTYMUX_HOME@/bin/kittymux layout pick
+map --when-focus-on title:kittymux-layout ctrl+alt+shift+l close_window
 
 # ============================================
 # RESIZE, SCROLLBACK & HELP
@@ -199,10 +205,14 @@ map ctrl+alt+z           layout_action maximize
 # ============================================
 # SESSIONS — Kitty Home is the one shortcut to remember
 # ============================================
-map ctrl+shift+space     launch --type=overlay @KITTYMUX_HOME@/bin/mux-sessionizer
-map ctrl+alt+shift+n     launch --type=overlay @KITTYMUX_HOME@/bin/mux-sessionizer
-map ctrl+alt+shift+m     launch --type=overlay @KITTYMUX_HOME@/bin/mux-movetab.sh
-map ctrl+alt+shift+s     launch --type=overlay @KITTYMUX_HOME@/bin/mux-save.sh
+map ctrl+shift+space     launch --type=overlay --title kittymux-sessionizer @KITTYMUX_HOME@/bin/mux-sessionizer
+map --when-focus-on title:kittymux-sessionizer ctrl+shift+space close_window
+map ctrl+alt+shift+n     launch --type=overlay --title kittymux-sessionizer @KITTYMUX_HOME@/bin/mux-sessionizer
+map --when-focus-on title:kittymux-sessionizer ctrl+alt+shift+n close_window
+map ctrl+alt+shift+m     launch --type=overlay --title kittymux-movetab @KITTYMUX_HOME@/bin/mux-movetab.sh
+map --when-focus-on title:kittymux-movetab ctrl+alt+shift+m close_window
+map ctrl+alt+shift+s     launch --type=overlay --title kittymux-save @KITTYMUX_HOME@/bin/mux-save.sh
+map --when-focus-on title:kittymux-save ctrl+alt+shift+s close_window
 map ctrl+alt+shift+a     launch --type=background @KITTYMUX_HOME@/bin/mux-cycle.sh last
 map ctrl+alt+comma       launch --type=background @KITTYMUX_HOME@/bin/mux-cycle.sh prev
 map ctrl+alt+period      launch --type=background @KITTYMUX_HOME@/bin/mux-cycle.sh next
@@ -210,7 +220,8 @@ map ctrl+alt+period      launch --type=background @KITTYMUX_HOME@/bin/mux-cycle.
 # ============================================
 # PROJECT PICKER + SCRATCH CONFIG TAB
 # ============================================
-map ctrl+alt+shift+p     launch --type=overlay @KITTYMUX_HOME@/bin/mux-projects.sh
+map ctrl+alt+shift+p     launch --type=overlay --title kittymux-projects @KITTYMUX_HOME@/bin/mux-projects.sh
+map --when-focus-on title:kittymux-projects ctrl+alt+shift+p close_window
 
 # ctrl+alt+shift+h / k / v / z / f / x are NOT ours: if your own kitty config maps them (quick config edits for Hyprland, kitty, nvim and zsh; a font toggle;
 # a screenshot) they keep working exactly as you wrote them. kitty reads this file AFTER yours and the last definition wins, so mapping one of them here would
