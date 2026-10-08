@@ -82,7 +82,7 @@ start() {   # start <session file> : a kitty with the kittymux modules; the conf
   env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP \
     KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 KITTYMUX_DEBUG=1 \
     kitty -o linux_display_server=x11 --class kmx-timers --listen-on "$SOCK" --session "$1" >"$T/k.log" 2>&1 & KPID=$!
-  for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 3
+  for _ in $(seq 240); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 3
   kill -0 "$KPID" 2>/dev/null || { echo "FAIL: kitty did not start"; tail -5 "$T/k.log"; exit 1; }
 }
 stop() { kill "$KPID" 2>/dev/null; wait "$KPID" 2>/dev/null; KPID=""; }

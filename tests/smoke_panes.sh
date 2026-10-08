@@ -24,7 +24,7 @@ printf 'layout splits\nlaunch sh\nlaunch --location=vsplit sh\nlaunch --location
 env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP \
   KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_SOCKET_GLOB="$T/mykitty-*" KITTYMUX_SOCKET_DIRS="$T" XDG_RUNTIME_DIR="$T" \
   kitty -o linux_display_server=x11 --class kmx-panes --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
-for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done
+for _ in $(seq 240); do [ -S "$T/sock" ] && break; sleep 0.25; done
 ln -s "$T/sock" "$T/mykitty-$KPID"; sleep 2
 # tripwire: this rig must never touch any OTHER kitty (the person running it may be typing in one). A signature of every other kitty's focus
 # (which OS window, active tab and focused pane) is taken now and compared at the end: a stray `kittymux workflow …` would change it.

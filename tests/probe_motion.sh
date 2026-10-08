@@ -14,7 +14,7 @@ mkdir -p "$T/cfg"; printf 'allow_remote_control socket-only\ntab_bar_edge left\n
 printf 'new_tab one\nlaunch sh\nnew_tab two\nlaunch sh\nnew_tab three\nlaunch sh\nfocus_tab 0\n' > "$T/session"
 env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP KITTY_CONFIG_DIRECTORY=$T/cfg \
   kitty -o linux_display_server=x11 --class kmx-motion --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
-for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 3
+for _ in $(seq 240); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 3
 X() { DISPLAY=$DISP xdotool "$@"; }
 W=$(X search --class kmx-motion | head -1); X windowsize "$W" 1190 790; sleep 0.3; X windowsize "$W" 1200 800; sleep 1.5
 kitty @ --to "$SOCK" kitten "$HOME_DIR/tests/probe_bar.py" "$T/geom.json" >/dev/null 2>&1

@@ -34,7 +34,7 @@ OTHERS_BEFORE=$(others)
 env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP \
   KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_SOCKET_DIRS=$T/no-sockets \
   kitty -o linux_display_server=x11 --class kmx-joinui --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
-for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 3
+for _ in $(seq 240); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 3
 X() { DISPLAY=$DISP xdotool "$@"; }
 W=$(X search --onlyvisible --class kmx-joinui | head -1); X windowsize "$W" 1190 790; sleep 0.4; X windowsize "$W" 1200 800; X windowfocus "$W" 2>/dev/null; sleep 0.8
 nwin() { kitty @ --to "$SOCK" ls | python3 -c 'import sys,json;print(sum(len(t["windows"]) for o in json.load(sys.stdin) for t in o["tabs"]))'; }

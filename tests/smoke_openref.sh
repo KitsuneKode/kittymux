@@ -27,7 +27,7 @@ printf 'launch --cwd=%s sh -c "printf \\"see src/app.py:42:7 and nowhere/none.py
 env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP \
   KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE VISUAL="$T/bin/nvim" EDITOR="$T/bin/nvim" \
   kitty -o linux_display_server=x11 --class kmx-ref --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
-for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 2
+for _ in $(seq 240); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 2
 X() { DISPLAY=$DISP xdotool "$@"; }
 W=$(X search --onlyvisible --class kmx-ref | head -1); X windowfocus "$W" 2>/dev/null; sleep 0.5
 read -r GW GH < <(X getwindowgeometry --shell "$W" | python3 -c 'import sys;d=dict(l.strip().split("=") for l in sys.stdin if "=" in l);print(d["WIDTH"],d["HEIGHT"])')

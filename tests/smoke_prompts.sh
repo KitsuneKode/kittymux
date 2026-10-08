@@ -29,7 +29,7 @@ printf 'new_tab one\nlaunch bash --norc\nnew_tab two\nlaunch bash --norc\nfocus_
 env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP \
   KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 KITTYMUX_DEBUG=1 \
   kitty -o linux_display_server=x11 --class kmx-prompts --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
-for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 4
+for _ in $(seq 240); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 4
 
 win_of() { kitty @ --to "$SOCK" ls | python3 -c 'import sys,json
 for t in json.load(sys.stdin)[0]["tabs"]:

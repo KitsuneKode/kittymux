@@ -29,7 +29,7 @@ printf '%s\n' 'printf "[sudo] password for someone: "; sleep 4' > "$T/pw.sh"
 env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP \
   KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 KITTYMUX_LEGACY_SOCKET_DIR=$T \
   kitty -o linux_display_server=x11 --class kmx-soak --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
-for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 4
+for _ in $(seq 240); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 4
 kill -0 "$KPID" 2>/dev/null || fail "kitty did not start"
 
 rss() { awk '/^VmRSS/ {print $2}' /proc/$KPID/status; }

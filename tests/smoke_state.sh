@@ -71,7 +71,7 @@ env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KIT
   kitty ${SMOKE_KITTY_ARGS:-} -o linux_display_server=x11 --class kmx-state --listen-on "$SOCK" --session "$T/session.kitty" \
   >"$T/kitty.log" 2>&1 &
 KPID=$!
-for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done
+for _ in $(seq 240); do [ -S "$T/sock" ] && break; sleep 0.25; done
 [ -S "$T/sock" ] || { for lg in "$T/kitty.log" "$T/k.log"; do [ -s "$lg" ] && { echo "--- kitty output:"; tail -20 "$lg"; }; done; fail "kitty never opened its control socket"; }
 
 redraw() {

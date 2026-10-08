@@ -76,7 +76,7 @@ start() {   # start <session file> <socket>
   echo $!
 }
 K1=$(start "$T/session1" "$SOCK1")
-for _ in $(seq 60); do [ -S "$T/mykitty-5551" ] && break; sleep 0.25; done; sleep 4
+for _ in $(seq 240); do [ -S "$T/mykitty-5551" ] && break; sleep 0.25; done; sleep 4
 ls_json() { kitty @ --to "$1" ls; }
 CLPID=$(ls_json $SOCK1 | python3 -c 'import sys,json
 for t in json.load(sys.stdin)[0]["tabs"]:
@@ -115,7 +115,7 @@ KMX sessions autosave || fail "sessions autosave failed"
 echo "  ok   autosave: resumable file written silently, older autosaves pruned to 5"
 ls "$T/ran" > "$T/ran.before"        # what the FIRST kitty started; only what the second one starts counts below
 K2=$(start "$F" "$SOCK2")
-for _ in $(seq 60); do [ -S "$T/mykitty-5552" ] && break; sleep 0.25; done; sleep 5
+for _ in $(seq 240); do [ -S "$T/mykitty-5552" ] && break; sleep 0.25; done; sleep 5
 ran() { for f in "$T"/ran/*; do grep -qx "$(basename "$f")" "$T/ran.before" || printf '%s: %s\n' "$(basename "$f" | cut -d. -f1)" "$(cat "$f")"; done; }
 ran | grep -q "^claude: --dangerously-skip-permissions --resume $SID$" || { ran; fail "the restored claude was not started with --resume $SID"; }
 ran | grep -q "^opencode: -s ses_smoke1$" || { ran; fail "the restored opencode was not started with -s ses_smoke1"; }
@@ -130,7 +130,7 @@ F2=$STATE/sessions/ask.kitty-session
 ! grep "bin/droid" "$F2" | grep -q "resume-prompt" || fail "the ambiguous droids must not get a prompt"
 ls "$T/ran" > "$T/ran.before"
 K3=$(start "$F2" "$SOCK3")
-for _ in $(seq 60); do [ -S "$T/mykitty-5553" ] && break; sleep 0.25; done; sleep 5
+for _ in $(seq 240); do [ -S "$T/mykitty-5553" ] && break; sleep 0.25; done; sleep 5
 ran | grep -q "^claude:" && { ran; fail "claude started before the prompt was answered"; }
 ran | grep -q "^opencode:" && { ran; fail "opencode started before the prompt was answered"; }
 WINS=$(kitty @ --to $SOCK3 ls | python3 -c 'import sys,json

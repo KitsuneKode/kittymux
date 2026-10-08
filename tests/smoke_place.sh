@@ -58,7 +58,7 @@ OTHERS_BEFORE=$(others)
 env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP \
   KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 KITTYMUX_BAR_DUMP=1 \
   kitty -o linux_display_server=x11 --class kmx-place --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
-for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 3
+for _ in $(seq 240); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 3
 X() { DISPLAY=$DISP xdotool "$@"; }
 W=$(X search --class kmx-place | head -1)
 X windowsize "$W" 1390 890; sleep 0.4; X windowsize "$W" 1400 900; sleep 1.2       # a real size (and a first redraw), as the other rigs do

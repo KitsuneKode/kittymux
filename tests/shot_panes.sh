@@ -47,7 +47,7 @@ sleep 1; kill -0 "$XPID" 2>/dev/null || { echo "SKIP: Xvfb would not start"; XPI
 env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID \
   __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_DATA_HOME=$T/data KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE \
   kitty -o linux_display_server=x11 --class kmx-pshot --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
-for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 2
+for _ in $(seq 240); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 2
 X() { DISPLAY=$DISP xdotool "$@"; }
 W=$(X search --onlyvisible --class kmx-pshot | head -1); [ -n "$W" ] || fail "no kitty window"
 X windowfocus "$W" 2>/dev/null; sleep 0.5

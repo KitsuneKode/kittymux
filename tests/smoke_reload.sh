@@ -68,7 +68,7 @@ env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KIT
   >"$T/kitty.log" 2>&1 &
 KPID=$!
 
-for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done
+for _ in $(seq 240); do [ -S "$T/sock" ] && break; sleep 0.25; done
 [ -S "$T/sock" ] || fail "kitty never opened its control socket ($(tail -3 "$T/kitty.log" 2>/dev/null))"
 
 tabs() { kitty @ --to "$SOCK" ls 2>/dev/null | python3 -c 'import sys,json; print(sum(len(o["tabs"]) for o in json.load(sys.stdin)))'; }

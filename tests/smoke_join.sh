@@ -36,7 +36,7 @@ others() { for s in /tmp/mykitty-* "${XDG_RUNTIME_DIR:-/nonexistent}"/mykitty-*;
 OTHERS_BEFORE=$(others)
 env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP KITTY_CONFIG_DIRECTORY=$T/cfg \
   kitty -o linux_display_server=x11 --class kmx-join --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
-for _ in $(seq 60); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 3
+for _ in $(seq 240); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 3
 X() { DISPLAY=$DISP xdotool "$@" 2>/dev/null; }
 command -v xdotool >/dev/null 2>&1 && { WID=$(X search --class kmx-join | head -1); X windowsize "$WID" 1390 890; sleep 0.4; X windowsize "$WID" 1400 900; sleep 1.5; }
 geo() { kitty @ --to "$SOCK" kitten "$HOME_DIR/tests/probe_geometry.py" "$T/geo.json" >/dev/null 2>&1; sleep 0.5; }

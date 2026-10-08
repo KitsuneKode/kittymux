@@ -15,6 +15,7 @@ reviews:
   auto_review:
     enabled: true
     drafts: true                    # most work here starts as a draft PR; skipping drafts meant nothing was ever reviewed
+                                    # (a public repo under 10 stars is not reviewed automatically at all: ask with `@coderabbitai review` on the PR)
     auto_incremental_review: true
     base_branches:
       - "main"
