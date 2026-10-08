@@ -1,14 +1,10 @@
-import { IconArrowUpRight, IconSearch } from '@tabler/icons-react';
+import { IconArrowUpRight } from '@tabler/icons-react';
 import { Link } from '@tanstack/react-router';
 import { DocLink } from '../doc-link';
+import { SearchLauncher } from './search-launcher';
 import { Shot, TerminalWindow } from '../terminal-window';
 import { WeaveBand } from '../weave-band';
 import { gitConfig } from '@/lib/shared';
-
-/** Opens the Fumadocs search dialog the way its own hotkey does. */
-function openSearch() {
-  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, metaKey: true, bubbles: true }));
-}
 
 export function Hero() {
   return (
@@ -45,16 +41,7 @@ export function Hero() {
                 <DocLink data-press="" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-onred px-6 text-base font-semibold hover:bg-onred hover:text-brand">Read the docs</DocLink>
               </div>
               <p data-rise="" className="mt-4 text-sm text-onred-soft [animation-delay:200ms]">The demo opens its own window. Your configuration is never read or changed.</p>
-              <button
-                type="button"
-                data-press=""
-                onClick={openSearch}
-                className="mt-8 hidden min-h-11 w-full max-w-md items-center gap-3 rounded-full border border-onred/40 px-4 text-start text-sm text-onred-soft hover:border-onred sm:flex"
-              >
-                <IconSearch aria-hidden="true" className="size-4" stroke={1.75} />
-                Search the docs
-                <kbd className="ms-auto rounded border border-onred/40 px-1.5 py-0.5 font-mono text-xs">Ctrl K</kbd>
-              </button>
+              <SearchLauncher />
             </div>
             <div data-rise="" className="mx-auto w-full max-w-[460px] [animation-delay:240ms] lg:col-span-6">
               <TerminalWindow captionClassName="text-onred-soft" caption="The docked panel on made-up tabs: one needs you, one has a usage limit that resets in 42 minutes.">

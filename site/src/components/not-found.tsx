@@ -1,11 +1,11 @@
-import { baseOptions } from '@/lib/layout.shared';
-import { HomeLayout } from 'fumadocs-ui/layouts/home';
-import { DefaultNotFound } from 'fumadocs-ui/layouts/home/not-found';
+import * as React from 'react';
+
+const Full = React.lazy(() => import('@/components/not-found-full'));   // Fumadocs' layout and provider load only for a page that does not exist
 
 export function NotFound() {
   return (
-    <HomeLayout {...baseOptions()}>
-      <DefaultNotFound />
-    </HomeLayout>
+    <React.Suspense fallback={null}>
+      <Full />
+    </React.Suspense>
   );
 }

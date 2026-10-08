@@ -1,7 +1,7 @@
 import { llms, loader } from 'fumadocs-core/source';
 import { defineDocs } from 'fumadocs-mdx/macro';
 import { applyMdxPreset } from 'fumadocs-mdx/config';
-import { lucideIconsPlugin } from 'fumadocs-core/source/lucide-icons';
+import { iconsPlugin } from './icons';
 import { docsRoute } from './shared';
 
 export const docs = defineDocs({
@@ -19,7 +19,7 @@ export const docs = defineDocs({
 export const source = loader({
   source: docs.toFumadocsSource(),
   baseUrl: docsRoute,
-  plugins: [lucideIconsPlugin()],
+  plugins: [iconsPlugin()],
 });
 
 export const docsLlms = llms(source, {

@@ -4,11 +4,11 @@ import { SiteFooter } from '@/components/site-footer';
 import { Inline } from '@/components/inline';
 import { baseOptions } from '@/lib/layout.shared';
 import { parseChangelog } from '@/lib/inline';
-import raw from '../generated/CHANGELOG.md?raw';
+import raw from '@/generated/CHANGELOG.md?raw';
 
 const releases = parseChangelog(raw);
 
-export const Route = createFileRoute('/changelog')({
+export const Route = createFileRoute('/_docs/changelog')({
   head: () => ({
     meta: [
       { title: 'Changelog — kittymux' },

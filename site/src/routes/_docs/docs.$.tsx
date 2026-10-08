@@ -33,7 +33,7 @@ const serverLoader = createServerFn({
     };
   });
 
-export const Route = createFileRoute('/docs/$')({
+export const Route = createFileRoute('/_docs/docs/$')({
   component: Page,
   head: ({ loaderData }: { loaderData?: { title?: string; description?: string } }) => ({
     meta: [

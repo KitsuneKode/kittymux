@@ -5,7 +5,7 @@ import { SiteFooter } from '@/components/site-footer';
 import { facts } from '@/lib/facts';
 import { baseOptions } from '@/lib/layout.shared';
 
-export const Route = createFileRoute('/keys')({
+export const Route = createFileRoute('/_docs/keys')({
   head: () => ({
     meta: [
       { title: 'Keys — kittymux' },

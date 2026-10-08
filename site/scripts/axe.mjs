@@ -55,6 +55,17 @@ try {
   const found = await page.waitForFunction(() => document.querySelectorAll('[role="dialog"] [role="option"], [role="dialog"] a').length > 0, { timeout: 8000 }).then(() => true, () => false)
   if (!found) { bad++; console.error('search: typing "palette" found nothing') }
   await page.close()
+  // the landing page's own search field loads the search code on its first click
+  const home = await browser.newPage()
+  await home.setViewport({ width: 1280, height: 900 })
+  await home.goto('http://localhost:4174/', { waitUntil: 'networkidle0' })
+  const [btn] = await home.$$('xpath/.//button[contains(., "Search the docs")]')
+  if (!btn) { bad++; console.error('landing: no "Search the docs" button') } else {
+    await btn.click()
+    const opened = await home.waitForSelector('[role="dialog"] input', { timeout: 8000 }).then(() => true, () => false)
+    if (!opened) { bad++; console.error('landing: the search button did not open the search dialog') }
+  }
+  await home.close()
 } finally { await browser.close(); server.kill() }
 if (bad) { console.error(`${bad} problem(s)`); process.exit(1) }
 console.log('axe ok: no violations; no horizontal overflow at 320, 390, 768, 1440; light and dark; search finds a page')
