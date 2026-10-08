@@ -23,9 +23,9 @@ mux_runtime_dir() {
 mux_owned_socket() { [[ -S "$1" && -O "$1" ]]; }
 
 # Owned kitty sockets, newest first (kitty appends its pid: listen_on unix:/tmp/mykitty →
-# /tmp/mykitty-<pid>). Also looks in $XDG_RUNTIME_DIR, the safer place for listen_on.
+# /tmp/mykitty-<pid>), in every directory mux_socket_dirs names (the private $XDG_RUNTIME_DIR and /tmp, or $KITTYMUX_SOCKET_DIRS).
 mux_kitty_sockets() {
-    local s real seen=$'\n'
+    local s real d seen=$'\n'
     while IFS= read -r s; do
         mux_owned_socket "$s" || continue
         # a socket and its /tmp compatibility link are ONE kitty: list the first spelling only
@@ -33,7 +33,7 @@ mux_kitty_sockets() {
         case "$seen" in *$'\n'"$real"$'\n'*) continue ;; esac
         seen+="$real"$'\n'
         printf '%s\n' "$s"
-    done < <(ls -t /tmp/mykitty-* "${XDG_RUNTIME_DIR:-/nonexistent}"/mykitty-* 2>/dev/null)
+    done < <(while IFS= read -r d; do ls -t "$d"/mykitty-* 2>/dev/null; done < <(mux_socket_dirs))
 }
 
 # Where kitty sockets are looked for, one directory per line, in the same order as bin/kittymux's _socket_dirs(): $KITTYMUX_SOCKET_DIRS (':'-separated, existing
@@ -63,6 +63,8 @@ mux_socket_for_pid() {
 # or nothing when we were not started inside a kitty at all. Never "the newest": a second kitty must not be mistaken for the one that got the key.
 mux_own_socket() {
     mux_socket_for_pid "$PPID" && return 0
+    if [[ "${KITTY_LISTEN_ON:-}" =~ ^fd:[0-9]+$ ]]; then printf '%s' "$KITTY_LISTEN_ON"; return 0; fi
+    if [[ "${KITTY_LISTEN_ON:-}" == unix:* ]] && mux_owned_socket "${KITTY_LISTEN_ON#unix:}"; then printf '%s' "$KITTY_LISTEN_ON"; return 0; fi
     mux_socket_for_pid "${KITTY_PID:-}" && return 0
     return 1
 }
@@ -80,20 +82,18 @@ mux_resolve_socket() {
         fi
         printf '%s' "$target"; return 0
     fi
-    if [[ "${KITTY_LISTEN_ON:-}" =~ ^fd:[0-9]+$ ]]; then
+    if [[ "${KITTY_LISTEN_ON:-}" =~ ^fd:[0-9]+$ ]]; then      # a kitten's own channel: it cannot be stale, so it comes before any socket file
         printf '%s' "$KITTY_LISTEN_ON"; return 0
     fi
-    for s in "/tmp/mykitty-${PPID}" "${XDG_RUNTIME_DIR:-/nonexistent}/mykitty-${PPID}" "/tmp/kitty-${PPID}"; do
-        mux_owned_socket "$s" && { printf 'unix:%s' "$s"; return 0; }
-    done
-    if [[ "${KITTY_LISTEN_ON:-}" == unix:* ]]; then
-        mux_owned_socket "${KITTY_LISTEN_ON#unix:}" && { printf '%s' "$KITTY_LISTEN_ON"; return 0; }
+    s="$(mux_own_socket)" && { printf '%s' "$s"; return 0; }
+    if [[ -z "${KITTYMUX_SOCKET_DIRS:-}" ]]; then              # the spellings older setups use; a confined search (tests) looks nowhere else
+        mux_owned_socket "/tmp/kitty-${PPID}" && { printf 'unix:/tmp/kitty-%s' "$PPID"; return 0; }
     fi
     s="$(mux_kitty_sockets | head -n1)"
     if [[ -n "$s" ]] && mux_owned_socket "$s"; then
         printf 'unix:%s' "$s"; return 0
     fi
-    if mux_owned_socket /tmp/mykitty; then
+    if [[ -z "${KITTYMUX_SOCKET_DIRS:-}" ]] && mux_owned_socket /tmp/mykitty; then
         printf 'unix:/tmp/mykitty'; return 0
     fi
     return 1
