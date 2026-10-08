@@ -111,6 +111,7 @@ class ExplainTests(unittest.TestCase):
         self.env = mock.patch.dict(os.environ, {"KITTYMUX_STATE": self.tmp.name})
         self.env.start()
         self.patches = [mock.patch.object(self.m, "_target_socket", lambda: "unix:/tmp/mykitty-4321"),
+                        mock.patch.object(self.m, "_focused_socket", lambda: "unix:/tmp/mykitty-4321"),
                         mock.patch.object(self.m, "_run", lambda *a, **k: (1, ""))]
         for p in self.patches:
             p.start()
@@ -1617,3 +1618,37 @@ class RestoreSpawnTests(unittest.TestCase):
                 code = m.sessions_restore([session])
         self.assertEqual(code, 1)
         self.assertNotIn("opening", "".join(c.args[0] for c in out.write.call_args_list))
+
+
+class FocusedBeatsNewestTests(unittest.TestCase):
+    """Started from outside every kitty (a window-manager bind): two kitties, the OLDER one has the keyboard focus. The commands below must act on it."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def test_commands_started_outside_a_kitty_follow_the_focus(self):
+        src = open(os.path.join(ROOT, "bin", "kittymux"), encoding="utf-8").read()
+        for fn in ("layout", "sessions_save", "sessions_list", "sessions_restore", "changes_cmd", "snooze", "explain", "screenshot", "dim"):
+            body = src[src.index(f"\ndef {fn}(") + 1:]
+            body = body[:body.index("\ndef ", 1)]
+            self.assertNotIn("_target_socket()", body, f"{fn} must use _focused_socket(): from a WM bind _target_socket() is 'the newest kitty'")
+
+    def test_the_focused_kitty_wins_over_the_newest(self):
+        older, newer = "unix:/run/user/1000/mykitty-100", "unix:/run/user/1000/mykitty-200"
+        data = {older: [{"is_focused": True, "tabs": []}], newer: [{"is_focused": False, "tabs": []}]}
+        with mock.patch.object(self.m, "_own_kitty_socket", return_value=None), \
+             mock.patch.object(self.m, "_sockets", return_value=[newer, older]), \
+             mock.patch.object(self.m, "_ls", side_effect=lambda s: data[s]), \
+             mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("KITTYMUX_TARGET", None)
+            self.assertEqual(self.m._focused_socket(), older)
+
+    def test_the_kitty_we_were_started_in_wins_over_the_focused_one(self):
+        mine, other = "unix:/run/user/1000/mykitty-100", "unix:/run/user/1000/mykitty-200"
+        with mock.patch.object(self.m, "_own_kitty_socket", return_value=mine), \
+             mock.patch.object(self.m, "_sockets", return_value=[other, mine]), \
+             mock.patch.object(self.m, "_ls", side_effect=lambda s: [{"is_focused": s == other, "tabs": []}]), \
+             mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("KITTYMUX_TARGET", None)
+            self.assertEqual(self.m._focused_socket(), mine)

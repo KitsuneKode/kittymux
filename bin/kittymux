@@ -768,7 +768,7 @@ def layout(argv: list[str]) -> int:
     cmd = argv[0] if argv else "show"
     arg = argv[1] if len(argv) > 1 else ""
     sdir = kittymux_layout.state_dir()
-    sock = _target_socket()
+    sock = _focused_socket()
     pid = _socket_pid(sock) if sock else None
     if pid is None:
         print("kittymux layout: no kitty remote-control socket found "
@@ -1110,7 +1110,7 @@ def sessions_save(argv: list[str], directory: str | None = None) -> int:
     if name and not TEMPLATE_NAME.match(name):
         print("kittymux sessions: a session name is letters, digits, . _ - (up to 60)", file=sys.stderr)
         return 2
-    sock = _target_socket()
+    sock = _focused_socket()
     if not sock:
         print("kittymux sessions: no kitty remote-control socket found", file=sys.stderr)
         return 1
@@ -1192,7 +1192,7 @@ def sessions_finalize(argv: list[str]) -> int:
 
 
 def sessions_list(argv: list[str]) -> int:
-    sock = _target_socket()
+    sock = _focused_socket()
     if not sock:
         print("kittymux sessions: no kitty remote-control socket found", file=sys.stderr)
         return 1
@@ -1275,7 +1275,7 @@ def sessions_restore(argv: list[str]) -> int:
     if not path:
         print("kittymux sessions: no such saved session (kittymux sessions save NAME first)", file=sys.stderr)
         return 1
-    sock = _target_socket()
+    sock = _focused_socket()
     if sock and "--new-window" not in argv:
         rc, _ = _run(["kitty", "@", "--to", sock, "action", "goto_session", path], 8)          # kitty's own session switch
         if rc == 0:
@@ -2104,7 +2104,7 @@ def changes_cmd(argv: list[str]) -> int:
     if "--diff" in argv and "--all" in argv:
         print("kittymux changes: --diff selects one window; omit --all", file=sys.stderr)
         return 2
-    sock = _target_socket()
+    sock = _focused_socket()
     pid = _socket_pid(sock) if sock else None
     if pid is None:
         print("kittymux changes: no kitty remote-control socket found", file=sys.stderr)
@@ -2500,7 +2500,7 @@ def snooze(argv: list[str]) -> int:
     if span is None or span <= 0 or span > kittymux_quiet.MAX_SPAN_S:
         print("kittymux snooze: a duration like 30m, 1h or 2d (up to 30 days)", file=sys.stderr)
         return 2
-    sock = _target_socket()
+    sock = _focused_socket()
     pid = _socket_pid(sock) if sock else None
     if not sock or pid is None:
         print("kittymux snooze: no kitty remote-control socket found", file=sys.stderr)
@@ -2579,7 +2579,7 @@ def explain(argv: list[str]) -> int:
     if wid is not None and not wid.isdigit():
         print("kittymux explain: --window needs a window id (kitty @ ls)", file=sys.stderr)
         return 2
-    socks = _sockets() if every else ([s] if (s := _target_socket()) else [])
+    socks = _sockets() if every else ([s] if (s := _focused_socket()) else [])
     if not socks:
         print("kittymux explain: no kitty remote-control socket found (set allow_remote_control socket-only and listen_on unix:${XDG_RUNTIME_DIR}/mykitty in kitty.conf)", file=sys.stderr)
         return 1
@@ -2652,7 +2652,7 @@ def dim(argv: list[str]) -> int:
     if want and ver and ver < kittymux_layout.DIM_SHADER_MIN:
         print(f"{WARN} kitty {'.'.join(map(str, ver))} is older than 0.49.2 — the flag is set, "
               "but it takes effect only on kitty ≥ 0.49.2 (older ones also dim the tab bar)")
-    sock = _target_socket()
+    sock = _focused_socket()
     if sock:
         _run(["kitty", "@", "--to", sock, "load-config"], 6)
     print("dim inactive panes: " + ("on" if want else "off"))
@@ -2672,7 +2672,7 @@ def screenshot(argv: list[str]) -> int:
             return 2
         else:
             rest.append(a)
-    sock = _target_socket()
+    sock = _focused_socket()
     if not sock:
         print("kittymux screenshot: no kitty remote-control socket found", file=sys.stderr)
         return 1
