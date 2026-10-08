@@ -1253,7 +1253,7 @@ class FeaturesTests(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(sdir, "hue-off")))
         rc, _o, err, _ = self.run_cmd("on", "nonsense")
         self.assertEqual(rc, 2)
-        self.assertIn("unknown feature", err)
+        self.assertIn("unknown setting", err)
         rc, _o, err, _ = self.run_cmd("preset", "loud")
         self.assertEqual(rc, 2)
 
