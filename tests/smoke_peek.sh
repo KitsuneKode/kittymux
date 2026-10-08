@@ -100,6 +100,7 @@ echo "  ok   one esc closes it; you stay on 'main'"
 
 # 5. ⏎ goes there
 K $CHORD; wait_open || fail "the card did not reopen for the jump"
+wait_loaded || fail "the card never finished loading before Enter"   # Enter does nothing until the card has its data (a worker thread fetches it: slow on a CI runner)
 K Return; wait_closed || fail "Enter did not close the card"
 for _ in $(seq 16); do [ "$(active)" = web ] && break; sleep 0.25; done
 [ "$(active)" = web ] || fail "Enter should jump to the 'web' tab (active: $(active))"
