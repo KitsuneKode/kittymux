@@ -53,7 +53,7 @@ s=json.load(open(sys.argv[1]));assert len(s['windows'])==3;assert len(s['rects']
 PY
 X key ctrl+alt+shift+semicolon
 sleep 1.5
-RC get-text --match title:kittymux-panes | rg 'Pane controls' >/dev/null
+RC get-text --match title:kittymux-panes | grep -q 'Pane controls'
 X key r
 sleep .8
 SNAP > "$RUN/rotated.json"
@@ -72,8 +72,8 @@ RC ls | python3 -c 'import json,sys;assert sum(len(t["windows"]) for o in json.l
 RC kitten --match id:1 "$ROOT/python/peek-kit.py" 1 >/dev/null
 sleep 1.4
 RC get-text --match cmdline:peek-kit.py > "$RUN/peek.txt"
-rg '3 panes' "$RUN/peek.txt" >/dev/null
-rg 'Preview pane' "$RUN/peek.txt" >/dev/null
+grep -q '3 panes' "$RUN/peek.txt"
+grep -q 'Preview pane' "$RUN/peek.txt"
 if [ -n "${SHOT:-}" ]; then RC screenshot "${SHOT}.peek.png" >/dev/null; fi
 X key Escape
 sleep .5
@@ -84,13 +84,13 @@ X key u
 sleep .25
 RC get-text --match cmdline:sidebar-kit.py > "$RUN/usage.txt"
 # an old-format cache (no numeric sidecars) still draws: two providers, Codex at 100 %, the reset text parsed into a countdown
-rg '2 providers' "$RUN/usage.txt" >/dev/null
-rg '100%' "$RUN/usage.txt" >/dev/null
-rg '42m' "$RUN/usage.txt" >/dev/null
+grep -q '2 providers' "$RUN/usage.txt"
+grep -q '100%' "$RUN/usage.txt"
+grep -q '42m' "$RUN/usage.txt"
 if [ -n "${SHOT:-}" ]; then RC screenshot "${SHOT}.usage.png" >/dev/null; fi
 X key Escape
 sleep .3
-RC get-text --match cmdline:sidebar-kit.py | rg 'Agents' >/dev/null
+RC get-text --match cmdline:sidebar-kit.py | grep -q 'Agents'
 X key q
 sleep .5
 RC ls | python3 -c 'import json,sys;assert sum(len(t["windows"]) for o in json.load(sys.stdin) for t in o["tabs"])==3'
