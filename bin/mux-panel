@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # mux-panel — the sidebar deck as a persistent docked panel (Wayland, wlr-layer-shell).
 #
-#   mux-panel toggle|start|stop|status|wider|narrower|width N
+#   mux-panel toggle|start|stop|status|summon|dock|wider|narrower|width N
 #
 # Runs python/sidebar-kit.py inside `kitten panel` docked to the left screen edge. On a
 # compositor that honours the layer-shell exclusive zone (Hyprland does) the panel
@@ -10,6 +10,10 @@
 #
 # The panel is resizable: `wider` / `narrower` / `width N`, or drag its inner edge with the
 # mouse (the deck handles the drag). The chosen width is remembered.
+#
+# Keyboard focus: a docked panel (`--focus-policy=on-demand`) takes keys only after a click. `toggle` therefore SUMMONS it
+# (`exclusive`: keys work at once); Esc / Q / a jump in the panel, `mux-panel dock`, or 12 s without a key hand the grab back
+# (`kittymux_panelfocus`). The mode is remembered in $STATE/panel-mode (`summoned` | `docked`; anything else = docked).
 #
 # Env: KITTYMUX_PANEL_COLUMNS (default: your last width, else 32), KITTYMUX_PANEL_EDGE (left|right, default left),
 #      KITTYMUX_TARGET (kitty socket to watch; default: the active kitty, else the newest)
@@ -24,6 +28,7 @@ PIDFILE="$STATE/panel.pid"
 # socket paths are limited to ~107 bytes, so a long state path would silently fail to connect
 SOCK="${XDG_RUNTIME_DIR:-$STATE}/kittymux-panel-$(id -u).sock"
 WIDTHFILE="$STATE/panel-columns"
+MODEFILE="$STATE/panel-mode"
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=../lib/socket.sh
 source "$HERE/../lib/socket.sh"
@@ -32,6 +37,10 @@ DECK="$(cd -- "$HERE/../python" && pwd -P)/sidebar-kit.py"
 COLUMNS_N="${KITTYMUX_PANEL_COLUMNS:-$(cat "$WIDTHFILE" 2>/dev/null || echo 32)}"
 [[ "$COLUMNS_N" =~ ^[0-9]+$ ]] && (( COLUMNS_N >= 16 && COLUMNS_N <= 80 )) || COLUMNS_N=32
 EDGE="${KITTYMUX_PANEL_EDGE:-left}"
+
+# the pure rules (mode names, what a toggle does) live in python/kittymux_panelfocus.py — one source
+pf() { python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import kittymux_panelfocus as pf; print(getattr(pf, sys.argv[2])(*sys.argv[3:]))' "$(dirname -- "$DECK")" "$@"; }
+mode() { pf parse_mode "$(cat "$MODEFILE" 2>/dev/null)"; }
 
 alive() { [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; }
 
@@ -46,7 +55,9 @@ pick_target() {
     [[ -n "$sock" ]] && printf 'unix:%s' "$sock"
 }
 
-start() {
+start() {   # start [summoned|docked]; a running panel is left alone
+    local want="${1:-docked}" policy
+    [[ "$want" == summoned ]] && policy=exclusive || { want=docked; policy=on-demand; }
     alive && { echo "panel already running (pid $(cat "$PIDFILE"))"; return 0; }
     command -v kitten >/dev/null 2>&1 || { echo "mux-panel: kitten not found" >&2; return 1; }
     [[ -n "${WAYLAND_DISPLAY:-}" ]] || echo "mux-panel: no Wayland session — the panel will not reserve space" >&2
@@ -67,19 +78,20 @@ except Exception:
     [[ "$target_pid" =~ ^[1-9][0-9]*$ ]] || { echo "mux-panel: could not verify target kitty owner" >&2; return 1; }
     mkdir -p "$STATE"
     KITTYMUX_TARGET="$target" KITTYMUX_TARGET_PID="$target_pid" KITTYMUX_PANEL=1 KITTYMUX_PANEL_SOCK="$SOCK" KITTYMUX_PANEL_EDGE="$EDGE" setsid nohup kitten panel \
-        --edge="$EDGE" --columns="$COLUMNS_N" --layer=top --focus-policy=on-demand \
+        --edge="$EDGE" --columns="$COLUMNS_N" --layer=top --focus-policy=$policy \
         --name kittymux-panel \
         --listen-on "unix:$SOCK" \
         -o allow_remote_control=socket-only -o confirm_os_window_close=0 -o background_opacity=1 \
         kitty +runpy 'from kittens.runner import main; main()' "${KITTY_CONFIG_DIRECTORY:-${XDG_CONFIG_HOME:-$HOME/.config}/kitty}" "$DECK" >"$STATE/panel.log" 2>&1 &
     echo $! > "$PIDFILE"
+    printf '%s' "$want" > "$MODEFILE"
     echo "panel started → watching $target"
 }
 
 stop() {
     if alive; then
         kill -- "-$(cat "$PIDFILE")" 2>/dev/null || kill "$(cat "$PIDFILE")" 2>/dev/null
-        rm -f "$PIDFILE" "$SOCK"
+        rm -f "$PIDFILE" "$SOCK" "$MODEFILE"
         echo "panel stopped"
     else
         rm -f "$PIDFILE"
@@ -101,15 +113,38 @@ resize() {  # absolute column count, clamped, remembered
     echo "panel width: $n columns"
 }
 
+focus() {   # focus summoned|docked on the RUNNING panel (kitten @ resize-os-window --action=os-panel focus-policy=…)
+    local want="$1" policy
+    alive && [[ -S "$SOCK" ]] || { echo "panel not running"; return 1; }
+    policy="$(pf_policy "$want")"
+    kitten @ --to "unix:$SOCK" resize-os-window --action=os-panel --incremental "focus-policy=$policy" >/dev/null 2>&1 \
+        || { echo "mux-panel: could not set the panel's keyboard focus to $policy" >&2; return 1; }
+    mkdir -p "$STATE"; printf '%s' "$want" > "$MODEFILE"
+    echo "panel $want (focus_policy=$policy)"
+}
+pf_policy() { [[ "$1" == summoned ]] && echo exclusive || echo on-demand; }
+
+toggle() {
+    local running=0
+    alive && running=1
+    case "$(pf toggle_action "$running" "$(mode)")" in
+        start-summoned) start summoned ;;
+        summon)         focus summoned ;;
+        *)              stop ;;
+    esac
+}
+
 current_width() { cat "$WIDTHFILE" 2>/dev/null || echo "$COLUMNS_N"; }
 
 case "${1:-toggle}" in
     wider)    resize $(( $(current_width) + 4 )) ;;
     narrower) resize $(( $(current_width) - 4 )) ;;
     width)    resize "${2:-}" ;;
-    start)  start ;;
+    start)  start "${2:-docked}" ;;
+    summon) focus summoned ;;
+    dock)   focus docked ;;
     stop)   stop ;;
-    status) alive && echo "running (pid $(cat "$PIDFILE"))" || echo "stopped" ;;
-    toggle) if alive; then stop; else start; fi ;;
-    *) echo "usage: mux-panel toggle|start|stop|status|wider|narrower|width N" >&2; exit 2 ;;
+    status) alive && echo "running (pid $(cat "$PIDFILE")), $(mode)" || echo "stopped" ;;
+    toggle) toggle ;;
+    *) echo "usage: mux-panel toggle|start|stop|status|summon|dock|wider|narrower|width N" >&2; exit 2 ;;
 esac

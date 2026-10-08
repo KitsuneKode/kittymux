@@ -31,7 +31,7 @@
                          explain [--window ID] [--last N] [--all] [--json]
   kittymux features    pick which optional pieces of the bar you want — the project/branch line under each tab, a colour per project, emphasis on look-alike tabs:
                          features [list] | on NAME | off NAME | preset minimal|default|full     (kittymux features -h)
-  kittymux panel       persistent agent-and-usage panel: panel [toggle|start|stop|status|wider|narrower|width N]
+  kittymux panel       persistent agent-and-usage panel: panel [toggle|start|stop|status|summon|dock|wider|narrower|width N]
   kittymux usage       provider quotas, resets and local usage: usage [--window] (Mod+N → Usage opens a separate window from any app)
   kittymux peek        the peek card (a right-click on a tab) from the keyboard: peek [TAB_ID | --waiting]  (--waiting: the agent that needs you longest)
   kittymux palette     one searchable list of what needs you, every tab, agents to reopen or start, and a few actions (ctrl+alt+shift+space): palette
@@ -2419,7 +2419,7 @@ def act_cmd(argv: list[str]) -> int:
 def panel_cmd(argv: list[str]) -> int:
     action = argv[0] if argv else "toggle"
     if action not in {"toggle", "start", "stop", "status", "wider", "narrower", "width"} or (action == "width" and (len(argv) != 2 or not argv[1].isdigit())) or (action != "width" and len(argv) > 1):
-        print("usage: kittymux panel [toggle|start|stop|status|wider|narrower|width N]", file=sys.stderr)
+        print("usage: kittymux panel [toggle|start|stop|status|summon|dock|wider|narrower|width N]", file=sys.stderr)
         return 2
     return subprocess.run([os.path.join(HOME_DIR, "bin/mux-panel"), *(argv or ["toggle"])], check=False).returncode
 

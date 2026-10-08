@@ -41,6 +41,7 @@ for _d in (_CONFIG_DIR, _source_dir()):
 import kittymux_agents  # noqa: E402
 import kittymux_agentsview  # noqa: E402
 import kittymux_features  # noqa: E402
+import kittymux_panelfocus  # noqa: E402
 import kittymux_helpview  # noqa: E402
 import kittymux_deck as deck  # noqa: E402
 import kittymux_git  # noqa: E402
@@ -469,6 +470,8 @@ class Sidebar(Handler):
                 return
             if not _PANEL:
                 self.quit_loop()
+            else:
+                self._release_grab()
             return
         kittymux_inbox.ack(str(_STATE_DIR), time.time(), ids=ids, status="dismissed")
         self._inbox_reload()
@@ -786,6 +789,26 @@ class Sidebar(Handler):
             self.preview = (lines["lines"] if isinstance(lines, dict) else lines) or ["(empty pane)"]
             self.draw_screen()
 
+    # ---- keyboard grab: a summoned panel (exclusive focus) gives the keys back when you are done ----
+    def _summoned(self) -> bool:
+        if not _PANEL:
+            return False
+        try:
+            return kittymux_panelfocus.parse_mode((_STATE_DIR / "panel-mode").read_text()) == kittymux_panelfocus.SUMMONED
+        except OSError:
+            return False
+
+    def _release_grab(self) -> None:
+        """Hand the keyboard back (`mux-panel dock`), detached: it is a remote-control call and must never block the UI."""
+        if not self._summoned():
+            return
+        root = Path(deck.__file__).resolve().parent.parent
+        try:
+            subprocess.Popen([str(root / "bin" / "mux-panel"), "dock"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+        except OSError:
+            pass
+
     def _schedule(self) -> None:
         if self._alive:
             self.asyncio_loop.call_later(_REFRESH_EVERY, self._tick)
@@ -795,6 +818,15 @@ class Sidebar(Handler):
             return
         if getattr(self, "_view", "agents") == "usage":
             self._request_usage()
+        if _PANEL:
+            summoned = self._summoned()
+            if summoned and not getattr(self, "_was_summoned", False):
+                self._last_key = time.monotonic()       # the idle clock starts when the summon does, not at the last key of an earlier visit
+            self._was_summoned = summoned
+            if kittymux_panelfocus.should_dock("summoned" if summoned else "docked", getattr(self, "_last_key", time.monotonic()), time.monotonic(),
+                                               kittymux_panelfocus.idle_limit(os.environ.get("KITTYMUX_PANEL_IDLE_S"))):
+                self._last_key = time.monotonic()      # one try per idle period; a failed dock tries again after another one
+                self._release_grab()
         self._request_refresh()
         self._schedule()
 
@@ -998,6 +1030,7 @@ class Sidebar(Handler):
         if key_event.type == EventType.RELEASE:   # press+release both arrive; act once
             return
         k = (key_event.key or "").upper()
+        self._last_key = time.monotonic()
         view = getattr(self, "_view", "agents")
         if self._help:                                          # the `?` card: one keypress closes it, whatever the key
             self._help = False
@@ -1051,6 +1084,8 @@ class Sidebar(Handler):
         if k in ("Q", "ESCAPE"):
             if not _PANEL or k == "Q":
                 self.quit_loop()
+            else:
+                self._release_grab()
             return
         shifted = bool(key_event.mods & 1)
         n = len(self.snap.rows)
@@ -1303,6 +1338,7 @@ class Sidebar(Handler):
         if not _PANEL:
             self.quit_loop()
         else:
+            self._release_grab()
             self._request_refresh()
 
 

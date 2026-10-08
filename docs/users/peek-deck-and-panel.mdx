@@ -84,6 +84,7 @@ Press `ctrl+alt+b`. The deck lists every tab across every session, grouped, each
 Press `ctrl+alt+shift+b`. The deck becomes a persistent column: the compositor reserves its width, so tiled windows sit beside it. It stays open after a jump and uses about one percent of a CPU when idle. Press the chord again to remove it.
 
 - Keys work as in the deck, except that `esc` does not close it. Press `q` to quit the panel.
+- **Summoned, then docked.** Opening the panel with its chord (or `kittymux panel summon`) takes the keyboard at once, so `j`, `k`, `/` and the rest work without a click. `esc`, `q`, a jump, `kittymux panel dock`, or 12 seconds without a key hands the keyboard back; the panel stays on screen and takes keys again after a click or the next summon. While it is summoned, the chord removes it. The 30-second limit exists so a forgotten summon can never swallow your typing.
 - Hover previews a tab or pane in a drawer under the list.
 - Drag the panel's inner edge to resize it. The pointer turns into a resize cursor there, and the width is remembered.
 

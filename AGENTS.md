@@ -14,7 +14,8 @@ remote work.
   (per-instance bar layout: `mode full|compact|hidden|cycle`, `edge`,
   `width`, `pick`, `default`). State: `$KITTYMUX_STATE/layout-<pid>.json`
 - `bin/mux-panel` — docks `sidebar-kit.py` as a Wayland layer-shell panel
-  (`ctrl+alt+shift+b`): always-visible clickable sidebar, survives a hidden bar
+  (`ctrl+alt+shift+b`): always-visible clickable sidebar, survives a hidden bar. Keyboard focus is `summoned` (`exclusive`, what `toggle` starts with) or `docked` (`on-demand`, click to type), remembered in `$KITTYMUX_STATE/panel-mode`; changed at runtime with
+  `kitten @ resize-os-window --action=os-panel --incremental focus-policy=…`. The panel gives the grab back on Esc/Q/jump and after `IDLE_DOCK_S` without a key — an exclusive grab must never be able to trap typing (`python/kittymux_panelfocus.py`, pure, `tests/test_panelfocus.py`; layer-shell cannot run under Xvfb, so the grab itself is checked by hand on Hyprland)
 - `bin/` — shell scripts (mux-*); shared helpers in `lib/mux.sh`, `lib/socket.sh`
 - `python/kittymux_layout.py` — layout engine; loaded via `geninclude` so its
   output must come LAST in kitty.conf (it wins over earlier tab_bar_* lines)

@@ -4,6 +4,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 
 ## [Unreleased]
 
+### Fixed
+- **The panel takes keys the moment you open it.** The docked panel only accepted the keyboard after a click, so Super+N and then `j` did nothing. Opening it now *summons* it (an exclusive keyboard grab); `esc`, `q`, a jump, `kittymux panel dock` or 12 s without a key give the keyboard back, so a forgotten summon cannot trap your typing. New `kittymux panel summon|dock`; pure rules in `kittymux_panelfocus`.
+
 ### Changed
 - **Tabs are called by what they are about.** An agent's product name ("Claude Code") or a sentence of its own reply ("I can't do that…") used as the window title no longer becomes the tab's name: the tab is called by its project. Titles are cleaned (markdown, quotes, trailing punctuation, and a `| folder` suffix some agents append when it is exactly the tab's project) and cut at a word. The text of a tab you named yourself is never touched. Bar and panel share one pure module (`kittymux_titles`); `kittymux features off titles` restores the raw title.
 - **The panel's Agents list is calmer.** A split tab starts closed (`▸ 3 panes`; click it, or `→` / `o`, to list its panes; hovering and refreshes never open one). The session header hides when there is only one unnamed group, says `other tabs` otherwise, and shows how many of its tabs ask for you. Rows say how long they have waited (`needs you 4m`, `limit hit 1h`, `done 3m`); the words shorten before they take room from the branch. PR numbers and ports no longer wear the "working" blue.
