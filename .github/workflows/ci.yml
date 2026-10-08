@@ -78,6 +78,8 @@ jobs:
         run: bash tests/smoke_fanout.sh
       - name: inbox from real OSC 99 agent notifications
         run: bash tests/smoke_inbox.sh
+      - name: the panel's Settings view (open, toggle, lock, confirm, click, presets, one reload for a burst)
+        run: bash tests/smoke_settings.sh
       - name: tab clicks survive wobble; agent tabs survive a stray middle-click
         run: bash tests/smoke_click.sh
       - name: native divider (drawn by kitty, native resize arrow and drag; kitty >= 0.49.2)

@@ -13,23 +13,28 @@ KEYS = {
     "agents": [
         ("j k", "move down / up"), ("⏎", "go to the tab (the pane that asks)"), ("/", "find a tab"), ("→ ← o", "open / close a split's panes"),
         ("a", "pull this tab's panes into yours"), ("t", "turn the pane into its own tab"), ("J K", "next / previous session"), ("g G", "first / last"),
-        ("u i", "Usage / Inbox"), ("q", "quit the panel"),
+        ("u i s", "Usage / Inbox / Settings"), ("q", "quit the panel"),
     ],
     "usage": [
         ("← →", "pick a provider"), ("1-9", "pick by number"), ("r", "refresh now"), ("d", "details and sources"), ("↑ ↓", "scroll"),
-        ("a i", "Agents / Inbox"), ("q", "quit the panel"),
+        ("a i s", "Agents / Inbox / Settings"), ("q", "quit the panel"),
     ],
     "inbox": [
         ("j k", "move down / up"), ("⏎", "go to the agent"), ("x X", "dismiss this / all in the filter"), ("z", "undo the last dismissal"),
-        ("tab 1-4", "change the filter"), ("g G", "first / last"), ("r", "reload"), ("a u", "Agents / Usage"), ("q", "quit the panel"),
+        ("tab 1-4", "change the filter"), ("g G", "first / last"), ("r", "reload"), ("a u s", "Agents / Usage / Settings"), ("q", "quit the panel"),
+    ],
+    "settings": [
+        ("j k", "move down / up"), ("space ⏎", "turn it on or off"), ("p P", "next / previous preset"), ("r R", "reset this one / its whole group"),
+        ("g G", "first / last"), ("esc a", "back to Agents"), ("u i", "Usage / Inbox"), ("q", "quit the panel"),
     ],
 }
 MOUSE = {
     "agents": [("hover", "preview a tab or pane"), ("click", "go to it"), ("▸ ▾", "open / close a split's panes"), ("drag edge", "resize the panel")],
     "usage": [("click a tile", "pick that provider")],
     "inbox": [("click a card", "pick it"), ("Jump / Dismiss", "act on the picked card"), ("a chip", "filter")],
+    "settings": [("a row", "pick it"), ("a state", "turn it on or off"), ("a preset", "apply it"), ("a button", "answer the question")],
 }
-TITLES = {"agents": "Agents", "usage": "Usage", "inbox": "Inbox"}
+TITLES = {"agents": "Agents", "usage": "Usage", "inbox": "Inbox", "settings": "Settings"}
 
 
 def view(name: str, cols: int, kit: U.Kit) -> list:

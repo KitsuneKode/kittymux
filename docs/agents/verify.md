@@ -15,6 +15,7 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
   `bash tests/smoke_fanout.sh` (one prompt → three fake agents in three real worktrees in a real kitty, each CLI's own prompt form, compare/clean, main checkout untouched),
   `bash tests/smoke_changes.sh` (a fake agent edits a real git repo: baseline at run start, summary at run end, dirty-before and ignored files excluded, repo untouched),
   `bash tests/smoke_socket.sh` (`allow_remote_control socket-only` refuses a printed escape sequence — `yes` obeys it, the control — and the `$XDG_RUNTIME_DIR` socket is discovered),
+  `bash tests/smoke_settings.sh [OUT_DIR]` (the panel's Settings view with real keys and mouse: `s` opens it, space writes the one flag file, a row held by the environment stays locked, a risky switch asks and esc cancels, a click on the state toggles, presets, reset, ten toggles cause ONE reload of the running kitties, the CLI agrees; PNGs when OUT_DIR is given),
   `bash tests/smoke_inbox.sh` (real OSC 99 notifications from an agent pane → typed inbox events, the pane follows a completion, focus acknowledges),
   `bash tests/smoke_click.sh` (tab clicks with wobble and slowness; a middle-click spares an agent tab),
   `bash tests/smoke_native.sh` (kitty ≥ 0.49.2: the native divider's pixels, the real X cursor name over it, a native drag, the single-pane fallback),

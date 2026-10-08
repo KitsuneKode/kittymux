@@ -31,6 +31,8 @@
                          explain [--window ID] [--last N] [--all] [--json]
   kittymux features    pick which optional pieces of the bar you want — the project/branch line under each tab, a colour per project, emphasis on look-alike tabs:
                          features [list] | on NAME | off NAME | preset minimal|default|full     (kittymux features -h)
+  kittymux settings    every on/off setting in one list (bar, notifications, safety, opt-in), what each does and why it is on or off:
+                         settings [list] | on NAME [--yes] | off NAME | reset NAME|GROUP|all | apply | open     (the panel's Settings view is the same list: press s)
   kittymux panel       persistent agent-and-usage panel: panel [toggle|start|stop|status|summon|dock|wider|narrower|width N]
   kittymux usage       provider quotas, resets and local usage: usage [--window] (Mod+N → Usage opens a separate window from any app)
   kittymux peek        the peek card (a right-click on a tab) from the keyboard: peek [TAB_ID | --waiting]  (--waiting: the agent that needs you longest)
@@ -2297,6 +2299,83 @@ def features_cmd(argv: list[str]) -> int:
     return 2
 
 
+def settings_cmd(argv: list[str]) -> int:
+    """`kittymux settings [list] | on NAME [--yes] | off NAME | reset NAME|GROUP|all | apply | open` — every switch in kittymux_switches, one list. The panel's Settings
+    view (press `s`) edits the same flag files, so the two always agree."""
+    SW = kittymux_switches
+    sdir = SW.state_dir()
+    cmd = argv[0] if argv else "list"
+    usage = "usage: kittymux settings [list] | on NAME [--yes] | off NAME | reset NAME|GROUP|all | apply | open"
+    if cmd in ("-h", "--help", "help"):
+        print(usage)
+        return 0
+    try:
+        if cmd in ("list", "status") and len(argv) <= 1:
+            for group, switches in SW.by_group():
+                print(c("1", group))
+                for sw in switches:
+                    on, where, what = SW.resolve(sw.id, sdir)
+                    src = {"env": c("33", f"env {what}"), "flag": c("2", "file"), "default": c("2", "")}[where]
+                    note = c("2", "  (planned: not built yet)") if sw.status == SW.PLANNED else ""
+                    print(f"  {sw.id:<15} {'on ' if on else 'off'}  {src:<28} {sw.label}: {sw.help}{note}")
+            print(c("2", "\n  change one: kittymux settings on|off NAME · back to the default: kittymux settings reset NAME|GROUP|all · presets: kittymux features preset ..."))
+            return 0
+        if cmd in ("on", "off") and len(argv) >= 2:
+            name = argv[1]
+            sw = SW.get(name)
+            extra = [a for a in argv[2:] if a != "--yes"]
+            if extra:
+                print(usage, file=sys.stderr)
+                return 2
+            if cmd == "on" and sw.risk != SW.NONE and "--yes" not in argv:
+                print(f"{WARN} {sw.label}: {sw.consequence}", file=sys.stderr)
+                print(f"  to turn it on anyway: kittymux settings on {name} --yes", file=sys.stderr)
+                return 2
+            SW.set_switch(sdir, name, cmd == "on")
+            note = ""
+            if SW.source(name, sdir)[1] == "env":
+                note = f"  {WARN} {SW.resolve(name, sdir)[2]} is set in this shell's environment and wins over this (kitty's own environment may differ)"
+            if sw.status == SW.PLANNED:
+                note += f"  {WARN} not built yet: the choice is saved for when it exists"
+            print(f"{OK} {name} {cmd}{note}")
+            print(c("2", f"  {_reloaded(_nudge_bars())}"))
+            return 0
+        if cmd == "reset" and len(argv) == 2:
+            target = argv[1]
+            names = list(SW.IDS) if target == "all" else [s.id for s in SW.CATALOG if s.group.lower().replace(" ", "-") == target.lower() or s.group.lower() == target.lower()] or [SW.get(target).id]
+            gone = SW.reset(sdir, names)
+            print(f"{OK} {len(gone)} setting{'s' if len(gone) != 1 else ''} back to the default" if gone else f"{OK} already the default")
+            if gone:
+                print(c("2", f"  {_reloaded(_nudge_bars())}"))
+            return 0
+        if cmd == "apply" and len(argv) == 1:
+            print(_reloaded(_nudge_bars()))
+            return 0
+        if cmd == "open" and len(argv) == 1:
+            pidfile = os.path.join(sdir, "panel.pid")
+            alive = False
+            try:
+                alive = os.path.exists(f"/proc/{int(open(pidfile).read().strip())}")
+            except (OSError, ValueError):
+                pass
+            if alive:
+                with open(os.path.join(sdir, "panel-view"), "w") as f:
+                    f.write("settings")
+                subprocess.run([os.path.join(HOME_DIR, "bin/mux-panel"), "summon"], check=False)
+                print(f"{OK} the panel shows Settings")
+                return 0
+            print(f"no panel is running: ctrl+alt+shift+b opens it, then press s ({c('2', 'the same list follows')})")
+            return settings_cmd(["list"])
+    except ValueError as e:
+        print(f"{BAD} {e}", file=sys.stderr)
+        return 2
+    except OSError as e:
+        print(f"{BAD} cannot save the setting in {sdir}: {e}", file=sys.stderr)
+        return 1
+    print(usage, file=sys.stderr)
+    return 2
+
+
 def _key_clashes() -> list:
     """Chords both YOUR kitty config and kittymux's rendered keys file define with different actions. Never raises."""
     try:
@@ -3026,6 +3105,8 @@ def _dispatch(argv: list[str]) -> int:
         return snooze(argv[1:])
     if cmd == "features":
         return features_cmd(argv[1:])
+    if cmd == "settings":
+        return settings_cmd(argv[1:])
     if cmd == "keys":
         return keys_cmd(argv[1:])
     if cmd == "join":

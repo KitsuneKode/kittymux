@@ -175,6 +175,21 @@ kittymux features preset minimal|default|full
 kittymux features -h
 ```
 
+## `kittymux settings`
+
+Every on/off setting in one list: the bar, notifications, safety and recovery, and the opt-in ones. It says what each does and whether it is on, and if it is not the default, whether your environment or a flag file decided it. The panel's Settings view (press `s`) is the same list and writes the same files. See [Customization](/docs/users/customization#settings-in-one-place).
+
+```sh
+kittymux settings [list]
+kittymux settings on NAME [--yes]
+kittymux settings off NAME
+kittymux settings reset NAME|GROUP|all
+kittymux settings apply
+kittymux settings open
+```
+
+A setting that changes what leaves your machine, what moves your focus or whether agents resume without asking (`usage-live`, `attention`, `resume-auto`) needs `--yes` to turn on, and the command prints what it will do first. Turning any setting off never asks. `apply` reloads the running kitties once; the other commands do it for you. `open` shows the Settings view in a running panel.
+
 ## `kittymux panel`
 
 A persistent native kitty Wayland panel with Agents and Usage views. It stays open after actions. Bind its toggle in your window manager to reach it from any app.

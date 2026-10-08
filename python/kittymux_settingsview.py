@@ -100,7 +100,7 @@ def _wrap(kit: U.Kit, text: str, width: int, rows_: int) -> list:
 
 def _state_pill(kit: U.Kit, row: Row, bg: int) -> list:
     p = kit.p
-    word = "on" if row.on else "off"
+    word = "on " if row.on else "off"                  # the same 5 cells either way: the state is a click target and must not shift when it flips
     glyph = "●" if row.on else "○"
     dim = locked(row) or row.sw.status == SW.PLANNED
     color = p.done if row.on else p.muted
@@ -111,9 +111,9 @@ def _source(kit: U.Kit, row: Row, bg: int) -> list:
     """`env` / `file` after the state, only when the value is not the default's own: the quiet default look stays quiet."""
     p = kit.p
     if row.where == "env":
-        return [U.S("  env", kit.ink(p.waiting, bg), bg, bold=True)]
+        return [U.S("env ", kit.ink(p.waiting, bg), bg, bold=True)]
     if row.where == "flag":
-        return [U.S("  file", kit.ink(p.muted, bg), bg)]
+        return [U.S("file ", kit.ink(p.muted, bg), bg)]
     return []
 
 
@@ -124,16 +124,17 @@ def _switch_rows(kit: U.Kit, row: Row, inner: int, selected: bool, asking: bool,
     planned = row.sw.status == SW.PLANNED
     pill = _state_pill(kit, row, bg)
     src = _source(kit, row, bg) if inner >= 30 else []
-    right = pill + src + [U.S(" ", None, bg)]
+    right = src + pill + [U.S(" ", None, bg)]         # the state is the LAST thing on the row: it never moves when `env` / `file` appears, so a second click lands on it again
     right_w = U.line_cells(right, kit.cells)
     mark = "▸ " if selected else "  "
-    label_w = max(1, inner - right_w - 2)
+    label_w = max(1, inner - right_w - 3)                      # 2 for the marker, 1 for air between the name and its state
     label = kittymux_deck.fit(kittymux_place.clean(row.sw.label) + (" (planned)" if planned and inner >= 34 else ""), label_w, kit.cells)
     left = [U.S(mark, kit.ink(p.accent, bg), bg, bold=True), U.S(label, kit.ink(p.muted if planned else p.text, bg), bg, bold=selected, dim=planned)]
     gap = max(0, inner - U.line_cells(left, kit.cells) - right_w)
     line = kit.fit_line(left + [U.S(" " * gap, None, bg)] + right, inner, bg)
-    pill_x0 = inner - right_w
-    pill_x1 = pill_x0 + U.line_cells(pill, kit.cells)
+    pill_w = U.line_cells(pill, kit.cells)
+    pill_x0 = inner - 1 - pill_w
+    pill_x1 = pill_x0 + pill_w
     out = [line]
     buttons, button_row = [], None
     if selected:
@@ -146,7 +147,7 @@ def _switch_rows(kit: U.Kit, row: Row, inner: int, selected: bool, asking: bool,
         elif planned:
             out.append(kit.fit_line([U.S("  not built yet: saved for when it exists", kit.ink(p.faint, bg, 3.0), bg)], inner, bg))
         elif asking:
-            for text in _wrap(kit, row.sw.consequence, detail_w, 3):
+            for text in _wrap(kit, row.sw.consequence, detail_w, 4):
                 out.append(kit.fit_line([U.S("  " + text, kit.ink(p.waiting, bg), bg)], inner, bg))
             tiers = [[("confirm", kit.button("Turn on", "⏎", primary=True, on=bg)), ("cancel", kit.button("Cancel", "esc", on=bg))],
                      [("confirm", kit.button("Turn on", primary=True, on=bg)), ("cancel", kit.button("Cancel", on=bg))],

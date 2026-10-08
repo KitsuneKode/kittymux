@@ -1706,3 +1706,92 @@ class OneNoSocketMessageTests(unittest.TestCase):
             import kittymux_diag
             self.assertEqual(len(kittymux_diag.recent_failures(d)), 1)
             self.assertIn("workflow nav: no kitty socket", kittymux_diag.recent_failures(d)[0])
+
+
+class SettingsCmdTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        env = {"KITTYMUX_STATE": self.tmp.name}
+        for k in list(os.environ):
+            if k.startswith("KITTYMUX_") and k != "KITTYMUX_STATE":
+                env[k] = ""
+        patcher = mock.patch.dict(os.environ, env)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        nudge = mock.patch.object(self.m, "_nudge_bars", return_value=1)
+        self.nudge = nudge.start()
+        self.addCleanup(nudge.stop)
+
+    def run_cmd(self, *argv):
+        with mock.patch("sys.stdout") as out, mock.patch("sys.stderr") as err:
+            code = self.m.settings_cmd(list(argv))
+        join = lambda m: "".join(c.args[0] for c in m.write.call_args_list)       # noqa: E731
+        return code, join(out), join(err)
+
+    def files(self):
+        return sorted(os.listdir(self.tmp.name))
+
+    def test_list_shows_every_group_and_every_setting(self):
+        code, out, _ = self.run_cmd()
+        self.assertEqual(code, 0)
+        import kittymux_switches as SW
+        for group in SW.GROUPS:
+            self.assertIn(group, out)
+        for sw in SW.CATALOG:
+            self.assertIn(sw.id, out)
+
+    def test_off_and_on_write_and_remove_the_one_file(self):
+        self.assertEqual(self.run_cmd("off", "bell")[0], 0)
+        self.assertEqual(self.files(), ["bell-off"])
+        self.assertEqual(self.run_cmd("on", "bell")[0], 0)
+        self.assertEqual(self.files(), [])
+
+    def test_a_risky_switch_needs_yes_and_says_why(self):
+        for name in ("usage-live", "attention", "resume-auto"):
+            code, _, err = self.run_cmd("on", name)
+            self.assertEqual(code, 2, name)
+            self.assertIn("--yes", err)
+            self.assertEqual(self.files(), [], name)
+        self.assertEqual(self.run_cmd("on", "usage-live", "--yes")[0], 0)
+        self.assertEqual(self.files(), ["usage-live-on"])
+        self.assertEqual(self.run_cmd("off", "usage-live")[0], 0)          # off never asks
+        self.assertEqual(self.files(), [])
+
+    def test_unknown_names_and_extra_words_are_usage_errors(self):
+        self.assertEqual(self.run_cmd("on", "nope")[0], 2)
+        self.assertEqual(self.run_cmd("off", "bell", "now")[0], 2)
+        self.assertEqual(self.run_cmd("frobnicate")[0], 2)
+        self.assertEqual(self.files(), [])
+
+    def test_reset_by_name_by_group_and_all(self):
+        for name in ("bell", "notify", "hue"):
+            self.run_cmd("off", name)
+        self.assertEqual(self.run_cmd("reset", "bell")[0], 0)
+        self.assertEqual(self.files(), ["hue-off", "notify-off"])
+        self.assertEqual(self.run_cmd("reset", "notifications")[0], 0)
+        self.assertEqual(self.files(), ["hue-off"])
+        self.assertEqual(self.run_cmd("reset", "all")[0], 0)
+        self.assertEqual(self.files(), [])
+
+    def test_a_setting_held_by_the_environment_says_so(self):
+        with mock.patch.dict(os.environ, {"KITTYMUX_BELL": "0"}):
+            code, out, _ = self.run_cmd("on", "bell")
+        self.assertEqual(code, 0)
+        self.assertIn("KITTYMUX_BELL", out)
+
+    def test_apply_reloads_once_and_a_change_reloads_too(self):
+        self.run_cmd("apply")
+        self.assertEqual(self.nudge.call_count, 1)
+        self.run_cmd("off", "hue")
+        self.assertEqual(self.nudge.call_count, 2)
+
+    def test_a_directory_in_the_way_is_exit_1_not_a_traceback(self):
+        os.mkdir(os.path.join(self.tmp.name, "hue-off"))
+        code, _, err = self.run_cmd("off", "hue")
+        self.assertEqual(code, 1)
+        self.assertIn("cannot save", err)

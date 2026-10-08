@@ -48,6 +48,8 @@ import kittymux_git  # noqa: E402
 import kittymux_theme  # noqa: E402
 import kittymux_inbox  # noqa: E402
 import kittymux_inboxview  # noqa: E402
+import kittymux_settingsview  # noqa: E402
+import kittymux_switches  # noqa: E402
 import kittymux_meters  # noqa: E402
 import kittymux_ui  # noqa: E402
 import kittymux_usageview  # noqa: E402
@@ -326,6 +328,9 @@ class Sidebar(Handler):
         self._inbox, self._inbox_mtime, self._inbox_sel, self._inbox_filter, self._inbox_scroll = [], -1.0, 0, "all", 0
         self._inbox_regions = ([], [], [])        # (filter chips, cards, buttons) in SCREEN coordinates, rebuilt on every draw
         self._inbox_undo = None                   # (ids, expires on the monotonic clock) of the last dismissal, while `z` can still take it back
+        self._settings_sel, self._settings_scroll, self._settings_asking, self._settings_notice = 0, 0, None, None
+        self._settings_regions = ([], [], [], [])   # (rows, state pills, presets, confirm buttons) in SCREEN coordinates, rebuilt on every draw
+        self._settings_apply_handle = None          # the coalesced reload of the running kitties after a change
         self._tab_regions = []
         self._preview_timer = None
         self._preview_rects = ()
@@ -560,6 +565,8 @@ class Sidebar(Handler):
         self._view = view
         self._help = False
         self._foot_hot = None
+        if view != "settings":
+            self._settings_asking = None             # a question left open does not wait for you in another view
         if view == "usage":
             self._request_usage()
         if view == "agents":
@@ -575,15 +582,15 @@ class Sidebar(Handler):
         return cols - 1 if self._can_drag() else cols                   # the last column is the resize handle
 
     def _tabs_line(self, width: int, hint: str = "") -> str:
-        """The strip: three pills (the picked one carries its name, the others an icon and a count). `hint` rides at the right edge when the
+        """The strip: four pills (the picked one carries its name, the others an icon and a count). `hint` rides at the right edge when the
         strip leaves room for it."""
         view = getattr(self, "_view", "agents")
         items = [("▦", "Agents", view == "agents", 0), ("◔", "Usage", view == "usage", 0),
-                 ("✉", "Inbox", view == "inbox", kittymux_inboxview.unread(self._inbox))]
+                 ("✉", "Inbox", view == "inbox", kittymux_inboxview.unread(self._inbox)), ("⚙", "Settings", view == "settings", 0)]
         hint_w = _cells(hint) + 1 if hint else 0
         room = width - hint_w if hint and width - hint_w >= self.kit.tab_regions(items, width)[-1][1] + 2 else width      # the hint only rides along when the pills leave room
         regions = self.kit.tab_regions(items, room)
-        self._tab_regions = [(a, b, name) for (a, b), name in zip(regions, ("agents", "usage", "inbox"))]
+        self._tab_regions = [(a, b, name) for (a, b), name in zip(regions, ("agents", "usage", "inbox", "settings"))]
         line = self.kit.tabs(items, room)
         if room != width:
             line = line + [kittymux_ui.S(hint + " ", self.pal.faint, self.pal.bar)]
@@ -666,6 +673,201 @@ class Sidebar(Handler):
         off = 2 - self._inbox_scroll
         self._inbox_regions = ([(x0, x1, off, filt) for x0, x1, filt in v.chips], [(y0 + off, y1 + off, i) for y0, y1, i in v.cards],
                                [(x0, x1, y + off, i, act) for x0, x1, y, i, act in v.buttons])
+
+    # ---- the Settings view: the switch catalog (kittymux_switches), edited as flag files in the state directory ----
+    def _settings_rows(self) -> list:
+        return kittymux_settingsview.rows(str(_STATE_DIR))
+
+    def _settings_ids(self) -> list:
+        return kittymux_settingsview.ids_in_order()
+
+    def _settings_row(self, sw_id: str):
+        return next((r for r in self._settings_rows() if r.sw.id == sw_id), None)
+
+    def _settings_say(self, sw_id: str, text: str, tone: str = "ok") -> None:
+        self._settings_notice = (sw_id, text, tone)
+
+    def _settings_key(self, k: str, shifted: bool) -> None:
+        ids = self._settings_ids()
+        cur = ids[max(0, min(self._settings_sel, len(ids) - 1))]
+        if k == "ESCAPE":
+            if self._settings_asking:
+                self._settings_asking = None
+                self.draw_screen()
+            else:
+                self._set_view("agents")
+            return
+        if k == "Q":
+            self.quit_loop()
+            return
+        if k in ("A",):
+            self._set_view("agents")
+            return
+        self._settings_notice = None
+        if k in ("J", "DOWN", "TAB") and not (k == "J" and shifted):
+            self._settings_move(1)
+        elif k in ("K", "UP"):
+            self._settings_move(-1)
+        elif k == "G":
+            self._settings_sel, self._settings_asking = (len(ids) - 1 if shifted else 0), None
+        elif k in (" ", "SPACE", "ENTER"):
+            if self._settings_asking and k == "ENTER":
+                self._settings_confirm()
+                return
+            self._settings_toggle(cur)
+            return
+        elif k == "P":
+            self._settings_cycle_preset(-1 if shifted else 1)
+            return
+        elif k == "R":
+            self._settings_reset(cur, group=shifted)
+            return
+        self.draw_screen()
+
+    def _settings_move(self, delta: int) -> None:
+        n = len(self._settings_ids())
+        self._settings_sel = max(0, min(n - 1, self._settings_sel + delta))
+        self._settings_asking = None
+
+    def _settings_toggle(self, sw_id: str) -> None:
+        row = self._settings_row(sw_id)
+        if row is None:
+            return
+        if row.sw.status == kittymux_switches.PLANNED:
+            self._settings_say(sw_id, "Not built yet: nothing reads it today.", "error")
+        elif kittymux_settingsview.locked(row):
+            self._settings_say(sw_id, f"Held by {row.what} in your environment: kittymux does not edit your shell.", "error")
+        elif kittymux_settingsview.needs_confirm(row) and self._settings_asking != sw_id:
+            self._settings_asking = sw_id
+        else:
+            self._settings_asking = None
+            self._settings_set(sw_id, not row.on)
+            return
+        self.draw_screen()
+
+    def _settings_confirm(self) -> None:
+        sw_id, self._settings_asking = self._settings_asking, None
+        if sw_id:
+            self._settings_set(sw_id, True)
+        else:
+            self.draw_screen()
+
+    def _settings_set(self, sw_id: str, on: bool) -> None:
+        try:
+            kittymux_switches.set_switch(str(_STATE_DIR), sw_id, on)
+        except OSError as e:
+            self._settings_say(sw_id, f"Cannot save: {e.strerror or e}", "error")
+        else:
+            self._settings_say(sw_id, "Saved. Applying…")
+            self._settings_changed()
+        self.draw_screen()
+
+    def _settings_cycle_preset(self, step: int) -> None:
+        names = list(kittymux_settingsview.PRESET_NAMES)
+        now = kittymux_settingsview.current_preset(self._settings_rows())
+        name = names[(names.index(now) + step) % len(names)] if now in names else names[0 if step > 0 else -1]
+        self._settings_preset(name)
+
+    def _settings_preset(self, name: str) -> None:
+        try:
+            kittymux_features.apply_preset(str(_STATE_DIR), name)
+        except (OSError, ValueError) as e:
+            self._settings_say("", f"Cannot apply {name}: {getattr(e, 'strerror', None) or e}", "error")
+        else:
+            self._settings_say("", f"Preset {name} applied.")
+            self._settings_changed()
+        self.draw_screen()
+
+    def _settings_reset(self, sw_id: str, group: bool = False) -> None:
+        ids = [sw_id]
+        if group:
+            sw = kittymux_switches.get(sw_id)
+            ids = [s.id for s in kittymux_switches.CATALOG if s.group == sw.group]
+        try:
+            gone = kittymux_switches.reset(str(_STATE_DIR), ids)
+        except OSError as e:
+            self._settings_say(sw_id, f"Cannot reset: {e.strerror or e}", "error")
+        else:
+            self._settings_say(sw_id, "Back to the default." if gone else "Already the default.")
+            if gone:
+                self._settings_changed()
+        self.draw_screen()
+
+    def _settings_changed(self) -> None:
+        """Reload the running kitties once, after the last of a burst of changes (ten quick toggles are one reload), never on the UI thread."""
+        if self._settings_apply_handle is not None:
+            self._settings_apply_handle.cancel()
+        self._settings_apply_handle = self.asyncio_loop.call_later(0.6, self._settings_apply)
+
+    def _settings_apply(self) -> None:
+        self._settings_apply_handle = None
+        root = Path(deck.__file__).resolve().parent.parent
+
+        def work() -> None:
+            text = ""
+            try:
+                r = subprocess.run([str(root / "bin" / "kittymux"), "settings", "apply"], capture_output=True, text=True, timeout=20, stdin=subprocess.DEVNULL)
+                text = (r.stdout or "").strip().splitlines()[-1] if r.returncode == 0 and (r.stdout or "").strip() else "Saved."
+            except Exception:
+                text = "Saved. The bar picks it up on its next redraw."
+            self._post(self._settings_applied, text)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _settings_applied(self, text: str) -> None:
+        if not self._alive:
+            return
+        n = self._settings_notice
+        if n and n[2] == "ok":
+            self._settings_notice = (n[0], text, "ok")
+        if getattr(self, "_view", "agents") == "settings":
+            self.draw_screen()
+
+    def _settings_click(self, x: int, y: int) -> None:
+        rows_, pills, presets, buttons = self._settings_regions
+        for x0, x1, by, act in buttons:
+            if y == by and x0 <= x < x1:
+                if act == "confirm":
+                    self._settings_confirm()
+                else:
+                    self._settings_asking = None
+                    self.draw_screen()
+                return
+        for x0, x1, py, name in presets:
+            if y == py and x0 <= x < x1:
+                self._settings_preset(name)
+                return
+        ids = self._settings_ids()
+        for x0, x1, py, sw_id in pills:
+            if y == py and x0 <= x < x1:
+                self._settings_sel = ids.index(sw_id)
+                self._settings_notice = None
+                self._settings_toggle(sw_id)
+                return
+        for y0, y1, sw_id in rows_:
+            if y0 <= y < y1:
+                if self._settings_sel != ids.index(sw_id):
+                    self._settings_asking = None
+                self._settings_sel = ids.index(sw_id)
+                self._settings_notice = None
+                self.draw_screen()
+                return
+
+    def _draw_settings(self, cols, height):
+        rows_ = self._settings_rows()
+        v = kittymux_settingsview.view(rows_, self._settings_sel, self._body_width(cols), self.kit, asking=self._settings_asking, notice=self._settings_notice)
+        self._settings_sel = v.sel
+        page, top = max(1, height - 3), self._settings_scroll
+        picked = next(((y0, y1) for y0, y1, i in v.rows if i == v.ids[v.sel]), None)
+        if picked:                                                         # keep the picked row (and what it opened) on screen
+            y0, y1 = picked
+            top = 0 if v.sel == 0 else y0 - 1 if y0 < top + 1 else y1 - page if y1 > top + page else top
+        footer = [("␣", "toggle", "SPACE"), ("p", "preset", "P"), ("r", "reset", "R"), ("j k", "move"), ("esc", "back", "ESCAPE")]       # buttons first: a narrow panel drops from the right
+        self._settings_scroll = self._draw_body(cols, height, v.header, v.lines, top, footer)
+        off = 2 - self._settings_scroll
+        self._settings_regions = ([(y0 + off, y1 + off, i) for y0, y1, i in v.rows],
+                                  [(x0, x1, y + off, i) for x0, x1, y, i in v.toggles], [(x0, x1, y + off, n) for x0, x1, y, n in v.presets],
+                                  [(x0, x1, y + off, a) for x0, x1, y, a in v.buttons])
 
     def _apply(self, snap) -> None:
         self._collecting = False
@@ -809,6 +1011,17 @@ class Sidebar(Handler):
         except OSError:
             pass
 
+    def _take_view_request(self) -> None:
+        """`kittymux settings open` asks the running panel to show a view by writing its name to `panel-view`: take it once and show it."""
+        req = _STATE_DIR / "panel-view"
+        try:
+            name = req.read_text().strip()
+            req.unlink()
+        except OSError:
+            return
+        if name in ("agents", "usage", "inbox", "settings") and name != getattr(self, "_view", "agents"):
+            self._set_view(name)
+
     def _schedule(self) -> None:
         if self._alive:
             self.asyncio_loop.call_later(_REFRESH_EVERY, self._tick)
@@ -818,6 +1031,10 @@ class Sidebar(Handler):
             return
         if getattr(self, "_view", "agents") == "usage":
             self._request_usage()
+        if _PANEL:
+            self._take_view_request()
+        if getattr(self, "_view", "agents") == "settings":
+            self.draw_screen()                         # a flag file changed by `kittymux settings` or another panel shows here within a tick
         if _PANEL:
             summoned = self._summoned()
             if summoned and not getattr(self, "_was_summoned", False):
@@ -897,6 +1114,9 @@ class Sidebar(Handler):
             return
         if view == "inbox":
             self._draw_inbox(cols, rows_n)
+            return
+        if view == "settings":
+            self._draw_settings(cols, rows_n)
             return
         w = self.write
         snap = self.snap
@@ -1046,6 +1266,9 @@ class Sidebar(Handler):
         if not self.searching and k == "I":
             self._set_view("agents" if view == "inbox" else "inbox")
             return
+        if not self.searching and k == "S":
+            self._set_view("agents" if view == "settings" else "settings")
+            return
         if view == "usage":
             if k in ("A", "ESCAPE"):
                 self._set_view("agents")
@@ -1065,6 +1288,9 @@ class Sidebar(Handler):
             return
         if view == "inbox":
             self._inbox_key(k, bool(key_event.mods & 1))
+            return
+        if view == "settings":
+            self._settings_key(k, bool(key_event.mods & 1))
             return
         if self.searching:
             ch = getattr(key_event, "text", "") or (key_event.key if len(key_event.key or "") == 1 and not (key_event.mods & ~1) else "")
@@ -1245,6 +1471,9 @@ class Sidebar(Handler):
                     self._usage_sel, self._usage_scroll = idx, 0
                     self.draw_screen()
                     return
+            return
+        if view == "settings":
+            self._settings_click(x, y)
             return
         if view == "inbox":
             chips, cards, buttons = self._inbox_regions

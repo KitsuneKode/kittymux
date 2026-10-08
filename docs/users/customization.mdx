@@ -15,6 +15,17 @@ For anything with a switch, the first of these wins:
 
 The state directory is `$KITTYMUX_STATE` if set, otherwise `${XDG_STATE_HOME}/kittymux`, which is `~/.local/state/kittymux` by default. Its mode is `0700` and the files in it are `0600`.
 
+## Settings in one place
+
+```sh
+kittymux settings                      # every setting, what it does, and why it is on or off
+kittymux settings off bell
+kittymux settings on usage-live --yes  # asks for --yes: it talks to the providers with your own login
+kittymux settings reset all            # back to the defaults (an environment variable is not touched)
+```
+
+In the panel (`ctrl+alt+shift+b`, or the deck on `ctrl+alt+b`), press `s` or click the gear pill. `space` turns the picked setting on or off, `p` cycles the presets, `r` puts the row back to its default (`R` the whole group), `?` lists the keys. A setting held by an environment variable shows `env` and is locked: kittymux never edits your shell. A setting that is risky to turn on asks first and says what will change; `esc` cancels. A burst of changes is one reload of your running kitties.
+
 ## Choose the pieces of the bar
 
 ```sh
@@ -53,7 +64,7 @@ Every colour comes from your live kitty theme. To pin the accent, set `KITTYMUX_
 | `KITTYMUX_ACCENT=#rrggbb`      |                                  | Pin the accent colour.                                              |
 | `KITTYMUX_ROFI_THEME=user`     |                                  | Leave your own rofi theme in charge of `pick`.                      |
 | `KITTYMUX_PROJECTS`            |                                  | The root the project picker lists.                                  |
-| `KITTYMUX_USAGE_LIVE=1`        |                                  | Let usage collectors fetch live quotas over the network.            |
+| `KITTYMUX_USAGE_LIVE=1`        | `usage-live-on`                  | Let usage collectors fetch live quotas over the network. Only an explicit yes turns it on (`1`, `on`, `true`, `yes`). |
 | `KITTYMUX_DEBUG=1`             |                                  | Log bar drag errors to `barsize-debug.log`.                         |
 | `KITTYMUX_STATE`               |                                  | Use another state directory.                                        |
 

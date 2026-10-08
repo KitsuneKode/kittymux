@@ -208,3 +208,45 @@ class SetTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoInlineChecksTests(unittest.TestCase):
+    """The point of the catalog: no call site knows a flag-file name or tests its own variable. A file name (`bell-off`) or a switch's variable (`KITTYMUX_BELL`) written
+    as a string literal in code, outside the catalog, is a second owner that will drift: ask the catalog (`kittymux_switches.enabled('bell')`)."""
+    ROOT = os.path.join(os.path.dirname(__file__), "..")
+    ALLOWED = {"kittymux_switches.py", "kittymux_features.py"}      # the catalog, and the facade that names the twelve
+
+    def sources(self):
+        for folder, pattern in (("python", ".py"), ("bin", ""), ("lib", ".sh")):
+            base = os.path.join(self.ROOT, folder)
+            for name in sorted(os.listdir(base)):
+                path = os.path.join(base, name)
+                if os.path.isfile(path) and (not pattern or name.endswith(pattern)) and name not in self.ALLOWED:
+                    try:
+                        yield os.path.relpath(path, self.ROOT), open(path, encoding="utf-8").read()
+                    except UnicodeDecodeError:
+                        continue
+
+    def test_no_flag_file_name_or_switch_variable_is_a_literal_outside_the_catalog(self):
+        import ast
+        needles = {}
+        for sw in S.CATALOG:
+            for f in (sw.off_file(), sw.on_file()):
+                needles[f] = sw.id
+            for v in sw.env_names():
+                needles[v] = sw.id
+        for sid in S.IDS:
+            needles.pop(sid, None)                                     # `notify-private` is both a switch id (what call sites pass) and its flag file's name
+        found = []
+        for rel, src in self.sources():
+            if not rel.endswith(".py") and not rel.startswith("bin/kittymux"):
+                continue                                              # shell scripts and the demo are read by eye (they never decide a switch)
+            try:
+                tree = ast.parse(src)
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value in needles:
+                    if len(node.value) > 3:                         # `-on` style one-word names would match prose; real file and variable names are longer
+                        found.append(f"{rel}:{node.lineno} {node.value!r} ({needles[node.value]})")
+        self.assertEqual(found, [], "ask kittymux_switches instead of naming the file or the variable here")

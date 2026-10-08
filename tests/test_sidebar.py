@@ -93,7 +93,7 @@ class SidebarTests(unittest.TestCase):
             s._view = "usage"
             with patch.object(s, "_ansi", return_value=""):
                 s._tabs_line(cols)                               # drawing records the regions a click is tested against
-            self.assertEqual({name for _a, _b, name in s._tab_regions}, {"agents", "usage", "inbox"})
+            self.assertEqual({name for _a, _b, name in s._tab_regions}, {"agents", "usage", "inbox", "settings"})
             for x0, x1, name in s._tab_regions:
                 self.assertLessEqual(x1, cols)
                 for x in (x0, x1 - 1):

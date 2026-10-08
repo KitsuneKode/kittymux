@@ -203,3 +203,15 @@ class DrawingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StableTargetTests(unittest.TestCase):
+    def test_the_state_pill_does_not_move_when_a_source_marker_appears(self):
+        """A second click on the same state must land on it again: `file` / `env` go to its left, never push it."""
+        for cols in (32, 38, 48, 80):
+            a, _ = rows_for()
+            b, _ = rows_for({}, ["hue-off"])
+            va, vb = SV.view(a, 1, cols, kit()), SV.view(b, 1, cols, kit())
+            ta = {i: (x0, x1) for x0, x1, _, i in va.toggles}
+            tb = {i: (x0, x1) for x0, x1, _, i in vb.toggles}
+            self.assertEqual(ta["hue"], tb["hue"], cols)
