@@ -18,6 +18,7 @@ import { Suspense, use } from 'react';
 import { useMDXComponents } from '@/components/mdx';
 import { breadcrumbLd, pageHead } from '@/lib/seo';
 import { DocsEnd, DocsTopRight } from '@/components/docs-extras';
+import { useArriveAtTop, usePreloadNeighbours } from '@/lib/docs-nav';
 
 // staticFunctionMiddleware: prerender writes each page's data as a JSON file, and a client-side navigation fetches that file. Without it a click on a docs link
 // calls a server endpoint that a static host does not have ("Something went wrong").
@@ -61,6 +62,7 @@ export const Route = createFileRoute('/_docs/docs/$')({
 });
 
 function Content({ path, markdownUrl }: { path: string; markdownUrl: string }) {
+  useArriveAtTop(path);
   const page = docs.getPage(path);
   if (!page) throw new Error(`unknown page: ${path}`);
 
@@ -88,6 +90,8 @@ function Content({ path, markdownUrl }: { path: string; markdownUrl: string }) {
 
 function Page() {
   const { path, pageTree, markdownUrl } = useFumadocsLoader(Route.useLoaderData());
+  const splat = Route.useParams()._splat;
+  usePreloadNeighbours(pageTree, splat ? `/docs/${splat}` : '/docs');
 
   return (
     <DocsLayout {...baseOptions()} tree={pageTree}>

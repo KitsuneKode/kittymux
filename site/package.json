@@ -21,7 +21,8 @@
     "budget": "bun scripts/budget.mjs \"$(cat BUILD_DIR)\"",
     "postbuild": "bun scripts/gen-seo.mjs \"$(cat BUILD_DIR)\" && bun scripts/patch-routes.mjs \"$(cat BUILD_DIR)\"",
     "tour": "bun scripts/tour.mjs \"$(cat BUILD_DIR)\"",
-    "cls": "bun scripts/cls.mjs \"$(cat BUILD_DIR)\""
+    "cls": "bun scripts/cls.mjs \"$(cat BUILD_DIR)\"",
+    "nav": "bun scripts/nav.mjs \"$(cat BUILD_DIR)\""
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",

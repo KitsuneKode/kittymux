@@ -43,3 +43,8 @@ jobs:
         working-directory: site
         env:
           CHROME: /usr/bin/google-chrome
+      - name: moving between docs pages ends at the top of the page (slow loads, back, anchors, phone)
+        run: bun run nav
+        working-directory: site
+        env:
+          CHROME: /usr/bin/google-chrome

@@ -14,10 +14,10 @@ export function baseOptions(inList = false): BaseLayoutProps {
       url: '/',
     },
     links: [
-      { text: 'Docs', url: '/docs', active: 'nested-url' },
+      { text: 'Docs', url: '/docs', active: 'url' },   // exact: inside the docs the sidebar below already marks the page, and two highlighted rows read as a mistake
       { text: 'Keys', url: '/keys' },
       { text: 'Changelog', url: '/changelog' },
-      { type: 'custom', secondary: true, children: inList ? <li className="list-none"><SponsorButton /></li> : <SponsorButton className="lg:hidden" /> },
+      { type: 'custom', secondary: true, children: inList ? <li className="list-none"><SponsorButton collapse /></li> : <SponsorButton collapse className="lg:hidden" /> },
     ],
     slots: { themeSwitch: () => <ThemeToggle /> },
   };

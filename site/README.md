@@ -19,6 +19,7 @@ TanStack Start + Fumadocs + Tailwind v4 + shadcn (Base UI), prerendered to stati
 bun install
 bun run dev          # sync, then the dev server
 bun run check        # sync + unit tests + typecheck + build + crawl the built site
+bun run nav          # every click between docs pages ends at the top of ITS page (slow loads, back/forward, #anchors, phone), preloads, the progress bar
 bun run axe          # axe-core (light and dark) on key pages, overflow at 320/390/768/1440, search finds a page
 bun run budget       # what a first visit downloads (gzip) and that nothing leaves the site
 bun run shoot        # screenshots of key pages, 3 widths x 2 themes, into .shots/
@@ -71,6 +72,14 @@ By hand, from a clean checkout of `main` (the same thing Vercel runs): `cd site 
 - **Mobile Lighthouse** is 87, not 95: hydration cost of the framework (see above).
 - **`.github/workflows/site.yml`** has not run on GitHub yet; it needs one push to show whether the runner's Chrome path and the Bun version hold.
 - **Screenshots** come from the repository's rigs; rerun `bash ../tools/build-site-assets.sh` after the panel or bar changes look.
+
+## Moving between docs pages
+
+A docs page is its data (a JSON file) and its code (a chunk), loaded one after the other. Three things keep a click from feeling dead (`bun run nav` checks them with real clicks, on a throttled network too):
+
+- **The reader is put at the top once the new content is on screen** (`useArriveAtTop` in `src/lib/docs-nav.ts`), not when the address changes: on a slow load the router had already reset the scroll while the old page was still drawn. Back and forward keep the old position; a `#heading` goes to its heading.
+- **The previous and next pages are preloaded while the browser is idle** (`usePreloadNeighbours`), so the pager's "Next" is instant. Not on a data-saver connection. This is why the docs page's JavaScript budget counts about 8 KB more than a page that is only read: it is idle loading, not first paint.
+- **A slim bar at the top of the window** (`nav-progress`) appears if a page takes more than 150 ms; a preloaded page never shows it.
 
 ## Missing pages and errors
 

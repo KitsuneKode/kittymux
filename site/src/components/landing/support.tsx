@@ -42,7 +42,7 @@ export function Support() {
         </li>
         <li className="flex flex-col items-start gap-4">
           <p className="t-small max-w-[34ch] text-mute">Sponsorship pays for the slow parts: checking each new agent CLI against real sessions and keeping the docs true.</p>
-          <SponsorButton label="Sponsor on GitHub" className="max-[419px]:px-4" />
+          <SponsorButton label="Sponsor on GitHub" />
         </li>
         <li className="flex flex-col items-start gap-4">
           <p className="t-small max-w-[34ch] text-mute">If an agent shows the wrong state, open an issue with what was on its screen. That is how the markers get verified.</p>

@@ -1,6 +1,7 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from '@tanstack/react-router';
 import appCss from '@/styles/app.css?url';
 import { Telemetry } from '@/components/telemetry';
+import { NavProgress } from '@/components/nav-progress';
 // the two files every page's first paint needs (latin subsets), fetched alongside the CSS instead of after it: the text is set in the right font from the first frame
 import displayLatin from '../../node_modules/@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-wght-normal.woff2?url';
 import textLatin from '../../node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
@@ -40,6 +41,7 @@ function RootComponent() {
         <HeadContent />
       </head>
       <body className="flex flex-col min-h-screen">
+        <NavProgress />
         <Outlet />
         <Telemetry />
         <Scripts />

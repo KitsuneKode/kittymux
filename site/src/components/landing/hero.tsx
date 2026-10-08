@@ -23,7 +23,7 @@ export function LandingHeader() {
             <Link to="/keys" className="hidden min-h-11 items-center px-2 hover:underline min-[400px]:inline-flex">Keys</Link>
             <Link to="/changelog" className="hidden min-h-11 items-center px-2 hover:underline sm:inline-flex">Changelog</Link>
           </nav>
-          <SponsorButton />
+          <SponsorButton collapse />
           </div>
         </div>
       </header>

@@ -118,7 +118,11 @@ html > body[data-scroll-locked] {
 .prose :where(h1, h2, h3) { font-family: var(--font-display); text-wrap: balance; letter-spacing: -0.022em; font-weight: 700; }
 .prose :where(h1) { letter-spacing: -0.032em; }
 .prose :where(td, th) { font-variant-numeric: tabular-nums; }
-.prose :where(a):not([data-card]) { text-underline-offset: 0.2em; text-decoration-thickness: from-font; }
+.prose :where(a):not([data-card]) { color: var(--link); text-decoration-line: underline; text-decoration-color: color-mix(in oklch, var(--link) 45%, transparent); text-underline-offset: 0.2em; text-decoration-thickness: from-font; }   /* a link reads as a link: the link colour (4.5:1 on every surface, checked in contrast.test), a softer underline that firms up on hover */
+@media (hover: hover) and (pointer: fine) {
+  .prose :where(a):not([data-card]):hover { text-decoration-color: currentColor; text-decoration-thickness: 2px; }
+}
+.prose :where(a):not([data-card]):active { opacity: 0.8; }
 /* Code blocks stay dark in both themes (one frame, the figure): they sit well on cream and match the terminal screenshots. */
 figure.shiki { background: var(--code-bg); color: var(--code-fg); border-color: transparent; border-radius: 0.75rem; outline: 1px solid rgb(0 0 0 / 0.1); outline-offset: -1px; box-shadow: none; }
 .dark figure.shiki { outline-color: rgb(255 255 255 / 0.1); }
@@ -150,3 +154,26 @@ figure.shiki :focus-visible { outline-color: var(--code-fg); outline-offset: -2p
   details[open]::details-content { block-size: auto; }
 }
 @media (forced-colors: active) { [data-cta], [data-press] { border: 1px solid CanvasText; } }
+
+
+/* the loading bar (src/components/nav-progress.tsx): a fixed strip, so it moves nothing; reduced motion gets a still bar */
+.nav-progress {
+  position: fixed;
+  inset-inline: 0;
+  inset-block-start: 0;
+  z-index: 70;
+  block-size: 3px;
+  background: var(--link);
+  transform-origin: left center;
+  transform: scaleX(0.6);
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .nav-progress {
+    animation: nav-progress 1.4s var(--ease-out) forwards;
+  }
+}
+@keyframes nav-progress {
+  from { transform: scaleX(0.06); }
+  to { transform: scaleX(0.92); }
+}
