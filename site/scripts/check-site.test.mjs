@@ -1,12 +1,15 @@
-import { expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { afterAll, expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { crawl } from './check-site.mjs'
 
 const html = (body, head = '<title>T</title><meta name="description" content="d">') => `<!doctype html><html lang="en"><head>${head}</head><body>${body}</body></html>`
+const made = []
+afterAll(() => { for (const d of made) rmSync(d, { recursive: true, force: true }) })   // /tmp filled up with 'kmx-' directories
 function site(files) {
   const dir = mkdtempSync(join(tmpdir(), 'kmx-site-'))
+  made.push(dir)
   for (const [rel, text] of Object.entries(files)) { const p = join(dir, rel); mkdirSync(join(p, '..'), { recursive: true }); writeFileSync(p, text) }
   return dir
 }

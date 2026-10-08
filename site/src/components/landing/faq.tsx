@@ -4,7 +4,7 @@ import { IconChevronDown } from '@tabler/icons-react';
 export const FAQ = [
   ['Does it send my data anywhere?', 'No. There is no server, no network listener and no always-on daemon. It reads pane text and agent state locally and never transmits it. Live usage quotas are opt-in.'],
   ['Will it type into my agents?', 'Notifications, the inbox and the panel never do: Jump moves focus, Dismiss hides a card. Only a key you press for it sends text, such as the one that sends a prompt to an agent pane.'],
-  ['Which agents does it recognise?', `${facts.agents.length} agent CLIs are in its table. Claude Code, Codex and Devin have been checked against live sessions; the rest follow each tool's documented hints. The platforms page says which is which.`],
+  ['Which agents does it recognise?', `${facts.agents.length} agent CLIs are in its table. Claude Code, Codex and Devin have been checked against live sessions. Some others follow each tool's documented hints, and a few get only their logo and what their hooks or window title report. The platforms page says which is which.`],
   ['Do I have to leave tmux?', 'No. tmux stays for remote work. kittymux is for the terminal in front of you.'],
   ['Does it need Wayland?', 'Only the docked panel does (it needs wlr-layer-shell). The tab bar, the scanner and the deck were tested on X11 in a virtual display.'],
 ] as const;

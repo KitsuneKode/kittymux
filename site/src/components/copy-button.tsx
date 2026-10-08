@@ -25,7 +25,7 @@ async function copy(text: string) {
 }
 
 /** Copies `text`; the label changes to say so (a cue that does not depend on motion or colour). */
-export function CopyButton({ text, label = 'Copy', className }: { text: string; label?: string; className?: string }) {
+export function CopyButton({ text, label = 'Copy', context, className }: { text: string; label?: string; context?: string; className?: string }) {
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const onClick = async () => {
@@ -37,6 +37,7 @@ export function CopyButton({ text, label = 'Copy', className }: { text: string; 
     <button type="button" data-press="" onClick={onClick} className={cn('inline-flex min-h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold sm:min-h-10', className)}>
       {state === 'copied' ? <IconCheck aria-hidden="true" className="size-4" stroke={2} /> : <IconCopy aria-hidden="true" className="size-4" stroke={1.75} />}
       <span aria-live="polite">{state === 'copied' ? 'Copied' : state === 'failed' ? 'Press ctrl+c' : label}</span>
+      {context && state === 'idle' ? <span className="sr-only">: {context}</span> : null}
     </button>
   );
 }

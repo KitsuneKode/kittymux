@@ -1,6 +1,7 @@
 import { createFileRoute, notFound } from '@tanstack/react-router';
 import { DocsLayout } from 'fumadocs-ui/layouts/docs';
 import { createServerFn } from '@tanstack/react-start';
+import { staticFunctionMiddleware } from '@tanstack/start-static-server-functions';
 import { docs, source } from '@/lib/source';
 import {
   DocsBody,
@@ -16,9 +17,12 @@ import { useFumadocsLoader } from 'fumadocs-core/source/client';
 import { Suspense, use } from 'react';
 import { useMDXComponents } from '@/components/mdx';
 
+// staticFunctionMiddleware: prerender writes each page's data as a JSON file, and a client-side navigation fetches that file. Without it a click on a docs link
+// calls a server endpoint that a static host does not have ("Something went wrong").
 const serverLoader = createServerFn({
   method: 'GET',
 })
+  .middleware([staticFunctionMiddleware])
   .validator((slugs: string[]) => slugs)
   .handler(async ({ data: slugs }) => {
     const page = source.getPage(slugs);

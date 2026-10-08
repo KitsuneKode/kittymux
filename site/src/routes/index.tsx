@@ -3,7 +3,7 @@ import { ThemeProvider } from 'next-themes';
 import { DocsHub } from '@/components/landing/docs-hub';
 import { Faq } from '@/components/landing/faq';
 import { FinalCta } from '@/components/landing/final-cta';
-import { Hero } from '@/components/landing/hero';
+import { Hero, LandingHeader } from '@/components/landing/hero';
 import { HowItKnows } from '@/components/landing/how-it-knows';
 import { Ideas } from '@/components/landing/ideas';
 import { Install } from '@/components/landing/install';
@@ -35,6 +35,8 @@ function Home() {
     <ThemeProvider {...THEME_PROPS}>
     <div className="min-h-[100dvh] bg-page text-ink">
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:start-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-ink focus:px-4 focus:py-2 focus:text-page">Skip to content</a>
+      <LandingHeader />
+      <main id="main">
       <Hero />
       <ProofLine />
       <Problem />
@@ -46,6 +48,7 @@ function Home() {
       <Limits />
       <Faq />
       <FinalCta />
+      </main>
       <SiteFooter themeToggle />
     </div>
     </ThemeProvider>

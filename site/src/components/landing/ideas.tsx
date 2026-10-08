@@ -9,7 +9,7 @@ export function Ideas() {
     <section aria-labelledby="ideas" className="mx-auto w-full max-w-[1280px] px-5 py-16 md:px-8 lg:py-24">
       <h2 id="ideas" className="text-balance text-3xl font-semibold tracking-[-0.03em] sm:text-4xl lg:text-5xl">Three things it does</h2>
       <div className="mt-12 grid gap-16">
-        <div className="grid items-center gap-8 lg:grid-cols-12 lg:gap-12">
+        <div className="grid items-start gap-8 lg:grid-cols-12 lg:gap-12">
           <div className="lg:col-span-5">
             <p className="text-sm font-semibold uppercase tracking-[0.08em] text-link">01</p>
             <h3 className="mt-2 text-3xl font-bold tracking-[-0.02em]">See</h3>
@@ -21,7 +21,7 @@ export function Ideas() {
             </TerminalWindow>
           </div>
         </div>
-        <div className="grid items-center gap-8 lg:grid-cols-12 lg:gap-12">
+        <div className="grid items-start gap-8 lg:grid-cols-12 lg:gap-12">
           <div className="lg:order-2 lg:col-span-5">
             <p className="text-sm font-semibold uppercase tracking-[0.08em] text-link">02</p>
             <h3 className="mt-2 text-3xl font-bold tracking-[-0.02em]">Act</h3>
@@ -33,7 +33,7 @@ export function Ideas() {
             </TerminalWindow>
           </div>
         </div>
-        <div className="grid items-center gap-8 lg:grid-cols-12 lg:gap-12">
+        <div className="grid items-start gap-8 lg:grid-cols-12 lg:gap-12">
           <div className="lg:col-span-5">
             <p className="text-sm font-semibold uppercase tracking-[0.08em] text-link">03</p>
             <h3 className="mt-2 text-3xl font-bold tracking-[-0.02em]">Come back</h3>

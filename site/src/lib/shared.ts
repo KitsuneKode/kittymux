@@ -2,7 +2,6 @@ import { createGetUrl } from 'fumadocs-core/source';
 
 export const appName = 'kittymux';
 export const docsRoute = '/docs';
-export const docsImageRoute = '/og/docs';
 
 export const gitConfig = {
   user: 'KitsuneKode',

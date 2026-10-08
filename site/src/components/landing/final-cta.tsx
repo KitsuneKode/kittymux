@@ -1,5 +1,6 @@
 import { CopyButton } from '../copy-button';
 import { DocLink } from '../doc-link';
+import { DEMO_CMD } from './install';
 
 export function FinalCta() {
   return (
@@ -10,7 +11,7 @@ export function FinalCta() {
           <p className="mt-3 max-w-[44ch] text-pretty text-lg text-onred-soft">Run the demo first. It opens its own window and leaves your setup alone.</p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <CopyButton text="kittymux demo" label="Copy: kittymux demo" className="bg-onred text-brand" />
+          <CopyButton text={DEMO_CMD} label="Copy the demo command" className="bg-onred text-brand" />
           <DocLink slug="users/getting-started" data-press="" className="inline-flex min-h-12 items-center rounded-full border border-onred px-6 font-semibold hover:bg-onred hover:text-brand">Getting started</DocLink>
         </div>
       </div>

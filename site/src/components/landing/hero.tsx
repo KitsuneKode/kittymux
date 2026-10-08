@@ -6,7 +6,8 @@ import { Shot, TerminalWindow } from '../terminal-window';
 import { WeaveBand } from '../weave-band';
 import { gitConfig } from '@/lib/shared';
 
-export function Hero() {
+/** The weave band and the top bar: outside <main>, so "Skip to content" skips them. */
+export function LandingHeader() {
   return (
     <>
       <WeaveBand id="top" />
@@ -26,11 +27,17 @@ export function Hero() {
           </nav>
         </div>
       </header>
-      <main id="main">
+    </>
+  );
+}
+
+export function Hero() {
+  return (
+    <>
         <div data-red="" className="bg-brand text-onred">
           <section aria-labelledby="hero-title" className="mx-auto grid w-full max-w-[1280px] gap-10 px-5 pb-12 pt-8 md:px-8 lg:grid-cols-12 lg:items-center lg:gap-10 lg:pb-24 lg:pt-14">
             <div className="lg:col-span-6">
-              <h1 id="hero-title" data-rise="" className="max-w-[12ch] text-balance text-[2.75rem] font-bold leading-[1.02] tracking-[-0.03em] sm:text-6xl lg:text-[4.5rem]">
+              <h1 id="hero-title" data-rise="" className="max-w-[12ch] text-balance text-[2.75rem] font-bold leading-[1.02] tracking-[-0.03em] sm:max-w-[16ch] sm:text-6xl lg:text-[4.25rem]">
                 Know which agent needs you.
               </h1>
               <p data-rise="" className="mt-6 max-w-[40ch] text-pretty text-lg leading-snug text-onred-soft [animation-delay:80ms] sm:text-xl">
@@ -55,7 +62,6 @@ export function Hero() {
           </section>
         </div>
         <WeaveBand id="hero-end" />
-      </main>
     </>
   );
 }

@@ -2,6 +2,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import puppeteer from 'puppeteer-core'
+import { serve } from './_host.mjs'
 
 const dir = process.argv[2]
 const CHROME = process.env.CHROME ?? '/usr/bin/google-chrome-stable'
@@ -11,8 +12,7 @@ const SCHEMES = (process.env.SCHEMES ?? 'light,dark').split(',')
 const out = new URL('../.shots/', import.meta.url).pathname
 mkdirSync(out, { recursive: true })
 
-const server = Bun.spawn(['bun', new URL('./serve.mjs', import.meta.url).pathname, dir, '4175'], { stdout: 'ignore' })
-await Bun.sleep(800)
+const host = serve(dir)
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new', args: ['--no-sandbox'] })
 try {
   for (const scheme of SCHEMES) {
@@ -21,7 +21,7 @@ try {
         const page = await browser.newPage()
         await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: scheme }])
         await page.setViewport({ width, height: 900 })
-        await page.goto(`http://localhost:4175${path}`, { waitUntil: 'networkidle0' })
+        await page.goto(`${host.origin}${path}`, { waitUntil: 'networkidle0' })
         // lazy images only load once scrolled into view: walk the page so a full-page shot is not full of holes
         await page.evaluate(async () => {
           for (let y = 0; y < document.body.scrollHeight; y += 600) { window.scrollTo(0, y); await new Promise((r) => setTimeout(r, 60)) }
@@ -35,4 +35,4 @@ try {
       }
     }
   }
-} finally { await browser.close(); server.kill() }
+} finally { await browser.close(); host.stop() }

@@ -1,11 +1,14 @@
-import { expect, test } from 'bun:test'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
+import { afterAll, expect, test } from 'bun:test'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { forSite, syncDocs, validateDocs } from './sync-docs.mjs'
 
+const made = []
+afterAll(() => { for (const d of made) rmSync(d, { recursive: true, force: true }) })
 function fixture(files) {
   const root = mkdtempSync(join(tmpdir(), 'kmx-docs-'))
+  made.push(root)
   for (const [rel, text] of Object.entries(files)) {
     const p = join(root, rel)
     mkdirSync(join(p, '..'), { recursive: true })

@@ -91,6 +91,9 @@ html > body[data-scroll-locked] {
 figure.shiki { background: var(--code-bg); color: var(--code-fg); border-color: transparent; border-radius: 0.75rem; outline: 1px solid rgb(0 0 0 / 0.1); outline-offset: -1px; box-shadow: none; }
 .dark figure.shiki { outline-color: rgb(255 255 255 / 0.1); }
 figure.shiki pre { background: transparent !important; }
+/* a code block's scroll box is a tab stop: on the dark figure the page's dark ring is 1:1, and its outset outline is clipped by the figure's overflow */
+figure.shiki { --color-fd-ring: var(--code-fg); }
+figure.shiki :focus-visible { outline-color: var(--code-fg); outline-offset: -2px; }
 .prose :where(code):not(pre code) { font-family: var(--font-mono); font-size: 0.875em; background: var(--surface-hi); padding: 0.1em 0.35em; border-radius: 0.35rem; }
 .tabular { font-variant-numeric: tabular-nums; }
 

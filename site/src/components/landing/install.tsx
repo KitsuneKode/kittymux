@@ -1,7 +1,10 @@
 import { CopyButton } from '../copy-button';
 
+/** The first command: it works before anything is installed, so the final call to action copies it too. */
+export const DEMO_CMD = 'git clone https://github.com/KitsuneKode/kittymux ~/kittymux && ~/kittymux/bin/kittymux demo';
+
 const STEPS = [
-  { n: '1', title: 'Look first', cmd: 'git clone https://github.com/KitsuneKode/kittymux ~/kittymux && ~/kittymux/bin/kittymux demo', note: 'Opens its own window with made-up agents. Nothing of yours is read or changed.' },
+  { n: '1', title: 'Look first', cmd: DEMO_CMD, note: 'Opens its own window with made-up agents. Nothing of yours is read or changed.' },
   { n: '2', title: 'Install', cmd: '~/kittymux/install.sh', note: 'Checks its dependencies, backs up kitty.conf and adds a few include lines. It never overwrites a key of yours.' },
   { n: '3', title: 'Check', cmd: 'kittymux doctor', note: 'Lists anything that is off, and how to fix it.' },
 ] as const;
@@ -16,8 +19,8 @@ export function Install() {
             <span className="text-5xl font-bold tabular text-link">{s.n}</span>
             <h3 className="text-xl font-semibold">{s.title}</h3>
             <p className="text-pretty text-mute">{s.note}</p>
-            <pre tabIndex={0} className="mt-auto overflow-x-auto rounded-lg bg-[var(--code-bg)] p-4 font-mono text-sm text-[var(--code-fg)]"><code>{s.cmd}</code></pre>
-            <CopyButton text={s.cmd} label="Copy command" className="self-start border border-line hover:bg-card-hi" />
+            <pre className="mt-auto whitespace-pre-wrap rounded-lg bg-[var(--code-bg)] p-4 font-mono text-sm text-[var(--code-fg)] [overflow-wrap:anywhere]"><code>{s.cmd}</code></pre>
+            <CopyButton text={s.cmd} label="Copy command" context={s.title} className="self-start border border-line hover:bg-card-hi" />
           </li>
         ))}
       </ol>
