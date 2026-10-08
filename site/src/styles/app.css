@@ -1,24 +1,35 @@
 @import 'tailwindcss';
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';
-@import '@fontsource-variable/epilogue';
-@import '@fontsource-variable/jetbrains-mono';
 @import './tokens.css';
+
+/* The two web fonts, latin subset only (the site is English; anything else falls through to the system font), straight from @fontsource-variable.
+   font-display: optional + a preload (see __root.tsx): the font is used if it arrives with the first paint and otherwise not at all on that view,
+   so text is never re-laid-out when a font lands (a "swap" was the layout shift on a slow first visit). The next page view finds it cached. */
+@font-face { font-family: 'Epilogue Variable'; font-style: normal; font-display: optional; font-weight: 100 900; src: url('../../node_modules/@fontsource-variable/epilogue/files/epilogue-latin-wght-normal.woff2') format('woff2-variations'); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: 'JetBrains Mono Variable'; font-style: normal; font-display: optional; font-weight: 100 800; src: url('../../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations'); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+
+/* Fallbacks shaped like the web fonts, so the swap does not move the text (layout shift). Numbers from `python3 tools/font_fallback.py FONT.woff2`:
+   Epilogue is 13% wider than Arial, so Arial is scaled up to it; the vertical overrides keep each line the same height. */
+@font-face { font-family: 'Epilogue Fallback'; src: local('Arial'), local('Liberation Sans'), local('Helvetica Neue'), local('Helvetica'); size-adjust: 113.04%; ascent-override: 69.89%; descent-override: 20.79%; line-gap-override: 0%; }
+@font-face { font-family: 'JetBrains Mono Fallback'; src: local('Liberation Mono'), local('Menlo'), local('Consolas'), local('Courier New'); size-adjust: 99.98%; ascent-override: 102.02%; descent-override: 30%; line-gap-override: 0%; }
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
-  --font-sans: 'Epilogue Variable', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace;
+  --font-sans: 'Epilogue Variable', 'Epilogue Fallback', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono Fallback', ui-monospace, SFMono-Regular, monospace;
   --color-page: var(--bg);
   --color-ink: var(--fg);
   --color-mute: var(--muted);
   --color-card: var(--surface);
   --color-card-hi: var(--surface-hi);
-  --color-brand: var(--red);
+  --color-brand: var(--brand);
+  --color-pink: var(--pink);
+  --color-onpink: var(--on-pink);
   --color-link: var(--link);
-  --color-onred: var(--on-red);
-  --color-onred-soft: var(--on-red-soft);
+  --color-onbrand: var(--on-brand);
+  --color-onbrand-soft: var(--on-brand-soft);
   --color-line: var(--line);
   /* the names shadcn components use, pointed at the same tokens */
   --color-background: var(--bg);
@@ -28,13 +39,13 @@
   --color-border: var(--line);
   --color-input: var(--line);
   --color-ring: var(--fg);
-  --color-primary: var(--red);
-  --color-primary-foreground: var(--on-red);
+  --color-primary: var(--brand);
+  --color-primary-foreground: var(--on-brand);
   --color-secondary: var(--surface-hi);
   --color-secondary-foreground: var(--fg);
   --color-accent: var(--surface-hi);
   --color-accent-foreground: var(--fg);
-  --color-destructive: var(--red);
+  --color-destructive: var(--brand);
   --color-card-foreground: var(--fg);
   --color-popover: var(--surface);
   --color-popover-foreground: var(--fg);
@@ -67,10 +78,10 @@
 }
 
 html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; font-family: var(--font-sans); }
-::selection { background: var(--red); color: var(--on-red); }
+::selection { background: var(--brand); color: var(--on-brand); }
 :focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; border-radius: 2px; }
-[data-red] :focus-visible { outline-color: var(--on-red); }
-[data-red] ::selection { background: var(--on-red); color: var(--red); }
+[data-brand] :focus-visible { outline-color: var(--on-brand); }
+[data-brand] ::selection { background: var(--on-brand); color: var(--brand); }
 
 html {
   scrollbar-gutter: stable;
@@ -100,7 +111,7 @@ figure.shiki :focus-visible { outline-color: var(--code-fg); outline-offset: -2p
 /* Motion: one easing, a press scale of 0.96, a clip-path wipe on the primary action; all of it off under reduced motion. */
 [data-press] { transition-property: transform, background-color, color, border-color, opacity; transition-duration: 200ms; transition-timing-function: var(--ease); }
 [data-press]:active { transform: scale(0.96); }
-[data-cta] { position: relative; isolation: isolate; overflow: hidden; background: var(--on-red); color: var(--red); }
+[data-cta] { position: relative; isolation: isolate; overflow: hidden; background: var(--on-brand); color: var(--brand); }
 [data-cta]::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--fg); clip-path: inset(0 100% 0 0); transition: clip-path 220ms var(--ease); }
 [data-cta]:hover { color: var(--bg); }
 [data-cta]:hover::before { clip-path: inset(0); }
@@ -111,5 +122,5 @@ figure.shiki :focus-visible { outline-color: var(--code-fg); outline-offset: -2p
   [data-press], [data-cta]::before { transition: none; }
   [data-press]:active { transform: none; }
 }
-@media (hover: none) { [data-cta]:hover::before { clip-path: inset(0 100% 0 0); } [data-cta]:hover { color: var(--red); } }
+@media (hover: none) { [data-cta]:hover::before { clip-path: inset(0 100% 0 0); } [data-cta]:hover { color: var(--brand); } }
 @media (forced-colors: active) { [data-cta], [data-press] { border: 1px solid CanvasText; } }

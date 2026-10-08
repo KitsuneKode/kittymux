@@ -47,6 +47,19 @@ try {
       }
     }
   }
+  // the build's security headers (CSP above all) must not block anything the pages do: load pages with a console listener and fail on a violation or an uncaught error.
+  // (/_vercel/... only exists on Vercel: a 404 for it here is expected and ignored.)
+  for (const path of ['/', '/docs/users/getting-started', '/keys', '/changelog']) {
+    const pg = await browser.newPage()
+    const problems = []
+    pg.on('console', (m) => { if (m.type() === 'error' && !/_vercel|Failed to load resource/.test(m.text() + (m.location()?.url ?? ''))) problems.push(m.text()) })
+    pg.on('pageerror', (e) => problems.push(String(e)))
+    const res = await pg.goto(`${ORIGIN}${path}`, { waitUntil: 'networkidle0' })
+    if (!res.headers()['content-security-policy']?.includes("default-src 'self'")) { bad++; console.error(`headers: ${path} has no content-security-policy`) }
+    if (res.headers()['x-content-type-options'] !== 'nosniff') { bad++; console.error(`headers: ${path} has no x-content-type-options: nosniff`) }
+    for (const t of problems) { bad++; console.error(`console [${path}]: ${t.slice(0, 200)}`) }
+    await pg.close()
+  }
   // search: open with the hotkey, type a word from the docs, a result must appear
   const page = await browser.newPage()
   await page.setViewport({ width: 1280, height: 900 })

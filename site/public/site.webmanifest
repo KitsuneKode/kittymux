@@ -4,10 +4,23 @@
   "description": "kitty as a multiplexer for AI coding agents: know which agent needs you.",
   "start_url": "/",
   "display": "browser",
-  "background_color": "#F7F3EA",
-  "theme_color": "#B3261E",
+  "background_color": "#FBF5EC",
+  "theme_color": "#3F5B86",
   "icons": [
-    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" },
-    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
   ]
 }

@@ -1,6 +1,7 @@
 import { IconArrowUpRight, IconHeart } from '@tabler/icons-react';
 import { Link } from '@tanstack/react-router';
 import { GitHubStars } from './github-stars';
+import { Logo } from './logo';
 import { buttonVariants } from './ui/button';
 import { Separator } from './ui/separator';
 import { ThemeToggle } from './theme-toggle';
@@ -34,10 +35,7 @@ export function SiteFooter({ themeToggle = false }: { themeToggle?: boolean }) {
       <div className="mx-auto w-full max-w-[1280px] px-5 py-12 md:px-8">
         <div className="grid gap-10 md:grid-cols-12">
           <div className="md:col-span-5">
-            <p className="flex items-center gap-3 text-lg font-semibold">
-              <span aria-hidden="true" className="grid size-9 place-items-center rounded-lg bg-brand text-lg font-bold text-onred">k</span>
-              kittymux
-            </p>
+            <Logo size={44} textClassName="text-xl" />
             <p className="mt-3 max-w-[40ch] text-pretty text-mute">Kitty as a multiplexer for AI coding agents. Free, MIT-licensed, and tested on the author’s own desktop.</p>
             <div className="mt-5 flex flex-wrap items-center gap-2">
               <GitHubStars repo={REPO} stargazersCount={stars} className="border border-line text-ink hover:bg-card-hi" />
@@ -96,7 +94,10 @@ export function SiteFooter({ themeToggle = false }: { themeToggle?: boolean }) {
         <Separator className="my-10 bg-line" />
 
         <div className="flex flex-col gap-4 text-sm text-mute sm:flex-row sm:items-center sm:justify-between">
-          <p>kittymux <span className="tabular">{buildLabel(facts.version)}</span> · MIT license · made by KitsuneKode</p>
+          <div className="flex flex-col gap-1">
+            <p>kittymux <span className="tabular">{buildLabel(facts.version)}</span> · MIT license · made by KitsuneKode</p>
+            <p className="max-w-[60ch] text-pretty">This site counts visits with Vercel Web Analytics: no cookies, nothing that identifies you, and nothing at all if your browser sends Do Not Track. <Link to="/docs/$" params={{ _splat: 'users/privacy-and-security' }} className="underline underline-offset-4 hover:text-ink">Read the privacy page</Link></p>
+          </div>
           {themeToggle && <ThemeToggle className="self-start" />}
         </div>
       </div>

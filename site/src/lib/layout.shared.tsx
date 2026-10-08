@@ -1,23 +1,16 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
 import { IconHeart } from '@tabler/icons-react';
 import { GitHubStars } from '@/components/github-stars';
+import { Logo } from '@/components/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { REPO, SPONSOR_URL, stars } from './links';
-import { appName } from './shared';
 
 /** `inList`: the home layout puts secondary links in a <ul> (each needs its <li>); the docs layout does not. */
 export function baseOptions(inList = false): BaseLayoutProps {
   const stars_ = <GitHubStars repo={REPO} stargazersCount={stars} />;
   return {
     nav: {
-      title: (
-        <span className="flex items-center gap-2 font-semibold tracking-tight">
-          <span aria-hidden="true" className="grid size-7 place-items-center rounded-md bg-brand text-sm font-bold text-onred">
-            k
-          </span>
-          {appName}
-        </span>
-      ),
+      title: <Logo size={30} textClassName="text-base" />,
       url: '/',
     },
     links: [

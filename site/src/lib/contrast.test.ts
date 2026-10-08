@@ -14,9 +14,11 @@ const PAIRS: [string, string, number, string][] = [
   ['--link', '--bg', 4.5, 'links on the page'],
   ['--link', '--surface', 4.5, 'links on a card'],
   ['--link', '--surface-hi', 4.5, 'links on a raised card'],
-  ['--on-red', '--red', 4.5, 'text on the red field'],
-  ['--on-red-soft', '--red', 4.5, 'secondary text on the red field'],
-  ['--red', '--on-red', 4.5, 'red text on a cream button'],
+  ['--on-brand', '--brand', 4.5, 'text on the brand (blue) field'],
+  ['--on-brand-soft', '--brand', 4.5, 'secondary text on the brand field'],
+  ['--brand', '--on-brand', 4.5, 'brand-coloured text on a cream button'],
+  ['--on-pink', '--pink', 4.5, 'text on a pink button'],
+  ['--link', '--code-bg', 3, 'a link-coloured mark on code'],
   ['--code-fg', '--code-bg', 4.5, 'code'],
 ]
 

@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { absolute, breadcrumbLd, faqLd, pageHead, siteUrl, softwareLd } from './seo'
 
 test('the site URL is read strictly: https only, no trailing slash, nothing when unset or garbage', () => {
-  expect(siteUrl(undefined)).toBe('')
+  expect(siteUrl('')).toBe('')   // ('' = unset; undefined would read the build's own VITE_SITE_URL)
   expect(siteUrl('')).toBe('')
   expect(siteUrl('not a url')).toBe('')
   expect(siteUrl('http://example.org')).toBe('')

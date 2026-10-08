@@ -31,7 +31,7 @@ export function Support() {
             <CardDescription className="text-base text-mute">Sponsorship pays for the slow parts: checking each new agent CLI against real sessions and keeping the docs true.</CardDescription>
           </CardHeader>
           <CardFooter className="mt-auto">
-            <a href={SPONSOR_URL} target="_blank" rel="noopener" className={cn(buttonVariants({ size: 'lg' }), 'min-h-11 bg-brand px-4 text-onred hover:bg-brand/90 sm:min-h-9')}>
+            <a href={SPONSOR_URL} target="_blank" rel="noopener" className={cn(buttonVariants({ size: 'lg' }), 'min-h-11 bg-pink px-4 font-semibold text-onpink hover:bg-pink/90 sm:min-h-9')}>
               <IconHeart aria-hidden="true" data-icon="inline-start" stroke={2} />
               Sponsor on GitHub
             </a>

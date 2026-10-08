@@ -46,6 +46,10 @@ To reduce what notifications and the inbox hold, turn on private mode with `touc
 
 Notification text can come from the agent's screen. It is stripped of control characters, limited in length (60 for the title, 120 for the body) and escaped for markup, because many daemons render Pango markup. Every subprocess is started with an argument list, and the helper checks its own arguments, because it takes arguments from anyone who can run it. Each helper lives at most 30 seconds in its own session.
 
+## This website
+
+The software sends nothing anywhere. The website you are reading is a separate thing: it counts visits and page speed with Vercel Web Analytics and Speed Insights. Neither sets a cookie or stores anything that identifies you, and both load from this site's own address rather than a third party's. A browser that sends "Do Not Track" or Global Privacy Control is not counted at all.
+
 ## Report a vulnerability
 
 Report it privately through [GitHub's private vulnerability reporting](https://github.com/KitsuneKode/kittymux/security/advisories/new). Do not open a public issue for something exploitable. Include what you saw, the kitty and kittymux versions (`kitty --version`, `kittymux version`) and a minimal way to reproduce it. A reply comes within about a week, and a fix and an advisory follow once it is confirmed. Only the latest release and `main` are supported.

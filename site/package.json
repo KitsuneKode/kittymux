@@ -19,9 +19,9 @@
     "axe": "bun scripts/axe.mjs \"$(cat BUILD_DIR)\"",
     "shoot": "bun scripts/shoot.mjs \"$(cat BUILD_DIR)\"",
     "budget": "bun scripts/budget.mjs \"$(cat BUILD_DIR)\"",
-    "postbuild": "bun scripts/gen-seo.mjs \"$(cat BUILD_DIR)\"",
-    "og": "bun scripts/og.mjs",
-    "tour": "bun scripts/tour.mjs \"$(cat BUILD_DIR)\""
+    "postbuild": "bun scripts/gen-seo.mjs \"$(cat BUILD_DIR)\" && bun scripts/patch-routes.mjs \"$(cat BUILD_DIR)\"",
+    "tour": "bun scripts/tour.mjs \"$(cat BUILD_DIR)\"",
+    "cls": "bun scripts/cls.mjs \"$(cat BUILD_DIR)\""
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",
@@ -31,6 +31,8 @@
     "@tanstack/react-router": "1.170.41",
     "@tanstack/react-start": "1.168.60",
     "@tanstack/start-static-server-functions": "1.167.39",
+    "@vercel/analytics": "2.0.1",
+    "@vercel/speed-insights": "2.0.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "fumadocs-core": "16.16.2",

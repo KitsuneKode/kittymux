@@ -1,34 +1,40 @@
-/* The kittymux site's palette. Light is cream/red/ink (from the gamusa prototype); dark is a full second theme, not an inversion.
+/* The kittymux site's palette, taken from the mascot (assets/brand/mascot.png): the slate-blue field, the cream half of the face, the pink half.
+   Light is warm paper with a blue brand band; dark is a full second theme (deep navy), not an inversion. Pink is an accent for fills and
+   marks (buttons, diamonds, stripes); text in pink uses --link, a deeper pink that clears 4.5:1 on the page.
    Every text pair is checked by src/lib/contrast.test.ts: change a value here and that test tells you if it still reads. */
 :root {
-  --bg: #F7F3EA;
-  --fg: #141414;
-  --muted: #6B655C;
+  --bg: #FBF5EC;
+  --fg: #17202E;
+  --muted: #566070;
   --surface: #FFFDF8;
-  --surface-hi: #EFE9DB;
-  --link: #B3261E;
-  --red: #B3261E;
-  --on-red: #F7F3EA;
-  --on-red-soft: #F5D6D2;
-  --code-bg: #1B1917;
-  --code-fg: #F4EFE4;
-  --line: rgb(20 20 20 / 0.12);
+  --surface-hi: #F1E8DA;
+  --link: #C8264C;
+  --brand: #3F5B86;
+  --on-brand: #FBF3E8;
+  --on-brand-soft: #DCE6F3;
+  --pink: #FB4C74;
+  --on-pink: #17202E;
+  --code-bg: #141B28;
+  --code-fg: #F4EFE6;
+  --line: rgb(23 32 46 / 0.13);
   --ease: cubic-bezier(0.23, 1, 0.32, 1);
   color-scheme: light;
 }
 
 .dark {
-  --bg: #121110;
-  --fg: #F4EFE4;
-  --muted: #B5AC9F;
-  --surface: #1B1917;
-  --surface-hi: #25221F;
-  --link: #F27A70;
-  --red: #B3261E;
-  --on-red: #F7F3EA;
-  --on-red-soft: #F5D6D2;
-  --code-bg: #0D0C0B;
-  --code-fg: #F4EFE4;
-  --line: rgb(244 239 228 / 0.14);
+  --bg: #0F1522;
+  --fg: #F4EFE6;
+  --muted: #A9B4C6;
+  --surface: #18202F;
+  --surface-hi: #222C3F;
+  --link: #FF8FA8;
+  --brand: #2B4468;
+  --on-brand: #FBF3E8;
+  --on-brand-soft: #D3DEEE;
+  --pink: #FB4C74;
+  --on-pink: #17202E;
+  --code-bg: #0A0F18;
+  --code-fg: #F4EFE6;
+  --line: rgb(244 239 230 / 0.14);
   color-scheme: dark;
 }

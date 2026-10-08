@@ -3,7 +3,7 @@ import { gitConfig } from './shared'
 export const SITE_NAME = 'kittymux'
 export const REPO_URL = `https://github.com/${gitConfig.user}/${gitConfig.repo}`
 /** Social preview, 1200x630 (scripts/og.mjs draws it from the site's own screenshots). */
-export const OG_IMAGE = { path: '/og.png', width: 1200, height: 630, alt: 'kittymux: know which agent needs you. The docked panel lists tabs, one marked as needing you.' }
+export const OG_IMAGE = { path: '/og.png', width: 1200, height: 630, alt: 'kittymux: a pink and cream kitten beside the name and the line agent-aware workspace for kitty, above a row of agent icons.' }
 
 /**
  * The public address of the site, from VITE_SITE_URL at build time (for example https://example.org). Unset means "not deployed yet": the pages then carry no canonical URL,

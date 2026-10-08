@@ -22,7 +22,7 @@ export function Install() {
           <h3 className="text-lg font-semibold">Already sure? One line.</h3>
           <pre className="mt-3 whitespace-pre-wrap rounded-lg bg-[var(--code-bg)] p-4 font-mono text-sm text-[var(--code-fg)] [overflow-wrap:anywhere]"><code>{INSTALL_CMD}</code></pre>
         </div>
-        <CopyButton text={INSTALL_CMD} label="Copy install line" className="self-start bg-brand text-onred hover:bg-brand/90 md:self-center" />
+        <CopyButton text={INSTALL_CMD} label="Copy install line" className="self-start bg-brand text-onbrand hover:bg-brand/90 md:self-center" />
       </div>
       <ol className="mt-10 grid gap-6 lg:grid-cols-3">
         {STEPS.map((s) => (

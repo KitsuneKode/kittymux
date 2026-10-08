@@ -16,6 +16,40 @@ function markdownPages(root = 'content/docs'): { path: string }[] {
   });
 }
 
+/**
+ * Response headers for every page and file. The CSP allows inline scripts because the theme script and TanStack Start's page data are inline (a hash per page would be
+ * needed to drop that); everything else is same-origin only, which is also what keeps the site free of third-party requests.
+ */
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "font-src 'self' data:",   // Vite inlines the smallest font files as data: URIs
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  'upgrade-insecure-requests',
+].join('; ');
+
+const ROUTE_RULES = {
+  '/**': {
+    headers: {
+      'content-security-policy': CSP,
+      'x-content-type-options': 'nosniff',
+      'referrer-policy': 'strict-origin-when-cross-origin',
+      'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()',
+      'cross-origin-opener-policy': 'same-origin',
+      'strict-transport-security': 'max-age=63072000; includeSubDomains; preload',
+    },
+  },
+  // not content-hashed, so not immutable: a day in caches, and a stale copy is served while a fresh one is fetched
+  '/assets/shots/**': { headers: { 'cache-control': 'public, max-age=86400, stale-while-revalidate=604800' } },
+  '/og.png': { headers: { 'cache-control': 'public, max-age=86400, stale-while-revalidate=604800' } },
+};
+
 export default defineConfig({
   server: {
     port: 3000,
@@ -38,6 +72,7 @@ export default defineConfig({
     // please see https://tanstack.com/start/latest/docs/framework/react/guide/hosting#nitro for guides on hosting
     nitro({
       preset: 'vercel',
+      routeRules: ROUTE_RULES,
     }),
   ],
   resolve: {
