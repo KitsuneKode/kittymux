@@ -11,6 +11,10 @@ const browser = await puppeteer.launch({ executablePath: process.env.CHROME ?? '
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 let bad = 0
 const check = (ok, what, detail = '') => { if (!ok) bad++; console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}${detail && !ok ? '  ' + detail : ''}`) }
+// Waits are CONDITIONS with a deadline, never a sleep that happened to be long enough on one machine. `arrived` waits for the page's own <h1>, then holds a short
+// stability window: the failure this gate exists for is a scroll position that changes AFTER the content is there.
+const poll = async (fn, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { try { if (await fn()) return true } catch { /* the page is navigating */ } await sleep(100) } return false }
+const arrived = async (page, h1) => { const ok = await poll(() => page.evaluate((t) => document.querySelector('h1')?.textContent === t, h1)); await sleep(300); return ok }
 const where = (p) => p.evaluate(() => ({ path: location.pathname + location.hash, y: Math.round(scrollY), h1: document.querySelector('h1')?.textContent ?? '' }))
 const FROM = '/docs/users/getting-started'
 
@@ -41,7 +45,7 @@ for (const [label, selector, pick, expectH1] of [
   ['a sidebar link', '#nd-sidebar a[href="/docs/users/troubleshooting"], aside a[href="/docs/users/troubleshooting"]', undefined, 'Troubleshooting'],
 ]) {
   const page = await open()
-  await clickLink(page, selector, pick); await sleep(900)
+  await clickLink(page, selector, pick); await arrived(page, expectH1)
   const w = await where(page)
   check(w.y === 0 && w.h1 === expectH1, `${label} ends at the top of "${expectH1}"`, JSON.stringify(w))
   await page.close()
@@ -51,10 +55,9 @@ for (const [label, selector, pick, expectH1] of [
   const page = await open({ delay: 900 })
   page.__slow = true
   await clickLink(page, '#nd-sidebar a[href="/docs/users/troubleshooting"], aside a[href="/docs/users/troubleshooting"]')   // not a pager neighbour, so it is NOT preloaded
-  await sleep(550)
-  const bar = await page.evaluate(() => !!document.querySelector('.nav-progress'))
+  const bar = await poll(() => page.evaluate(() => !!document.querySelector('.nav-progress')), 4000)
   const mid = await where(page)
-  await sleep(3500)
+  await arrived(page, 'Troubleshooting')
   const w = await where(page)
   check(bar, 'a slow load shows the progress bar after a moment', JSON.stringify(mid))
   check(w.y === 0 && w.h1 === 'Troubleshooting', 'a slow load still ends at the top of the new page', JSON.stringify(w))
@@ -64,11 +67,11 @@ for (const [label, selector, pick, expectH1] of [
 
 {
   const page = await open()
-  await clickLink(page, 'a[href="/docs/users/install-and-update"]', last); await sleep(900)
-  await page.goBack(); await sleep(900)
+  await clickLink(page, 'a[href="/docs/users/install-and-update"]', last); await arrived(page, 'Install and update')
+  await page.goBack(); await arrived(page, 'Getting started')
   const w = await where(page)
   check(w.path === FROM && w.y > 800, 'back returns to the old page at the old position', JSON.stringify(w))
-  await page.goForward(); await sleep(900)
+  await page.goForward(); await arrived(page, 'Install and update')
   const f = await where(page)
   check(f.h1 === 'Install and update', 'forward shows the next page again', JSON.stringify(f))
   await page.close()
@@ -81,7 +84,8 @@ for (const [label, selector, pick, expectH1] of [
   const target = await (async () => { const p2 = await browser.newPage(); await p2.goto(host.origin + '/docs/users/shortcuts', { waitUntil: 'networkidle0' }); const t = await p2.evaluate(() => [...document.querySelectorAll('h2[id]')].map((h) => h.id)[3]); await p2.close(); return t })()
   await page.evaluate((t) => { const a = document.getElementById('probe'); a.setAttribute('href', `/docs/users/shortcuts#${t}`) }, target)
   await page.evaluate(() => scrollTo(0, 400)); await sleep(150)
-  await (await page.$('#probe')).click(); await sleep(1200)
+  await (await page.$('#probe')).click()
+  await poll(() => page.evaluate((t) => { const e = document.getElementById(t); return !!e && location.pathname === '/docs/users/shortcuts' && e.getBoundingClientRect().top < 260 }, target), 6000); await sleep(300)
   const w = await page.evaluate((t) => ({ path: location.pathname + location.hash, top: Math.round(document.getElementById(t)?.getBoundingClientRect().top ?? -1) }), target)
   check(w.top >= 0 && w.top < 260, `a link to a heading of another page puts the heading in view (#${target})`, JSON.stringify(w))
   await page.close()
@@ -89,7 +93,7 @@ for (const [label, selector, pick, expectH1] of [
 
 {
   const page = await open()
-  await sleep(4500)
+  await poll(() => page.__seen.filter((u) => /staticServerFnCache/.test(u)).length >= 2, 9000)
   const jsons = page.__seen.filter((u) => /staticServerFnCache/.test(u)).length
   check(jsons >= 2, 'the previous and next pages are preloaded while idle (no click)', `${jsons} data files requested`)
   await page.close()
@@ -100,7 +104,7 @@ for (const [label, selector, pick, expectH1] of [
   await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight)); await sleep(200)
   const all = await page.$$('a[href="/docs/users/install-and-update"]'); const el = last(all)
   await el.evaluate((e) => e.scrollIntoView({ block: 'center' })); await sleep(150)
-  await el.click(); await sleep(1100)
+  await el.click(); await arrived(page, 'Install and update')
   const w = await where(page)
   check(w.y === 0 && w.h1 === 'Install and update', 'on a phone the pager\'s Next also ends at the top', JSON.stringify(w))
   await page.close()

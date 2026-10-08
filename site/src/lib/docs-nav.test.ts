@@ -12,7 +12,8 @@ const tree = {
 test('splatOf takes the part after /docs/ and nothing for /docs itself', () => {
   expect(splatOf('/docs/users/shortcuts')).toBe('users/shortcuts')
   expect(splatOf('/docs/users/shortcuts/')).toBe('users/shortcuts')
-  expect(splatOf('/docs')).toBeNull()
+  expect(splatOf('/docs')).toBe('')                      // the overview is the empty splat of the same route: it is preloaded too
+  expect(splatOf('/docs/')).toBe('')
   expect(splatOf('/keys')).toBeNull()
   expect(splatOf('/docsx/y')).toBeNull()
 })

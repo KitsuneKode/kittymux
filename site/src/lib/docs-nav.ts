@@ -1,8 +1,9 @@
 import { useRouter } from '@tanstack/react-router';
 import { useEffect, useLayoutEffect, useRef } from 'react';
 
-/** The `$` part of /docs/$ for a docs address ("/docs/users/shortcuts" → "users/shortcuts"); null for /docs itself or anything else. */
+/** The `$` part of /docs/$ for a docs address ("/docs/users/shortcuts" → "users/shortcuts"; the overview, /docs, is the empty splat); null for anything else. */
 export function splatOf(url: string): string | null {
+  if (/^\/docs\/?$/.test(url)) return '';
   const m = /^\/docs\/(.+?)\/?$/.exec(url);
   return m ? m[1] : null;
 }
@@ -48,11 +49,12 @@ export function arrivedByHistory(now = Date.now()): boolean {
 export function useArriveAtTop(key: string) {
   const first = useRef(true);
   useLayoutEffect(() => {
+    const byHistory = arrivedByHistory();                // consumed on EVERY run, the first render included: an unconsumed pop must not swallow a later click
     if (first.current) {
       first.current = false;
       return;
     }
-    if (arrivedByHistory()) return;
+    if (byHistory) return;
     const id = decodeURIComponent(window.location.hash.slice(1));
     const heading = id ? document.getElementById(id) : null;
     if (heading) heading.scrollIntoView();
@@ -69,7 +71,7 @@ export function usePreloadNeighbours(tree: unknown, url: string) {
     const run = () => {
       for (const u of neighbourUrls(tree, url)) {
         const splat = splatOf(u);
-        if (splat) router.preloadRoute({ to: '/docs/$', params: { _splat: splat } }).catch(() => undefined);
+        if (splat !== null) router.preloadRoute({ to: '/docs/$', params: { _splat: splat } }).catch(() => undefined);
       }
     };
     const w = window as Window & { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (n: number) => void };
