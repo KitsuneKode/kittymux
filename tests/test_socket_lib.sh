@@ -70,6 +70,39 @@ listed="$(
 )"
 check "the link and the socket resolve to one kitty" 1 "$listed"
 
+# the kitty a command was started FROM comes before any "newest" one (the panel used to watch the newest kitty and act on the wrong one)
+mkdir -p "$tmp/run2"
+python3 - "$tmp/run2/mykitty-4242" "$tmp/run2/mykitty-4243" <<'PY' &
+import socket, sys, time
+socks = []
+for path in sys.argv[1:]:
+    s = socket.socket(socket.AF_UNIX); s.bind(path); socks.append(s); time.sleep(0.2)   # the second one is the newest
+time.sleep(30)
+PY
+srv3=$!
+for _ in $(seq 1 30); do [[ -S "$tmp/run2/mykitty-4243" ]] && break; sleep 0.1; done
+got="$(XDG_RUNTIME_DIR="$tmp/run2" mux_socket_for_pid 4242)"
+check "a socket is found by its kitty's pid in the runtime dir"  "unix:$tmp/run2/mykitty-4242" "$got"
+got="$(XDG_RUNTIME_DIR="$tmp/run2" mux_socket_for_pid 4244 || printf none)"
+check "a pid with no socket finds nothing"                        none "$got"
+for bad in "" 0 -1 "../x" "4242 " "4242/../4243"; do
+    got="$(XDG_RUNTIME_DIR="$tmp/run2" mux_socket_for_pid "$bad" || printf none)"
+    check "pid [$bad] is not a pid"                              none "$got"
+done
+got="$(XDG_RUNTIME_DIR="$tmp/run2" KITTY_PID=4242 mux_own_socket)"
+check "the launching kitty (KITTY_PID) beats the newest socket"  "unix:$tmp/run2/mykitty-4242" "$got"
+got="$(XDG_RUNTIME_DIR="$tmp/run2" KITTY_PID="" mux_own_socket || printf none)"
+check "not started inside a kitty: no own socket, never 'newest'" none "$got"
+got="$(XDG_RUNTIME_DIR="$tmp/run" KITTY_PID=4242 mux_own_socket)"
+check "the parent's socket wins over KITTY_PID"                  "unix:$tmp/run/mykitty-$PPID" "$got"
+# the panel itself (a stand-in hyprctl that knows no focused window, so a live desktop cannot change the answer): started from kitty 4242 while kitty 4243 is newer, it must watch 4242
+mkdir -p "$tmp/fakebin"; printf '#!/bin/sh\necho {}\n' > "$tmp/fakebin/hyprctl"; chmod +x "$tmp/fakebin/hyprctl"
+env -u KITTYMUX_TARGET XDG_RUNTIME_DIR="$tmp/run2" KITTY_PID=4242 PATH="$tmp/fakebin:$PATH" "$here/../bin/mux-panel" target > "$tmp/target.out" 2>/dev/null
+check "mux-panel watches the kitty it was started from, not the newest" "unix:$tmp/run2/mykitty-4242" "$(cat "$tmp/target.out")"
+env -u KITTYMUX_TARGET -u KITTY_PID KITTYMUX_TARGET="" XDG_RUNTIME_DIR="$tmp/run2" PATH="$tmp/fakebin:$PATH" "$here/../bin/mux-panel" target > "$tmp/target2.out" 2>/dev/null
+check "started from outside every kitty it falls back to the newest" "unix:$tmp/run2/mykitty-4243" "$(cat "$tmp/target2.out")"
+kill "$srv3" 2>/dev/null || true
+
 # private runtime dir
 d="$(XDG_RUNTIME_DIR="$tmp/run" mux_runtime_dir)"
 check "runtime dir under XDG_RUNTIME_DIR"   "$tmp/run/kittymux" "$d"

@@ -47,9 +47,12 @@ alive() { [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/
 pick_target() {
     [[ -n "${KITTYMUX_TARGET:-}" ]] && { printf '%s' "$KITTYMUX_TARGET"; return; }
     local pid sock
-    if command -v hyprctl >/dev/null 2>&1; then     # the kitty you are in right now
+    # the kitty the key was pressed in (or that ran the CLI) comes first: it used to fall straight to "the newest socket", so with a second kitty open
+    # the panel watched that one and its clicks and keys acted on the wrong kitty
+    sock="$(mux_own_socket)" && { printf '%s' "$sock"; return; }
+    if command -v hyprctl >/dev/null 2>&1; then     # started from a window-manager bind: the kitty you are in right now
         pid="$(hyprctl activewindow -j 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("pid",""))' 2>/dev/null)"
-        [[ -n "$pid" ]] && mux_owned_socket "/tmp/mykitty-$pid" && { printf 'unix:/tmp/mykitty-%s' "$pid"; return; }
+        sock="$(mux_socket_for_pid "$pid")" && { printf '%s' "$sock"; return; }
     fi
     sock="$(mux_kitty_sockets | head -n1)"
     [[ -n "$sock" ]] && printf 'unix:%s' "$sock"
@@ -146,5 +149,6 @@ case "${1:-toggle}" in
     stop)   stop ;;
     status) alive && echo "running (pid $(cat "$PIDFILE")), $(mode)" || echo "stopped" ;;
     toggle) toggle ;;
+    target) pick_target; echo ;;      # which kitty a start would watch (for tests and for finding out why it watches the wrong one)
     *) echo "usage: mux-panel toggle|start|stop|status|summon|dock|wider|narrower|width N" >&2; exit 2 ;;
 esac

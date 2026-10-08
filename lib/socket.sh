@@ -36,6 +36,25 @@ mux_kitty_sockets() {
     done < <(ls -t /tmp/mykitty-* "${XDG_RUNTIME_DIR:-/nonexistent}"/mykitty-* 2>/dev/null)
 }
 
+# The socket of the kitty with this pid, in either place a socket lives (/tmp, or the private $XDG_RUNTIME_DIR). Fails when there is none we own.
+mux_socket_for_pid() {
+    local pid="${1:-}" d s
+    [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
+    for d in /tmp "${XDG_RUNTIME_DIR:-/nonexistent}"; do
+        s="$d/mykitty-$pid"
+        mux_owned_socket "$s" && { printf 'unix:%s' "$s"; return 0; }
+    done
+    return 1
+}
+
+# The kitty this process was started FROM (kitty spawns key-bound commands, so its pid is our parent's; a command run through the CLI has it in KITTY_PID),
+# or nothing when we were not started inside a kitty at all. Never "the newest": a second kitty must not be mistaken for the one that got the key.
+mux_own_socket() {
+    mux_socket_for_pid "$PPID" && return 0
+    mux_socket_for_pid "${KITTY_PID:-}" && return 0
+    return 1
+}
+
 # An optional explicit target never falls back. Otherwise prefer the launching
 # kitty's socket over inherited env, then owned discovery. fd:N is a kitten handle.
 # Failure prints nothing: callers must not pass an empty --to to kitty.
