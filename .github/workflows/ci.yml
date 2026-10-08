@@ -30,7 +30,7 @@ jobs:
           python3 -m pip install --quiet fonttools      # the icon-font coverage tests read the font's real glyph table
           python3 -m unittest discover -s tests
       - name: shell tests
-        run: bash tests/test_mux_status.sh && bash tests/test_socket_lib.sh
+        run: bash tests/test_mux_status.sh && bash tests/test_socket_lib.sh && bash tests/test_panel_focus.sh
       - name: shellcheck
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
