@@ -38,3 +38,8 @@ jobs:
         working-directory: site
         env:
           CHROME: /usr/bin/google-chrome
+      - name: layout shift on every page, both themes, a slow first visit included
+        run: bun run cls
+        working-directory: site
+        env:
+          CHROME: /usr/bin/google-chrome
