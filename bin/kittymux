@@ -64,6 +64,7 @@ HOME_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(HOME_DIR, "python"))
 import kittymux_agents  # noqa: E402
 import kittymux_changes  # noqa: E402
+import kittymux_cliargs  # noqa: E402
 import kittymux_fanout  # noqa: E402
 import kittymux_features  # noqa: E402
 import kittymux_inbox  # noqa: E402
@@ -1280,7 +1281,11 @@ def sessions_restore(argv: list[str]) -> int:
         if rc == 0:
             print(f"{OK} restored {path} (goto_session)")
             return 0
-    subprocess.Popen(["kitty", "--session", path], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    try:
+        subprocess.Popen(["kitty", "--session", path], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError as e:
+        print(f"{BAD} could not start kitty: {e.strerror or e}", file=sys.stderr)
+        return 1
     print(f"{OK} opening {path} in a new kitty")
     return 0
 
@@ -1306,7 +1311,7 @@ def sessions_new(argv: list[str]) -> int:
     opts, pos, it = {"template": "agent", "agent": "claude", "cwd": os.getcwd(), "agent2": "codex"}, [], iter(argv)
     for a in it:
         if a in ("--template", "--agent", "--cwd", "--agent2"):
-            opts[a[2:]] = next(it, "")
+            opts[a[2:]] = kittymux_cliargs.take(it, a)
         elif a == "--force":
             continue
         elif a.startswith("-"):
@@ -1644,7 +1649,7 @@ def spawn(argv: list[str]) -> int:
         if a in ("--tab", "--hsplit", "--vsplit"):
             where = a[2:]
         elif a == "--cwd":
-            cwd = os.path.abspath(os.path.expanduser(next(it, "")))
+            cwd = os.path.abspath(os.path.expanduser(kittymux_cliargs.take(it, a)))
         elif a == "--focus-wm":
             wm = True
         elif a.startswith("-"):
@@ -1976,7 +1981,7 @@ def fanout(argv: list[str]) -> int:
     opts, pos, it = {}, [], iter(argv)
     for a in it:
         if a in ("--name", "--base", "--cwd"):
-            opts[a[2:]] = next(it, "")
+            opts[a[2:]] = kittymux_cliargs.take(it, a)
         elif a in ("--yes", "--force"):
             opts[a[2:]] = True
         elif a.startswith("-") and a != "-":
@@ -2557,10 +2562,10 @@ def explain(argv: list[str]) -> int:
     it = iter(argv)
     for a in it:
         if a == "--window":
-            wid = next(it, "")
+            wid = kittymux_cliargs.take(it, a)
         elif a == "--last":
             try:
-                last = int(next(it, ""))
+                last = int(kittymux_cliargs.take(it, a))
             except ValueError:
                 print("kittymux explain: --last needs a number", file=sys.stderr)
                 return 2
@@ -2767,7 +2772,9 @@ def _write_settings(path: str, data: dict) -> None:
 def hooks(argv: list[str]) -> int:
     path = os.path.expanduser("~/.claude/settings.json")
     if "--settings" in argv:
-        path = argv[argv.index("--settings") + 1]
+        it = iter(argv[argv.index("--settings"):])
+        next(it)
+        path = kittymux_cliargs.take(it, "--settings")
     if "--install" not in argv and "--remove" not in argv:
         snippet, _ = merge_hooks({})
         print(f"Add to {path} (or run: kittymux hooks --install):\n")
@@ -2957,6 +2964,15 @@ def workflow_cmd(argv: list[str]) -> int:
 
 
 def main(argv: list[str]) -> int:
+    """Run a command. A usage error raised anywhere below (an option with no value) is exit 2 with its own words, and nothing has been started."""
+    try:
+        return _dispatch(argv)
+    except kittymux_cliargs.UsageError as e:
+        print(f"kittymux {argv[0] if argv else ''}: {e}", file=sys.stderr)
+        return 2
+
+
+def _dispatch(argv: list[str]) -> int:
     cmd = argv[0] if argv else "help"
     if cmd == "uninstall":
         return uninstall(argv[1:])

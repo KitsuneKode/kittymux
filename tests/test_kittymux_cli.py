@@ -4,6 +4,7 @@ import importlib.util
 import os
 import types
 import re
+import tempfile
 import unittest
 from unittest import mock
 
@@ -1572,3 +1573,47 @@ class PanelVerbTests(unittest.TestCase):
             code, run = self.run_panel(argv)
             self.assertEqual(code, 2, argv)
             run.assert_not_called()
+
+
+class DanglingValueTests(unittest.TestCase):
+    """An option that ends the command line with no value used to be read as an empty string: `spawn claude --cwd` started claude in the current directory
+    (or `/`), `sessions new x --cwd` saved a template for ''. Each is now a usage error (exit 2) and starts nothing."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def run_cmd(self, argv):
+        with mock.patch.object(self.m, "_run", side_effect=AssertionError("must not reach kitty")), \
+             mock.patch.object(self.m.subprocess, "Popen", side_effect=AssertionError("must not start a process")), \
+             mock.patch("sys.stderr") as err:
+            code = self.m.main(argv)
+        return code, "".join(c.args[0] for c in err.write.call_args_list)
+
+    def test_every_dangling_option_is_exit_2_with_its_name(self):
+        for argv, flag in ((["spawn", "claude", "--cwd"], "--cwd"), (["sessions", "new", "x", "--cwd"], "--cwd"),
+                           (["sessions", "new", "x", "--agent"], "--agent"), (["fanout", "do it", "claude", "--name"], "--name"),
+                           (["fanout", "do it", "claude", "--base"], "--base"), (["explain", "--window"], "--window"),
+                           (["hooks", "--settings"], "--settings")):
+            code, err = self.run_cmd(argv)
+            self.assertEqual(code, 2, argv)
+            self.assertIn(f"{flag} needs a value", err, argv)
+
+    def test_an_option_followed_by_another_option_is_not_given_a_value(self):
+        code, err = self.run_cmd(["spawn", "claude", "--cwd", "--tab"])
+        self.assertEqual(code, 2)
+        self.assertIn("--cwd needs a value", err)
+
+
+class RestoreSpawnTests(unittest.TestCase):
+    def test_a_missing_kitty_binary_is_exit_1_and_does_not_claim_success(self):
+        m = load()
+        with tempfile.TemporaryDirectory() as d:
+            session = os.path.join(d, "x.kitty-session")
+            open(session, "w").close()
+            with mock.patch.object(m, "_find_session", return_value=session), mock.patch.object(m, "_target_socket", return_value=None), \
+                 mock.patch.object(m.subprocess, "Popen", side_effect=FileNotFoundError("kitty")), \
+                 mock.patch("sys.stdout") as out, mock.patch("sys.stderr"):
+                code = m.sessions_restore([session])
+        self.assertEqual(code, 1)
+        self.assertNotIn("opening", "".join(c.args[0] for c in out.write.call_args_list))
