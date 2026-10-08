@@ -47,14 +47,16 @@ def own(directories, owned, env=None, ppid=None):
     return None
 
 
-def target(own_socket, directories, owned, env=None):
+def target_how(own_socket, directories, owned, env=None):
+    """(socket, how): `how` is "explicit" (KITTYMUX_TARGET), "own" (the kitty we were started in), "newest" (a guess: the newest socket we own) or "none"."""
     env = os.environ if env is None else env
     explicit = env.get('KITTYMUX_TARGET', '')
     if explicit:
-        return explicit if (explicit.startswith('unix:') and owned(explicit[5:])) or socket_fd(explicit) is not None else None
+        ok = (explicit.startswith('unix:') and owned(explicit[5:])) or socket_fd(explicit) is not None
+        return (explicit, 'explicit') if ok else (None, 'none')
     current = own_socket()
     if current:
-        return current
+        return current, 'own'
     candidates = []
     for directory in directories:
         for path in glob.glob(os.path.join(directory, 'mykitty-*')):
@@ -63,7 +65,11 @@ def target(own_socket, directories, owned, env=None):
                     candidates.append((os.stat(path).st_mtime_ns, path))
                 except OSError:
                     pass
-    return 'unix:' + max(candidates)[1] if candidates else None
+    return ('unix:' + max(candidates)[1], 'newest') if candidates else (None, 'none')
+
+
+def target(own_socket, directories, owned, env=None):
+    return target_how(own_socket, directories, owned, env)[0]
 
 
 # ── the old place ─────────────────────────────────────────────────────────────

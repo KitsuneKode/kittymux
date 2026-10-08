@@ -1652,3 +1652,30 @@ class FocusedBeatsNewestTests(unittest.TestCase):
              mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("KITTYMUX_TARGET", None)
             self.assertEqual(self.m._focused_socket(), mine)
+
+
+class GuessIsSaidTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def said(self, tty, run):
+        with mock.patch("sys.stderr") as err:
+            err.isatty.return_value = tty
+            run()
+        return "".join(c.args[0] for c in err.write.call_args_list)
+
+    def test_a_guessed_kitty_is_named_for_a_person_at_a_terminal(self):
+        sock = "unix:/run/user/1000/mykitty-200"
+        with mock.patch.object(self.m, "_own_kitty_socket", return_value=None), mock.patch.object(self.m, "_socket_dirs", return_value=["/x"]), \
+             mock.patch.object(__import__("kittymux_sockets"), "target_how", return_value=(sock, "newest")), \
+             mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("KITTYMUX_TARGET", None)
+            self.assertIn("kitty 200 (the newest one", self.said(True, lambda: self.m._target_socket()))
+            self.assertEqual(self.said(False, lambda: self.m._target_socket()), "")
+
+    def test_the_kitty_we_were_started_in_is_never_called_a_guess(self):
+        with mock.patch.object(self.m, "_own_kitty_socket", return_value="unix:/run/user/1000/mykitty-100"), mock.patch.object(self.m, "_socket_dirs", return_value=["/x"]), \
+             mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("KITTYMUX_TARGET", None)
+            self.assertEqual(self.said(True, lambda: self.m._target_socket()), "")

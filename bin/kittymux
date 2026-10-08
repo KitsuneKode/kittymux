@@ -748,7 +748,21 @@ def _target_socket() -> str | None:
 
     Order matters: an explicit KITTYMUX_TARGET; then the kitty we were started from; finally the newest socket we own."""
     import kittymux_sockets
-    return kittymux_sockets.target(_own_kitty_socket, _socket_dirs(), _owned_socket)
+    sock, how = kittymux_sockets.target_how(_own_kitty_socket, _socket_dirs(), _owned_socket)
+    if how == "newest":
+        _note_guess(sock, "the newest one")
+    return sock
+
+
+def _note_guess(sock: str | None, which: str) -> None:
+    """When a command had to GUESS its kitty (it was not started inside one), say which, so "it did that in the wrong window" is not a mystery. Only for a person at a
+    terminal: a key-bound command has nowhere to print and a script would only see noise."""
+    try:
+        if sock and sys.stderr.isatty():
+            pid = _socket_pid(sock)
+            print(f"kittymux: acting on {'kitty ' + str(pid) if pid else 'a kitty'} ({which}: this command was not started inside a kitty)", file=sys.stderr)
+    except Exception:
+        pass
 
 
 def _socket_pid(sock: str) -> int | None:
@@ -1618,6 +1632,7 @@ def _focused_socket() -> str | None:
     for sock in _sockets():
         data = _ls(sock)
         if data and any(o.get("is_focused") for o in data):
+            _note_guess(sock, "the one with the keyboard focus")
             return sock
     return _target_socket()
 
