@@ -109,10 +109,14 @@ PYCODE
     then break; fi
     sleep .3
 done
-python3 - "$STATE/panetitle-dump.json" <<'PYCODE'
+python3 - "$STATE/panetitle-dump.json" "$STATE/scan-$KPID.json" <<'PYCODE'
 import json,sys
 d = json.load(open(sys.argv[1]))
-assert '⊘' in d['2'], 'native caption did not refresh its limit state: ' + repr(d)[:400]
+try:
+    scan = json.load(open(sys.argv[2])).get('2')
+except (OSError, ValueError):
+    scan = 'unreadable'
+assert '⊘' in d['2'], 'native caption did not refresh its limit state; the scan says window 2 is: ' + repr(scan)[:300] + '; its caption: ' + repr(d['2'])[:200]
 PYCODE
 [ "$(others)" = "$BEFORE" ] || { echo 'FAIL: another kitty was touched'; exit 1; }
 [ ! -s "$STATE/tab_bar-error.log" ] || { cat "$STATE/tab_bar-error.log"; exit 1; }
