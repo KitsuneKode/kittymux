@@ -1,4 +1,5 @@
 import json
+import time
 import multiprocessing
 import os
 import stat
@@ -101,7 +102,10 @@ def _w(args):
     for i in range(20):
         r = {}
         J.observe(r, obs(sid=f"{base:08x}-0000-4000-8000-{i:012x}", kitty_pid=base, wid=i), 1000.0 + i)
-        J.flush(d, r, 1000.0 + i)
+        for _ in range(200):                                 # flush gives up after 0.25 s on a busy lock and says False; the scanner keeps its record dirty and retries on the next tick
+            if J.flush(d, r, 1000.0 + i):
+                break
+            time.sleep(0.01)
 
 
 class ConcurrencyTests(unittest.TestCase):
