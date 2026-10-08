@@ -11,7 +11,7 @@ T=$(mktemp -d "${TMPDIR:-/tmp}/kmx-plain.XXXXXX"); CFG=$T/cfg; mkdir -p "$CFG" "
 XPID="" KPID=""
 cleanup() { [ -n "$KPID" ] && kill "$KPID" 2>/dev/null; [ -n "$XPID" ] && kill "$XPID" 2>/dev/null; rm -rf "$T"; }
 trap cleanup EXIT
-if [ "$THEME" = light ]; then BG=#eff1f5 FG=#4c4f69; else BG=#1a1b26 FG=#c0caf5; fi
+if [ "$THEME" = light ]; then BG='#eff1f5' FG='#4c4f69'; else BG='#1a1b26' FG='#c0caf5'; fi
 cat > "$CFG/kitty.conf" <<CONF
 font_family JetBrainsMono Nerd Font Mono
 font_size ${KMX_FONT_SIZE:-12}

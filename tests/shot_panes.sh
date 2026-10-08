@@ -18,7 +18,7 @@ cleanup() { [ -n "$KPID" ] && kill "$KPID" 2>/dev/null; [ -n "$XPID" ] && kill "
 trap cleanup EXIT
 fail() { echo "FAIL: $*"; exit 1; }
 cp "$HOME_DIR/assets/kittymux-icons.ttf" "$T/data/fonts/" 2>/dev/null
-if [ "$THEME" = light ]; then BG=#eff1f5 FG=#4c4f69 ACT=#1e66f5 IDLE=#acb0be; else BG=#1a1b26 FG=#c0caf5 ACT=#f08fb8 IDLE=#414868; fi
+if [ "$THEME" = light ]; then BG='#eff1f5' FG='#4c4f69' ACT='#1e66f5' IDLE='#acb0be'; else BG='#1a1b26' FG='#c0caf5' ACT='#f08fb8' IDLE='#414868'; fi
 sed "s|@KITTYMUX_HOME@|$HOME_DIR|g" "$HOME_DIR/kittymux-keys.conf.tpl" > "$CFG/kittymux-keys.conf"
 cat > "$CFG/kitty.conf" <<CONF
 font_family JetBrainsMono Nerd Font Mono
