@@ -65,6 +65,7 @@ sys.path.insert(0, os.path.join(HOME_DIR, "python"))
 import kittymux_agents  # noqa: E402
 import kittymux_changes  # noqa: E402
 import kittymux_cliargs  # noqa: E402
+import kittymux_switches  # noqa: E402
 import kittymux_diag  # noqa: E402
 import kittymux_fanout  # noqa: E402
 import kittymux_features  # noqa: E402
@@ -783,7 +784,7 @@ def _socket_pid(sock: str) -> int | None:
 
 
 def _notify(msg: str) -> None:
-    if os.environ.get("KITTYMUX_NOTIFY") == "0" or os.path.exists(os.path.join(STATE, "notify-off")):
+    if not kittymux_switches.enabled("notify", STATE):
         return                                     # same off-switch as the agent notifications
     if shutil.which("notify-send"):
         subprocess.Popen(["notify-send", "-a", "kittymux", "-t", "1400", "--", "tab bar", msg],
@@ -1393,9 +1394,8 @@ def _resume_all_active(now: float | None = None) -> bool:
 
 
 def _auto_resume() -> bool:
-    """Resume without asking: KITTYMUX_RESUME=auto, a `resume-auto` flag file in the state dir, or a recent `a` (resume all) answer."""
-    return (os.environ.get("KITTYMUX_RESUME", "").lower() == "auto" or os.path.exists(os.path.join(kittymux_layout.state_dir(), "resume-auto"))
-            or _resume_all_active())
+    """Resume without asking: the `resume-auto` switch (KITTYMUX_RESUME=auto or the file `resume-auto`), or a recent `a` (resume all) answer."""
+    return kittymux_switches.enabled("resume-auto", kittymux_layout.state_dir()) or _resume_all_active()
 
 
 def resume_summary(info: dict, records: dict | None = None, now: float | None = None) -> list[str]:
@@ -2193,7 +2193,6 @@ def notify_cmd(argv: list[str]) -> int:
     sdir = kittymux_layout.state_dir()
     os.makedirs(sdir, mode=0o700, exist_ok=True)
     cmd = argv[0] if argv else "status"
-    flag = lambda name: os.path.join(sdir, name)            # noqa: E731
     if cmd == "mute":
         span = parse_duration(argv[1] if len(argv) > 1 else "1h")
         if span is None or span <= 0 or span > kittymux_quiet.MAX_SPAN_S:
@@ -2207,19 +2206,19 @@ def notify_cmd(argv: list[str]) -> int:
         print(f"{OK} unmuted")
         return 0
     if cmd in ("off", "on"):
-        (open(flag("notify-off"), "a").close() if cmd == "off" else (os.path.exists(flag("notify-off")) and os.unlink(flag("notify-off"))))
+        kittymux_switches.set_switch(sdir, "notify", cmd == "on")
         print(f"{OK} notifications {cmd}")
         return 0
     if cmd == "done" and len(argv) > 1 and argv[1] in ("off", "on"):
-        (open(flag("notify-done-off"), "a").close() if argv[1] == "off" else (os.path.exists(flag("notify-done-off")) and os.unlink(flag("notify-done-off"))))
+        kittymux_switches.set_switch(sdir, "notify-done", argv[1] == "on")
         print(f"{OK} 'finished' notifications {argv[1]}")
         return 0
     if cmd == "status":
         left = mute_remaining()
-        off = os.environ.get("KITTYMUX_NOTIFY") == "0" or os.path.exists(flag("notify-off"))
+        off = not kittymux_switches.enabled("notify", sdir)
         print("notifications:", "OFF" if off else (f"muted for another {kittymux_journal.human_span(left)}" if left else "on"))
-        print("'finished' popups:", "off" if os.environ.get("KITTYMUX_NOTIFY_DONE") == "0" or os.path.exists(flag("notify-done-off")) else "on")
-        print("bells:", "off" if os.environ.get("KITTYMUX_BELL") == "0" or os.path.exists(flag("bell-off")) else "on (skipped where the compositor would steal focus)")
+        print("'finished' popups:", "on" if kittymux_switches.enabled("notify-done", sdir) else "off")
+        print("bells:", "on (skipped where the compositor would steal focus)" if kittymux_switches.enabled("bell", sdir) else "off")
         unread = [e for e in kittymux_inbox.load(sdir) if e.get("status") == "unread"]
         print(f"inbox: {len(unread)} unread ({sum(1 for e in unread if e.get('severity') == 'needs-you')} need you)")
         return 0

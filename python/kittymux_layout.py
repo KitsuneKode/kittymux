@@ -151,10 +151,20 @@ def hypr_focus_on_activate(run=None, env=None) -> bool | None:
 
 def attention_allowed(sdir: str, steals: bool | None, env=None) -> bool:
     """May kittymux ask the window manager for attention? Not when that would steal focus — unless the user insists
-    (KITTYMUX_ATTENTION=1 or the file `attention-on` in the state dir)."""
+    (the `attention` switch: KITTYMUX_ATTENTION=1 or the file `attention-on` in the state dir)."""
     env = os.environ if env is None else env
-    if env.get("KITTYMUX_ATTENTION") == "1" or os.path.exists(os.path.join(sdir, "attention-on")):
-        return True
+    try:
+        # this file is a geninclude (kitty runs it while it reads kitty.conf): its own directory is not on sys.path, and it must NEVER raise, or the whole config fails to load
+        import sys
+        here = globals().get("__file__")
+        folder = os.path.dirname(os.path.realpath(here)) if here else ""
+        if folder and folder not in sys.path:
+            sys.path.insert(0, folder)
+        import kittymux_switches
+        if kittymux_switches.enabled("attention", sdir, env):
+            return True
+    except Exception:
+        pass                                  # cannot read the switch: the safe answer below (a bell that would steal focus stays off)
     return not steals
 
 

@@ -624,14 +624,28 @@ def _sync_spinner() -> None:
 # So a crash, a reboot or "I closed kitty" never loses the layout or the agents' conversations: when the set of windows changes (and has been stable for
 # AUTOSAVE_SETTLE), and at least every AUTOSAVE_PERIOD, `kittymux sessions autosave` saves this kitty with kitty's own save_as_session and rewrites agent
 # windows to `--resume <id>`. It is a detached subprocess (a couple of times an hour at most); the scanner only compares a tuple of window ids per tick.
-# Restore with `kittymux sessions restore last`. Off: KITTYMUX_AUTOSAVE=0 or the file `autosave-off`.
+# Restore with `kittymux sessions restore last`. Off: the `autosave` switch.
 AUTOSAVE_SETTLE = 20.0
 AUTOSAVE_MIN_GAP = 60.0
 AUTOSAVE_PERIOD = 900.0
 
 
+def _switch(name: str) -> bool:
+    """One switch of the catalog (kittymux_switches): environment, then flag file, then default. Never raises: a switch that cannot be read keeps its default."""
+    try:
+        _ensure_path()
+        import kittymux_switches
+        return kittymux_switches.enabled(name, state_dir())
+    except Exception:
+        try:
+            import kittymux_switches
+            return kittymux_switches.get(name).default
+        except Exception:
+            return False
+
+
 def _autosave_enabled() -> bool:
-    return os.environ.get("KITTYMUX_AUTOSAVE") != "0" and not os.path.exists(os.path.join(state_dir(), "autosave-off"))
+    return _switch("autosave")
 
 
 def _quit_capture(boss, window, data) -> None:
@@ -736,7 +750,7 @@ CHANGES_MAX, CHANGES_GAP = 2, 3.0
 
 
 def _changes_enabled() -> bool:
-    return os.environ.get("KITTYMUX_CHANGES") != "0" and not os.path.exists(os.path.join(state_dir(), "changes-off"))
+    return _switch("changes")
 
 
 def _checkpoint(window, kind: str, now: float) -> str:
@@ -789,7 +803,7 @@ def _journal_prune_memory(wall: float) -> None:
 
 
 def _journal_enabled() -> bool:
-    return os.environ.get("KITTYMUX_JOURNAL") != "0" and not os.path.exists(os.path.join(state_dir(), "journal-off"))
+    return _switch("journal")
 
 
 def _journal_mod():
@@ -1000,13 +1014,11 @@ def _install_notification_tap() -> None:
 
 # ── notifications ────────────────────────────────────────────────────────────
 def _notify_enabled(kind: str = "needs") -> bool:
-    """Off switches: KITTYMUX_NOTIFY=0 or the file `notify-off` silence everything;
-    KITTYMUX_NOTIFY_DONE=0 or the file `notify-done-off` silence only "finished" notifications."""
-    if os.environ.get("KITTYMUX_NOTIFY") == "0" or os.path.exists(os.path.join(state_dir(), "notify-off")):
+    """The `notify` switch silences everything; the `notify-done` switch silences only "finished" notifications (kittymux_switches has the spellings)."""
+    if not _switch("notify"):
         return False
     if kind == "done":
-        return os.environ.get("KITTYMUX_NOTIFY_DONE") != "0" and \
-            not os.path.exists(os.path.join(state_dir(), "notify-done-off"))
+        return _switch("notify-done")
     return True
 
 
@@ -1052,12 +1064,12 @@ def _attention_allowed() -> tuple[bool, str]:
 
 def _alert(window) -> str:
     """Ask the window manager for attention (taskbar flash / urgent border) when an agent you are not looking at needs you. This is kitty's own
-    bell path (`screen.bell()`), so it obeys the user's `window_alert_on_bell` / `enable_audio_bell`. Only for needs-you. Off with KITTYMUX_BELL=0
-    or the file `bell-off`; skipped when it would steal focus. Returns what it did, for the decision log."""
+    bell path (`screen.bell()`), so it obeys the user's `window_alert_on_bell` / `enable_audio_bell`. Only for needs-you. Off with the `bell` switch;
+    skipped when it would steal focus. Returns what it did, for the decision log."""
     try:
         if getattr(window, "is_focused", False):
             return "skipped: you are looking at it"
-        if os.environ.get("KITTYMUX_BELL") == "0" or os.path.exists(os.path.join(state_dir(), "bell-off")):
+        if not _switch("bell"):
             return "skipped: switched off (bell-off)"
         quiet = _quiet_reason(window)
         if quiet:
@@ -1093,7 +1105,7 @@ def _icon(agent: str) -> str:
 
 def _private() -> bool:
     """Notifications hold text from the agent's screen; in private mode they carry only "<agent> needs you"."""
-    return os.environ.get("KITTYMUX_NOTIFY_PRIVATE") == "1" or os.path.exists(os.path.join(state_dir(), "notify-private"))
+    return _switch("notify-private")
 
 
 def _within_budget(now: float) -> bool:

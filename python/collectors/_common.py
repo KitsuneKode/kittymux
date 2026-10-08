@@ -53,8 +53,26 @@ CACHE = STATE_DIR / "agent-usage.json"
 HIST = STATE_DIR / "agent-usage-history.json"
 TTL = 60.0
 LIVE_TTL = 300.0  # live quota fetch is opt-in and polite: 5min minimum cadence
-LIVE = os.environ.get("KITTYMUX_USAGE_LIVE", os.environ.get("KITTY_USAGE_LIVE", "")) \
-    not in ("", "0", "no")
+
+
+def _live_enabled() -> bool:
+    """The `usage-live` switch (kittymux_switches: KITTYMUX_USAGE_LIVE, or the older KITTY_USAGE_LIVE, or the flag file `usage-live-on`). Only an explicit yes turns it
+    on: this one talks to the providers with your own login, so "off" or an unknown word must not."""
+    try:
+        import sys
+        here = str(Path(__file__).resolve().parent.parent)
+        if here not in sys.path:
+            sys.path.insert(0, here)
+        import kittymux_switches
+        env = dict(os.environ)
+        if not env.get("KITTYMUX_USAGE_LIVE") and env.get("KITTY_USAGE_LIVE"):
+            env["KITTYMUX_USAGE_LIVE"] = env["KITTY_USAGE_LIVE"]
+        return kittymux_switches.enabled("usage-live", str(STATE_DIR), env)
+    except Exception:
+        return False
+
+
+LIVE = _live_enabled()
 
 
 class LiveError(Exception):
