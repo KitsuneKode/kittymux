@@ -1427,10 +1427,9 @@ def _log_exception(tab, index: int) -> None:
         import traceback
         text = traceback.format_exc()
         key = text.strip().splitlines()[-1] if text.strip() else ""
-        now = time.monotonic()
-        if now - _ERR_SEEN.get(key, -1e9) < _ERR_DEDUPE:
+        import kittymux_bounded
+        if kittymux_bounded.seen_within(_ERR_SEEN, key, time.monotonic(), _ERR_DEDUPE):
             return
-        _ERR_SEEN[key] = now
         _ERR_LOG.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         if _ERR_LOG.exists() and _ERR_LOG.stat().st_size > 64 * 1024:
             _ERR_LOG.write_text("")
