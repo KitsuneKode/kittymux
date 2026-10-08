@@ -17,6 +17,7 @@ import { useFumadocsLoader } from 'fumadocs-core/source/client';
 import { Suspense, use } from 'react';
 import { useMDXComponents } from '@/components/mdx';
 import { breadcrumbLd, pageHead } from '@/lib/seo';
+import { DocsEnd, DocsTopRight } from '@/components/docs-extras';
 
 // staticFunctionMiddleware: prerender writes each page's data as a JSON file, and a client-side navigation fetches that file. Without it a click on a docs link
 // calls a server endpoint that a static host does not have ("Something went wrong").
@@ -80,6 +81,7 @@ function Content({ path, markdownUrl }: { path: string; markdownUrl: string }) {
       <DocsBody>
         <MDX components={useMDXComponents()} />
       </DocsBody>
+      <DocsEnd />
     </DocsPage>
   );
 }
@@ -89,6 +91,7 @@ function Page() {
 
   return (
     <DocsLayout {...baseOptions()} tree={pageTree}>
+      <DocsTopRight />
       <Suspense>
         <Content path={path} markdownUrl={markdownUrl} />
       </Suspense>

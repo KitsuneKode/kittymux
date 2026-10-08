@@ -9,7 +9,8 @@ const CHROME = process.env.CHROME ?? '/usr/bin/google-chrome-stable'
 // The first plan aimed at 120 KB of JavaScript on the landing page. MEASURED 2026-10-08, gzip: 150 KB for the landing page (React 19 + TanStack Start's router and hydration are most of it:
 // `bun scripts/chunks.mjs <dir> /` lists every script), 363 KB for a docs page (the Fumadocs shell, Base UI, the MDX runtime). These limits are the measured numbers plus a margin:
 // they catch a regression, they do not claim the 120 KB target was met.
-const BUDGET = { '/': { js: 165 * 1024 }, '/docs/users/getting-started': { js: 385 * 1024 } }
+// '/' was 165 KB until the error page (status-page, in the router's default error component: static, so it still renders when a lazy chunk is what failed) added 0.8 KB
+const BUDGET = { '/': { js: 167 * 1024 }, '/docs/users/getting-started': { js: 385 * 1024 } }
 const host = serve(dir)
 let browser
 let bad = 0

@@ -1,11 +1,11 @@
-import { IconHeart } from '@tabler/icons-react';
 import { Link } from '@tanstack/react-router';
 import { DocLink } from '../doc-link';
 import { Shot, TerminalWindow } from '../terminal-window';
 import { WeaveBand } from '../weave-band';
 import { GitHubStars } from '../github-stars';
+import { SponsorButton } from '../sponsor-button';
 import { Logo, Mascot } from '../logo';
-import { REPO, SPONSOR_URL, stars } from '@/lib/links';
+import { REPO, stars } from '@/lib/links';
 
 /** The weave band and the top bar: outside <main>, so "Skip to content" skips them. */
 export function LandingHeader() {
@@ -17,16 +17,14 @@ export function LandingHeader() {
           <Link to="/" data-press="" className="flex min-h-11 items-center gap-3 rounded-lg font-semibold">
             <Logo size={40} textClassName="text-xl" />
           </Link>
+          <div className="flex items-center gap-2 sm:gap-5">
           <nav aria-label="Primary" className="flex items-center text-sm font-medium sm:gap-5">
             <DocLink className="inline-flex min-h-11 items-center px-2 hover:underline">Docs</DocLink>
             <Link to="/keys" className="hidden min-h-11 items-center px-2 hover:underline min-[400px]:inline-flex">Keys</Link>
             <Link to="/changelog" className="hidden min-h-11 items-center px-2 hover:underline sm:inline-flex">Changelog</Link>
-            <GitHubStars repo={REPO} stargazersCount={stars} className="text-onbrand hover:bg-onbrand/15 hover:text-onbrand aria-expanded:bg-onbrand/15" />
-            <a href={SPONSOR_URL} target="_blank" rel="noopener" className="hidden min-h-11 items-center gap-1.5 px-2 hover:underline min-[380px]:inline-flex">
-              <IconHeart aria-hidden="true" className="size-4" stroke={1.75} />
-              <span className="max-[479px]:sr-only">Sponsor</span>
-            </a>
           </nav>
+          <SponsorButton />
+          </div>
         </div>
       </header>
     </>
@@ -48,6 +46,7 @@ export function Hero() {
               <div data-rise="" className="mt-8 flex flex-col gap-3 [animation-delay:160ms] sm:flex-row sm:items-center">
                 <a href="#install" data-cta="" data-press="" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full px-6 text-base font-semibold">Try the demo</a>
                 <DocLink data-press="" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-onbrand px-6 text-base font-semibold hover:bg-onbrand hover:text-brand">Read the docs</DocLink>
+                <GitHubStars repo={REPO} stargazersCount={stars} tone="brand" className="min-h-12 sm:min-h-12" />
               </div>
             </div>
             <div data-rise="" className="relative mx-auto mt-20 w-full max-w-[460px] [animation-delay:240ms] lg:col-span-6 lg:mt-24">

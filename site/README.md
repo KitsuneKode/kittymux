@@ -66,11 +66,15 @@ By hand, from a clean checkout of `main` (the same thing Vercel runs): `cd site 
 
 ## What is left
 
-- **Star count** is read once per build (`scripts/gen-github.mjs`); it is 0 today and the buttons then say "Star" without a number. Rebuild after it grows.
-- **Search index:** about 400 KB gzip, fetched on the first search. Not in the budget yet; a smaller index (titles and headings only) is possible.
+- **GitHub numbers** (stars, forks, open issues, last push, and each other project's stars in the footer) are read once per build by `scripts/gen-github.mjs` into `src/generated/github.json`. A number GitHub cannot give is left out, never guessed; a count of 0 is left out too (the star button then says only "Star"). The site does not rebuild when the numbers change: they refresh on the next push to `main`, or with `vercel redeploy`.
+- **Search index** (`/api/search`, prerendered; built in `src/routes/api/search.ts` from every docs page plus `src/lib/search-index.ts`: the keys, the changelog, the front page's questions, the other projects): about 2 MB, about 450 KB gzip. It is fetched when someone reaches for search (pointer, focus, touch or Ctrl K), not on page load. Results whose page title matches the query move first (`src/lib/search-rank.ts`). A smaller index (titles and headings only) is possible; not in the budget yet.
 - **Mobile Lighthouse** is 87, not 95: hydration cost of the framework (see above).
 - **`.github/workflows/site.yml`** has not run on GitHub yet; it needs one push to show whether the runner's Chrome path and the Bun version hold.
 - **Screenshots** come from the repository's rigs; rerun `bash ../tools/build-site-assets.sh` after the panel or bar changes look.
+
+## Missing pages and errors
+
+`src/components/status-page.tsx` is both the 404 (`not-found-full.tsx`, inside Fumadocs' top bar, with a search button) and the error page (`route-error.tsx`, its own small top bar and no Fumadocs imports, so it cannot fail for the same reason the page it replaces did). Both are `noindex`. Only the 404 can be seen in `bun run dev`; a static host with no server answers a missing address with its own plain 404, so check the real thing after a deploy (`curl -i https://kittymux.kitsunekode.in/no/such/page`).
 
 ## Brand and layout stability
 

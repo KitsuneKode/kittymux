@@ -19,7 +19,8 @@ export function parseInline(src: string): Inline[] {
   while (i < src.length) {
     const rest = src.slice(i)
     let m: RegExpExecArray | null
-    if ((m = /^\*\*([^*]+)\*\*/.exec(rest))) { flush(); out.push({ t: 'bold', v: m[1] }); i += m[0].length; continue }
+    // bold text has no code spans of its own: "**`?` in the panel**" showed its backticks on the page
+    if ((m = /^\*\*([^*]+)\*\*/.exec(rest))) { flush(); out.push({ t: 'bold', v: m[1].replace(/`/g, '') }); i += m[0].length; continue }
     if ((m = /^`([^`]+)`/.exec(rest))) { flush(); out.push({ t: 'code', v: m[1] }); i += m[0].length; continue }
     if ((m = /^\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)/.exec(rest))) {
       const href = hrefOf(m[2])

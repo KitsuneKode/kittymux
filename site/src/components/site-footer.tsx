@@ -1,14 +1,13 @@
-import { IconArrowUpRight, IconHeart } from '@tabler/icons-react';
+import { IconArrowUpRight } from '@tabler/icons-react';
 import { Link } from '@tanstack/react-router';
 import { GitHubStars } from './github-stars';
 import { Logo } from './logo';
-import { buttonVariants } from './ui/button';
+import { SponsorButton } from './sponsor-button';
 import { Separator } from './ui/separator';
 import { ThemeToggle } from './theme-toggle';
 import { WeaveBand } from './weave-band';
 import { facts } from '@/lib/facts';
-import { cn } from '@/lib/utils';
-import { ALL_PROJECTS_URL, AUTHOR_URL, ISSUES_URL, REPO, REPO_URL, SPONSOR_URL, stars } from '@/lib/links';
+import { ALL_PROJECTS_URL, AUTHOR_URL, github, ISSUES_URL, REPO, REPO_URL, SPONSOR_URL, stars } from '@/lib/links';
 import { PROJECTS } from '@/lib/projects';
 
 /** A tag reads as a version ("v1.2.0"); a bare commit id says what it is, and a dirty tree is not worth announcing. */
@@ -38,11 +37,8 @@ export function SiteFooter({ themeToggle = false }: { themeToggle?: boolean }) {
             <Logo size={44} textClassName="text-xl" />
             <p className="mt-3 max-w-[40ch] text-pretty text-mute">Kitty as a multiplexer for AI coding agents. Free, MIT-licensed, and tested on the author’s own desktop.</p>
             <div className="mt-5 flex flex-wrap items-center gap-2">
-              <GitHubStars repo={REPO} stargazersCount={stars} className="border border-line text-ink hover:bg-card-hi" />
-              <a href={SPONSOR_URL} target="_blank" rel="noopener" className={cn(buttonVariants({ variant: 'outline' }), 'min-h-11 border-line text-ink hover:bg-card-hi sm:min-h-8')}>
-                <IconHeart aria-hidden="true" data-icon="inline-start" className="text-link" stroke={2} />
-                Sponsor
-              </a>
+              <GitHubStars repo={REPO} stargazersCount={stars} />
+              <SponsorButton />
             </div>
           </div>
           <nav aria-label="Footer" className="grid grid-cols-2 gap-8 md:col-span-7">
@@ -82,7 +78,7 @@ export function SiteFooter({ themeToggle = false }: { themeToggle?: boolean }) {
               <li key={p.name} className="group relative min-w-0 rounded-md has-[a:focus-visible]:outline has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-8 has-[a:focus-visible]:outline-ink">
                 <span className="flex items-baseline justify-between gap-3">
                   <a href={p.url} target="_blank" rel="noopener" className="font-semibold underline-offset-4 outline-2 outline-transparent after:absolute after:inset-0 group-hover:underline focus-visible:outline-transparent">{p.name}</a>
-                  <span className="t-caption shrink-0 text-mute">{p.kind}</span>
+                  <span className="t-caption shrink-0 text-mute">{(github.projects[p.repo] ?? 0) > 0 ? `★ ${github.projects[p.repo]}  ` : ''}{p.kind}</span>
                 </span>
                 <span className="t-small mt-1 block text-mute">{p.blurb}</span>
               </li>

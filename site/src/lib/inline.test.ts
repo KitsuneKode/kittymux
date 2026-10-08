@@ -31,3 +31,7 @@ test('the changelog splits into releases, groups and items, joining wrapped line
 test('a file with no releases is an error, not an empty page', () => {
   expect(() => parseChangelog('# Changelog\n\njust prose\n')).toThrow(/no "## " release/)
 })
+
+test('a code span inside bold text loses its backticks (they showed on the changelog page)', () => {
+  expect(parseInline('**`?` in the panel** shows keys')).toEqual([{ t: 'bold', v: '? in the panel' }, { t: 'text', v: ' shows keys' }])
+})

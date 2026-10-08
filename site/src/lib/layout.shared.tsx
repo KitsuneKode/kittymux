@@ -1,13 +1,13 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
-import { IconHeart } from '@tabler/icons-react';
-import { GitHubStars } from '@/components/github-stars';
+import { SponsorButton } from '@/components/sponsor-button';
 import { Logo } from '@/components/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { REPO, SPONSOR_URL, stars } from './links';
 
-/** `inList`: the home layout puts secondary links in a <ul> (each needs its <li>); the docs layout does not. */
+/**
+ * `inList`: the home layout puts secondary links in a <ul> (each needs its <li>); the docs layout does not.
+ * Sponsor is a pink pill at the top right of every page. On the docs layout a fixed pill (DocsTopRight) does that on wide screens, so the one in the sidebar list only shows below `lg`.
+ */
 export function baseOptions(inList = false): BaseLayoutProps {
-  const stars_ = <GitHubStars repo={REPO} stargazersCount={stars} />;
   return {
     nav: {
       title: <Logo size={30} textClassName="text-base" />,
@@ -17,8 +17,7 @@ export function baseOptions(inList = false): BaseLayoutProps {
       { text: 'Docs', url: '/docs', active: 'nested-url' },
       { text: 'Keys', url: '/keys' },
       { text: 'Changelog', url: '/changelog' },
-      { type: 'icon', text: 'Sponsor', label: 'Sponsor kittymux on GitHub', url: SPONSOR_URL, icon: <IconHeart aria-hidden="true" />, external: true },
-      { type: 'custom', secondary: true, children: inList ? <li className="list-none">{stars_}</li> : stars_ },
+      { type: 'custom', secondary: true, children: inList ? <li className="list-none"><SponsorButton /></li> : <SponsorButton className="lg:hidden" /> },
     ],
     slots: { themeSwitch: () => <ThemeToggle /> },
   };
