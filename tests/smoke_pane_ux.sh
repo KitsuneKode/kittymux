@@ -96,7 +96,7 @@ sleep .5
 RC ls | python3 -c 'import json,sys;assert sum(len(t["windows"]) for o in json.load(sys.stdin) for t in o["tabs"])==3'
 # A screen-derived agent limit updates native pane captions without a title change.
 RC send-text --match id:2 "printf '\nUsage limit reached\n'; exec -a codex sleep 60"$'\n'
-for _ in $(seq 30); do
+for _ in $(seq 100); do                                   # ~30 s: the scan, then the title bar's redraw, on a slow runner
     if python3 - "$STATE/scan-$KPID.json" "$STATE/panetitle-dump.json" <<'PYCODE'
 import json,sys
 try:
@@ -111,7 +111,8 @@ PYCODE
 done
 python3 - "$STATE/panetitle-dump.json" <<'PYCODE'
 import json,sys
-assert '⊘' in json.load(open(sys.argv[1]))['2'], 'native caption did not refresh its limit state'
+d = json.load(open(sys.argv[1]))
+assert '⊘' in d['2'], 'native caption did not refresh its limit state: ' + repr(d)[:400]
 PYCODE
 [ "$(others)" = "$BEFORE" ] || { echo 'FAIL: another kitty was touched'; exit 1; }
 [ ! -s "$STATE/tab_bar-error.log" ] || { cat "$STATE/tab_bar-error.log"; exit 1; }
