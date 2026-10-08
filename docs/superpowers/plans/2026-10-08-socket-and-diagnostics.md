@@ -1,6 +1,6 @@
 # Which kitty, and why did it fail: Implementation Plan
 
-Status: **proposed, not started** (Task 0 is done and merged separately). Written 2026-10-08 from an architecture review whose claims were re-checked against the code.
+Status: **executed 2026-10-08** (PRs #4 and #6). Deviations: Task 1's table found two real drifts and the shell was changed to match Python (except an inherited `fd:` handle, which stays first in `mux_resolve_socket` because a kitten's own channel cannot be stale); Task 3 left `join` alone (it already validated its values and its tests expect its own usage text); Task 4 exempts the deck chord `ctrl+alt+b` (the docked panel is the same program, so a twin keyed on its command line would close the panel when the chord is pressed in it) and the real-key check showed the toggle for the sessionizer, layout picker and the cwd HUD's `shift+i` variant, but was inconclusive for `ctrl+alt+i` and `ctrl+alt+g` (the overlays exit at once in a rig with no agents); Task 5 left `sessions autosave`, the journal-key resolver and `workflow` on `_target_socket`; Task 2 also logs `workflow` failures and shows the last three in `doctor`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

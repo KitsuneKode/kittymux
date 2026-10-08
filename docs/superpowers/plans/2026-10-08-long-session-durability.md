@@ -1,6 +1,6 @@
 # Long-session durability Implementation Plan
 
-Status: **proposed, not started.** Written 2026-10-08 from an architecture review whose claims were re-checked against the code (what held and what did not is in "What was checked"). Nothing here changes behaviour a user can see.
+Status: **executed 2026-10-08** (PR #5, merged). Deviations from the text below: `append_capped` seeks `-(cap // 2)` (the plan's `-cap // 2` is the same for even caps and wrong for odd ones); Task 6 needed no code (measured 0 zombies); the weekly soak has not run on GitHub yet (it runs on the next Monday, or by hand from the Actions tab). One unrelated flake showed up in CI: `smoke_changes` failed once on kitty 0.49.1 ("the repository's object store was written to") and passed on rerun; it has not been investigated.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
