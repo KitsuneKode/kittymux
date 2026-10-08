@@ -101,6 +101,7 @@ class ScanBase(unittest.TestCase):
         vars(KS._RT).pop("decisions", None)
         vars(KS._RT).pop("attention", None)
         vars(KS._RT).pop("journal", None)
+        vars(KS._RT).pop("unread", None)
         self._hypr = mock.patch("kittymux_layout.hypr_focus_on_activate", return_value=None)   # never depend on the compositor running the tests
         self._hypr.start()
         self.agent = mock.patch.object(KS, "agent_of", side_effect=lambda w: w.agent)
@@ -1399,6 +1400,23 @@ class FalseCompletionTests(ScanBase):
                 mock.patch.object(KS.subprocess, "Popen") as popen:
             KS._notify(w, "done", "", "codex")
         self.assertEqual(popen.call_args[0][0][7], "Review promotion and reader PRs | kitsu-lab finished")
+
+
+class DebugLogTests(ScanBase):
+    def test_the_debug_and_trace_logs_are_capped(self):
+        with mock.patch.dict(os.environ, {"KITTYMUX_DEBUG": "trace"}):
+            for i in range(3000):
+                KS._trace(f"event {i} " + "x" * 80)
+            for i in range(300):
+                try:
+                    raise ValueError(f"boom {i} " + "y" * 300)
+                except ValueError:
+                    KS._debug()
+        for name in ("scan-trace.log", "scan-debug.log"):
+            path = os.path.join(KS.state_dir(), name)
+            self.assertLess(os.path.getsize(path), 70 * 1024, name)
+        self.assertIn("event 2999", open(os.path.join(KS.state_dir(), "scan-trace.log"), encoding="utf-8").read())
+        self.assertIn("boom 299", open(os.path.join(KS.state_dir(), "scan-debug.log"), encoding="utf-8").read())
 
 
 if __name__ == "__main__":

@@ -85,9 +85,9 @@ def _debug() -> None:
         return
     try:
         import traceback
+        import kittymux_bounded
         os.makedirs(state_dir(), mode=0o700, exist_ok=True)
-        with open(os.path.join(state_dir(), "scan-debug.log"), "a") as f:
-            f.write(traceback.format_exc() + "\n")
+        kittymux_bounded.append_capped(os.path.join(state_dir(), "scan-debug.log"), traceback.format_exc() + "\n")
     except Exception:
         pass
 
@@ -548,8 +548,8 @@ def _trace(msg: str) -> None:
     if os.environ.get("KITTYMUX_DEBUG") != "trace":
         return
     try:
-        with open(os.path.join(state_dir(), "scan-trace.log"), "a") as f:
-            f.write(f"{time.monotonic():.3f} {msg}\n")
+        import kittymux_bounded
+        kittymux_bounded.append_capped(os.path.join(state_dir(), "scan-trace.log"), f"{time.monotonic():.3f} {msg}\n")
     except Exception:
         pass
 
