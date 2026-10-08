@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { ThemeProvider } from 'next-themes';
 import { DocsHub } from '@/components/landing/docs-hub';
-import { Faq } from '@/components/landing/faq';
+import { FAQ, Faq } from '@/components/landing/faq';
 import { FinalCta } from '@/components/landing/final-cta';
 import { Hero, LandingHeader } from '@/components/landing/hero';
 import { HowItKnows } from '@/components/landing/how-it-knows';
@@ -13,20 +13,13 @@ import { Problem } from '@/components/landing/problem';
 import { ProofLine } from '@/components/landing/proof-line';
 import { SiteFooter } from '@/components/site-footer';
 import { THEME_PROPS } from '@/lib/theme-props';
+import { faqLd, pageHead, softwareLd } from '@/lib/seo';
 
 const TITLE = 'kittymux — know which agent needs you';
 const DESCRIPTION = 'kittymux turns kitty into a multiplexer for AI coding agents: one glance at the tab bar says who is working, who is waiting for you and who has finished.';
 
 export const Route = createFileRoute('/')({
-  head: () => ({
-    meta: [
-      { title: TITLE },
-      { name: 'description', content: DESCRIPTION },
-      { property: 'og:title', content: TITLE },
-      { property: 'og:description', content: DESCRIPTION },
-      { property: 'og:type', content: 'website' },
-    ],
-  }),
+  head: () => pageHead({ title: TITLE, description: DESCRIPTION, path: '/', ldJson: [softwareLd(), faqLd(FAQ)] }),
   component: Home,
 });
 

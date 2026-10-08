@@ -110,7 +110,12 @@ class PageTests(unittest.TestCase):
             fm = frontmatter(read(p))
             self.assertTrue(fm.get("title"), f"{p}: title")
             d = fm.get("description", "")
-            self.assertTrue(60 <= len(d) <= 220, f"{p}: description is {len(d)} characters (aim for 60-220)")
+            # a search result shows about 155 characters of it; past 158 the sentence is cut mid-word
+            self.assertTrue(70 <= len(d) <= 158, f"{p}: description is {len(d)} characters (aim for 70-158)")
+            raw = re.search(r"^description:\s*(.*)$", read(p), re.M).group(1)
+            if (": " in raw or " #" in raw) and not raw.startswith('"'):
+                self.fail(f"{p}: a description containing ': ' or ' #' must be quoted, or the frontmatter is not valid YAML")
+            self.assertLessEqual(len(fm["title"]) + len(" — kittymux"), 60, f"{p}: the page title is too long for a search result")
 
     def test_titles_and_descriptions_are_unique(self):
         for field in ("title", "description"):

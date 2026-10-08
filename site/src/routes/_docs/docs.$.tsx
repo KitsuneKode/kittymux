@@ -16,6 +16,7 @@ import { getPageMarkdownUrl, gitConfig } from '@/lib/shared';
 import { useFumadocsLoader } from 'fumadocs-core/source/client';
 import { Suspense, use } from 'react';
 import { useMDXComponents } from '@/components/mdx';
+import { breadcrumbLd, pageHead } from '@/lib/seo';
 
 // staticFunctionMiddleware: prerender writes each page's data as a JSON file, and a client-side navigation fetches that file. Without it a click on a docs link
 // calls a server endpoint that a static host does not have ("Something went wrong").
@@ -39,14 +40,17 @@ const serverLoader = createServerFn({
 
 export const Route = createFileRoute('/_docs/docs/$')({
   component: Page,
-  head: ({ loaderData }: { loaderData?: { title?: string; description?: string } }) => ({
-    meta: [
-      { title: loaderData?.title ? `${loaderData.title} — kittymux` : 'kittymux' },
-      { name: 'description', content: loaderData?.description ?? 'kittymux documentation' },
-      { property: 'og:title', content: loaderData?.title ?? 'kittymux' },
-      { property: 'og:description', content: loaderData?.description ?? '' },
-    ],
-  }),
+  head: ({ loaderData, params }: { loaderData?: { title?: string; description?: string }; params: { _splat?: string } }) => {
+    const path = params._splat ? `/docs/${params._splat}` : '/docs';
+    const title = loaderData?.title ?? 'Documentation';
+    return pageHead({
+      title: `${title} — kittymux`,
+      description: loaderData?.description || 'kittymux documentation',
+      path,
+      type: 'article',
+      ldJson: [breadcrumbLd([{ name: 'Docs', path: '/docs' }, ...(path === '/docs' ? [] : [{ name: title, path }])])].filter((x): x is NonNullable<typeof x> => x !== null),
+    });
+  },
   loader: async ({ params }) => {
     const slugs = params._splat?.split('/') ?? [];
     const data = await serverLoader({ data: slugs });

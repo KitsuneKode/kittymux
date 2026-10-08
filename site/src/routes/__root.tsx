@@ -11,11 +11,15 @@ export const Route = createRootRoute({
         name: 'viewport',
         content: 'width=device-width, initial-scale=1',
       },
-      {
-        title: 'kittymux',
-      },
+      { name: 'theme-color', content: '#B3261E' },   // the brand red: the top of the page is red in both themes (two media-specific entries are merged into one by name)
+      { name: 'color-scheme', content: 'light dark' },
     ],
-    links: [{ rel: 'stylesheet', href: appCss }, { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' }],
+    links: [
+      { rel: 'stylesheet', href: appCss },
+      { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' },
+      { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
+      { rel: 'manifest', href: '/site.webmanifest' },
+    ],
   }),
   component: RootComponent,
 });

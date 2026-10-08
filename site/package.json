@@ -18,7 +18,10 @@
     "check": "bun run sync && bun test && bun run typecheck && bun run build && bun run check:crawl",
     "axe": "bun scripts/axe.mjs \"$(cat BUILD_DIR)\"",
     "shoot": "bun scripts/shoot.mjs \"$(cat BUILD_DIR)\"",
-    "budget": "bun scripts/budget.mjs \"$(cat BUILD_DIR)\""
+    "budget": "bun scripts/budget.mjs \"$(cat BUILD_DIR)\"",
+    "postbuild": "bun scripts/gen-seo.mjs \"$(cat BUILD_DIR)\"",
+    "og": "bun scripts/og.mjs",
+    "tour": "bun scripts/tour.mjs \"$(cat BUILD_DIR)\""
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",

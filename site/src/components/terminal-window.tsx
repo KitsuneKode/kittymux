@@ -4,16 +4,20 @@ import { cn } from '@/lib/cn';
 type Size = { width: number; height: number };
 const sizes = manifest as Record<string, Size>;
 
-/** A real screenshot, once per theme: the one for the other theme is hidden (and, being lazy, never fetched). Width and height are the real ones, so nothing shifts. */
+/**
+ * A real screenshot, once per theme; the other theme's is hidden. Width and height are the real ones, so nothing shifts.
+ * `priority` (the first screen): the light one loads at once and is preloaded; the dark one stays lazy, so a light visitor never downloads it, and a dark visitor's
+ * starts as soon as the page is laid out (it is in view). Marking both eager sent both on every visit.
+ */
 export function Shot({ name, alt, priority = false, className }: { name: string; alt: string; priority?: boolean; className?: string }) {
   const dark = sizes[`${name}-dark.png`];
   const light = sizes[`${name}-light.png`] ?? dark;
   if (!dark) throw new Error(`Shot: no screenshot named ${name}-dark.png in the manifest (run tools/build-site-assets.sh)`);
-  const common = { loading: priority ? ('eager' as const) : ('lazy' as const), decoding: 'async' as const, alt };
+  const common = { decoding: 'async' as const, alt };
   return (
     <>
-      <img {...common} src={`/assets/shots/${name}-light.png`} width={light.width} height={light.height} className={cn('h-auto w-full dark:hidden', className)} />
-      <img {...common} src={`/assets/shots/${name}-dark.png`} width={dark.width} height={dark.height} className={cn('hidden h-auto w-full dark:block', className)} />
+      <img {...common} loading={priority ? 'eager' : 'lazy'} src={`/assets/shots/${name}-light.png`} width={light.width} height={light.height} className={cn('h-auto w-full dark:hidden', className)} />
+      <img {...common} loading="lazy" src={`/assets/shots/${name}-dark.png`} width={dark.width} height={dark.height} className={cn('hidden h-auto w-full dark:block', className)} />
     </>
   );
 }
