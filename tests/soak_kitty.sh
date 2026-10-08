@@ -72,4 +72,6 @@ growth=$(( (R1 - R0) / 1024 ))
 age=$(python3 -c 'import os,sys,time;print(int(time.time()-os.stat(sys.argv[1]).st_mtime))' "$STATE/scan-$KPID.json" 2>/dev/null || echo 999)
 [ "$age" -le 6 ] || fail "the scanner stopped publishing ($age s old)"
 [ -s "$STATE/tab_bar-error.log" ] && fail "the tab bar logged errors: $(tail -3 "$STATE/tab_bar-error.log")"
-echo "PASS: $CYCLES cycles of windows opening, asking, hitting limits, prompting and closing: fds, threads, zombies and memory stayed flat (memory +${growth} MB)"
+bytes=$(du -sb "$STATE" 2>/dev/null | cut -f1)
+[ "${bytes:-0}" -le $((2 * 1024 * 1024)) ] || fail "the state directory grew to ${bytes} bytes: something logs or caches without a cap ($(ls -S "$STATE" | head -3 | tr '\n' ' '))"
+echo "PASS: $CYCLES cycles of windows opening, asking, hitting limits, prompting and closing: fds, threads, zombies and memory stayed flat (memory change ${growth} MB, state dir ${bytes} bytes)"

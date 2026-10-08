@@ -1,0 +1,25 @@
+name: soak
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"      # Mondays, 03:17 UTC
+  workflow_dispatch:
+
+jobs:
+  soak:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb xdotool jq fzf fontconfig dbus \
+            libgl1-mesa-dri libglx-mesa0 libegl1 libxkbcommon-x11-0 libxcb-xkb1 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 \
+            libxcb-image0 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xfixes0 libxcb-xinerama0 libxcursor1 libxi6 libxrandr2
+      - name: kitty 0.49.2
+        run: |
+          curl -fsSL https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin launch=n dest="$HOME/.local" installer="version-0.49.2"
+          echo "$HOME/.local/kitty.app/bin" >> "$GITHUB_PATH"
+      - name: soak (40 cycles of windows opening, asking, hitting limits and closing)
+        run: bash tests/soak_kitty.sh 40
