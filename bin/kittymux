@@ -2519,6 +2519,10 @@ def describe_event(ev: dict) -> str:
     if ev.get("kind") == "state":
         arrow = f"{ev.get('frm') or '·'} → {ev.get('to') or '·'}"
         return f"{arrow:<20} {ev.get('why', '')}"
+    if ev.get("kind") == "closed":
+        n, tab = ev.get("together", 1), ev.get("same_tab", 1)
+        how = "with " + str(n - 1) + " other agent window" + ("s" if n > 2 else "") + (f" ({tab - 1} in the same tab)" if tab > 1 else "") + ": a tab or window was closed, the agent did not quit" if n > 1 else "alone: the agent quit or its window was closed"
+        return f"{'window gone':<20} was {ev.get('last_state') or 'idle'} {ev.get('seen_ago', 0)} s earlier, {how}"
     if ev.get("kind") == "attention":
         return f"{'window-manager bell':<20} {ev.get('outcome', '')}"
     if ev.get("kind") == "agent-notification":

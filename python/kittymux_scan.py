@@ -822,8 +822,42 @@ def _journal_note(window, state: str, wall: float | None = None) -> None:
         _debug()
 
 
+def closed_events(seen: dict, live, now: float, together_s: float = 3.0) -> list:
+    """Agent windows that were seen and are gone from kitty: one event each, saying what the agent was doing when it was last seen and how many agent windows
+    went in the same few seconds. Several at once is a tab or an OS window being closed (by a key, the window manager or `kitty @`), not an agent quitting. Pure.
+    `seen` is {window id: {"agent", "state", "tab", "last"}} and is updated in place: gone windows are removed from it."""
+    out = []
+    for wid in [w for w in seen if w not in live]:
+        info = seen.pop(wid)
+        out.append({"w": wid, "agent": info.get("agent", ""), "last_state": info.get("state", ""), "tab": info.get("tab"), "seen_ago": round(max(0.0, now - info.get("last", now)), 1)})
+    for ev in out:
+        ev["together"] = len(out)
+        ev["same_tab"] = sum(1 for o in out if o["tab"] is not None and o["tab"] == ev["tab"])
+    return out
+
+
+def _note_closes(boss, live, wall: float) -> None:
+    """Write `closed` decisions: the one piece of evidence a vanished tab leaves behind (kitty keeps no record of who closed what). Never raises."""
+    try:
+        rt = _journal_rt()
+        seen = rt.setdefault("seen", {})
+        for w in list(boss.all_windows):
+            v = _RT.verdicts.get(str(w.id)) or {}
+            if v.get("agent"):
+                try:
+                    tab = w.tabref().id
+                except Exception:
+                    tab = None
+                seen[str(w.id)] = {"agent": v.get("agent"), "state": v.get("state", ""), "tab": tab, "last": wall}
+        for ev in closed_events(seen, set(live), wall):
+            _record("closed", ev.pop("w"), ev.pop("agent"), **ev)
+    except Exception:
+        _debug()
+
+
 def _journal_tick(boss, live, wall: float) -> None:
     """Heartbeat (re-observe every agent window), close what vanished, and write when something changed."""
+    _note_closes(boss, live, wall)
     rt = _journal_rt()
     try:
         if not _journal_enabled():

@@ -5,6 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 ## [Unreleased]
 
 ### Fixed
+- **A tab that disappears leaves evidence.** kitty keeps no record of who closed a tab, so the scanner now writes a `closed` decision for every agent window that vanishes: what the agent was doing when last seen, how many agent windows went in the same seconds and how many shared its tab. `kittymux explain` says it in words ("with 1 other agent window (1 in the same tab): a tab or window was closed, the agent did not quit"). Two or more at once means a close action, not an agent exiting.
 - **The panel takes keys the moment you open it.** The docked panel only accepted the keyboard after a click, so Super+N and then `j` did nothing. Opening it now *summons* it (an exclusive keyboard grab); `esc`, `q`, a jump, `kittymux panel dock` or 12 s without a key give the keyboard back, so a forgotten summon cannot trap your typing. New `kittymux panel summon|dock`; pure rules in `kittymux_panelfocus`.
 
 ### Changed

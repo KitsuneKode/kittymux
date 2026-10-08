@@ -1403,3 +1403,30 @@ class FalseCompletionTests(ScanBase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ClosedEventsTests(unittest.TestCase):
+    """A vanished tab leaves no record in kitty. The scanner's `closed` decisions are the evidence: which agent, what it was doing, and how many went together."""
+
+    def seen(self):
+        return {"2": {"agent": "devin", "state": "working", "tab": 5, "last": 100.0},
+                "6": {"agent": "codex", "state": "working", "tab": 5, "last": 100.0},
+                "9": {"agent": "claude", "state": "idle", "tab": 7, "last": 100.0}}
+
+    def test_a_tab_closing_is_two_events_that_know_they_went_together(self):
+        seen = self.seen()
+        evs = KS.closed_events(seen, {"9"}, 101.5)
+        self.assertEqual({e["w"] for e in evs}, {"2", "6"})
+        for e in evs:
+            self.assertEqual((e["together"], e["same_tab"], e["last_state"], e["seen_ago"]), (2, 2, "working", 1.5))
+        self.assertEqual(set(seen), {"9"}, "closed windows are forgotten, live ones kept")
+
+    def test_one_agent_quitting_alone_is_one_event(self):
+        evs = KS.closed_events(self.seen(), {"2", "6"}, 101.0)
+        self.assertEqual([(e["agent"], e["together"], e["same_tab"]) for e in evs], [("claude", 1, 1)])
+
+    def test_nothing_closed_nothing_said_and_a_second_call_is_quiet(self):
+        seen = self.seen()
+        self.assertEqual(KS.closed_events(seen, {"2", "6", "9"}, 101.0), [])
+        KS.closed_events(seen, set(), 101.0)
+        self.assertEqual(KS.closed_events(seen, set(), 102.0), [])

@@ -44,6 +44,8 @@ inbox schema doc, the tests, and keep `version` stable (consumers ignore unknown
 
 **Usage numbers say how old they are.** Collectors may return `sample_ts` (when the provider last reported); `kittymux_usageview` dates it, `kittymux_usagehistory` records a snapshot at THAT time (never "now") and keys a quota by a validated short label (`^[a-z0-9]{1,6}$`: it cannot carry a title or token), and a Codex window whose `resets_at` has passed is a `closed` state row, never its old percentage.
 
+**A vanished window is on record.** `kittymux_scan.closed_events` writes a `closed` decision for each agent window that disappears (last state, seconds since seen, how many agent windows and how many from the same tab went together): several at once is a tab or OS window being closed by a key, the window manager or `kitty @`, not agents exiting. kitty itself keeps no such record, so this is the only evidence when a user reports "my tab disappeared".
+
 **Every answer says why.** `kittymux_state.resolve` records a static, human `why` at each return (`_why`); the scanner publishes it in the verdict and writes every state change and every notification
 outcome (`_notify` returns "sent" or why not) to the decision log (`_record`: a 300-event deque in `_RT` + `decisions-<pid>.jsonl`, 0600, rotated; `kittymux explain` reads it). A new state or a new
 suppression rule MUST set a `why`/outcome, and a reason must be static text (no clocks or counters in it, or the published verdict changes every tick). Never log screen text.
