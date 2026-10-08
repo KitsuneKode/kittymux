@@ -82,6 +82,7 @@ python3 tools/docs_status.py --check
 | Product posture    | `docs/feature-status.yaml`                                      | Allowed values, and the generated table on the capability page.        |
 | Prose              | `docs/users/*.mdx`, `docs/developer/*.mdx`                      | `tests/test_docs.py`: links, anchors, chords, CLI coverage, voice.     |
 | Source notes       | `README.md`, `docs/*.md`, `AGENTS.md`, `SECURITY.md`            | `docs/promotion-manifest.yaml` maps each to the page that explains it. |
+| Agent guide        | `AGENTS.md` (short) and `docs/agents/*.md` (one page per area)  | `tests/test_agents_doc.py`: size, links, every script named and none left out. |
 | Release            | `CHANGELOG.md`                                                  | The release checklist.                                                 |
 
 **Code wins for behaviour. The YAML wins for product posture. Prose explains and does not duplicate a table that can be generated.**

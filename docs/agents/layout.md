@@ -1,0 +1,105 @@
+# Module map
+
+Which file owns what. Read it before adding, moving or duplicating code: most bugs in this repository were a second copy of a rule that one module should own.
+
+Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and the "read before you change" table); this page is the reference for one area.
+
+- `kittymux.conf` — main config (included from the user's kitty.conf)
+- `kittymux-keys.conf.tpl` — keybind template; `install.sh` renders
+  `@KITTYMUX_HOME@` into a generated conf. **Edit the .tpl, never the output.**
+- `bin/kittymux` — the CLI: `doctor`, `demo`, `hooks [--install|--remove]`, `dim`, `screenshot`, `upgrade`
+  (re-link + reload every kitty twice + doctor), `layout`
+  (per-instance bar layout: `mode full|compact|hidden|cycle`, `edge`,
+  `width`, `pick`, `default`). State: `$KITTYMUX_STATE/layout-<pid>.json`
+- `bin/mux-panel` — docks `sidebar-kit.py` as a Wayland layer-shell panel
+  (`ctrl+alt+shift+b`): always-visible clickable sidebar, survives a hidden bar. Keyboard focus is `summoned` (`exclusive`, what `toggle` starts with) or `docked` (`on-demand`, click to type), remembered in `$KITTYMUX_STATE/panel-mode`; changed at runtime with
+  `kitten @ resize-os-window --action=os-panel --incremental focus-policy=…`. The panel gives the grab back on Esc/Q/jump and after `IDLE_DOCK_S` without a key — an exclusive grab must never be able to trap typing (`python/kittymux_panelfocus.py`, pure, `tests/test_panelfocus.py`; layer-shell cannot run under Xvfb, so the grab itself is checked by hand on Hyprland)
+- `bin/` — shell scripts (mux-*); shared helpers in `lib/mux.sh`, `lib/socket.sh`
+- `python/kittymux_layout.py` — layout engine; loaded via `geninclude` so its
+  output must come LAST in kitty.conf (it wins over earlier tab_bar_* lines)
+- `python/tab_bar.py` — custom tab bar (two-line vertical rows, brand icons,
+  compact rail rendering; helper modules `kittymux_*.py` reload every config load)
+- `python/pane-state.py` — kitty `watcher`: hook status + titles →
+  `$KITTYMUX_STATE/panes-<kittypid>.json`. Holds no logic that must survive an upgrade (see conventions.md).
+- `python/kittymux_state.py` (pure) + `kittymux_scan.py` (in kitty) — THE status resolver: twice a second reads
+  the bottom of each agent pane's screen, combines it with hook state, publishes `scan-<kittypid>.json`.
+  Every consumer reads that merged view via `kittymux_agents.load_panes/merge_scan` → `resolve_status`.
+  Order: limited > waiting > working > done > idle; a state needs positive evidence (silence ≠ waiting).
+- `python/kittymux_theme.py` / `kittymux_agents.py` / `kittymux_deck.py` — pure helper modules
+  (no kitty imports; unit-tested in `tests/`). Theme tokens derive from live kitty colours; symlinked
+  into the config dir by `install.sh`. Never hardcode a palette in `tab_bar.py`/`sidebar-kit.py`.
+- `python/kittymux_ui.py` (pure) — the ONE place a cell-drawn surface learns what a card, gauge, chip, tab, keycap or chart looks like: a `Kit(palette, cells, rounded)` returns LINES of styled spans, each exactly the width asked for
+  (`fit_line`), from glyphs kitty draws itself (half-block cards with quadrant corners, lower-half-block gauges, Powerline round caps). Every colour is a `Palette` token (`card`, `card_hi`, `track`, `on_accent` live in `kittymux_theme._surfaces`,
+  the calm/warm/hot ramp reuses `done`/`waiting`/`alert`); text is `ink`ed to 4.5:1 on whatever it sits on; program/provider text is `kittymux_place.clean`ed. Shape rule: pills for chips/tabs/toggles, one chamfered radius for cards and buttons, square keycaps.
+- `python/kittymux_meters.py` (pure) — ONE model for every provider's usage: rows → `quota | counter | state | spend` meters (numeric sidecars `rem_s window_s tok cached sess turns ago_s state plan status lines ai_pct` when a collector
+  gives them, label/text heuristics otherwise, so an old `agent-usage.json` still draws). Views draw by KIND, never by provider name. History is read only from `_daily_version == 2` entries: older ones are rolling totals, never one day's burn.
+- `python/kittymux_usageview.py` + `python/kittymux_inboxview.py` (pure) — the panel's Usage and Inbox views: lines plus click regions (`View.tiles`, `InboxView.chips/cards/buttons`); `sidebar-kit.py` places them (strip, header, footer keycaps, the
+  resize handle) and owns keys, mouse and refresh. Narrow panels degrade in tiers (the share outlives the countdown; the filter chips go full words → glyphs → bare glyphs; buttons lose their key hints). The Inbox never types into an agent: Jump runs
+  `kittymux inbox jump`, Dismiss only changes the event's status. `tests/shot_panel.sh` + `tools/demo_world.py` render and drive the real panel on synthetic data.
+- `python/kittymux_agentsview.py` (pure) — the panel's Agents rows: `title_row` / `context_row` (2 lines per tab, the deck's `Item` heights, so `row_at`/`pane_at` still hold), `pane_row`, `header_row`, `summary_row`, and `action_bar` (clickable keycaps: `(key, label, token)`,
+  tokens are the key the click presses; a hint has no token and no region). One bright thing per row; needs-you = stripe + tint; PR/ports only when lit; a one-cell gap before every mark and number (`tests/test_agentsview.py::GapTests` — a 26-column render found it). `sidebar-kit._footer` records each button's
+  cells, `on_mouse_move` lights the one under the pointer, `on_click` runs `_press(token)` (the same handler as the key). Order buttons by importance: a narrow panel drops from the right. `tests/shot_agents.sh` + `tools/demo_agents.py` draw it; `tests/stress_panel.sh` drives the real panel and checks memory/fds/threads/idle CPU.
+- `python/kittymux_titles.py` (pure) — what a tab is CALLED, for the bar AND the panel (one rule, never two): `tidy(raw, agent, project)` cleans a window title (control chars, markdown, quotes, trailing punctuation), treats the agent's product name and
+  assistant-sounding replies (`looks_like_reply`: first-person/apology/"here's" openers; interjections like "okay"/"yes" only with punctuation after them, so "Okay button styles" stays a title) as NOT a title and shows the PROJECT instead; `shorten` cuts at a word.
+  Switch: `titles` (`kittymux features off titles`). The panel keeps `RowData.raw_title` for the `/` search. `tab_bar._tidy_title` is the one bar call (3 sites + the `_title_keys` cache signature).
+- `python/kittymux_helpview.py` (pure) — the panel's `?` card (keys + mouse of the current view; the key list is data, `tests/test_helpview.py` checks every named key is one the panel handles). `kittymux_deck.wrap_words` wraps prose at spaces (`wrap_detail` splits characters: for paths).
+  A split tab's panes are listed only for tab ids in `Snapshot.open_tabs` (`sidebar-kit._open`; `deck.flatten(…, open_tabs)`): toggled by `▸`/`▾` clicks, `→ ← o`; NEVER by hover or by a state change (the list must not move under the pointer).
+- `python/kittymux_palette.py` (pure) + `python/palette-kit.py` + `kittymux palette|act` (`ctrl+alt+shift+space`) — the command palette: `build(tabs, pick rows)` → items in groups (Needs you, Inbox, Tabs, Agents, Actions; `extra` rows — new agents past the
+  first four, split variants — only show for a query), ranked by `score`, drawn with the shared kit. The kitten ONLY CHOOSES: `handle_result` runs `kittymux act JSON` from kitty (`boss.run_background_process`, so the CLI's parent is kitty and `_own_kitty_socket` works) AFTER
+  the overlay is gone (a focus change made while it was open would be undone when it closes). `act` re-validates with `kittymux_palette.validate_action` (ids are ints, journal keys match one shape, agents must be installed, `run` ids are a fixed whitelist
+  of kittymux argvs): never add an op there without extending the validator and `tests/test_palette.py`'s refusal list. `tests/smoke_palette.sh` drives it with real keys and mouse.
+- `python/kittymux_ledger.py` (pure) — the wait ledger: how long agents waited on you, from an inbox event's `t0` (first appeared) to its `ack_t` (first looked at; both are optional fields `kittymux_inbox.fold` keeps, schema
+  version unchanged), a wait counting at most `CAP_S` toward a total. A card at the bottom of the panel's Inbox view and `kittymux inbox ledger`. It says "how fast you got to each agent", never "how long the answer took".
+- `python/kittymux_features.py` (pure) + `kittymux features [list | on|off NAME | preset minimal|default|full]` — the switchboard for the optional pieces of the bar: `folder`, `hue`, `collide`, `panetitle`, `motion` are live (`motion` off = `state_glyph(animate=False)`, a still frame; the scanner's spin timer, the panel's `_schedule_spin` and the bar all read it, the bar once per pass); `sheet`,
+  `hover` are planned (saved, nothing reads them — the CLI says so). Precedence: env `KITTYMUX_<NAME>` > flag file `<name>-off|-on` in `$KITTYMUX_STATE` > default; the bar resolves it once per pass
+  (`tab_bar._features`). With `folder` off the bar draws the line it always drew — keep that path as it was.
+- `python/kittymux_prompts.py` (pure) + `kittymux_scan.scan_prompt` — a PLAIN terminal waiting on you (sudo/doas/su/pkexec password, ssh/git login, pacman/paru/apt `[Y/n]`): the LAST screen line must match a rule, and either be wording only that tool prints (`[sudo] password for X:`) or appear while that program leads the pty
+  (`fg_job`: the foreground group is not the shell's own; only then is the screen read). Fixed event text (`rule.say`; the matched line holds a user name/host and is never stored, logged or shown), announced via `_announce` after `PROMPT_SETTLE` (1 s), cleared (inbox `ack`) when the prompt goes, a window's first scan never announces.
+  It never touches the tab's verdict (that is agent-only: `has_agent`). Switches `sudo`, `loginprompt`, `pkgprompt` in kittymux_features. Adding a program or pattern = a `Rule` in `RULES` + a test in `tests/test_prompts.py`; `tests/smoke_prompts.sh` drives a real kitty.
+- `python/kittymux_sockets.py` also owns the **legacy socket link** (`legacy_link`, `prune_links`, `dedupe`; scanner `_socket_link`, once per kitty and on reload, switch `socketlink`): the socket lives in `$XDG_RUNTIME_DIR` (private) but scripts written for `listen_on unix:/tmp/mykitty` look ONLY at
+  `/tmp/mykitty-<pid>` — the day the socket moved, every one of the user's own scripts (scratch tab, nvim/hypr/zsh/kitty config chords, font toggle, snapshot…) silently found no kitty, and a key-bound background script has nowhere to print an error. The link is made only for kitty's own `<name>-<pid>` socket, never over
+  anything that exists, and dead ones are pruned. Discovery (`_sockets()`, `lib/socket.sh`) lists a socket and its link ONCE (`dedupe`, by realpath) or every agent would show twice. NEVER move a socket, a flag file or a path other tools read without checking who reads it (`grep -rn mykitty ~/.config`), and say so in `doctor`.
+- `python/kittymux_timers.py` — EVERY timer kittymux gives kitty (`add_timer`) goes through `kittymux_timers.add(__name__, "func", interval, repeats)`: a callable that is ONE object for the life of the process and looks the function up by name when it fires. Why: kitty runs due timers from a snapshot (glfw `dispatchTimers`) and drops its reference when a callback
+  removes another due timer; a function that a re-executed module no longer holds is then FREED while kitty still calls it → SIGSEGV in `python_timer_callback` (coredump 2026-10-07 22:57; `tests/smoke_timers.sh` reproduces it with a raw pair and proves the fix). A timer callback must also ignore a tick whose id is not the live one (`scan_all`, `_spin_tick`, `_watchdog`, `_trail`).
+  Never pass kitty a lambda/closure/module function directly, never remove or replace a timer without this module.
+- `site/` — the documentation site (TanStack Start + Fumadocs + shadcn; tokens in `site/src/styles/tokens.css`, contrast-tested). `docs/` stays the ONLY source of prose: `site/scripts/sync-docs.mjs` validates and copies it; `tools/export_facts.py` exports keys/agents/states/features from the product's own parsers; `tools/build-site-assets.sh` regenerates the screenshots from the repo's rigs. In `site/`: `bun run check` (sync + tests + build + crawl), `bun run axe` (accessibility, overflow, search), `bun run budget`; SEO (canonical, sitemap, structured data) turns on with `VITE_SITE_URL` at build time and is checked by `check-site.mjs`. Live at https://kittymux.kitsunekode.in (Vercel project `kittymux-docs`; prebuilt deploys by hand, previews private; SEO — canonical, sitemap, structured data — turns on with `VITE_SITE_URL` at build time; steps and DNS in `site/README.md`).
+- `python/kittymux_place.py` (pure) — the folder line under a vertical tab: `facts` (project / worktree / inner / where / branch), `layout` (what fits: branch goes first, then the path, then the icon; the worktree outranks the
+  path; the project name is only ever middle-truncated), `place_room` (the room pieces drawn AFTER it keep), `style` (one bright element per row), and the title rules `redundant` / `worktree_named` / `colliding`.
+  `kittymux_theme.project_hue` is a stable, calm per-project tint (SHA-1 slots, never `hash()`), kept clear of the state colours and ≥ 4.5:1 on the row. The bar compares what is DRAWN — `tab.name or tab.title`
+  with the agent prefix stripped — never the raw window title. `KITTYMUX_BAR_DUMP=1` writes `$KITTYMUX_STATE/bar-dump.json` — per tab: the folder line AND the title row as drawn (a test hook for `tests/smoke_place.sh`, `smoke_titles.sh`).
+  Text from a program or a directory name is `kittymux_place.clean`ed everywhere it is drawn (kitty's own title sanitiser lets ESC through). An agent whose window title is only its product name (`kittymux_agents.is_default_title`)
+  is shown as its project; `kittymux resume-prompt` titles its window while it asks and clears the title before the exec.
+- `python/kittymux_panetitle.py` + `python/window_title_bar.py` — the folder line in kitty's per-pane title bars (kitty ≥ 0.49.2). kitty loads `window_title_bar.py` ONCE per process, so it is a trampoline into
+  `kittymux_panetitle.draw` (reloaded by tab_bar.py like the other helpers). `kittymux_layout.gated_conf` emits `window_title_template` with `{custom or title}`: an empty hook result (switch off, failure, no directory)
+  falls back to kitty's own title, never a blank bar. Colours derive from the bar's REAL fg/bg (`window_title_bar_*` else the tab colours) and `kittymux_theme.ensure_contrast` turns the other way on mid-tone
+  backgrounds. `KITTYMUX_PANETITLE_DUMP=1` records what each pane drew (`tests/smoke_panetitle.sh`).
+- `tests/shot_panes.sh` — the pane-guide screenshots (`assets/panes-*.png`: layout, `ctrl+alt+e` digits, six `alt+shift+l`, `alt+shift+=`), taken with REAL key events in a private kitty; asserts the widths it claims (50 → 70 → 50/50 columns). Re-run after changing a pane key or the look of kitty borders.
+- `tests/shot_bar.sh` — a screenshot of the bar (dark|light, any width, rail) with synthetic repos; `tests/profile_bar.sh` — draw cost with N tabs (compare two trees; the folder line costs ~0.02 ms/draw at 23 tabs).
+- `assets/notify/` (built by `tools/build-notify-icons.py`) — one PNG per agent for notifications; `docs/brand/` — the mascot
+  brief and image-model prompts (`tools/build-brand.py` derives sizes from `assets/brand/mascot.png`); `docs/notifications.md` — the
+  notification flow, security model and limits. Icons are chosen from OUR table only, never from agent output.
+- `python/kittymux_openref.py` (pure) + `bin/mux-open-ref` + `open-actions.conf.tpl` — clickable `path/file.py:42[:7]`: kitty ≥ 0.49.2
+  `detect_url_regex` finds it, open-actions runs `mux-open-ref` (validated, never a shell, must be an existing regular file) → `$VISUAL`/`$EDITOR` at the line
+- `bin/mux-keys.py` — the `ctrl+alt+/` keymap overlay: parsed live from the rendered conf + extras for the deck/mouse/CLI; scrollable, searchable,
+  1–3 columns by width; pure helpers (`filter_sections`, `build_body`, `parse_input`, `step`) are unit-tested
+- `bin/mux-notify` — one desktop notification with a "Jump to it" action (focuses the window via kitty
+  remote control, then `hyprctl`); started detached by the scanner, lives ≤ 30 s
+- `python/kittymux_barsize.py` — bar sizing + the `TabBar.tab_id_at` hit-test wrapper (installed by `tab_bar.py`)
+- `python/kittymux_launcher.py` (pure) + `kittymux spawn|pick|reopen|notify|snooze` — docs/launcher.md: agents spawned into a tab (before the `!scratch` tab) or split via `kitty @ launch`; `pick` builds rows (needs-you longest-waiting first → running → closed → new) for rofi/fuzzel/fzf; the focused kitty is chosen BEFORE the menu opens; `assets/agent-risk.json` (flags read from each CLI's `--help`) marks agents started without approvals; pin/settle are journal flags (`pinned`, `settled`, `flags_ts`) merged BY `flags_ts` in `flush` (a stale scanner copy must not erase a user's pin), settled = closed and untouched 3 days or settled by hand
+- `python/kittymux_changes.py` + `kittymux changes|checkpoint` — what an agent changed: the scanner (`_checkpoint`) runs a detached `kittymux checkpoint start|finish` on idle/done→working and working→waiting/limited/done/idle (never on first sight); snapshots via a TEMP index + private object dir (`changes-objects/`), cached in `changes-<kittypid>.json`; shown by the bar on a done tab, `pick` rows and the CLI. Never run git on kitty's main thread; never write into the user's repo
+- `python/kittymux_fanout.py` + `kittymux fanout` + `assets/agent-prompt.json` — one prompt to several agents, one git worktree/branch/tab each: all-or-nothing creation with rollback, never reuses an existing path/branch, the prompt is ONE argv element in each CLI's verified form (read from its `--help`; never guess a form), `compare` diffs each worktree against the base via kittymux_changes (read-only), `clean` is a dry run without `--yes` and keeps dirty worktrees without `--force`
+- `python/kittymux_join.py` (pure) + `python/join-kit.py` + `kittymux join` (`ctrl+alt+shift+j`) — move a tab's panes into another tab as splits, keeping their shape. `plan` orders the windows and says for each which
+  already-placed pane it goes next to (from the source tab's real pixel geometry); the kitten moves them with kitty's own `Tab.detach_window` → `attach_windows(next_to=, horizontal=, after=)` (what its drag-and-drop uses; `detach-window
+  --target-tab` pane by pane splits ONE pane again and again: 15/7/7-column slivers) and pushes the first pane to the tab's edge (`move_to_screen_edge`) so the block gets a whole side. Splits layout only: another layout places windows
+  itself. The picker (hover/click/keys, side, tab-or-pane) runs in the kitten's own process; the move runs in kitty (`handle_result`). Row widths come from `row_budget` (title, then folder, the pane count goes first).
+- `docs/index.mdx` + `docs/users/` + `docs/developer/` (+ `meta.json`, `feature-status.yaml`, `promotion-manifest.yaml`, `troubleshooting-symptoms.yaml`) — the published docs, written for a TanStack Start + Fumadocs site (frontmatter `title`/`description`, `/docs/...` links, `/assets/...` images, only Fumadocs components). The status tables on `users/what-you-can-do.mdx` are GENERATED from `feature-status.yaml` by `tools/docs_status.py` (`--check` in the tests). `tests/test_docs.py` guards frontmatter, navigation, links and anchors, MDX safety, every `ctrl+alt` chord a page names being bound, and the CLI reference covering every command. A change to a command, a key or the feature YAML updates the docs in the same commit.
+- `docs/` (flat `*.md`) — `compatibility.md` (which agent markers are verified), `audit-*.md`, `launch-checklist.md`; the source notes `promotion-manifest.yaml` maps to published pages
+- `bin/mux-status` — agent hooks → `kittymux_status` window user var → recorded by `pane-state.py`
+- `python/sidebar-kit.py` — `kitten` overlay: sidebar with real hover/click
+  + live pane preview (bound `ctrl+alt+b`)
+- `python/peek-kit.py` — the right-click peek card for one tab (kitten over the active window, opened by
+  `kittymux_barsize._open_peek`; `kitty @ kitten --match id:W peek-kit.py <tab id>`). `kittymux peek [TAB_ID | --waiting]` (`ctrl+alt+shift+q`) opens it from the keyboard: the pane to show it over is `$KITTY_WINDOW_ID` when that is a real pane
+  of this kitty, else the FOCUSED pane (a key-bound `launch --type=background` gets the id of its own hidden window, which no `--match id:` finds); `--waiting` = `kittymux_launcher.needs_you_target` over `build_rows` (the order `pick` uses), this kitty only
+- `python/collectors/` — per-provider usage collectors (claude/codex/cursor/devin)
+- `tools/build-icons.py` — builds the PUA icon font the glyphs live in
+- `install.sh` — symlinks/copies into `~/.config/kitty`, renders the tpl
