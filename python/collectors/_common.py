@@ -34,6 +34,9 @@ than a fabricated percentage.
 """
 
 import json
+from contextlib import contextmanager
+import fcntl
+import hashlib
 import math
 import os
 import sqlite3
@@ -53,6 +56,43 @@ CACHE = STATE_DIR / "agent-usage.json"
 HIST = STATE_DIR / "agent-usage-history.json"
 TTL = 60.0
 LIVE_TTL = 300.0  # live quota fetch is opt-in and polite: 5min minimum cadence
+
+
+def usage_memo(kind: str, name: str) -> Path:
+    """Fixed-size, private coordination state; one entry per collector source."""
+    key = hashlib.sha256(name.encode()).hexdigest()[:20]
+    return STATE_DIR / "usage-sources" / f"{kind}-{key}.json"
+
+
+class UsageLockBusy(TimeoutError):
+    """Coordination ownership is busy or unavailable; use the cached snapshot."""
+
+
+@contextmanager
+def usage_lock(kind: str, name: str = "publication", timeout: float = 2.0):
+    """Cross-process AND cross-thread ownership, independent of launcher locks."""
+    path = usage_memo(kind, name).with_suffix(".lock")
+    try:
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    except OSError:
+        raise UsageLockBusy("usage coordination unavailable") from None
+    with os.fdopen(descriptor, "a") as lock:
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise UsageLockBusy("usage source is already refreshing") from None
+                time.sleep(min(.025, max(0, deadline - time.monotonic())))
+            except OSError:
+                raise UsageLockBusy("usage coordination unavailable") from None
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 def _live_enabled() -> bool:

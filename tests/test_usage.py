@@ -115,6 +115,9 @@ class UsageTests(unittest.TestCase):
             finally:
                 release.set()
                 self.assertTrue(finished.wait(1))
+                # The source returning is not the end of the worker: it still
+                # publishes its private coordination memo before queueing.
+                self.assertEqual(loader.q.get(timeout=1)[0], "live")
 
     def test_sync_cache_persists_empty_failed_live_attempts_and_safe_errors(self):
         mod = SimpleNamespace(__name__="claude", collect=lambda: {

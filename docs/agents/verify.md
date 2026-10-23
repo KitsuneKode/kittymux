@@ -5,6 +5,7 @@ What each check proves and when to run it. A failing rig is information about th
 Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and the "read before you change" table); this page is the reference for one area.
 
 - `python3 -m unittest discover -s tests` and `bash tests/test_mux_status.sh && bash tests/test_socket_lib.sh`.
+- `python3 -m unittest tests.test_usage_coordination` (isolated fake providers: cross-process scan sharing, live cooldowns, monotonic publication, opt-out, bounded lock waits and cached fallback on lock I/O failures).
 - Real-kitty smoke tests (Xvfb, private config/socket, SKIP if tools are missing): `bash tests/smoke_state.sh`
   (states from screens, spinner frame rate on an idle window, spacer-row click) and `bash tests/smoke_reload.sh`
   (a running kitty upgraded under itself must draw cleanly after two reloads; `SMOKE_KEEP_STALE=1` must FAIL).

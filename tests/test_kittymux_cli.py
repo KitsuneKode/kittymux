@@ -436,11 +436,11 @@ class SessionsCliTests(unittest.TestCase):
         self.assertTrue(self.m._find_session("old").endswith("old.kitty-session"))
         self.assertIsNone(self.m._find_session("../../etc/passwd"))
         calls = []
-        with mock.patch.object(self.m, "_target_socket", lambda: "unix:/tmp/mykitty-1"), mock.patch.object(self.m, "_run", lambda cmd, t=3.0: (calls.append(cmd) or (0, ""))):
+        with mock.patch.object(self.m, "_focused_socket", lambda: "unix:/tmp/mykitty-1"), mock.patch.object(self.m, "_run", lambda cmd, t=3.0: (calls.append(cmd) or (0, ""))):
             rc, out, _ = self.run_cli(self.m.sessions_restore, ["old"])
         self.assertEqual(rc, 0)
-        self.assertEqual(calls[0][3:6], ["action", "goto_session", self.m._find_session("old")][0:0] or calls[0][3:6])
-        self.assertIn("goto_session", calls[0])
+        self.assertEqual(calls, [["kitty", "@", "--to", "unix:/tmp/mykitty-1",
+                                 "action", "goto_session", self.m._find_session("old")]])
 
     def test_usage_errors(self):
         self.assertEqual(self.run_cli(self.m.sessions, ["bogus"])[0], 2)
