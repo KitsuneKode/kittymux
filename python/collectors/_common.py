@@ -65,15 +65,18 @@ def usage_memo(kind: str, name: str) -> Path:
 
 
 class UsageLockBusy(TimeoutError):
-    """Another process still owns this collection/publication operation."""
+    """Coordination ownership is busy or unavailable; use the cached snapshot."""
 
 
 @contextmanager
 def usage_lock(kind: str, name: str = "publication", timeout: float = 2.0):
     """Cross-process AND cross-thread ownership, independent of launcher locks."""
     path = usage_memo(kind, name).with_suffix(".lock")
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    except OSError:
+        raise UsageLockBusy("usage coordination unavailable") from None
     with os.fdopen(descriptor, "a") as lock:
         deadline = time.monotonic() + timeout
         while True:
@@ -84,6 +87,8 @@ def usage_lock(kind: str, name: str = "publication", timeout: float = 2.0):
                 if time.monotonic() >= deadline:
                     raise UsageLockBusy("usage source is already refreshing") from None
                 time.sleep(min(.025, max(0, deadline - time.monotonic())))
+            except OSError:
+                raise UsageLockBusy("usage coordination unavailable") from None
         try:
             yield
         finally:
