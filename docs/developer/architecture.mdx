@@ -71,6 +71,8 @@ tools/                         icon, brand and docs generators
 
 State lives in `$KITTYMUX_STATE`, otherwise `${XDG_STATE_HOME}/kittymux`. Panes and usage caches are per kitty process: `panes-<pid>.json`.
 
+Usage collectors coordinate through private `usage-sources/` files in that state directory. Separate local/live locks per provider keep overlapping HUD, CLI and external refreshes from repeating the same work; the live memo preserves both successful samples and failed-attempt cooldowns. Waiting for source ownership is bounded to two seconds: a busy local source falls back to its original cached sample, and a busy live source retains its original attempt time. The HUD retries a busy publication lock on a later UI tick rather than blocking. Publication merges provider generations and live source timestamps before atomically replacing `agent-usage.json` and recording history. Turning live usage off clears live overlays from published rows, so old live data cannot replace fresh local counts. `collected_at` dates a local scan for publication ordering; it does not replace the upstream `sample_ts` or live `ts` used to date quota data.
+
 ## Data, not code
 
 Agent behaviour is data, so adding one does not need new logic: `assets/resume-agents.json` and `~/.config/kittymux/resume.json` for resume, `assets/agent-prompt.json` for fan-out prompts and `assets/agent-risk.json` for approval flags. Each entry is checked against the installed CLI's own `--help`. Never add a flag you did not read there.
