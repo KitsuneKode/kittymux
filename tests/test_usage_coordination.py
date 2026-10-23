@@ -178,6 +178,30 @@ print(json.dumps(u._collect_local('example',source,started)))
         with self.assertRaises(TimeoutError):
             usage._collect_local('example',source,time.time())
 
+    def test_lock_io_failures_keep_cached_local_and_live_samples(self):
+        provider={'name':'example','rows':[{'label':'wk','pct':17}],'collected_at':1}
+        live={'ts':1,'attempt_ts':1,'rows':[{'label':'wk','pct':18}]}
+        usage.C.write_private(usage.C.usage_memo('local','example'),
+                              json.dumps({'collected_at':1,'provider':provider}))
+        usage.C.write_private(usage.C.usage_memo('live','example'),json.dumps(live))
+        for target in ('pathlib.Path.mkdir','os.open','fcntl.flock'):
+            with self.subTest(target=target),patch(target,side_effect=PermissionError('unavailable')):
+                self.assertEqual(usage._collect_local('example',
+                    lambda:self.fail('must not collect without ownership'),time.time()),provider)
+                self.assertEqual(usage._fetch_live(
+                    lambda cached:self.fail('must not request without ownership'),{},'example'),live)
+
+    def test_local_collector_oserror_is_not_reported_as_lock_contention(self):
+        def source():raise OSError('source read failed')
+        with self.assertRaisesRegex(OSError,'source read failed'):
+            usage._collect_local('example',source,time.time())
+
+    def test_live_collector_oserror_remains_a_collector_error(self):
+        def source(cached):raise OSError('source read failed')
+        result=usage._fetch_live(source,{'ts':1,'rows':[]},'example')
+        self.assertEqual(result['error'],'collector error (OSError)')
+        self.assertGreater(result['attempt_ts'],1)
+
     def test_hud_retries_busy_publication_without_waiting_on_ui_thread(self):
         loader=usage.Loader([])
         data={'ts':0,'providers':[{'name':'example','rows':[],'pending':True}],'live':{}}
