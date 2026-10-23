@@ -21,6 +21,7 @@ import select
 import signal
 import sys
 import threading
+import copy
 import time
 from pathlib import Path
 from datetime import date, datetime, timedelta
@@ -126,7 +127,56 @@ def _sparkline(hist_key: str) -> str:
     return "".join(blocks[min(7, round(v / max(vals) * 7))] for v in vals)
 
 
-def _fetch_live(fn, cached: dict) -> dict:
+def _read_object(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text())
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError, UnicodeError):
+        return {}
+
+
+def _stamp(value) -> float:
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) else 0.0
+
+
+def _collect_local(name: str, fn, started: float) -> dict:
+    path = C.usage_memo("local", name)
+    try:
+        with C.usage_lock("local", name):
+            memo = _read_object(path)
+            if _stamp(memo.get("collected_at")) >= started and isinstance(memo.get("provider"), dict):
+                return copy.deepcopy(memo["provider"])
+            result = dict(fn())
+            result["collected_at"] = time.time()
+            C.write_private(path, json.dumps({"collected_at": result["collected_at"], "provider": result}))
+            return result
+    except C.UsageLockBusy:
+        memo = _read_object(path).get("provider")
+        return copy.deepcopy(memo) if isinstance(memo, dict) else {
+            "name": name, "rows": [], "note": "refresh already running", "collected_at": 0}
+
+
+def _latest_live(cached: dict, name: str) -> dict:
+    memo = _read_object(C.usage_memo("live", name))
+    published = _read_object(C.CACHE).get("live")
+    published = published.get(name, {}) if isinstance(published, dict) else {}
+    candidates = [v for v in (cached, memo, published) if isinstance(v, dict)]
+    return max(candidates, key=lambda v: _stamp(v.get("attempt_ts", v.get("ts"))), default={})
+
+
+def _fetch_live(fn, cached: dict, name: str | None = None) -> dict:
+    name = name or getattr(fn, "__module__", "source")
+    try:
+        with C.usage_lock("live", name):
+            cached = _latest_live(cached, name)
+            result = _fetch_live_owned(fn, cached)
+            C.write_private(C.usage_memo("live", name), json.dumps(result))
+            return result
+    except C.UsageLockBusy:
+        return _latest_live(cached, name)  # Keep original age; no fabricated attempt.
+
+
+def _fetch_live_owned(fn, cached: dict) -> dict:
     if C.live_fresh(cached):
         return cached
     try:
@@ -137,11 +187,12 @@ def _fetch_live(fn, cached: dict) -> dict:
 
 
 def collect() -> dict:
+    started = time.time()
     providers = []
     mods = load_collectors()
     for mod in mods:
         try:
-            providers.append(mod.collect())
+            providers.append(_collect_local(mod.__name__.rsplit(".", 1)[-1], mod.collect, started))
         except Exception:
             providers.append({"name": mod.__name__, "rows": [],
                               "note": "collector error"})
@@ -161,13 +212,54 @@ def collect() -> dict:
             if not callable(live_fn):
                 continue
             name = mod.__name__.rsplit(".", 1)[-1]
-            result = _fetch_live(live_fn, cached.get(name) or {})
+            result = _fetch_live(live_fn, cached.get(name) or {}, name)
             live[name] = result
             provider = next((p for p in providers if p["name"] == name), None)
             if provider is not None:
                 _apply_live(provider, result)
-    _record_history(providers)
     return {"ts": time.time(), "providers": providers, "live": live}
+
+
+def _publish(data: dict, live_enabled: bool = True) -> dict:
+    """Publish a monotonic merge; delayed HUD results cannot roll back the cache."""
+    with C.usage_lock("publish", timeout=0):
+        previous = _read_object(C.CACHE)
+        previous_providers = {p.get("name"): p for p in previous.get("providers", []) if isinstance(p, dict)}
+        old_live = previous.get("live") if isinstance(previous.get("live"), dict) else {}
+        new_live = data.get("live") if isinstance(data.get("live"), dict) else {}
+        live = {}
+        for name in (old_live.keys() | new_live.keys()) if live_enabled else ():
+            choices = [v for v in (old_live.get(name), new_live.get(name)) if isinstance(v, dict)]
+            if not choices:
+                continue
+            winner = copy.deepcopy(max(choices, key=lambda v: _stamp(v.get("attempt_ts", v.get("ts")))))
+            success = max(choices, key=lambda v: _stamp(v.get("ts")))
+            if _stamp(success.get("ts")) > _stamp(winner.get("ts")):
+                winner.update(ts=success["ts"], rows=copy.deepcopy(success.get("rows", [])))
+            live[name] = winner
+        providers = []
+        for incoming in data.get("providers", []):
+            name = incoming.get("name")
+            old = previous_providers.get(name)
+            if old and (incoming.get("pending") or _stamp(old.get("collected_at", previous.get("ts"))) >
+                        _stamp(incoming.get("collected_at", data.get("ts")))):
+                selected, source_live = old, old_live.get(name, {})
+            else:
+                selected, source_live = incoming, new_live.get(name, {})
+            provider = copy.deepcopy(selected)
+            # Published HUD rows have their private markers stripped. Identify
+            # those old live rows through the associated live snapshot too.
+            old_rows = source_live.get("rows", []) if isinstance(source_live, dict) else []
+            provider["rows"] = [r for r in provider.get("rows", []) if not r.get("_live") and
+                                {k:v for k,v in r.items() if not k.startswith("_")} not in old_rows]
+            if live.get(name) and not provider.get("pending"):
+                _apply_live(provider, live[name])
+            providers.append(provider)
+        result = {"ts": max(_stamp(data.get("ts")), _stamp(previous.get("ts"))),
+                  "providers": providers, "live": live}
+        _record_history(providers)
+        C.write_private(C.CACHE, json.dumps(_sanitise(result)))
+        return result
 
 
 def get_data(force: bool) -> dict:
@@ -179,8 +271,10 @@ def get_data(force: bool) -> dict:
         except (json.JSONDecodeError, OSError):
             pass
     d = collect()
-    C.write_private(C.CACHE, json.dumps(d))
-    return d
+    try:
+        return _publish(d, live_enabled=C.LIVE)
+    except C.UsageLockBusy:
+        return d  # Another writer owns publication; never block a reader/UI.
 
 
 # ---------- progressive loader ------------------------------------------------
@@ -230,12 +324,17 @@ class Loader:
         self.live_pending: set[str] = set()
         self.since: dict[str, float] = {}
         self.local_done = False
+        self.started = 0.0
+        self.live = C.LIVE
+        self.publish_pending = False
 
     def alive(self) -> bool:
         return bool(self.pending or self.live_pending)
 
     def start(self, live: bool) -> None:
         now = time.time()
+        self.started = now
+        self.live = live
         for mod in self.mods:
             name = mod.__name__.rsplit(".", 1)[-1]
             self.pending.add(name)
@@ -260,14 +359,14 @@ class Loader:
 
     def _run_local(self, name: str, fn) -> None:
         try:
-            res = fn()
+            res = _collect_local(name, fn, self.started)
         except Exception as e:  # a broken collector never kills the HUD
             res = {"name": name, "rows": [], "note": "error",
                    "err": str(e)[:48] or type(e).__name__}
         self.q.put(("local", name, res))
 
     def _run_live(self, name: str, fn, cached: dict) -> None:
-        self.q.put(("live", name, _fetch_live(fn, cached)))
+        self.q.put(("live", name, _fetch_live(fn, cached, name)))
 
 
 def _provider_order(mods: list) -> list[str]:
@@ -300,7 +399,7 @@ def _seed(live: bool, mods: list) -> tuple[dict, "Loader"]:
 
 def _drain(loader: Loader, data: dict) -> None:
     """Apply everything the loader delivered; mark stuck collectors."""
-    changed = False
+    changed = loader.publish_pending
     while True:
         try:
             kind, name, res = loader.q.get_nowait()
@@ -314,7 +413,7 @@ def _drain(loader: Loader, data: dict) -> None:
                 p.clear()
                 p.update(res)
             lv = (data["live"] or {}).get(name)
-            if p is not None and lv:
+            if p is not None and lv and loader.live:
                 _apply_live(p, lv)
         else:
             loader.live_pending.discard(name)
@@ -345,8 +444,12 @@ def _drain(loader: Loader, data: dict) -> None:
         if not loader.pending and not loader.local_done:
             loader.local_done = True
             data["ts"] = time.time()
-        _record_history(data["providers"])
-        C.write_private(C.CACHE, json.dumps(_sanitise(data)))
+        try:
+            published = _publish(data, live_enabled=loader.live)
+            data.update(published)
+            loader.publish_pending = False
+        except C.UsageLockBusy:
+            loader.publish_pending = True  # Retry on the next UI tick, never wait.
 
 
 # ---------- render ----------
