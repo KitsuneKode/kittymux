@@ -44,6 +44,7 @@ import kittymux_launcher  # noqa: E402
 import kittymux_layout  # noqa: E402
 import kittymux_panetitle  # noqa: E402
 import kittymux_place  # noqa: E402
+import kittymux_progress  # noqa: E402
 import kittymux_reload  # noqa: E402
 import kittymux_scan  # noqa: E402
 import kittymux_state  # noqa: E402
@@ -994,12 +995,36 @@ def _sep_column(screen: Screen, y0: int, n: int, bg: int, pal, native: bool = Fa
         screen.draw(_LEFT_BLOCK[SEP_EIGHTS])
 
 
+# While a tab with OSC 9;4 progress is drawn: ((first_row, end_row), x_from, x_to, fill_bg). Text drawn into those
+# cells keeps the fill behind it instead of the row's colour (kittymux_progress). Reset by every _draw_vertical.
+_fill: tuple | None = None
+
+
 def _put(screen: Screen, x: int, text: str, fg: int, bold: bool = False) -> int:
     screen.cursor.x = x
     screen.cursor.fg = fg
     screen.cursor.bold = bold
-    screen.draw(text)
+    f = _fill
+    if f and text and f[0][0] <= screen.cursor.y < f[0][1] and f[1] <= x < f[2]:
+        split, cx = 0, x
+        while split < len(text) and cx < f[2]:
+            cx += max(0, wcswidth(text[split]))
+            split += 1
+        bg = screen.cursor.bg
+        screen.cursor.bg = f[3]
+        screen.draw(text[:split])
+        screen.cursor.bg = bg
+        screen.draw(text[split:])
+    else:
+        screen.draw(text)
     return screen.cursor.x
+
+
+def _tab_progress(tab) -> tuple[str, int] | None:
+    try:
+        return kittymux_progress.of_tab(tab, get_boss().window_id_map)
+    except Exception:
+        return None
 
 
 def _tab_state(tab: TabBarData) -> str:
@@ -1148,6 +1173,8 @@ def _native_edge(os_window_id: int) -> bool:
 
 
 def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
+    global _fill
+    _fill = None
     cols = screen.columns
     y0 = screen.cursor.y
     native = _native_edge(draw_data.os_window_id)
@@ -1245,6 +1272,20 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         _paint_rows(screen, y0, n_rows, row_bg)
     if active and not compact:                       # the card: the bar's colour back at both edges
         _paint_edges(screen, y0 + hdr_rows, n_rows - hdr_rows, bar, cols - sep_cols)
+    # OSC 9;4 progress: the card fills from the left (Rex's tab progress), the percent in the number's place.
+    progress = None if compact else _tab_progress(tab)
+    if progress:
+        p_state, p_pct = progress
+        x_from, x_to = 1, cols - sep_cols - ins
+        k = kittymux_progress.fill_cells(x_to - x_from, p_state, p_pct)
+        tint = {"error": pal.alert, "paused": pal.waiting}.get(p_state, pal.accent)
+        fill_bg = _rgb(kittymux_theme.blend(tint, pal.surface_hi if active else pal.bar, kittymux_progress.TINT[p_state]))
+        if k:
+            screen.cursor.bg = fill_bg
+            for r in range(y0 + hdr_rows, min(y0 + n_rows, screen.lines)):
+                screen.cursor.x, screen.cursor.y = x_from, r
+                screen.draw(" " * k)
+            _fill = ((y0 + hdr_rows, y0 + n_rows), x_from, x_from + k, fill_bg)
     if index == 1 and not extra_data.for_layout:
         # one full-height separator line, drawn once; each tab re-asserts its rows
         _sep_column(screen, 0, screen.lines, bar, pal, native)
@@ -1311,9 +1352,12 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         screen.cursor.y = y
         if stripe:
             _put(screen, 0, _RAIL, _rgb(pal.waiting))
-        idx = str(index)
-        _put(screen, cols - sep_cols - ins - len(idx), idx, _rgb(pal.faint))
-        room = cols - tx - 1 - len(idx) - sep_cols - ins
+        idx, idx_fg = str(index), pal.faint
+        if progress:
+            idx = kittymux_progress.label(*progress)
+            idx_fg = {"error": pal.alert, "paused": pal.waiting}.get(progress[0], pal.text if active else pal.muted)
+        _put(screen, cols - sep_cols - ins - _cells(idx), idx, _rgb(idx_fg))
+        room = cols - tx - 1 - _cells(idx) - sep_cols - ins
         # The state word (waiting/working) outranks the branch/path: reserve
         # its room first and give the rest to the leading pieces.
         tail = [p for p in subtitle if isinstance(p[0], str) and p[0] in ("working", "waiting")]
@@ -1386,6 +1430,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     screen.cursor.bg = bar
     screen.cursor.fg = 0
     screen.cursor.bold = False
+    _fill = None
     return screen.cursor.x
 
 
