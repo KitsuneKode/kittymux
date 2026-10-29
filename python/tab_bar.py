@@ -87,6 +87,7 @@ _APP_LABELS = {
 
 _ICON_BRANCH = ""   # nerd-font git-branch
 _ICON_FOLDER = ""   # nerd-font folder
+_ICON_SHELL = "\uf489"  # nerd-font terminal (oct-terminal): every plain shell tab gets an icon too, as in Rex
 _RAIL = "▌"
 _COLLAPSE, _EXPAND = "«", "»"   # sidebar collapse / expand button glyphs (kittymux_layout.toggle_collapsed)
 COMPACT_MAX_COLS = kittymux_layout.COMPACT_MAX_COLS   # a vertical bar at most this wide draws compact one-line rows
@@ -1258,6 +1259,8 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         _put(screen, gx, glyph, _rgb(brand if active else _mute(brand, pal)))
     elif _tool_glyph(foreground):
         _put(screen, gx, _tool_glyph(foreground), _rgb(pal.muted if active else pal.faint))
+    elif not compact:
+        _put(screen, gx, _ICON_SHELL, _rgb(pal.muted if active else pal.faint))
     title_room = cols - tx - 1 - sep_cols - ins
     if age and state_fg is not None and cols >= 6:
         title_room -= _cells(age) + 1             # the age sits just left of the state glyph
