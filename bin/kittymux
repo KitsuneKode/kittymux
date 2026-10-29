@@ -1717,7 +1717,8 @@ def spawn(argv: list[str]) -> int:
             _notify(msg)
             failed += 1
             continue
-        make = lambda scratch, agent=agent, exe=exe: kittymux_launcher.launch_args(agent, exe, where, cwd, source, scratch and where == "tab")      # noqa: E731
+        relay = os.path.join(HOME_DIR, "bin", "mux-pty") if kittymux_switches.enabled("relay", kittymux_layout.state_dir()) else None
+        make = lambda scratch, agent=agent, exe=exe: kittymux_launcher.launch_args(agent, exe, where, cwd, source, scratch and where == "tab", relay=relay)      # noqa: E731
         ok = _launch_tab_before_scratch(sock, make) if where == "tab" else _launch(sock, make(False))
         if ok:
             print(f"{OK} {agent} → new {'tab' if where == 'tab' else 'split'}")

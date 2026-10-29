@@ -69,9 +69,10 @@ def resolve_agent(name: str) -> str | None:
 
 
 def launch_args(agent: str, exe: str, where: str, cwd: str | None = None, source_window: str | None = None, before_scratch: bool = False,
-                extra: list[str] | None = None, tab_title: str | None = None) -> list[str]:
+                extra: list[str] | None = None, tab_title: str | None = None, relay: str | None = None) -> list[str]:
     """The arguments after `kitty @ --to SOCK launch` that start `exe` as a tab (`tab`), or as a split (`hsplit`/`vsplit`). The working directory is the source window's
-    (`--cwd=current`) unless `cwd` is given. `before_scratch` puts a new tab before the `!scratch` tab so the scratch tab stays last (same rule as mux-newtab)."""
+    (`--cwd=current`) unless `cwd` is given. `before_scratch` puts a new tab before the `!scratch` tab so the scratch tab stays last (same rule as mux-newtab).
+    `relay` (the path of bin/mux-pty) runs the agent behind the OSC 7501 relay; the agent's name stays on the command line, so the scanner still finds it."""
     if where not in ("tab", "hsplit", "vsplit"):
         raise ValueError(where)
     args: list[str] = []
@@ -86,7 +87,7 @@ def launch_args(agent: str, exe: str, where: str, cwd: str | None = None, source
     args += [f"--cwd={cwd}" if cwd else "--cwd=current"]
     if source_window and str(source_window).isdigit():
         args += ["--source-window", f"id:{source_window}"]
-    args += ["--title", agent, f"--var=kittymux_agent={agent}", "--", exe, *(extra or [])]
+    args += ["--title", agent, f"--var=kittymux_agent={agent}", "--", *([relay, "--"] if relay else []), exe, *(extra or [])]
     return args
 
 

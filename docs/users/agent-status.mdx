@@ -28,6 +28,12 @@ Twice a second, and every two seconds when no agent is running, kittymux reads t
 
 Claude, Codex, Devin, Gemini, Cursor, OpenCode, Amp, Antigravity and Factory `droid` work with no setup. Other agents with a logo, and aider and crush, use hooks or title activity. See [Platforms and compatibility](/docs/users/platforms) for which markers have been checked against live sessions.
 
+### Status the agent reports itself (OSC 7501)
+
+Claude Code, Pi and Crush report what they are doing with the Program Status Protocol (OSC 7501): working, blocked on a permission or a question, done, error. kitty does not read it yet, so kittymux can run agents it spawns behind a small relay, `mux-pty`, that passes every byte through unchanged and hands the report to the scanner. A reported status is the strongest evidence there is: "blocked" shows as waiting with the agent's own question, "done" counts as the agent's word. The screen markers above remain the fallback for agents that don't report.
+
+It is off by default. Turn it on with `kittymux settings` (the **Agent status relay** switch, in Opt-in) or the panel's Settings view; agents spawned after that run behind the relay. Agents you start by hand can use it too: `mux-pty -- claude`.
+
 ### When is something "done"?
 
 A false "finished" is worse than none, so the rules are strict.

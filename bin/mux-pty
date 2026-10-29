@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""mux-pty -- CMD [ARGS…]: run CMD behind a byte-transparent PTY relay that hears its OSC 7501 status.
+
+kitty 0.49 ignores OSC 7501 (the Program Status Protocol), so agents that report their status (Claude Code, Pi,
+Crush) are only read off the screen. Under this relay every byte still passes both ways unchanged; the relay also
+answers the protocol's probe (before kitty answers the DA1 that follows it, as the spec asks), keeps the records
+(kittymux_psp) and gives their summary to kitty as the window's `kittymux_psp` user variable, which the scanner
+prefers to the screen. It only adds its own sequence at a clean point of the stream (kittymux_psp.Boundary).
+
+The window size follows kitty's (SIGWINCH), the terminal is raw so keys (Ctrl+C too) reach CMD as typed, and the
+relay exits with CMD's status. Started by `kittymux spawn` when the `relay` switch is on; works by hand too.
+"""
+import errno
+import fcntl
+import os
+import pty
+import select
+import signal
+import sys
+import termios
+import time
+import tty
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "python"))
+import kittymux_psp as P  # noqa: E402
+
+
+def _write_all(fd: int, data: bytes) -> None:
+    while data:
+        try:
+            n = os.write(fd, data)
+        except InterruptedError:
+            continue
+        data = data[n:]
+
+
+def main(argv: list[str]) -> int:
+    if argv[:1] == ["--"]:
+        argv = argv[1:]
+    if not argv:
+        print("usage: mux-pty -- CMD [ARGS…]", file=sys.stderr)
+        return 2
+    if not os.isatty(0) or not os.isatty(1):
+        os.execvp(argv[0], argv)                          # nothing to relay: become the command
+
+    pid, master = pty.fork()
+    if pid == 0:
+        try:
+            os.execvp(argv[0], argv)
+        except OSError as e:
+            os.write(2, f"mux-pty: {argv[0]}: {e.strerror}\n".encode())
+        os._exit(127)
+
+    def resize(*_):
+        try:
+            fcntl.ioctl(master, termios.TIOCSWINSZ, fcntl.ioctl(0, termios.TIOCGWINSZ, b"\0" * 8))
+        except OSError:
+            pass
+    resize()
+    signal.signal(signal.SIGWINCH, resize)
+
+    scanner, records, edge = P.Scanner(), P.Records(), P.Boundary()
+    shown = None                                          # the summary kitty has
+    old = termios.tcgetattr(0)
+    tty.setraw(0)
+    try:
+        while True:
+            try:
+                ready, _, _ = select.select([0, master], [], [])
+            except InterruptedError:
+                continue
+            if master in ready:
+                try:
+                    data = os.read(master, 65536)
+                except OSError as e:
+                    if e.errno == errno.EIO:              # the command is gone
+                        break
+                    raise
+                if not data:
+                    break
+                for ev in scanner.feed(data):
+                    if ev[0] == "query":
+                        _write_all(master, P.REPLY)       # before kitty sees the DA1 that follows the probe
+                    else:
+                        records.apply(ev[1], time.monotonic())
+                _write_all(1, data)
+                clean = edge.feed(data)
+                now = records.summary()
+                if now != shown and clean:
+                    _write_all(1, P.user_var(now))
+                    shown = now
+            if 0 in ready:
+                try:
+                    data = os.read(0, 65536)
+                except OSError:
+                    break
+                if not data:
+                    break
+                _write_all(master, data)
+    finally:
+        termios.tcsetattr(0, termios.TCSAFLUSH, old)
+        # The program ended: running and blocked records end with it; done and error stay for the bar.
+        records.drop_live()
+        try:
+            if records.summary() != shown and edge.state == P.Boundary.GROUND:
+                _write_all(1, P.user_var(records.summary()))
+        except OSError:
+            pass
+        try:
+            os.close(master)
+        except OSError:
+            pass
+    # kitty closed the window: the closed master hung the command up; give it a moment, then insist.
+    for _ in range(40):
+        done, status = os.waitpid(pid, os.WNOHANG)
+        if done:
+            break
+        time.sleep(0.05)
+    else:
+        os.kill(pid, signal.SIGTERM)
+        _, status = os.waitpid(pid, 0)
+    code = os.waitstatus_to_exitcode(status)
+    return 128 - code if code < 0 else code
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

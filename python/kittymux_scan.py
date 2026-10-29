@@ -312,6 +312,12 @@ def scan_window(window, now: float) -> bool:
     book = _RT.book.setdefault(wid, {})
     view = {**entry, **book}
     focused = bool(getattr(window, "is_focused", False))
+    # What the agent itself reported (OSC 7501, through bin/mux-pty): the strongest evidence, folded in like a hook.
+    try:
+        import kittymux_psp
+        marker, line = kittymux_psp.apply_to_view(kittymux_psp.read_var(getattr(window, "user_vars", None) or {}), view, marker, line)
+    except Exception:
+        pass
     adt = view.get("agent_done_ts")
     if adt and adt > float(view.get("ts_status") or 0):
         view["status"], view["ts_status"] = "done", adt        # the agent's own "finished" notification counts like its Stop hook
