@@ -11,6 +11,9 @@ It lives only as long as the notification (hard cap: 30 s), so it can never pile
 notification daemon reports the "jump" action being invoked, it focuses that window — through
 kitty's remote control, then the compositor — so the notification takes you to the agent.
 Daemons without action support still show the notification; they just cannot jump.
+
+The notification also carries where it came from as hints (x-kittymux-pid, x-kittymux-window), so a notification
+center can jump there itself later, after this process has gone: `kittymux act '{"op":"jump","pid":P,"w":W}'`.
 """
 import os
 import re
@@ -18,6 +21,9 @@ import shutil
 import subprocess
 import sys
 import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "python"))
+import kittymux_wmfocus  # noqa: E402
 
 TIMEOUT = 30            # seconds; also what bounds the lifetime of this process
 EXPIRE_MS = 20000
@@ -38,9 +44,12 @@ def safe_icon(icon: str) -> str:
     return "kitty"
 
 
-def notify(urgency: str, category: str, icon: str, title: str, body: str, with_action: bool) -> str:
+def notify(urgency: str, category: str, icon: str, title: str, body: str, with_action: bool,
+           where: tuple[str, str] | None = None) -> str:
     cmd = ["notify-send", "-a", "kittymux", "-i", safe_icon(icon), "-u", urgency, "-c", category,
            "-t", str(EXPIRE_MS)]
+    if where:
+        cmd += ["-h", f"string:x-kittymux-pid:{where[0]}", "-h", f"string:x-kittymux-window:{where[1]}"]
     if with_action:
         cmd += ["--wait", "--action=jump=Jump to it"]
     cmd += ["--", title, body]        # `--`: text starting with "-" must not parse as an option
@@ -52,12 +61,9 @@ def notify(urgency: str, category: str, icon: str, title: str, body: str, with_a
 
 
 def focus(socket: str, window_id: str, kitty_pid: str) -> None:
+    """The window and its tab in kitty, then exactly its OS window in the compositor (never `pid:`, see kittymux_wmfocus)."""
     if shutil.which("kitty"):
-        subprocess.run(["kitty", "@", "--to", socket, "focus-window", "--match", f"id:{window_id}"],
-                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
-    if shutil.which("hyprctl"):
-        subprocess.run(["hyprctl", "dispatch", "focuswindow", f"pid:{kitty_pid}"],
-                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+        kittymux_wmfocus.focus(socket, window_id, kitty_pid)
 
 
 def main(argv: list[str]) -> int:
@@ -70,9 +76,9 @@ def main(argv: list[str]) -> int:
     started = time.monotonic()
     answer = ""
     if socket:
-        answer = notify(urgency, category, icon, title, body, with_action=True)
+        answer = notify(urgency, category, icon, title, body, with_action=True, where=(kitty_pid, window_id))
     if not socket or (answer == "\0failed" and time.monotonic() - started < 2):
-        notify(urgency, category, icon, title, body, with_action=False)      # libnotify without --action
+        notify(urgency, category, icon, title, body, with_action=False, where=(kitty_pid, window_id))      # libnotify without --action
         return 0
     if answer == "jump":
         focus(socket, window_id, kitty_pid)

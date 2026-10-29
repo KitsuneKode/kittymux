@@ -72,6 +72,7 @@ import kittymux_diag  # noqa: E402
 import kittymux_fanout  # noqa: E402
 import kittymux_features  # noqa: E402
 import kittymux_inbox  # noqa: E402
+import kittymux_wmfocus  # noqa: E402
 import kittymux_journal  # noqa: E402
 import kittymux_keymap  # noqa: E402
 import kittymux_launcher  # noqa: E402
@@ -892,12 +893,11 @@ def inbox_jump(ev: dict) -> int:
     if sock is None or not str(ev.get("w", "")).isdigit():
         print("kittymux inbox: that kitty is no longer running (or has no control socket)", file=sys.stderr)
         return 1
-    rc, _ = _run(["kitty", "@", "--to", sock, "focus-window", "--match", f"id:{ev['w']}"], 4)
-    if rc != 0:
+    # kitty focuses the window (and its tab), then the compositor gets THAT OS window: one kitty often has several, on
+    # other workspaces, and `focuswindow pid:` took whichever Hyprland listed first (kittymux_wmfocus).
+    if not kittymux_wmfocus.focus(sock, ev["w"], ev.get("pid"), run=_wm_run):
         print("kittymux inbox: that window is gone", file=sys.stderr)
         return 1
-    if shutil.which("hyprctl"):
-        _run(["hyprctl", "dispatch", "focuswindow", f"pid:{ev.get('pid')}"], 3)
     kittymux_inbox.ack(kittymux_layout.state_dir(), time.time(), window=ev["w"], pid=ev.get("pid"))
     return 0
 
@@ -1647,9 +1647,24 @@ def _focused_socket() -> str | None:
     return _target_socket()
 
 
-def _focus_wm(pid) -> None:
-    if shutil.which("hyprctl") and str(pid).isdigit():
-        _run(["hyprctl", "dispatch", "focuswindow", f"pid:{pid}"], 3)
+def _focus_wm(pid, sock: str | None = None) -> None:
+    """Bring the kitty at `sock` to the front: its active window's OS window, not just any window of the pid (one kitty
+    is often several OS windows on other workspaces)."""
+    if not str(pid).isdigit() or not sock:
+        return
+    data = _ls(sock) or []
+    osw = next((o for o in data if o.get("is_active")), None) or next((o for o in data if o.get("last_focused")), None)
+    tab = next((t for t in (osw or {}).get("tabs", []) if t.get("is_active")), None)
+    win = next((w for w in (tab or {}).get("windows", []) if w.get("is_active")), None)
+    if win:
+        kittymux_wmfocus.focus(sock, win["id"], pid, run=_wm_run)
+
+
+def _wm_run(argv, **kw):
+    """kittymux_wmfocus's runner, through _run (one place that runs things, and the one the tests stand in for)."""
+    from types import SimpleNamespace
+    rc, out = _run(argv, kw.get("timeout", 4))
+    return SimpleNamespace(returncode=rc, stdout=out)
 
 
 def _installed_agents() -> list[str]:
@@ -1710,7 +1725,7 @@ def spawn(argv: list[str]) -> int:
             print(f"{BAD} kittymux spawn: kitty did not start {agent}", file=sys.stderr)
             failed += 1
     if wm and not failed and _socket_pid(sock):
-        _focus_wm(_socket_pid(sock))
+        _focus_wm(_socket_pid(sock), sock)
     return 1 if failed else 0
 
 
@@ -1862,7 +1877,7 @@ def _do_row(row: dict, how: str, sock: str | None) -> int:
         sock = sock or _focused_socket()
         if target is None or not sock or not reopen_entry(target, sock):
             return 1
-        _focus_wm(_socket_pid(sock))
+        _focus_wm(_socket_pid(sock), sock)
         return 0
     if a["op"] == "usage":
         return usage_cmd(["--window"])
@@ -2506,7 +2521,7 @@ def act_cmd(argv: list[str]) -> int:
             return 1
         rc, _ = _run(["kitty", "@", "--to", sock, "focus-tab", "--match", f"id:{a['tab']}"], 4)
         if rc == 0:
-            _focus_wm(_socket_pid(sock))
+            _focus_wm(_socket_pid(sock), sock)
         return 0 if rc == 0 else 1
     if op == "jump":
         rc = inbox_jump({"pid": a["pid"], "w": a["w"]})
