@@ -5,6 +5,28 @@ what kitty can now do natively that kittymux either reimplements, works around, 
 is worth to an agent multiplexer. Each line names the kitty version that added it; check `kitty --version` before
 relying on one (kittymux supports older kitties too).
 
+## First: agent status from the agents themselves (OSC 7501)
+
+Mitchell Hashimoto's **Program Status Protocol** (OSC 7501, draft 0.4, 2026-10-10; spec at
+superlogical.com/rex/docs/build/program-status) lets a program tell the terminal what it is doing:
+`ESC ] 7501 ; state=<idle|working|done|blocked|error|clear>:kind=<permission|question|auth>:app=<id>:msg=<base64>:title=<base64>:progress=<0-100>:id=<a/b/c> ST`.
+Claude Code (since 2.1.295), Pi and Crush emit it; Rex shows it in its sidebar. Programs may probe first
+(`OSC 7501 ; ? ST`, reply `?`), and some only report after a terminal answers.
+
+**kitty 0.49.2 doesn't implement it**, and unknown OSCs are dropped inside kitty with no hook for a kitten or watcher.
+So today the reports never reach kittymux. Two ways in:
+
+1. **A relay between kitty and the agent** (`mux-pty`, what a multiplexer does): agents spawned by kittymux run under
+   a thin PTY relay that passes everything through, answers the probe, and turns 7501 records into kittymux state
+   (a user var on the window, which the scanner already reads). Exact states (working, blocked + why, done, error)
+   instead of screen heuristics; works with every agent that speaks 7501, today. Cost: one small process per agent,
+   and it must be byte-transparent (resize, signals, the alternate screen, kitty's keyboard protocol).
+2. **Upstream**: ask kitty to implement OSC 7501, or to hand unknown OSCs to watchers. Better long term; not ours to
+   decide, and not soon.
+
+Plan: build (1) behind a switch, keep the scanner's heuristics as the fallback for agents that don't speak 7501, and
+offer (2) upstream.
+
 ## Replace what we build ourselves
 
 | kitty feature | since | what it replaces or fixes in kittymux |
