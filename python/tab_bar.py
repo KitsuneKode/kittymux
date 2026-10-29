@@ -1161,6 +1161,22 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     hdr_rows = kittymux_layout.header_rows(screen.lines, draw_data.max_tab_title_lines, compact) if want_header else 0
     lines_avail = (hdr_rows + 1) if compact else min(max(1, draw_data.max_tab_title_lines),
                                                        screen.lines - y0)
+    # Session folders (Rex's sidebar groups): where a tab's kitty session differs from the tab above it, a heading row
+    # with that session's name goes first (`Other tabs` for tabs in no session). The first tab's session is already
+    # the bar's header. Drawn in the layout pass too, so kitty counts the row.
+    if not compact and index > 1 and extra_data.prev_tab is not None and lines_avail >= 3:
+        this = getattr(tab, "session_name", "") or ""
+        if this != (getattr(extra_data.prev_tab, "session_name", "") or ""):
+            label = _compact_session_name(this)
+            label = "Other tabs" if label == "—" else label
+            _paint_rows(screen, y0, 1, _rgb(pal.bar))
+            screen.cursor.y = y0
+            _put(screen, 1, "\u2304 " + _fit(label, max(4, cols - 4 - sep_cols)), _rgb(pal.faint), True)
+            screen.cursor.bold = False
+            _sep_column(screen, y0, 1, _rgb(pal.bar), pal, native)
+            y0 += 1
+            screen.cursor.y = y0
+            lines_avail -= 1
     active = tab.is_active
     # Full bar: the active tab is an inset card (one bar-coloured column each side, Rex-style), so content sits one
     # column further in: the waiting stripe at 0, the logo at 2, the title at 4. The rail keeps its tight layout.
