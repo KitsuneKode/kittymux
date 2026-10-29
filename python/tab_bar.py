@@ -1088,7 +1088,7 @@ def _mascot_ready() -> bool:
 
 
 def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: int, compact: bool) -> None:
-    """The first tab's header. Full bar: `TABS` over `N tabs  ! 1`, and the collapse button at the right
+    """The first tab's header. Full bar: the session's name over `host · N tabs  ! 1`, and the collapse button at the right
     (a bare glyph; its hit area, kittymux_layout.in_toggle_zone, is a good deal larger).
     Rail: the expand button across the top, the attention badges under it."""
     total, counts = _session_stats(tab)
@@ -1102,18 +1102,19 @@ def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: in
             screen.cursor.bg = bar
             _put(screen, 1, _fit(badge, cols - 3), _rgb(pal.waiting), True)
         return
+    # Rex-style: the session's name, in full weight, over this machine and how many tabs (it said `TABS` / `N tabs`).
     name = _compact_session_name(getattr(tab, "session_name", "") or "")
-    name = "TABS" if name == "—" else name.upper()
+    name = "Tabs" if name == "—" else name
     btn_x = cols - kittymux_layout.TOGGLE_CELLS
     mascot = _mascot_ready()
     room = btn_x - 3 - (2 if mascot else 0)
     screen.cursor.y = y
     if mascot:
         _put(screen, 1, kittymux_agents.MASCOT_GLYPH, _rgb(pal.accent), True)
-    _put(screen, 3 if mascot else 1, _fit(name, max(4, room)), _rgb(pal.faint), True)
+    _put(screen, 3 if mascot else 1, _fit(name, max(4, room)), _rgb(pal.text), True)
     info_y = y + (1 if rows > 1 else 0)
     parts = _attention_parts(counts, pal)
-    count_txt = f"{total} tabs" if total else ""
+    count_txt = (f"{_host()} · {total} tabs" if rows > 1 else f"{total} tabs") if total else ""
     x = 1
     screen.cursor.y = info_y
     screen.cursor.bg = bar
@@ -1126,6 +1127,18 @@ def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: in
             break
         x = _put(screen, x, text, _rgb(color), bold)
     _button(screen, y, rows, btn_x, 3, _COLLAPSE, pal)
+
+
+_HOST = ""
+
+
+def _host() -> str:
+    """This machine's short name, for the header's second line (Rex shows the host under the session)."""
+    global _HOST
+    if not _HOST:
+        import socket
+        _HOST = (socket.gethostname() or "this machine").split(".")[0]
+    return _HOST
 
 
 @_per_pass
