@@ -4,6 +4,7 @@
 
 import math
 import os
+from collections import OrderedDict
 from dataclasses import dataclass, field
 
 import gi
@@ -75,17 +76,44 @@ def rrect(cr, x, y, w, h, r):
     cr.close_path()
 
 
+class Resources:
+    """Bounded, window-owned Pango/SVG caches. No context or timer survives the window."""
+    def __init__(self, limit=256):
+        self.limit = max(1, limit)
+        self.layouts, self.fonts, self.icons = OrderedDict(), OrderedDict(), OrderedDict()
+
+    def get(self, cache, key, create):
+        if key not in cache:
+            cache[key] = create()
+            if len(cache) > self.limit:
+                cache.popitem(last=False)
+        cache.move_to_end(key)
+        return cache[key]
+
+
 class Painter:
-    def __init__(self, cr, scale: float, pal: th.Palette):
+    def __init__(self, cr, scale: float, pal: th.Palette, resources=None, spinners=None):
         self.cr, self.s, self.p = cr, scale, pal
         self.dark = th.luminance(pal.bg) < 0.4
+        self.resources = resources or Resources()
+        self.spinners = spinners
 
     # text ------------------------------------------------------------------------------------------------------------
     def layout(self, text, size, weight=Pango.Weight.NORMAL, family=UI_FONT, width=None, tnum=False, track=0.0):
+        key = (text, size, weight, family, width, tnum, track, self.s)
+        lo = self.resources.get(self.resources.layouts, key,
+                                lambda: self._layout(text, size, weight, family, width, tnum, track))
+        PangoCairo.update_layout(self.cr, lo)
+        return lo
+
+    def _layout(self, text, size, weight, family, width, tnum, track):
         lo = PangoCairo.create_layout(self.cr)
-        fd = Pango.FontDescription.from_string(family)
-        fd.set_weight(weight)
-        fd.set_absolute_size(size * self.s * Pango.SCALE)
+        def font():
+            fd = Pango.FontDescription.from_string(family)
+            fd.set_weight(weight)
+            fd.set_absolute_size(size * self.s * Pango.SCALE)
+            return fd
+        fd = self.resources.get(self.resources.fonts, (family, weight, size, self.s), font)
         lo.set_font_description(fd)
         attrs = Pango.AttrList()
         if tnum:
@@ -159,7 +187,7 @@ class Painter:
         if not os.path.exists(path):
             return False
         s, cr = self.s, self.cr
-        handle = Rsvg.Handle.new_from_file(path)
+        handle = self.resources.get(self.resources.icons, path, lambda: Rsvg.Handle.new_from_file(path))
         cr.push_group()
         vp = Rsvg.Rectangle()
         vp.x, vp.y, vp.width, vp.height = x * s, y * s, size * s, size * s
@@ -181,6 +209,9 @@ class Painter:
             cr.fill()
 
     def spinner(self, cx, cy, r, color, phase):
+        if self.spinners is not None:
+            self.spinners.append((cx, cy, r, color))
+            return
         s, cr = self.s, self.cr
         cr.set_line_width(1.6 * s)
         cr.new_path()
@@ -209,6 +240,8 @@ def status_mark(pt: Painter, right, cy, state, phase, bar):
     p = pt.p
     if state == "waiting":
         return pt.pill(right, cy, "Needs you", p.waiting, bar)
+    if state == "limited":
+        return pt.pill(right, cy, "Limited", p.alert, bar)
     if state == "working":
         pt.spinner(right - 5, cy, 4.6, p.working, phase)
         return 11
@@ -220,21 +253,25 @@ def status_mark(pt: Painter, right, cy, state, phase, bar):
 
 
 def render(model: Model, pal: th.Palette, width: float, height: float, scale: float = 1.0, frame: Frame | None = None,
-           glass: float = 0.84, hits: list | None = None) -> cairo.ImageSurface:
+           glass: float = 0.84, hits: list | None = None, resources: Resources | None = None,
+           spinners: list | None = None) -> cairo.ImageSurface:
     """Draw the deck. width/height are logical px; the surface is width*scale × height*scale device px.
     `glass` < 1 leaves the bar translucent so the compositor's blur shows through (kitty background_opacity).
     `hits`, when given, collects (kind, index, x, y, w, h) in logical px for the window's own mouse hit-testing."""
     frame = frame or Frame()
+    if not all(math.isfinite(v) and v > 0 for v in (width, height, scale)):
+        raise ValueError("deck dimensions and scale must be finite and positive")
     W, H = int(round(width * scale)), int(round(height * scale))
+    if not (0 < W <= 10000 and 0 < H <= 10000):
+        raise ValueError("deck exceeds kitty's image dimensions")
     surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, W, H)
     cr = cairo.Context(surf)
     fo = cairo.FontOptions()
     fo.set_antialias(cairo.ANTIALIAS_GRAY)       # grey AA: subpixel AA breaks on a translucent surface
     fo.set_hint_style(cairo.HINT_STYLE_SLIGHT)
     fo.set_hint_metrics(cairo.HINT_METRICS_OFF)
-    PangoCairo.context_set_font_options(PangoCairo.create_context(cr), fo)
     cr.set_font_options(fo)
-    pt = Painter(cr, scale, pal)
+    pt = Painter(cr, scale, pal, resources, spinners)
     p = pal
     bar = p.bar
 
@@ -245,7 +282,7 @@ def render(model: Model, pal: th.Palette, width: float, height: float, scale: fl
     g.add_color_stop_rgba(1, *rgb(bar, glass))
     cr.set_source(g)
     cr.fill()
-    cr.rectangle(W - 1 * scale, 0, 1 * scale, H)       # the hairline towards the panes
+    cr.rectangle(W - 1, 0, 1, H)       # one device pixel, also at fractional scale
     cr.set_source_rgba(*rgb(p.line, 0.55))
     cr.fill()
 
