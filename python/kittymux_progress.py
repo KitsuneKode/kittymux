@@ -35,6 +35,8 @@ def fill_cells(width: int, state: str, pct: int) -> int:
         return 0
     if state == "indeterminate":
         return width
+    if state == "error":
+        return width
     if pct <= 0:
         return 0
     return max(1, min(width, round(width * pct / 100)))

@@ -36,6 +36,7 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(P.fill_cells(20, "set", 50), 10)
         self.assertEqual(P.fill_cells(20, "set", 100), 20)
         self.assertEqual(P.fill_cells(20, "indeterminate", 0), 20)
+        self.assertEqual(P.fill_cells(20, "error", 0), 20)
         self.assertEqual(P.fill_cells(0, "set", 50), 0)
 
     def test_label(self):

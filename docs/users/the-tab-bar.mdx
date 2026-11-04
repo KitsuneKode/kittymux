@@ -17,9 +17,9 @@ Each tab has a title row and a folder line under it.
 | Time              | How long it has been waiting or working, such as `1m !`.                                                  |
 | `⚠`               | The agent was started with its approvals turned off.                                                      |
 | Layout picture    | For a split tab, a to-scale picture of its panes, each tinted by its state.                               |
-| Progress          | A program that reports progress (OSC 9;4: downloads, builds, package managers) fills the tab's card from the left, with the percent where the tab number was. Paused is yellow, an error is red and says `failed`. |
+| Progress          | A program that reports progress (OSC 9;4: downloads, builds, package managers) fills the tab's card from the left, with the percent where the tab number was (on the title row when there is no folder line). Paused is yellow, an error fills the card in the alert colour and says `failed`. |
 
-The header shows `! 2  ✓ 1`: how many agents need you and how many finished unseen, across every tab of the window. See [Agent status](/docs/users/agent-status).
+The header shows `! 2  ✓ 1`: how many agents need you and how many finished unseen, across every tab of the window. Its session name and tab count follow your **active tab**, not tab 1. See [Agent status](/docs/users/agent-status).
 
 ## Tell tabs apart: the folder line
 
