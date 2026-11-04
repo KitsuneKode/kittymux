@@ -81,7 +81,7 @@ DETECT_URL_MIN = (0, 49, 2)          # detect_url_regex
 PANE_TITLE_MIN = (0, 49, 2)          # window_title_template with `{custom}` (window_title_bar.py's draw_window_title) — verified on 0.49.2
 # kitty's own default template with `{title}` swapped for `{custom or title}`: no hook file, a failing hook or the switch off leave `{custom}` empty,
 # and the pane title bar must then show the usual title — never a blank bar
-PANE_TITLE_TEMPLATE = '"{fmt.fg.red}{bell_symbol}{activity_symbol}{fmt.fg.window}{progress_percent}{custom or title}"'
+PANE_TITLE_TEMPLATE = '"{fmt.fg.red}{bell_symbol}{activity_symbol}{fmt.fg.window}{custom or title}"'
 DIM_SHADER_MIN = (0, 49, 2)          # dim-inactive-windows stopped dimming the tab bar here (custom_shaders itself is 0.49.0)
 DIM_FLAG = "dim-inactive"            # $KITTYMUX_STATE/dim-inactive present → dim the windows that are not focused
 

@@ -38,6 +38,10 @@ class ProgressTests(unittest.TestCase):
         self.assertIsNone(P.of_tab(_tab(), {7: _win("unset")}))
         self.assertIsNone(P.of_tab(_tab(), {}))
 
+    def test_of_window_reads_one_pane(self):
+        self.assertEqual(P.of_window(_win("set", 55)), ("set", 55))
+        self.assertIsNone(P.of_window(types.SimpleNamespace(progress=types.SimpleNamespace(state=types.SimpleNamespace(name="unset")))))
+
     def test_fill_cells(self):
         self.assertEqual(P.fill_cells(20, "set", 0), 0)
         self.assertEqual(P.fill_cells(20, "set", 1), 1)                 # started: visible at once

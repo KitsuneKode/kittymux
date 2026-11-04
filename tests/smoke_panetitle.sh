@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The folder line in kitty's per-pane title bars, in a real kitty (kitty >= 0.49.2): window_title_template + the window_title_bar.py trampoline →
+# The pane header row in kitty's per-pane title bars, in a real kitty (kitty >= 0.49.2): window_title_template + the window_title_bar.py trampoline →
 # kittymux_panetitle. Pane title bars are forced on; KITTYMUX_PANETITLE_DUMP=1 records what was drawn per window (escape sequences and all).
 #   SHOT=out.png bash tests/smoke_panetitle.sh      also saves a screenshot of the window, for looking at.
 # Needs Xvfb, xdotool, kitty >= 0.49.2, git; else SKIP.
@@ -103,15 +103,14 @@ A=$(wid_of "/work/alpha/src/ui"); B=$(wid_of "/work/bravo"); N=$(wid_of "/plain/
 [ -n "$A" ] && [ -n "$B" ] && [ -n "$N" ] && [ -n "$WT" ] || fail "could not map the windows (A=$A B=$B N=$N WT=$WT)"
 
 # 1. every pane says where it is, in the tab bar's grammar
-for want in "$A|alpha/src/ui|main" "$B|bravo|main" "$N|notes|" "$WT|alpha:alpha-wt|feat-wt"; do
-  id=${want%%|*}; rest=${want#*|}; proj=${rest%%|*}; extra=${rest#*|}
+for want in "$A|/alpha/src/ui" "$B|bravo" "$N|notes" "$WT|alpha:alpha-wt"; do
+  id=${want%%|*}; proj=${want#*|}
   out=$(drawn "$id")
   case "$out" in *"$proj"*) ;; *) fail "window $id should show '$proj', drew: $out" ;; esac
-  [ -z "$extra" ] || case "$out" in *"$extra"*) ;; *) fail "window $id should show '$extra', drew: $out" ;; esac
 done
-echo "  ok   each pane's title bar shows its project / path / branch / worktree"
+echo "  ok   each pane title bar shows its folder caption"
 
-# 2. the active pane's project is bold; an inactive pane's is not
+# 2. the active pane's name is bold; an inactive pane's is not
 ACTIVE=$(kitty @ --to "$SOCK" ls | python3 -c 'import sys,json
 for o in json.load(sys.stdin):
     for t in o["tabs"]:
@@ -125,20 +124,21 @@ for o in json.load(sys.stdin):
             for w in t["windows"]:
                 if not w["is_focused"]: print(w["id"])')
 [ -n "$ACTIVE" ] && [ -n "$OTHER" ] || fail "no split tab found"
-case "$(drawn "$ACTIVE" raw)" in *$'\x1b[1m'*) ;; *) fail "the focused pane's project should be bold: $(drawn "$ACTIVE" raw)" ;; esac
-case "$(drawn "$OTHER" raw)" in *$'\x1b[1m'*) fail "an unfocused pane's project should not be bold" ;; esac
-echo "  ok   the focused pane's project is bold, the other pane's is not"
+case "$(drawn "$ACTIVE" raw)" in *$'\x1b[1m'*) ;; *) fail "the focused pane's name should be bold: $(drawn "$ACTIVE" raw)" ;; esac
+case "$(drawn "$OTHER" raw)" in *$'\x1b[1m'*) fail "an unfocused pane's name should not be bold" ;; esac
+echo "  ok   the focused pane's name is bold, the other pane's is not"
 
-# 3. the pane's own title follows when it adds something, and is left out when it does not
+# 3. the pane's own title becomes the bold name when it adds something, and a repeated product name is left out
 kitty @ --to "$SOCK" set-window-title --match "id:$B" "nvim README.md" >/dev/null 2>&1; sleep 1.5
-case "$(drawn "$B")" in *"bravo"*"nvim README.md") ;; *) fail "the pane's own title should follow the folder line: $(drawn "$B")" ;; esac
+case "$(drawn "$B")" in *"nvim README.md"*) ;; *) fail "the pane's task should be the bold name: $(drawn "$B")" ;; esac
 kitty @ --to "$SOCK" set-window-title --match "id:$B" "bravo" >/dev/null 2>&1; sleep 1.5
-case "$(drawn "$B")" in *"·"*) fail "a title that only repeats the project must be left out: $(drawn "$B")" ;; esac
+plain_b=$(drawn "$B")
+case "$plain_b" in *"nvim README"*) fail "a title that only repeats the folder must be left out: $plain_b" ;; esac
 kitty @ --to "$SOCK" set-window-title --match "id:$B" "" >/dev/null 2>&1; sleep 1.5
-case "$(drawn "$B")" in *bravo*) ;; *) fail "an EMPTY window title (a session that was just resumed) must still show the folder line: $(drawn "$B")" ;; esac
-echo "  ok   the pane's own title is appended only when it says something new (empty and repeated titles included)"
+case "$(drawn "$B")" in *bravo*) ;; *) fail "an EMPTY window title must still show the folder caption: $(drawn "$B")" ;; esac
+echo "  ok   the bold name is the task when it says something new (empty and repeated titles included)"
 
-# 4. renaming the TAB does not touch the pane's folder line (the tab name and the pane title are different things)
+# 4. renaming the TAB does not touch the pane header (the tab name and the pane title are different things)
 before=$(drawn "$A")
 TAB=$(kitty @ --to "$SOCK" ls | python3 -c 'import sys,json
 for o in json.load(sys.stdin):
@@ -146,7 +146,7 @@ for o in json.load(sys.stdin):
         if any(w["id"] == int(sys.argv[1]) for w in t["windows"]): print(t["id"])' "$A")
 kitty @ --to "$SOCK" set-tab-title --match "id:$TAB" "my renamed tab" >/dev/null 2>&1; sleep 1.5
 [ "$(drawn "$A")" = "$before" ] || fail "renaming the tab changed the pane's line: '$before' → '$(drawn "$A")'"
-echo "  ok   renaming a tab leaves the panes' folder lines alone"
+echo "  ok   renaming a tab leaves the pane headers alone"
 
 # 5. the switch: off → nothing is drawn through the hook (kitty shows its own title)
 FEAT off panetitle; kitty @ --to "$SOCK" load-config >/dev/null 2>&1; sleep 1
@@ -160,7 +160,10 @@ echo "  ok   features off panetitle hands the bar back to kitty's own title; on 
 if [ -n "${SHOT:-}" ]; then
   kitty @ --to "$SOCK" focus-tab --match title:alpha >/dev/null 2>&1; kitty @ --to "$SOCK" set-window-title --match "id:$A" "nvim src/main.rs" >/dev/null 2>&1; sleep 2
   DISPLAY=$DISP import -window root "$SHOT" && echo "  shot $SHOT"
+  X windowsize "$WID" 520 890; sleep 1.5
+  DISPLAY=$DISP import -window root "${SHOT%.png}-narrow.png" && echo "  shot ${SHOT%.png}-narrow.png"
+  X windowsize "$WID" 1400 900; sleep 0.5
 fi
 [ "$(others)" = "$OTHERS_BEFORE" ] || fail "this rig changed the windows of ANOTHER kitty (before: $OTHERS_BEFORE after: $(others))"
 echo "  ok   no other kitty on this machine was touched"
-echo "PASS: pane title bars carry the folder line, fall back to kitty's own title when off, and survive renames"
+echo "PASS: pane title bars show the pane header row, fall back to kitty's own title when off, and survive renames"

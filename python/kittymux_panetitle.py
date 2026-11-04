@@ -1,16 +1,18 @@
-# kittymux pane titles — the folder line in kitty's per-pane title bars (ctrl+alt+shift+c shows them).
+# kittymux pane titles — the header row in kitty's per-pane title bars (ctrl+alt+shift+c shows them).
 #
 # kitty draws a one-row title bar above each pane when `window_title_bar_min_windows` says so; its text is `window_title_template`, and `{custom}` in
 # that template is what `draw_window_title(data)` of the config dir's `window_title_bar.py` returns. kitty loads that file ONCE per process, so it is a
 # trampoline into `draw` here — this module is reloaded by tab_bar.py on every config load, like the other helpers.
 #
-# The line speaks the tab bar's grammar — project[:worktree]/inner  branch — then the pane's own title when it adds something, in colours derived
-# from the title bar's REAL foreground/background (so it reads on every theme) and the same per-project tint as the tab bar.
+# Each bar reads like the deck pane header: brand glyph, bold program or agent name, faint folder, then the state mark and OSC 9;4 percent on the right.
+# Colours come from the title bar's REAL foreground/background and the same state colours as the tab bar.
 #
-# `render` and `derive_colours` are pure; `draw` imports kitty lazily and never raises: "" makes the template fall back to kitty's own title.
+# `render`, `derive_colours`, and helpers are pure; `draw` imports kitty lazily and never raises: "" makes the template fall back to kitty's own title.
 
 import json
 import os
+import re
+import shlex
 import sys
 import time
 import types
@@ -19,13 +21,32 @@ import kittymux_agents
 import kittymux_features
 import kittymux_git
 import kittymux_place
+import kittymux_progress
 import kittymux_theme
+import kittymux_titles
 
-_ICON_FOLDER = ""
-_ICON_BRANCH = ""
-_GENERIC = {"", "kitty", "zsh", "bash", "fish", "sh", "node", "~"}
-_DOT = "  ·  "
-_MIN_TITLE = 8                       # a title narrower than this is not worth a separator
+_ICON_SHELL = "\uf489"                 # nerd-font terminal: plain shells, same as the tab bar
+_APP_LABELS = {
+    "claude": "Claude",
+    "codex": "Codex",
+    "nvim": "nvim",
+    "vim": "vim",
+    "hx": "hx",
+    "helix": "hx",
+    "lazygit": "lazygit",
+    "git": "git",
+    "ssh": "ssh",
+    "python": "python",
+    "python3": "python",
+    "node": "node",
+    "bun": "bun",
+    "zsh": "zsh",
+    "bash": "bash",
+    "fish": "fish",
+    "sh": "sh",
+    "kitty": "kitty",
+}
+_GENERIC = frozenset({"", "kitty", "zsh", "bash", "fish", "sh", "node", "~"})
 _BOLD, _NOBOLD, _RESET = "\x1b[1m", "\x1b[22m", "\x1b[0m"
 
 
@@ -33,50 +54,164 @@ def _sgr_fg(rgb: int) -> str:
     return f"\x1b[38;2;{(rgb >> 16) & 255};{(rgb >> 8) & 255};{rgb & 255}m"
 
 
-def _says_nothing_new(title: str, f) -> bool:
-    """A shell titles its window with the folder or the shell's name — the folder line already says that."""
-    t = " ".join(title.split())
-    return (t.lower() in _GENERIC or kittymux_place.redundant(t, f) or kittymux_place.worktree_named(t, f)
-            or t.startswith(("~", "/")))
+def folder_caption(f: kittymux_place.Facts) -> str:
+    """One faint folder string: repo path, worktree, or home-relative where."""
+    if f.inner:
+        text = f"/{f.project}/{f.inner.lstrip('/')}" if f.project else f"/{f.inner.lstrip('/')}"
+    elif f.worktree:
+        text = f"{f.project}:{f.worktree}"
+    elif f.where:
+        text = f.where
+    else:
+        text = f.project
+    return kittymux_place.clean(text)
 
 
-def _fit(text: str, width: int, cells) -> str:
-    if cells(text) <= width:
-        return text
-    out = ""
-    for ch in text:
-        if cells(out + ch) > width - 1:
-            break
-        out += ch
-    return out + "…"
+def _basename(value: str) -> str:
+    return os.path.basename(value) or value
 
 
-def render(f, title: str, columns: int, style: dict, title_rgb: int, dot_rgb: int, *, active: bool,
-           icon: str = "", branch_icon: str = "", cells=len, state_mark: str = "", state_rgb: int | None = None) -> str:
-    """The title bar text for one pane: the folder line first (it gets the room it needs), the pane's own title in what is left.
-    Visible width never exceeds the bar. `style` is kittymux_place.style's role → (rgb, bold)."""
+def _title_from_cmdline(cmdline: list[str]) -> str:
+    if not cmdline:
+        return ""
+    argv = [_basename(arg) for arg in cmdline]
+    lowered = [arg.lower() for arg in argv]
+    if "--" in cmdline:
+        tail = cmdline[cmdline.index("--") + 1:]
+        tail_label = _title_from_cmdline(tail)
+        if tail_label:
+            return tail_label
+    for name in ("nvim", "vim", "hx", "helix", "claude", "codex"):
+        if name in lowered:
+            return _APP_LABELS[name]
+    for item in reversed(lowered):
+        if item in _APP_LABELS and item not in {"node"}:
+            return _APP_LABELS[item]
+    first = lowered[0].lstrip("-")
+    return _APP_LABELS.get(first, first)
+
+
+def pane_name(raw_title: str, agent: str | None, cmd: str, f: kittymux_place.Facts, *, titles: bool = True) -> str:
+    """Bold label: agent product name, the tidied window title, or the foreground program."""
+    title = kittymux_place.clean(raw_title or "")
+    if agent:
+        if titles and title and not kittymux_agents.is_default_title(title, agent):
+            shown = kittymux_titles.tidy(title, agent, f.project).text
+            if shown and shown.lower() not in _GENERIC:
+                return shown
+        return _APP_LABELS.get(agent, agent.replace("-", " ").title())
+    if titles and title and not kittymux_place.redundant(title, f):
+        shown = kittymux_titles.tidy(title, None, f.project).text
+        if shown and shown.lower() not in _GENERIC and not title.startswith(("~", "/")):
+            return shown
+    if cmd:
+        try:
+            label = _title_from_cmdline(shlex.split(cmd))
+        except ValueError:
+            label = ""
+        if label and label.lower() not in _GENERIC:
+            return label
+    if f.project:
+        return f.project
+    return "shell"
+
+
+def pane_icon(agent: str | None, cmd: str) -> tuple[str, int | None]:
+    """(glyph, brand_rgb or None). Plain shells get the terminal glyph with no brand colour."""
+    if agent:
+        spec = kittymux_agents.AGENTS.get(agent, kittymux_agents.FALLBACK)
+        return spec.glyph, spec.brand
+    if cmd:
+        try:
+            name = kittymux_agents.tool_in([shlex.split(cmd)])
+        except ValueError:
+            name = None
+        if name:
+            return kittymux_agents.TOOLS.get(name, ""), None
+    return _ICON_SHELL, None
+
+
+def _state_rgb(state: str, pal, bg: int, title_rgb: int) -> int:
+    rgb = {"waiting": pal.waiting, "limited": pal.alert, "error": pal.alert, "working": pal.working, "done": pal.done}.get(state, title_rgb)
+    return kittymux_theme.ensure_contrast(rgb, bg, 4.5)
+
+
+def _tail_text(state_mark: str, progress: tuple[str, int] | None, cells=len) -> str:
+    parts = []
+    if progress:
+        parts.append(kittymux_progress.label(*progress))
+    if state_mark:
+        parts.append(state_mark)
+    if not parts:
+        return ""
+    return " ".join(parts)
+
+
+def _styled(role: str, text: str, style: dict, *, bold_override: bool | None = None) -> str:
+    rgb, bold = style[role]
+    if bold_override is not None:
+        bold = bold_override
+    body = (_BOLD if bold else "") + text + (_NOBOLD if bold else "")
+    return _sgr_fg(rgb) + body
+
+
+def render(f: kittymux_place.Facts, title: str, columns: int, style: dict, *, active: bool,
+           icon: str = "", name: str = "", folder: str = "", cells=len,
+           state_mark: str = "", progress: tuple[str, int] | None = None) -> str:
+    """One pane title bar row in cells: icon, bold name, faint folder, right-aligned progress and state."""
     avail = max(columns, 4) - 1
-    prefix = kittymux_place.clean(state_mark)[:1] + " " if state_mark else ""
-    avail -= cells(prefix)
-    pieces = kittymux_place.layout(f, avail, icon=icon, branch_icon=branch_icon, cells=cells)
-    if not pieces:
-        return (_sgr_fg(state_rgb or title_rgb) + prefix + _RESET) if prefix else ""
-    used = sum(cells(t) for t, _r in pieces)
-    out = [_sgr_fg(state_rgb if state_rgb is not None else title_rgb) + _BOLD + prefix + _NOBOLD] if prefix else []
-    for text, role in pieces:
-        rgb, bold = style[role]
-        out.append(_sgr_fg(rgb) + (_BOLD if bold else "") + text + (_NOBOLD if bold else ""))
-    title = kittymux_place.clean(title)                       # the title is whatever the program in the pane set
-    shown = "" if _says_nothing_new(title, f) else title
-    room = avail - used - len(_DOT)
-    if shown and room >= _MIN_TITLE:
-        out.append(_sgr_fg(dot_rgb) + _DOT + _sgr_fg(title_rgb) + _fit(shown, room, cells))
-    return "".join(out) + _RESET
+    tail = _tail_text(state_mark, progress, cells=cells)
+    tail_w = cells(tail)
+    icon_seg = (icon + " ") if icon else ""
+    name = kittymux_place.clean(name)
+    folder = kittymux_place.clean(folder)
+
+    def left_plain(name_text: str, folder_text: str) -> str:
+        out = icon_seg + name_text
+        if folder_text:
+            out += " " + folder_text
+        return out
+
+    name_text, folder_text = name, folder
+    left_w = cells(left_plain(name_text, folder_text))
+    while left_w + (1 if tail else 0) + tail_w > avail and folder_text:
+        folder_text = kittymux_place.mid_ellipsis(folder_text, max(0, cells(folder_text) - 1), cells)
+        if cells(folder_text) <= 1:
+            folder_text = ""
+        left_w = cells(left_plain(name_text, folder_text))
+    while left_w + (1 if tail else 0) + tail_w > avail and name_text:
+        name_text = kittymux_place.mid_ellipsis(name_text, max(1, cells(name_text) - 1), cells)
+        left_w = cells(left_plain(name_text, folder_text))
+    while left_w + (1 if tail else 0) + tail_w > avail and icon_seg:
+        icon_seg = icon_seg[:-1]
+        left_w = cells(left_plain(name_text, folder_text))
+
+    parts = []
+    if icon_seg:
+        parts.append(_styled("icon", icon_seg, style))
+    parts.append(_styled("name", name_text, style, bold_override=active))
+    if folder_text:
+        parts.append(_sgr_fg(style["folder"][0]) + " " + folder_text)
+    left = "".join(parts)
+    left_plain_text = icon_seg + name_text + ((" " + folder_text) if folder_text else "")
+    pad = max(0, avail - cells(left_plain_text) - tail_w)
+    tail_styled = ""
+    if tail:
+        chunks = []
+        if progress:
+            chunks.append(_sgr_fg(style["progress"][0]) + kittymux_progress.label(*progress))
+        if state_mark:
+            chunks.append(_sgr_fg(style["state"][0]) + state_mark)
+        tail_styled = " ".join(chunks) + _RESET
+    return left + (" " * pad) + tail_styled + _RESET
+
+
+def _sgr_strip(text: str) -> str:
+    return re.sub(r"\x1b\[[0-9;:]*m", "", text)
 
 
 def derive_colours(fg: int, bg: int, accent: int, avoid: tuple, project: str, active: bool):
-    """(style, title_rgb, dot_rgb) for a title bar whose real colours are fg on bg: every role stays readable there, the project's tint is the
-    one the tab bar uses (same accent, same state colours kept clear)."""
+    """(style, title_rgb, dot_rgb) — kept for contrast tests; draw uses derive_colours_full."""
     text = kittymux_theme.ensure_contrast(fg, bg, 4.5)
     muted = kittymux_theme.ensure_contrast(kittymux_theme.blend(fg, bg, 0.62), bg, 3.0)
     faint = kittymux_theme.ensure_contrast(kittymux_theme.blend(fg, bg, 0.45), bg, 3.0)
@@ -84,6 +219,26 @@ def derive_colours(fg: int, bg: int, accent: int, avoid: tuple, project: str, ac
     style = kittymux_place.style(types.SimpleNamespace(text=text, muted=muted, faint=faint), active, hue, False)
     dot = kittymux_theme.ensure_contrast(kittymux_theme.blend(fg, bg, 0.3), bg, 1.5)
     return style, muted, dot
+
+
+def derive_colours_full(fg: int, bg: int, pal, brand: int | None, active: bool, state: str):
+    text = kittymux_theme.ensure_contrast(fg, bg, 4.5)
+    muted = kittymux_theme.ensure_contrast(kittymux_theme.blend(fg, bg, 0.62), bg, 3.0)
+    faint = kittymux_theme.ensure_contrast(kittymux_theme.blend(fg, bg, 0.45), bg, 3.0)
+    icon = brand if brand is not None else muted
+    if brand is not None and not active:
+        icon = kittymux_theme.ensure_contrast(kittymux_theme.blend(brand, bg, 0.6), bg, 3.0)
+    name_rgb = text if active else muted
+    if state == "error":
+        name_rgb = kittymux_theme.ensure_contrast(pal.alert, bg, 4.5)
+    state_rgb = _state_rgb(state, pal, bg, text) if state and state != "idle" else text
+    return {
+        "icon": (icon, False),
+        "name": (name_rgb, active),
+        "folder": (faint, False),
+        "progress": (faint, False),
+        "state": (state_rgb, state in ("waiting", "limited", "error")),
+    }
 
 
 # ── the kitty side ───────────────────────────────────────────────────────────
@@ -97,11 +252,10 @@ def _enabled() -> bool:
     try:
         return kittymux_features.enabled("panetitle")
     except Exception:
-        return False                                  # cannot tell: leave kitty's own title alone
+        return False
 
 
 def _bar_colours(opts, active: bool, as_int) -> tuple[int, int]:
-    """The title bar's foreground/background the way kitty resolves them (window_title_bar_* option, else the tab colours)."""
     def pick(name, fallback):
         value = getattr(opts, name, None)
         return fallback if value is None else value
@@ -126,7 +280,6 @@ def _palette(opts, as_int):
 
 
 def _dump(window_id: int, text: str) -> None:
-    """Test hook (tests/smoke_panetitle.sh): the last text drawn per window, escape sequences and all."""
     if os.environ.get("KITTYMUX_PANETITLE_DUMP") != "1":
         return
     try:
@@ -144,10 +297,9 @@ def _dump(window_id: int, text: str) -> None:
 
 
 def draw(data) -> str:
-    """What `{custom}` becomes in the pane title bar of window `data.window_id`; "" leaves kitty's own title."""
     try:
         if not _enabled():
-            _dump(data.window_id, "")                     # (test hook only) so a rig can see the hand-back
+            _dump(data.window_id, "")
             return ""
         get_boss, get_options, as_int, cells = _kitty()
         window = get_boss().window_id_map.get(data.window_id)
@@ -157,21 +309,28 @@ def draw(data) -> str:
         if not cwd:
             return ""
         opts = get_options()
-        fg, bg = _bar_colours(opts, bool(data.is_active), as_int)
+        active = bool(data.is_active)
+        fg, bg = _bar_colours(opts, active, as_int)
         pal = _palette(opts, as_int)
         f = kittymux_place.facts(cwd, kittymux_git.info(cwd))
-        style, title_rgb, dot_rgb = derive_colours(fg, bg, pal.accent, (pal.waiting, pal.alert, pal.working, pal.done),
-                                                   f.project, bool(data.is_active))
         rt = sys.modules.get("_kittymux_scan_rt")
+        hook = (getattr(rt, "panes", (None, {}))[1].get(str(data.window_id)) or {})
         entry = kittymux_agents.merge_scan(
-            {str(data.window_id): (getattr(rt, "panes", (None, {}))[1].get(str(data.window_id)) or {})},
-            {str(data.window_id): (getattr(rt, "verdicts", {}).get(str(data.window_id)) or {})}).get(str(data.window_id))
+            {str(data.window_id): hook},
+            {str(data.window_id): (getattr(rt, "verdicts", {}).get(str(data.window_id)) or {})}).get(str(data.window_id)) or {}
+        agent = entry.get("agent")
         state = kittymux_agents.fresh_verdict(entry, time.monotonic())
-        mark = "◐" if state == "working" else kittymux_agents.state_glyph(state) if state and state != "idle" else ""
-        state_rgb = {"waiting": pal.waiting, "limited": pal.alert, "error": pal.alert, "working": pal.working, "done": pal.done}.get(state, title_rgb)
-        state_rgb = kittymux_theme.ensure_contrast(state_rgb, bg, 4.5)
-        out = render(f, data.title or "", int(window.screen.columns), style, title_rgb, dot_rgb, active=bool(data.is_active),
-                     icon=_ICON_FOLDER, branch_icon=_ICON_BRANCH, cells=cells, state_mark=mark, state_rgb=state_rgb)
+        animate = kittymux_features.enabled("motion")
+        mark = "" if not state or state == "idle" else kittymux_agents.state_glyph(state, animate=animate)
+        titles = kittymux_features.enabled("titles")
+        name = pane_name(data.title or "", agent, hook.get("cmd") or "", f, titles=titles)
+        icon, brand = pane_icon(agent, hook.get("cmd") or "")
+        folder = folder_caption(f)
+        progress = kittymux_progress.of_window(window)
+        style = derive_colours_full(fg, bg, pal, brand, active, state)
+        out = render(f, data.title or "", int(window.screen.columns), style, active=active,
+                     icon=icon, name=name, folder=folder, cells=cells,
+                     state_mark=mark, progress=progress)
         _dump(data.window_id, out)
         return out
     except Exception:

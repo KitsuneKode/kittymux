@@ -11,6 +11,20 @@ percent takes the tab number's place. Pure: the bar hands in the tab and a windo
 TINT = {"set": 0.24, "paused": 0.24, "error": 0.28, "indeterminate": 0.12}
 
 
+def of_window(window) -> tuple[str, int] | None:
+    """(state, percent) for one pane's OSC 9;4 progress, else None."""
+    progress = getattr(window, "progress", None)
+    if progress is None:
+        return None
+    state = getattr(getattr(progress, "state", None), "name", "unset")
+    if state not in TINT:
+        return None
+    if state == "indeterminate":
+        return state, 0
+    pct = int(getattr(progress, "percent", 0) or 0)
+    return state, max(0, min(100, pct))
+
+
 def of_tab(tab, windows) -> tuple[str, int] | None:
     """(state, percent) for a tab with progress, else None. `windows` maps a window id to kitty's Window. With
     several windows reporting, the percent is their mean (kitty's own total) and the state the last focused one's."""

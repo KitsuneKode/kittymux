@@ -74,10 +74,10 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
   with the agent prefix stripped — never the raw window title. `KITTYMUX_BAR_DUMP=1` writes `$KITTYMUX_STATE/bar-dump.json` — per tab: the folder line AND the title row as drawn (a test hook for `tests/smoke_place.sh`, `smoke_titles.sh`).
   Text from a program or a directory name is `kittymux_place.clean`ed everywhere it is drawn (kitty's own title sanitiser lets ESC through). An agent whose window title is only its product name (`kittymux_agents.is_default_title`)
   is shown as its project; `kittymux resume-prompt` titles its window while it asks and clears the title before the exec.
-- `python/kittymux_panetitle.py` + `python/window_title_bar.py` — the folder line in kitty's per-pane title bars (kitty ≥ 0.49.2). kitty loads `window_title_bar.py` ONCE per process, so it is a trampoline into
+- `python/kittymux_panetitle.py` + `python/window_title_bar.py` — the pane header row in kitty's per-pane title bars (kitty ≥ 0.49.2). kitty loads `window_title_bar.py` ONCE per process, so it is a trampoline into
   `kittymux_panetitle.draw` (reloaded by tab_bar.py like the other helpers). `kittymux_layout.gated_conf` emits `window_title_template` with `{custom or title}`: an empty hook result (switch off, failure, no directory)
-  falls back to kitty's own title, never a blank bar. Colours derive from the bar's REAL fg/bg (`window_title_bar_*` else the tab colours) and `kittymux_theme.ensure_contrast` turns the other way on mid-tone
-  backgrounds. `KITTYMUX_PANETITLE_DUMP=1` records what each pane drew (`tests/smoke_panetitle.sh`).
+  falls back to kitty's own title, never a blank bar. Colours derive from the bar's REAL fg/bg (`window_title_bar_*` else the tab colours) and the same state colours as the tab bar.
+  `KITTYMUX_PANETITLE_DUMP=1` records what each pane drew (`tests/smoke_panetitle.sh`).
 - `tests/shot_panes.sh` — the pane-guide screenshots (`assets/panes-*.png`: layout, `ctrl+alt+e` digits, six `alt+shift+l`, `alt+shift+=`), taken with REAL key events in a private kitty; asserts the widths it claims (50 → 70 → 50/50 columns). Re-run after changing a pane key or the look of kitty borders.
 - `tests/shot_bar.sh` — a screenshot of the bar (dark|light, any width, rail) with synthetic repos; `tests/profile_bar.sh` — draw cost with N tabs (compare two trees; the folder line costs ~0.02 ms/draw at 23 tabs).
 - `assets/notify/` (built by `tools/build-notify-icons.py`) — one PNG per agent for notifications; `docs/brand/` — the mascot
