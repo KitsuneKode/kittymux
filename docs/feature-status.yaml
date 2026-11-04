@@ -36,7 +36,7 @@ features:
   - id: pane-title-bars
     label: Pane title bars
     status: shipped
-    description: The folder line in kitty's per-pane title bars, doubling as drag handles (kitty 0.49.2 and later).
+    description: Each pane's title bar shows an icon, a bold name and the tab's folder line (project colour and branch), plus state and progress. They are also drag handles (kitty 0.49.2 and later).
   - id: peek-card
     label: Peek card
     status: shipped

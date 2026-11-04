@@ -283,6 +283,12 @@ def is_default_title(title: str, agent: str | None) -> bool:
     return False
 
 
+def product_label(agent: str) -> str:
+    """The words drawn for an agent that has not named this conversation ("Claude Code", "Codex"). The same names `is_default_title` knows."""
+    raw = _NAMES.get(agent, (str(agent).replace("-", " "),))[0]
+    return " ".join(part[:1].upper() + part[1:] for part in raw.split())
+
+
 STATE_GLYPH = {"working": SPINNER[0], "waiting": "!", "limited": "⊘", "error": "✕", "done": "✓", "unread": "•"}
 SPINNER_FPS = 10.0
 

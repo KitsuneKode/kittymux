@@ -234,9 +234,7 @@ never the only cue.
   instead of repeating the name.
 - Narrow bar? The branch goes first, then the path; a long name is cut in the middle (`kit…ux:hue`), never dropped.
 - The slim rail has no room for a line, so it tints the tab number with the project's colour.
-- **Pane title bars** (`ctrl+alt+shift+c` shows them on every pane of a split tab) carry the same line — `alpha/src/ui  ⑂ main  ·  nvim README.md` — in colours
-  derived from the bar's own, so they read on any theme: the focused pane's name is bold, the folder is faint, and
-  `kittymux features off panetitle` hands the bars back to kitty's own title. Renaming a tab never changes them (a tab name and a pane title are different things).
+- **Pane title bars** (`ctrl+alt+shift+c` shows them on every pane) lead with the program and then the same place as the tab: `nvim src/main.rs  alpha/src/ui  ⑂ main`, the project in its own colour. A plain shell is named by the project, so the name is not repeated (`alpha  ⑂ main`, and `src/ui` rather than a leading slash). The state mark and any progress percent sit on the right. A focused pane is bright; the others recede. `kittymux features off panetitle` hands the bars back to kitty's own title. Renaming a tab never changes them (a tab name and a pane title are different things).
 
 ### Pick what you want
 
@@ -249,7 +247,7 @@ Every optional piece is its own switch — use all of it, some of it, or none (t
 | `collide` | emphasise the project of tabs that show the same title | on |
 | `sheet` | the side sheet — **planned, no effect yet** | planned |
 | `hover` | open the sheet on hover — **planned, no effect yet**; kitty sends the bar no idle mouse motion, so it can only live inside the sheet | planned |
-| `panetitle` | icon, bold name, faint folder, state and progress in each pane's title bar (`ctrl+alt+shift+c` shows the bars; kitty ≥ 0.49.2) | on |
+| `panetitle` | icon, bold name, the folder line (project colour and branch), state and progress in each pane's title bar (`ctrl+alt+shift+c` shows the bars; kitty ≥ 0.49.2) | on |
 | `titles` | a tab is called by its task, or by its project when the title is only a product name or an agent's reply; titles are cut at a word | on |
 | `motion` | the working spinner turns (off: one still frame in the bar and the panel, and no timer redraws a bar just to animate it) | on |
 | `sudo` | a notification when `sudo`/`doas`/`su`/`pkexec` waits for your password in a pane you are not looking at (fixed text; the line on screen is never stored) | on |
