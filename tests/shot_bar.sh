@@ -116,6 +116,14 @@ cd $T/plain/notes
 launch sh
 focus_tab 1
 S
+# KMX_SHOT_SCENE=home: two plain shells in a (synthetic) home folder, the bar most people see first
+if [ "${KMX_SHOT_SCENE:-}" = home ]; then
+  mkdir -p "$T/home"
+  # the shells title themselves `~`, the way zsh/fish prompts do
+  L="launch sh -c 'printf \"\\\\033]2;~\\\\007\"; exec sh'"
+  printf 'new_tab\ncd %s\n%s\nnew_tab\ncd %s\n%s\nfocus_tab 1\n' "$T/home" "$L" "$T/home" "$L" > "$T/session"
+  export HOME="$T/home"
+fi
 env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_DATA_HOME=$T/data \
   KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
   kitty -o linux_display_server=x11 --class kmx-shot --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
