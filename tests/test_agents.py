@@ -52,6 +52,10 @@ class ResolveStatusTests(unittest.TestCase):
         self.assertEqual(A.resolve_status({"status": "done"}, True, self.NOW), "done")
         self.assertEqual(A.resolve_status({"status": "idle"}, True, self.NOW), "idle")
 
+    def test_a_fresh_error_verdict_is_error(self):
+        self.assertEqual(A.resolve_status({"state": "error", "ts_scan": self.NOW}, True, self.NOW), "error")
+        self.assertEqual(A.fresh_verdict({"state": "error", "ts_scan": self.NOW}, self.NOW), "error")
+
     def test_unknown_explicit_falls_back(self):
         self.assertEqual(A.resolve_status({"status": "bogus", "ts_title": self.NOW - 1}, True, self.NOW), "working")
 
@@ -133,6 +137,8 @@ class MsgTests(unittest.TestCase):
         self.assertEqual(A.resolve_msg(e, "waiting"), "needs approval")
         self.assertEqual(A.resolve_msg(e, "done"), "needs approval")
         self.assertEqual(A.resolve_msg(e, "limited"), "needs approval")
+        self.assertEqual(A.resolve_msg({"reason": "build failed"}, "error"), "build failed")
+        self.assertEqual(A.resolve_msg({"msg": "hook says", "reason": "screen says"}, "error"), "hook says")
         self.assertEqual(A.resolve_msg(e, "working"), "")
         self.assertEqual(A.resolve_msg(e, ""), "")
 
@@ -161,6 +167,7 @@ class SpinnerTests(unittest.TestCase):
         self.assertEqual({A.state_glyph("working", t / A.SPINNER_FPS, animate=False) for t in range(40)}, {A.SPINNER[0]})   # motion off: one still frame
         self.assertEqual(A.state_glyph("waiting"), "!")
         self.assertEqual(A.state_glyph("done"), "✓")
+        self.assertEqual(A.state_glyph("error"), "✕")
         self.assertEqual(A.state_glyph("unread"), "•")
         self.assertEqual(A.state_glyph(""), "")
         self.assertEqual(A.state_glyph("idle"), "")

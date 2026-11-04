@@ -321,6 +321,9 @@ class RollupTests(unittest.TestCase):
         self.assertEqual(S.rollup(["working", "waiting"]), "waiting")
         self.assertEqual(S.rollup(["waiting", "limited"]), "limited")
         self.assertEqual(S.rollup(["done", "idle"]), "done")
+        self.assertEqual(S.rollup(["working", "error", "done"]), "error")
+        self.assertEqual(S.rollup(["error", "waiting"]), "waiting")
+        self.assertEqual(S.rollup(["limited", "error"]), "limited")
         self.assertEqual(S.rollup([]), "")
 
 
@@ -335,6 +338,12 @@ class WhyTests(unittest.TestCase):
         self.assertIn("usage-limit", self.run_({}, "limited")[1])
         self.assertIn("prompt", self.run_({}, "waiting")[1])
         self.assertIn("busy marker", self.run_({}, "working")[1])
+
+    def test_a_reported_error_is_not_a_completion(self):
+        state, why = self.run_({}, "error")
+        self.assertEqual(state, "error")
+        self.assertIn("OSC 7501", why)
+        self.assertEqual(self.run_({"status": "error", "ts_status": 100.0}, agent="aider")[0], "error")
 
     def test_a_stop_hook_completion_names_the_hook(self):
         e = {"status": "working", "ts_status": 90.0}

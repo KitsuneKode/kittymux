@@ -33,9 +33,11 @@ for _d in (_CONFIG_DIR, _source_dir()):
         sys.path.insert(0, _d)
 import kittymux_agents  # noqa: E402
 import kittymux_deck as deck  # noqa: E402
+import kittymux_features  # noqa: E402
 import kittymux_place
 import kittymux_git  # noqa: E402
 import kittymux_theme  # noqa: E402
+import kittymux_titles  # noqa: E402
 
 _STATE_DIR = Path(os.environ["KITTYMUX_STATE"]) if os.environ.get("KITTYMUX_STATE") else \
     Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))) / "kittymux"
@@ -65,6 +67,23 @@ def _rc(*args: str) -> str:
     return p.stdout if p.returncode == 0 else ""
 
 
+def _project(cwd: str) -> str:
+    if not cwd:
+        return ""
+    try:
+        return kittymux_place.facts(cwd, kittymux_git.info(cwd)).project
+    except Exception:
+        return ""
+
+
+def _title(raw: str, agent: str | None, cwd: str, tidy_on: bool) -> str:
+    """The same name the bar and the panel show (`kittymux_titles.tidy`), or the raw title when that switch is off."""
+    text = raw or ""
+    if tidy_on:
+        text = kittymux_titles.tidy(text, agent, _project(cwd)).text or text
+    return kittymux_agents.strip_title_prefix(text)
+
+
 def collect(tab_id: int, selected_id: int = 0) -> dict | None:
     """Everything the card shows, or None when the tab no longer exists."""
     try:
@@ -90,8 +109,13 @@ def collect(tab_id: int, selected_id: int = 0) -> dict | None:
     gi = kittymux_git.info(shown.get("cwd", "")) if shown.get("cwd") else None
     text = _rc("get-text", "--extent", "screen", "--match", f"id:{shown['id']}")
     tail = [ln.rstrip() for ln in text.rstrip().splitlines() if ln.strip()][-_PREVIEW_LINES:]
+    try:
+        tidy_on = kittymux_features.enabled("titles", str(_STATE_DIR))
+    except Exception:
+        tidy_on = True
+    shown_agent = kittymux_agents.identify(shown)[0]
     return {
-        "title": kittymux_agents.strip_title_prefix(tab.get("title") or aw.get("title") or ""),
+        "title": _title(tab.get("title") or aw.get("title") or "", name, aw.get("cwd", ""), tidy_on),
         "agent": name or "", "tool": tool or "", "state": state,
         "reason": kittymux_agents.resolve_msg(panes.get(str(deciding or aw["id"])), state) if state else "",
         "cwd": shown.get("cwd", ""), "branch": "" if gi is None or gi.branch == "detached" else gi.branch,
@@ -100,9 +124,9 @@ def collect(tab_id: int, selected_id: int = 0) -> dict | None:
         "panes": [{"id": w["id"], "agent": n or "", "glyph": (kittymux_agents.AGENTS[n].glyph if n else kittymux_agents.TOOLS.get(t or "", "")),
                    "state": kittymux_agents.fresh_verdict(panes.get(str(w["id"])), now) if w["id"] != aw["id"]
                    else kittymux_agents.resolve_status(panes.get(str(w["id"])), n is not None, now, _STALE_AFTER),
-                   "title": kittymux_agents.strip_title_prefix(w.get("title") or ""), "active": w["id"] == aw["id"]}
+                   "title": _title(w.get("title") or "", n, w.get("cwd", ""), tidy_on), "active": w["id"] == aw["id"]}
                   for w in wins for n, t in [kittymux_agents.identify(w)]] if len(wins) > 1 else [],
-        "tail": tail, "shown_title": kittymux_agents.strip_title_prefix(shown.get("title") or ""),
+        "tail": tail, "shown_title": _title(shown.get("title") or "", shown_agent, shown.get("cwd", ""), tidy_on),
     }
 
 
@@ -184,7 +208,7 @@ class Peek(Handler):
             lines.append(self._line([(" " + ("this tab is gone" if self.gone else "loading…"), p.faint, False)], width, bg))
         else:
             st = card["state"]
-            state_fg = {"waiting": p.waiting, "working": p.working, "limited": p.alert,
+            state_fg = {"waiting": p.waiting, "working": p.working, "limited": p.alert, "error": p.alert,
                         "done": kittymux_theme.blend(p.done, p.bg, 0.65)}.get(st)
             agent = kittymux_agents.AGENTS.get(card["agent"])
             glyph = agent.glyph if agent else kittymux_agents.TOOLS.get(card["tool"], "")
@@ -193,8 +217,6 @@ class Peek(Handler):
             right = f"{kittymux_agents.state_glyph(st)} {st} " if state_fg is not None else ""
             header_room = max(0, width - _cells(right))
             lines.append(self._line(head, header_room, bg) + self._seg(right, fg=state_fg, bg=bg, bold=True))
-            for text in deck.wrap_detail(card["title"], width - 2, _cells):
-                lines.append(self._line([(" " + text, p.text, True)], width, bg))
             lines.append(self._line([("─" * width, p.line, False)], width, bg))
             if card["reason"]:
                 lines.append(self._line([(" " + card["reason"], state_fg or p.text, True)], width, bg))
@@ -211,7 +233,7 @@ class Peek(Handler):
                     lines.append(self._line([(" " + text, p.muted, False)], width, bg))
             for i, pane in enumerate(card["panes"]):
                 brand = kittymux_agents.AGENTS[pane["agent"]].brand if pane["agent"] in kittymux_agents.AGENTS else p.muted
-                pfg = {"waiting": p.waiting, "working": p.working, "limited": p.alert,
+                pfg = {"waiting": p.waiting, "working": p.working, "limited": p.alert, "error": p.alert,
                        "done": kittymux_theme.blend(p.done, p.bg, 0.65)}.get(pane["state"])
                 mark = kittymux_agents.state_glyph(pane["state"]) if pfg is not None else " "
                 label = f" {i + 1} " + (pane["glyph"] or "·") + " "

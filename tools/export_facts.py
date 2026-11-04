@@ -20,6 +20,7 @@ AGENT_NAMES = {"claude": "Claude Code", "codex": "Codex", "cursor-agent": "Curso
 STATE_TEXT = {
     "limited": ("⊘", "A usage limit or quota is exhausted. Nothing happens until it resets, and the tab says when."),
     "waiting": ("!", "It is asking you something: a permission prompt or a question."),
+    "error": ("✕", "The agent reported an error. The message stays, and the run is not finished."),
     "working": ("⠋", "It is busy. The spinner turns."),
     "done": ("✓", "It finished while you were elsewhere. It clears when you look."),
     "idle": ("", "An agent is running and not doing anything."),

@@ -22,7 +22,7 @@ completion. Claude's "waiting for your input" is its idle notice (it finished a 
 | `question` | needs-you | the agent asks you something | yes |
 | `limit` | warn | usage/rate limit reached; `reset_at` is parsed from "resets in 2h 30m" / "resets at 5pm" when present | yes, once per agent per reset |
 | `done` | info | a run finished | **only if the agent said so itself** (hook / its own notification) after ≥ 15 s of work, or if inferred from the screen alone after ≥ 60 s; shorter screen-only finishes are inbox + bar only |
-| `error` | warn | the agent reported a failure | inbox only |
+| `error` | warn | the agent reported a failure | yes when it is an OSC 7501 status report (the message is the body); a failure only mentioned in other text stays inbox only |
 | `info` | info | anything else the agent said | inbox only |
 
 The same occurrence reported by several sources inside 45 s is **one** event (`sources: ["agent","screen"]`, `count` > 1) and **one** popup. Focusing a window

@@ -13,6 +13,8 @@ Terms are listed alphabetically.
 
 **Done.** An agent state: it finished while you were looking elsewhere. It clears when you focus it.
 
+**Error.** An agent state: it reported a failure. The message stays, and the tab is not marked finished.
+
 **Folder line.** The line under a tab's title that says where the tab is: `project[:worktree]/inner  branch`.
 
 **Hook.** A command an agent runs at a lifecycle event, such as when it stops. kittymux's hooks call `mux-status`.
@@ -51,7 +53,7 @@ Terms are listed alphabetically.
 
 **Spawn.** To start an agent in a new tab or split.
 
-**State.** What an agent is doing: limited, waiting, working, done or idle.
+**State.** What an agent is doing: limited, waiting, error, working, done or idle.
 
 **Tab.** A kitty tab: a group of panes.
 

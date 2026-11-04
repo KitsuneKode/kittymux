@@ -20,7 +20,7 @@ class PaneData:
     glyph: str = ""
     agent: str = ""
     tool: bool = False
-    state: str = ""         # working | waiting | limited | done | idle | "" (not an agent)
+    state: str = ""         # working | waiting | limited | error | done | idle | "" (not an agent)
     title: str = ""
     active: bool = False    # the tab's focused pane
     cwd: str = ""

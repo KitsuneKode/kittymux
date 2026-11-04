@@ -168,7 +168,7 @@ def draw(data) -> str:
             {str(data.window_id): (getattr(rt, "verdicts", {}).get(str(data.window_id)) or {})}).get(str(data.window_id))
         state = kittymux_agents.fresh_verdict(entry, time.monotonic())
         mark = "◐" if state == "working" else kittymux_agents.state_glyph(state) if state and state != "idle" else ""
-        state_rgb = {"waiting": pal.waiting, "limited": pal.alert, "working": pal.working, "done": pal.done}.get(state, title_rgb)
+        state_rgb = {"waiting": pal.waiting, "limited": pal.alert, "error": pal.alert, "working": pal.working, "done": pal.done}.get(state, title_rgb)
         state_rgb = kittymux_theme.ensure_contrast(state_rgb, bg, 4.5)
         out = render(f, data.title or "", int(window.screen.columns), style, title_rgb, dot_rgb, active=bool(data.is_active),
                      icon=_ICON_FOLDER, branch_icon=_ICON_BRANCH, cells=cells, state_mark=mark, state_rgb=state_rgb)

@@ -12,12 +12,12 @@
 #   * exhaustion (usage limit / quota) is its own state, not a flavour of "waiting".
 #
 # Order of importance (also used to roll several panes up into one tab/session):
-#   limited > waiting > working > done > idle
+#   limited > waiting > error > working > done > idle
 
 import re
 
-STATES = ("limited", "waiting", "working", "done", "idle")
-PRIORITY = {"limited": 5, "waiting": 4, "working": 3, "done": 2, "idle": 1, "": 0}
+STATES = ("limited", "waiting", "error", "working", "done", "idle")
+PRIORITY = {"limited": 6, "waiting": 5, "error": 4, "working": 3, "done": 2, "idle": 1, "": 0}
 
 # Agents whose TUIs draw "esc to interrupt"-style hints and permission prompts — for these
 # the visible screen is the primary source of truth. Others (aider, crush, grok, unknown)
@@ -163,7 +163,7 @@ def _why(entry: dict, state: str, text: str) -> str:
 
 
 def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bool) -> str:
-    """The pane's state: limited | waiting | working | done | idle | "" (no agent).
+    """The pane's state: limited | waiting | error | working | done | idle | "" (no agent).
 
     `entry` is the watcher's bookkeeping dict for the window. This function keeps a few private
     keys in it (`marker`, `marker_ts`, `seen_working`, `unseen`, `ack_ts`, `why`, …) — its only mutation —
@@ -175,6 +175,8 @@ def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bo
 
     if agent not in SCREEN_AGENTS:
         # an agent whose TUI we cannot read: hooks if it has them, else recent title activity
+        if explicit == "error":
+            return _why(entry, "error", "it reports an error (OSC 7501)")
         if explicit == "done":
             if focused:
                 entry["ack_ts"] = ts_status
@@ -197,6 +199,9 @@ def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bo
         entry["seen_working"], entry["unseen"] = False, False
         return _why(entry, marker, "the screen shows a usage-limit message" if marker == "limited"
                     else "the screen shows a permission/question prompt")
+    if marker == "error":
+        entry["seen_working"], entry["unseen"] = False, False
+        return _why(entry, "error", "it reports an error (OSC 7501)")
     if explicit == "working" and ts_status > float(entry.get("hook_turn_ts") or 0):
         entry["hook_turn"], entry["hook_turn_ts"] = True, ts_status    # a hook announced this turn: its Stop hook ends it
     if marker == "working":

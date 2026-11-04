@@ -55,8 +55,8 @@ def from_tabs(tabs) -> list:
     for t in tabs if isinstance(tabs, list) else []:
         if not isinstance(t, dict) or not isinstance(t.get("id"), int) or isinstance(t.get("id"), bool):
             continue
-        state = t.get("state") if t.get("state") in ("waiting", "limited", "working", "done") else ""
-        tone = {"waiting": "warm", "limited": "hot", "working": "calm", "done": "calm"}.get(state, "muted")
+        state = t.get("state") if t.get("state") in ("waiting", "limited", "error", "working", "done") else ""
+        tone = {"waiting": "warm", "limited": "hot", "error": "hot", "working": "calm", "done": "calm"}.get(state, "muted")
         glyph = kittymux_agents.state_glyph(state) if state else "▸"
         n = t.get("panes") if isinstance(t.get("panes"), int) and not isinstance(t.get("panes"), bool) else 1
         cwd = _text(t.get("cwd"), 80)

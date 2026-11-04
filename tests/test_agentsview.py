@@ -169,6 +169,16 @@ class QuietByDefaultTests(unittest.TestCase):
             self.assertEqual(V.row_bg(p, row(status=""), False, False), p.bar)
             self.assertEqual(V.row_bg(p, row(status="waiting"), True, False), p.surface_hi)     # picked wins: the tint never hides the pick
 
+    def test_an_error_is_painted_with_the_alert_token(self):
+        k = next(kits())
+        line = V.title_row(k, row(status="error"), False, False, 48)
+        fg = next(s.fg for s in line if s.text == "✕")
+        self.assertEqual(fg, k.ink(k.p.alert, k.p.bar, 3.0))
+        with open(os.path.join(os.path.dirname(__file__), "..", "python", "tab_bar.py"), encoding="utf-8") as f:
+            bar = f.read()
+        body = bar.split("def _state_color", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn('"error": pal.alert', body)
+
     def test_the_mark_is_the_state_glyph_and_a_still_frame_when_motion_is_off(self):
         k = next(kits())
         still = {text(V.title_row(k, row(status="working"), False, False, 30, animate=False))[-3:] for _ in range(5)}

@@ -24,7 +24,7 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
 - `python/kittymux_state.py` (pure) + `kittymux_scan.py` (in kitty) — THE status resolver: twice a second reads
   the bottom of each agent pane's screen, combines it with hook state, publishes `scan-<kittypid>.json`.
   Every consumer reads that merged view via `kittymux_agents.load_panes/merge_scan` → `resolve_status`.
-  Order: limited > waiting > working > done > idle; a state needs positive evidence (silence ≠ waiting).
+  Order: limited > waiting > error > working > done > idle; a state needs positive evidence (silence ≠ waiting). An OSC 7501 `error` is its own state (alert colour, message kept), not a completion.
 - `python/kittymux_theme.py` / `kittymux_agents.py` / `kittymux_deck.py` — pure helper modules
   (no kitty imports; unit-tested in `tests/`). Theme tokens derive from live kitty colours; symlinked
   into the config dir by `install.sh`. Never hardcode a palette in `tab_bar.py`/`sidebar-kit.py`.

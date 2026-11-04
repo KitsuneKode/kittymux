@@ -555,7 +555,7 @@ class _MiniMap(tuple):
     """Cells (char, fg_rgb, bg_rgb) of a tab's layout picture — a subtitle piece drawn as it is, colours and all."""
 
 
-_STATE_TINT = {"working": "working", "waiting": "waiting", "limited": "alert"}
+_STATE_TINT = {"working": "working", "waiting": "waiting", "limited": "alert", "error": "alert"}
 
 
 @_per_pass
@@ -1043,6 +1043,7 @@ def _state_color(state: str, pal) -> int | None:
         "working": pal.working,
         "waiting": pal.waiting,
         "limited": pal.alert,
+        "error": pal.alert,
         "done": kittymux_theme.blend(pal.done, pal.bg, 0.65),
         "unread": pal.faint,
     }.get(state)
@@ -1062,7 +1063,7 @@ def _session_stats(tab: TabBarData) -> tuple[int, dict[str, int]]:
         counts: dict[str, int] = {}
         for t in tm.tabs:
             st = _agent_status(t.id)
-            if st in ("waiting", "limited", "done"):
+            if st in ("waiting", "limited", "error", "done"):
                 counts[st] = counts.get(st, 0) + 1
         return total, counts
     except Exception:
@@ -1071,9 +1072,9 @@ def _session_stats(tab: TabBarData) -> tuple[int, dict[str, int]]:
 
 def _attention_parts(counts: dict[str, int], pal) -> list[tuple[str, int, bool]]:
     """Right-aligned header badges, each with the SAME glyph and colour its tabs carry:
-    `! 2` waiting, `⊘ 1` limited, `✓ 3` finished unseen — (text, rgb, bold)."""
+    `! 2` waiting, `⊘ 1` limited, `✕ 1` error, `✓ 3` finished unseen — (text, rgb, bold)."""
     parts = []
-    for state in ("waiting", "limited", "done"):
+    for state in ("waiting", "limited", "error", "done"):
         if counts.get(state):
             parts.append((f"{_glyph(state)} {counts[state]}  ", _state_color(state, pal),
                           state in kittymux_agents.NEEDS_YOU))
@@ -1122,7 +1123,7 @@ def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: in
     if compact:
         # `»` on top, the attention badges underneath (the whole two-row header is the button)
         _button(screen, y, 1, 1, cols - 4, _EXPAND, pal)
-        badge = " ".join(f"{_glyph(st)}{counts[st]}" for st in ("waiting", "limited", "done") if counts.get(st))
+        badge = " ".join(f"{_glyph(st)}{counts[st]}" for st in ("waiting", "limited", "error", "done") if counts.get(st))
         if badge and rows > 1:
             screen.cursor.y = y + 1
             screen.cursor.bg = bar

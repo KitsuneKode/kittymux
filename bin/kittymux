@@ -2102,11 +2102,13 @@ def fanout(argv: list[str]) -> int:
         print(f"{BAD} kittymux fanout: {err}", file=sys.stderr)
         return 1
     kittymux_fanout.save(sdir, name, repo, base, prompt, items)
+    relay = os.path.join(HOME_DIR, "bin", "mux-pty") if kittymux_switches.enabled("relay", kittymux_layout.state_dir()) else None
     failed = 0
     for it_ in items:
         exe = shutil.which(it_["agent"])
         extra = kittymux_launcher.prompt_args(forms, it_["agent"], prompt)
-        make = lambda scratch, it_=it_, exe=exe, extra=extra: kittymux_launcher.launch_args(it_["agent"], exe, "tab", it_["path"], None, scratch, extra, f"{it_['agent']} · {name}")      # noqa: E731
+        make = lambda scratch, it_=it_, exe=exe, extra=extra, relay=relay: kittymux_launcher.launch_args(      # noqa: E731
+            it_["agent"], exe, "tab", it_["path"], None, scratch, extra, f"{it_['agent']} · {name}", relay=relay)
         if _launch_tab_before_scratch(sock, make):
             print(f"{OK} {it_['agent']:<14} {c('2', it_['branch'])}")
         else:

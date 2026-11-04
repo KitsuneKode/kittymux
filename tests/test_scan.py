@@ -1109,6 +1109,91 @@ class AgeRefreshTests(ScanBase):
         self.assertEqual(len(self.redraws), n)
 
 
+class PspErrorTests(ScanBase):
+    """OSC 7501 `error` is its own state: the message stays, a quiet screen is not "done", a busy screen is not left "working"."""
+
+    def report(self, msg="build failed"):
+        return {"kittymux_psp": json.dumps({"state": "error", "msg": msg, "t": time.time()})}
+
+    def test_a_quiet_screen_shows_the_error_and_keeps_the_message(self):
+        w = FakeWindow(1, "claude", WORKING, title="claude: build")
+        w.user_vars = {}
+        self.add(w)
+        KS.scan_window(w, 100.0)
+        self.assertEqual(KS._RT.verdicts["1"]["state"], "working")
+        w.user_vars = self.report()
+        w.screen = IDLE
+        KS.scan_window(w, 101.0)
+        v = KS._RT.verdicts["1"]
+        self.assertEqual(v["state"], "error")
+        self.assertIn("build failed", v["reason"])
+        self.assertIn("OSC 7501", v["why"])
+        KS.scan_window(w, 120.0)                                         # past the completion settle: still not "done"
+        self.assertEqual(KS._RT.verdicts["1"]["state"], "error")
+        events = KS._inbox().load(self.state)
+        self.assertIn("error", [e["kind"] for e in events])
+        self.assertNotIn("done", [e["kind"] for e in events])
+        self.assertIn("build failed", next(e["body"] for e in events if e["kind"] == "error"))
+
+    def test_a_busy_screen_shows_the_error(self):
+        w = FakeWindow(1, "claude", WORKING)
+        w.user_vars = {}
+        self.add(w)
+        KS.scan_window(w, 100.0)
+        w.user_vars = self.report("still broken")
+        KS.scan_window(w, 101.0)                                         # the spinner is still on screen
+        self.assertEqual(KS._RT.verdicts["1"]["state"], "error")
+        self.assertIn("still broken", KS._RT.verdicts["1"]["reason"])
+
+    def test_it_notifies_as_an_error_not_a_completion(self):
+        w = FakeWindow(1, "claude", WORKING, title="build the thing")
+        w.user_vars = {}
+        self.add(w)
+        KS.scan_window(w, 100.0)
+        w.user_vars = self.report("build failed")
+        w.screen = IDLE
+        with mock.patch.dict(os.environ, {"KITTYMUX_NOTIFY": "1"}), \
+             mock.patch("kittymux_scan.shutil.which", return_value="notify-send"), \
+             mock.patch("kittymux_scan.subprocess.Popen") as popen:
+            KS.scan_window(w, 101.0)
+        self.assertEqual(popen.call_count, 1)
+        argv = popen.call_args[0][0]
+        joined = " ".join(argv)
+        self.assertIn("reported an error", joined)
+        self.assertIn("build failed", joined)
+        self.assertNotIn("finished", joined)
+
+    def test_first_sight_of_an_error_is_not_replayed(self):
+        w = FakeWindow(1, "claude", IDLE)
+        w.user_vars = self.report()
+        self.add(w)
+        with mock.patch.dict(os.environ, {"KITTYMUX_NOTIFY": "1"}), \
+             mock.patch("kittymux_scan.shutil.which", return_value="notify-send"), \
+             mock.patch("kittymux_scan.subprocess.Popen") as popen:
+            KS.scan_window(w, 100.0)
+        popen.assert_not_called()
+        self.assertEqual(KS._RT.verdicts["1"]["state"], "error")
+        self.assertEqual(KS._inbox().load(self.state), [])
+
+    def test_a_mute_holds_the_popup_and_the_error_still_reaches_the_inbox(self):
+        w = FakeWindow(1, "claude", WORKING, title="build")
+        w.user_vars = {}
+        self.add(w)
+        KS.scan_window(w, 100.0)
+        with open(os.path.join(self.state, "notify-mute-until"), "w") as f:
+            f.write(str(time.time() + 600))
+        w.user_vars = self.report("build failed")
+        w.screen = IDLE
+        with mock.patch.dict(os.environ, {"KITTYMUX_NOTIFY": "1"}), \
+             mock.patch("kittymux_scan.shutil.which", return_value="notify-send"), \
+             mock.patch("kittymux_scan.subprocess.Popen") as popen:
+            KS.scan_window(w, 101.0)
+        popen.assert_not_called()
+        events = [e for e in KS._inbox().load(self.state) if e["kind"] == "error"]
+        self.assertEqual(len(events), 1)
+        self.assertIn("build failed", events[0]["body"])
+
+
 class QuietTests(ScanBase):
     """`kittymux notify mute` and `kittymux snooze`: quiet the interruption, never lose the news."""
 
