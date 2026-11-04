@@ -26,6 +26,14 @@ class ProgressTests(unittest.TestCase):
     def test_several_windows_average(self):
         self.assertEqual(P.of_tab(_tab(n=2, total=130), {7: _win("paused", 90)}), ("paused", 65))
 
+    def test_error_and_indeterminate_show_although_kitty_does_not_count_them(self):
+        # kitty 0.49.2 Tab.update_progress counts only set/paused in num_of_windows_with_progress, but still makes an
+        # error or indeterminate window the last focused one with progress (kitty/tabs.py update_progress)
+        self.assertEqual(P.of_tab(_tab(n=0, wid=7), {7: _win("error", 0)}), ("error", 0))
+        self.assertEqual(P.of_tab(_tab(n=0, wid=7), {7: _win("indeterminate", 0)}), ("indeterminate", 0))
+        # one error window beside one counted window: the state is the focused one's, the amount the counted mean
+        self.assertEqual(P.of_tab(_tab(n=1, total=40, wid=7), {7: _win("error", 0)}), ("error", 40))
+
     def test_cleared_or_gone_window_is_none(self):
         self.assertIsNone(P.of_tab(_tab(), {7: _win("unset")}))
         self.assertIsNone(P.of_tab(_tab(), {}))

@@ -16,13 +16,15 @@ def of_tab(tab, windows) -> tuple[str, int] | None:
     several windows reporting, the percent is their mean (kitty's own total) and the state the last focused one's."""
     n = getattr(tab, "num_of_windows_with_progress", 0) or 0
     wid = getattr(tab, "last_focused_window_with_progress_id", 0) or 0
-    if n <= 0 or not wid:
+    # kitty counts only set/paused windows in `n` (Tab.update_progress), yet makes an error or indeterminate window the
+    # last focused one with progress: decide by that window, and use `n` only to average the amount
+    if not wid:
         return None
     progress = getattr(windows.get(wid), "progress", None)
     state = getattr(getattr(progress, "state", None), "name", "unset")
     if state not in TINT:
         return None
-    if n > 1:
+    if n > 1 or (n == 1 and state not in ("set", "paused")):
         pct = int((getattr(tab, "total_progress", 0) or 0) / n)
     else:
         pct = int(getattr(progress, "percent", 0) or 0)
