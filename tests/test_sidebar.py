@@ -178,6 +178,18 @@ class SidebarTests(unittest.TestCase):
             self.assertEqual(s._open, {1})
         s.finalize()
 
+    def test_a_click_on_an_agents_row_jumps_without_a_prior_hover(self):
+        s = self.applied()
+        y_of = {}
+        for off, it in self.m.deck.visible(s.snap.items, s.scroll, s._avail()):
+            if it.kind == "row":
+                y_of[it.row] = off + 2
+        with patch.object(s, "_jump") as jump, patch.object(s, "_request_preview"):
+            s.sel = 2
+            s.on_click(self.click(8, y_of[0]))
+            jump.assert_called_once()
+        s.finalize()
+
     def test_a_click_on_the_marker_toggles_and_does_not_jump_but_a_click_elsewhere_does(self):
         s = self.applied()
         y_of = {}
@@ -714,23 +726,25 @@ class SidebarTests(unittest.TestCase):
     def test_clicking_a_provider_tile_picks_it(self):
         s = self.sidebar()
         s._view, s._usage_data = "usage", self.providers()
-        s._usage_regions = [(1, 9, 3, 7, 0), (10, 18, 3, 7, 1)]
+        s._usage_scroll = 0
+        s._usage_regions = [(1, 9, 1, 4, 0), (10, 18, 1, 4, 1)]
         s.on_click(self.click(12, 5))
         self.assertEqual(s._usage_sel, 1)
-        s.on_click(self.click(12, 9))                                    # below the tiles: nothing
+        s.on_click(self.click(12, 9))
         self.assertEqual(s._usage_sel, 1)
         s.finalize()
 
     def test_clicking_inbox_buttons_chips_and_cards(self):
         s = self.sidebar()
         s._view, s._inbox = "inbox", self.inbox_events()
-        s._inbox_regions = ([(1, 8, 2, "all"), (9, 20, 2, "needs")], [(4, 9, 0), (10, 15, 1)], [(2, 8, 7, 1, "jump"), (9, 18, 7, 1, "dismiss")])
+        s._inbox_scroll = 0
+        s._inbox_regions = ([(1, 8, "all"), (9, 20, "needs")], [(4, 10, 0), (10, 16, 1)], [(2, 8, 7, 1, "jump"), (9, 18, 7, 1, "dismiss")])
         s.on_click(self.click(10, 2))
         self.assertEqual(s._inbox_filter, "needs")
         s.on_click(self.click(3, 12))
         self.assertEqual(s._inbox_sel, 1)
         with patch.object(s, "_inbox_act") as act:
-            s.on_click(self.click(3, 7))
+            s.on_click(self.click(3, 9))
             act.assert_called_once_with("jump", 1)
         s.finalize()
 
@@ -766,8 +780,13 @@ class SidebarTests(unittest.TestCase):
         self.assertIn("4 providers", out)
         self.assertIn("P0", out.upper())
         self.assertEqual(len(s._usage_regions), 4)
+        import kittymux_panelhit as panelhit
         for x0, x1, y0, y1, _ in s._usage_regions:
-            self.assertTrue(0 <= x0 < x1 <= s.screen_size.cols and 2 <= y0 < y1 <= s.screen_size.rows)
+            self.assertTrue(0 <= x0 < x1 <= s.screen_size.cols)
+            span = panelhit.screen_span_for_lines(y0, y1, s._usage_scroll)
+            self.assertIsNotNone(span)
+            sy0, sy1 = span
+            self.assertTrue(panelhit.BODY_TOP <= sy0 < sy1 <= s.screen_size.rows)
         self.assertTrue(s._tab_regions and s._tab_regions[1][2] == "usage")
         s.finalize()
 
