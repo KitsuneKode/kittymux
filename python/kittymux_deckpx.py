@@ -1,6 +1,6 @@
-# kittymux deckpx — SPIKE: the sidebar drawn in pixels (cairo + pango + rsvg) for kitty's graphics protocol.
+# kittymux deckpx — the sidebar drawn in pixels (cairo + pango + rsvg) for kitty's graphics protocol.
 # Pure: no kitty imports. Colours come from a kittymux_theme.Palette (kitty's live colours), never a fixed palette.
-# Status: spike (docs/superpowers/specs/2026-11-04-deck-pixels-spike.md). Not wired into kitty yet.
+# The panel's Agents view uses it when the `deckpx` switch is on (kittymux_deckadapt maps the snapshot). The demo kitten still runs alone.
 
 import math
 import os
@@ -27,8 +27,9 @@ ROUNDED_FONT = "SF Pro Rounded"
 class Space:
     name: str
     branch: str = ""
-    state: str = ""          # "waiting" | "working" | "done" | ""
-    active: bool = False
+    state: str = ""          # waiting | working | done | idle | limited | error | ""
+    active: bool = False     # the session that holds the keyboard selection (raised card)
+    current: bool = False    # the session you are in
 
 
 @dataclass
@@ -38,9 +39,17 @@ class Agent:
     brand: int
     space: str
     age: str = ""
-    state: str = "idle"      # working | waiting | done | idle
-    progress: float | None = None   # OSC 9;4, 0..1
-    active: bool = False
+    state: str = "idle"      # working | waiting | done | idle | limited | error
+    progress: float | None = None   # OSC 9;4 hairline, 0..1 (0 and None draw nothing)
+    active: bool = False     # raised card (the demo's selection, and the panel's keyboard row)
+    current: bool = False    # the tab you are looking at: an accent bar, distinct from the selection
+    selected: bool = False   # keyboard selection ring, distinct from hover
+    progress_state: str = "" # set | paused | error | indeterminate (the hairline's colour)
+    can_open: bool = False   # a split tab: a chevron, never opened by hover
+    opened: bool = False
+    row: int = -1            # flat snapshot row, for hit testing
+    pane: int = -1           # child pane index, or -1 for the tab row
+    children: list = field(default_factory=list)
 
 
 @dataclass
@@ -49,13 +58,21 @@ class Model:
     host: str
     spaces: list[Space] = field(default_factory=list)
     agents: list[Agent] = field(default_factory=list)
+    empty: str = ""
+    empty_hint: str = ""
 
 
 @dataclass
 class Frame:
-    hover: int | None = None      # index of the hovered agent row (hover comes from the deck window's own mouse tracking)
+    hover: int | None = None      # index of the hovered agent row
     phase: float = 0.0            # 0..1 animation clock (spinner); a frame is drawn only while something moves
     reveal: float = 1.0           # 0..1 spring value for the active card (slides/settles on focus change)
+    scroll: float = 0.0           # logical px into the body under the header
+    hover_pane: int | None = None # flat index of the hovered child pane
+
+
+# The header occupies this many logical px. Everything under it scrolls.
+HEADER_END = 56.0
 
 
 ICON_FILE = {"claude": "claude", "codex": "openai", "gemini": "googlegemini", "opencode": "opencode", "cursor": "cursor",
@@ -97,6 +114,7 @@ class Painter:
         self.dark = th.luminance(pal.bg) < 0.4
         self.resources = resources or Resources()
         self.spinners = spinners
+        self.spin_clip = (None, None)
 
     # text ------------------------------------------------------------------------------------------------------------
     def layout(self, text, size, weight=Pango.Weight.NORMAL, family=UI_FONT, width=None, tnum=False, track=0.0):
@@ -209,6 +227,9 @@ class Painter:
             cr.fill()
 
     def spinner(self, cx, cy, r, color, phase):
+        lo, hi = self.spin_clip
+        if lo is not None and not (lo <= cy <= hi):
+            return
         if self.spinners is not None:
             self.spinners.append((cx, cy, r, color))
             return
@@ -234,12 +255,21 @@ class Painter:
                   weight=Pango.Weight.SEMIBOLD)
         return w
 
+    def stroke_rrect(self, x, y, w, h, r, color, alpha=1.0, width=1.5):
+        s = self.s
+        rrect(self.cr, x * s, y * s, w * s, h * s, r * s)
+        self.cr.set_source_rgba(*rgb(color, alpha))
+        self.cr.set_line_width(width * s)
+        self.cr.stroke()
+
 
 def status_mark(pt: Painter, right, cy, state, phase, bar):
     """Draw the right-hand state mark ending at `right`; returns the width it took."""
     p = pt.p
     if state == "waiting":
         return pt.pill(right, cy, "Needs you", p.waiting, bar)
+    if state == "error":
+        return pt.pill(right, cy, "Error", p.alert, bar)
     if state == "limited":
         return pt.pill(right, cy, "Limited", p.alert, bar)
     if state == "working":
@@ -252,12 +282,96 @@ def status_mark(pt: Painter, right, cy, state, phase, bar):
     return 8
 
 
+def body_items(model: Model) -> list:
+    """Rows under the header, in content px: (kind, index, y, h, payload). The renderer draws these and nothing else moves them."""
+    y = 0.0
+    out = []
+    if model.spaces:
+        out.append(("label", 0, y, 20, ("section", "Spaces", True)))
+        y += 20
+        for i, sp in enumerate(model.spaces):
+            out.append(("space", i, y, 32, sp))
+            y += 34
+        y += 8
+        out.append(("rule", 0, y, 1, None))
+        y += 10
+    out.append(("label", 0, y, 20, ("section", "Agents", False)))
+    y += 20
+    if not model.agents:
+        out.append(("empty", 0, y, 48, None))
+        return out
+    last = None
+    flat = 0
+    for i, ag in enumerate(model.agents):
+        if ag.space != last:
+            if last is not None:
+                y += 4
+            if ag.space:
+                out.append(("label", 0, y, 18, ("group", ag.space, False)))
+                y += 18
+            last = ag.space
+        out.append(("agent", i, y, 30, ag))
+        y += 31
+        for ch in ag.children:
+            out.append(("pane", flat, y, 26, ch))
+            flat += 1
+            y += 27
+    return out
+
+
+def content_height(model: Model) -> float:
+    items = body_items(model)
+    if not items:
+        return 0.0
+    last = items[-1]
+    return last[2] + last[3] + 8
+
+
+def clamp_scroll(scroll, content: float, view_h: float) -> float:
+    try:
+        scroll = float(scroll)
+    except (TypeError, ValueError):
+        scroll = 0.0
+    if not math.isfinite(scroll):
+        scroll = 0.0
+    room = max(0.0, float(content) - max(0.0, float(view_h)))
+    return min(room, max(0.0, scroll))
+
+
+def scroll_to_item(items, scroll: float, view_h: float, kind: str, index) -> float:
+    """Smallest change that puts (kind, index) fully inside the body viewport."""
+    for k, i, y, h, _payload in items:
+        if k == kind and i == index:
+            if y < scroll:
+                return float(y)
+            if y + h > scroll + view_h:
+                return float(y + h - view_h)
+            return float(scroll)
+    return float(scroll)
+
+
+def hit_at(hits, x: float, y: float):
+    """The topmost (kind, index) whose rect contains (x, y), else None. Later rects win, so a chevron beats its row."""
+    if not hits:
+        return None
+    for item in reversed(hits):
+        kind, idx, hx, hy, hw, hh = item[:6]
+        if hw > 0 and hh > 0 and hx <= x < hx + hw and hy <= y < hy + hh:
+            return kind, idx
+    return None
+
+
+def _progress_color(p, state: str) -> int:
+    return {"paused": p.waiting, "error": p.alert, "indeterminate": p.faint}.get(state, p.working)
+
+
 def render(model: Model, pal: th.Palette, width: float, height: float, scale: float = 1.0, frame: Frame | None = None,
            glass: float = 0.84, hits: list | None = None, resources: Resources | None = None,
-           spinners: list | None = None) -> cairo.ImageSurface:
+           spinners: list | None = None, metrics: dict | None = None) -> cairo.ImageSurface:
     """Draw the deck. width/height are logical px; the surface is width*scale × height*scale device px.
     `glass` < 1 leaves the bar translucent so the compositor's blur shows through (kitty background_opacity).
-    `hits`, when given, collects (kind, index, x, y, w, h) in logical px for the window's own mouse hit-testing."""
+    `hits`, when given, collects (kind, index, x, y, w, h) in logical px for the window's own mouse hit-testing.
+    The header stays put; spaces and agents scroll by `frame.scroll`."""
     frame = frame or Frame()
     if not all(math.isfinite(v) and v > 0 for v in (width, height, scale)):
         raise ValueError("deck dimensions and scale must be finite and positive")
@@ -272,6 +386,7 @@ def render(model: Model, pal: th.Palette, width: float, height: float, scale: fl
     fo.set_hint_metrics(cairo.HINT_METRICS_OFF)
     cr.set_font_options(fo)
     pt = Painter(cr, scale, pal, resources, spinners)
+    pt.spin_clip = (HEADER_END, height)
     p = pal
     bar = p.bar
 
@@ -306,78 +421,115 @@ def render(model: Model, pal: th.Palette, width: float, height: float, scale: fl
     cr.move_to((sx + 1.6) * scale, (sy + 1.6) * scale)
     cr.line_to((sx + 4.6) * scale, (sy + 4.6) * scale)
     cr.stroke()
+    if hits is not None:
+        hits.append(("search", 0, width - pad - 22, 12, 22, 30))
     y += 44
 
-    def section(label, y, plus=True):
-        pt.text(pad + 4, y + 8, label, 11, p.muted, weight=Pango.Weight.SEMIBOLD, track=0.2)
-        if plus:
-            pt.text(width - pad - 12, y + 8, "+", 14, p.faint)
-        return y + 20
+    items = body_items(model)
+    content = content_height(model)
+    view_h = max(0.0, height - HEADER_END)
+    scroll = clamp_scroll(frame.scroll, content, view_h)
+    if metrics is not None:
+        metrics["content"] = content
+        metrics["scroll"] = scroll
+        metrics["view_h"] = view_h
 
-    # spaces ------------------------------------------------------------------------------------------------------------
-    y = section("Spaces", y)
-    for si, sp in enumerate(model.spaces):
-        h = 32
-        if hits is not None:
-            hits.append(("space", si, pad, y, inner, h))
-        if sp.active:
-            pt.card(pad, y, inner, h, 9, p.card_hi, lift=frame.reveal)
-        hue = th.project_hue(sp.name, p.accent, bar, 3.0, avoid=(p.waiting, p.alert, p.done))
-        pt.card(pad + 7, y + 7, 18, 18, 5.5, hue, lift=0.6)
-        ink = max((0x111111, 0xFFFFFF), key=lambda c: th.contrast(c, hue))
-        lw = pt.text_w(sp.name[:1].upper(), 10.5, weight=Pango.Weight.BOLD, family=ROUNDED_FONT)
-        pt.text(pad + 16 - lw / 2, y + 16, sp.name[:1].upper(), 10.5, ink, weight=Pango.Weight.BOLD, family=ROUNDED_FONT)
-        right = pad + inner - 8
-        right -= status_mark(pt, right, y + 16, sp.state, frame.phase, p.card_hi if sp.active else bar) + 6
-        bw = 0
-        if sp.branch and inner > 200:
-            bw = min(pt.text_w(sp.branch, 11, family=UI_FONT), 70)
-            pt.text(right - bw, y + 16, sp.branch, 11, p.faint, width=70)
-            bw += 8
-        pt.text(pad + 34, y + 16, sp.name, 13, p.text,
-                weight=Pango.Weight.MEDIUM if sp.active else Pango.Weight.NORMAL, width=right - bw - pad - 34)
-        y += h + 2
-    y += 8
-    cr.rectangle((pad + 4) * scale, y * scale, (inner - 8) * scale, max(1, scale * 0.75))
-    cr.set_source_rgba(*rgb(p.line, 0.5))
-    cr.fill()
-    y += 10
+    def hit(kind, index, hx, hy, hw, hh):
+        if hits is None or hw <= 0 or hh <= 0:
+            return
+        y0, y1 = max(hy, HEADER_END), min(hy + hh, height)
+        if y1 - y0 >= 1:
+            hits.append((kind, index, hx, y0, hw, y1 - y0))
 
-    # agents, grouped by space -----------------------------------------------------------------------------------------
-    y = section("Agents", y, plus=False)
-    last = None
-    for i, ag in enumerate(model.agents):
-        if ag.space != last:
-            if last is not None:
-                y += 4
-            pt.text(pad + 4, y + 8, ag.space, 10.5, p.faint, weight=Pango.Weight.MEDIUM)
-            y += 18
-            last = ag.space
-        h = 30
-        if hits is not None:
-            hits.append(("agent", i, pad, y, inner, h))
-        if ag.active:
-            pt.card(pad, y, inner, h, 8, p.card_hi, lift=frame.reveal)
-        elif frame.hover == i:
-            pt.fill_rrect(pad, y, inner, h, 8, p.card if pt.dark else th.blend(p.fg, bar, 0.05))
-        icon = ICON_FILE.get(ag.agent, ag.agent)
-        if not (icon and pt.icon(icon, pad + 8, y + 8, 14, th.ensure_contrast(ag.brand, bar, 3.0))):
-            pt.fill_rrect(pad + 8, y + 8, 14, 14, 4, p.track)
-            pt.text(pad + 10.5, y + 15, ">_", 8, p.muted, family="SF Mono", weight=Pango.Weight.BOLD)
-        right = pad + inner - 8
-        right -= status_mark(pt, right, y + 15, ag.state, frame.phase, p.card_hi if ag.active else bar) + 6
-        aw = 0
-        if ag.age and not (ag.state == "waiting" and inner < 200):
-            aw = pt.text_w(ag.age, 11, tnum=True)
-            pt.text(right - aw, y + 15, ag.age, 11, p.faint, tnum=True)
-            aw += 8
-        col = p.text if ag.state != "idle" or ag.active else p.muted
-        pt.text(pad + 30, y + 15, ag.title, 12.5, col,
-                weight=Pango.Weight.MEDIUM if ag.active else Pango.Weight.NORMAL, width=right - aw - pad - 30)
-        if ag.progress is not None:          # OSC 9;4: a hairline track under the title
-            tx0, tw = pad + 30, right - aw - pad - 30
-            pt.fill_rrect(tx0, y + h - 5, tw, 2, 1, p.track)
-            pt.fill_rrect(tx0, y + h - 5, max(2, tw * ag.progress), 2, 1, p.working)
-        y += h + 1
+    cr.save()
+    cr.rectangle(0, HEADER_END * scale, W, max(1.0, (height - HEADER_END) * scale))
+    cr.clip()
+    for kind, index, y0, h, payload in items:
+        y = HEADER_END + y0 - scroll
+        if y + h < HEADER_END or y > height:
+            continue
+        if kind == "label":
+            role, text, plus = payload
+            size = 11 if role == "section" else 10.5
+            weight = Pango.Weight.SEMIBOLD if role == "section" else Pango.Weight.MEDIUM
+            pt.text(pad + 4, y + 8, text, size, p.muted if role == "section" else p.faint, weight=weight,
+                    track=0.2 if role == "section" else 0)
+            if plus:
+                pt.text(width - pad - 12, y + 8, "+", 14, p.faint)
+        elif kind == "rule":
+            cr.rectangle((pad + 4) * scale, y * scale, (inner - 8) * scale, max(1, scale * 0.75))
+            cr.set_source_rgba(*rgb(p.line, 0.5))
+            cr.fill()
+        elif kind == "empty":
+            pt.text(pad + 8, y + 16, model.empty or "No tabs yet", 13, p.text, weight=Pango.Weight.SEMIBOLD, width=inner - 16)
+            if model.empty_hint:
+                pt.text(pad + 8, y + 36, model.empty_hint, 11, p.muted, width=inner - 16)
+        elif kind == "space":
+            sp = payload
+            hit("space", index, pad, y, inner, h)
+            if sp.active:
+                pt.card(pad, y, inner, h, 9, p.card_hi, lift=frame.reveal)
+            if sp.current:
+                pt.fill_rrect(pad + 2, y + 8, 3, h - 16, 1.5, p.accent)
+            hue = th.project_hue(sp.name, p.accent, bar, 3.0, avoid=(p.waiting, p.alert, p.done))
+            pt.card(pad + 7, y + 7, 18, 18, 5.5, hue, lift=0.6)
+            ink = max((0x111111, 0xFFFFFF), key=lambda c: th.contrast(c, hue))
+            lw = pt.text_w(sp.name[:1].upper(), 10.5, weight=Pango.Weight.BOLD, family=ROUNDED_FONT)
+            pt.text(pad + 16 - lw / 2, y + 16, sp.name[:1].upper(), 10.5, ink, weight=Pango.Weight.BOLD, family=ROUNDED_FONT)
+            right = pad + inner - 8
+            right -= status_mark(pt, right, y + 16, sp.state, frame.phase, p.card_hi if sp.active else bar) + 6
+            bw = 0
+            if sp.branch and inner > 200:
+                bw = min(pt.text_w(sp.branch, 11, family=UI_FONT), 70)
+                pt.text(right - bw, y + 16, sp.branch, 11, p.faint, width=70)
+                bw += 8
+            pt.text(pad + 34, y + 16, sp.name, 13, p.text,
+                    weight=Pango.Weight.MEDIUM if sp.active else Pango.Weight.NORMAL, width=right - bw - pad - 34)
+        elif kind == "agent":
+            _paint_row(pt, p, bar, frame, pad, inner, y, h, payload, index, False, hit)
+        elif kind == "pane":
+            _paint_row(pt, p, bar, frame, pad, inner, y, h, payload, index, True, hit)
+    cr.restore()
     surf.flush()
     return surf
+
+
+def _paint_row(pt, p, bar, frame, pad, inner, y, h, ag, index, pane, hit):
+    """One agent or child-pane row. `index` is the agent index or the flat pane index."""
+    hovered = (frame.hover_pane == index) if pane else (frame.hover == index)
+    if ag.active:
+        pt.card(pad, y, inner, h, 8, p.card_hi, lift=frame.reveal)
+    elif hovered:
+        pt.fill_rrect(pad, y, inner, h, 8, p.card if pt.dark else th.blend(p.fg, bar, 0.05))
+    if ag.current:
+        pt.fill_rrect(pad + 2, y + 6, 3, h - 12, 1.5, p.accent)
+    inset = 14 if (not pane and ag.can_open) else (12 if pane else 0)
+    # the row rect goes in first; the chevron, appended after, wins the overlap
+    hit("pane" if pane else "agent", index, pad, y, inner, h)
+    if not pane and ag.can_open:
+        pt.text(pad + 5, y + h / 2, "▾" if ag.opened else "▸", 11, p.accent if ag.active else p.muted, weight=Pango.Weight.MEDIUM)
+        hit("toggle", index, pad, y, 16, h)
+    icon_x = pad + 8 + inset
+    icon = ICON_FILE.get(ag.agent, ag.agent)
+    brand = ag.brand or p.muted
+    if not (icon and pt.icon(icon, icon_x, y + (h - 14) / 2, 14, th.ensure_contrast(brand, bar, 3.0))):
+        pt.fill_rrect(icon_x, y + (h - 14) / 2, 14, 14, 4, p.track)
+        pt.text(icon_x + 2.5, y + h / 2, ">_", 8, p.muted, family="SF Mono", weight=Pango.Weight.BOLD)
+    cy = y + h / 2
+    right = pad + inner - 8
+    right -= status_mark(pt, right, cy, ag.state, frame.phase, p.card_hi if ag.active else bar) + 6
+    aw = 0
+    if ag.age and not (ag.state == "waiting" and inner < 200):
+        aw = pt.text_w(ag.age, 11, tnum=True)
+        pt.text(right - aw, cy, ag.age, 11, p.faint, tnum=True)
+        aw += 8
+    col = p.text if ag.state != "idle" or ag.active or ag.selected else p.muted
+    title_x = pad + 30 + inset
+    pt.text(title_x, cy, ag.title, 12.5 if not pane else 12, col,
+            weight=Pango.Weight.MEDIUM if ag.active or ag.selected else Pango.Weight.NORMAL, width=max(1, right - aw - title_x))
+    if ag.progress:
+        tx0, tw = title_x, max(2, right - aw - title_x)
+        pt.fill_rrect(tx0, y + h - 4, tw, 2, 1, p.track)
+        pt.fill_rrect(tx0, y + h - 4, max(2, tw * ag.progress), 2, 1, _progress_color(p, ag.progress_state))
+    if ag.selected:
+        pt.stroke_rrect(pad + 0.5, y + 0.5, inner - 1, h - 1, 8, p.accent, width=1.4)

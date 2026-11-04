@@ -38,6 +38,41 @@ class RendererTests(unittest.TestCase):
             pt.layout(str(n), 12)
         self.assertLessEqual(len(cache.layouts), 4)
 
+    def test_states_selection_and_scroll_leave_the_visible_hits(self):
+        pal = th.from_colors({})
+        plain = dp.Agent("Review", "codex", pal.accent, "core")
+        marked = dp.Agent("Review", "codex", pal.accent, "core", selected=True, current=True)
+        a = dp.render(dp.Model("calm-otter", "demo", agents=[plain]), pal, 320, 400)
+        b = dp.render(dp.Model("calm-otter", "demo", agents=[marked]), pal, 320, 400)
+        self.assertNotEqual(bytes(a.get_data()), bytes(b.get_data()))
+        for state in ("error", "limited", "waiting", "done", "idle"):
+            dp.render(dp.Model("calm-otter", "demo", agents=[dp.Agent("Review", "codex", pal.accent, "core", state=state)]), pal, 320, 400)
+        agents = [dp.Agent(f"task {i}", "shell", 0, "core", row=i) for i in range(24)]
+        model = dp.Model("calm-otter", "demo", agents=agents)
+        hits = []
+        dp.render(model, pal, 280, 180, frame=dp.Frame(scroll=0), hits=hits)
+        shown = {h[1] for h in hits if h[0] == "agent"}
+        self.assertIn(0, shown)
+        self.assertNotIn(23, shown)
+        items = dp.body_items(model)
+        scroll = dp.scroll_to_item(items, 0, 180 - dp.HEADER_END, "agent", 23)
+        hits = []
+        dp.render(model, pal, 280, 180, frame=dp.Frame(scroll=scroll), hits=hits)
+        self.assertIn(23, {h[1] for h in hits if h[0] == "agent"})
+        opened = dp.Agent("web", "shell", 0, "core", can_open=True, opened=False)
+        hits = []
+        dp.render(dp.Model("calm-otter", "demo", agents=[opened]), pal, 320, 400, hits=hits)
+        agent = next(h for h in hits if h[0] == "agent")
+        self.assertEqual(dp.hit_at(hits, agent[2] + 2, agent[3] + 4), ("toggle", 0))
+        self.assertEqual(dp.hit_at(hits, agent[2] + 40, agent[3] + 4), ("agent", 0))
+
+    def test_the_first_space_stays_where_the_spike_drew_it(self):
+        pal = th.from_colors({})
+        hits = []
+        dp.render(dp.Model("calm-otter", "demo", spaces=[dp.Space("core", "main")],
+                           agents=[dp.Agent("Review", "codex", pal.accent, "core")]), pal, 400, 700, hits=hits)
+        self.assertEqual(next(h[3] for h in hits if h[0] == "space"), 76)
+
 
 if __name__ == "__main__":
     unittest.main()

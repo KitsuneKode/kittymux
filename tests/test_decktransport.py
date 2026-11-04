@@ -61,6 +61,14 @@ class ProtocolTests(unittest.TestCase):
         self.assertIn("a=p", data)
         self.assertIn("z=-1", data)
 
+    def test_a_placed_frame_names_its_cell_and_its_z(self):
+        out = io.StringIO()
+        dt.Graphics(out, transport="direct").show(bytes(16), 2, 2, col=1, row=2, z=1)
+        text = out.getvalue()
+        self.assertIn("\x1b[2;1H", text)
+        self.assertIn("z=1", text)
+        self.assertIn("a=T", text)
+
 
 class InputTests(unittest.TestCase):
     def test_every_mouse_split_and_coalesced_key(self):

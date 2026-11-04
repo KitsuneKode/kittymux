@@ -44,6 +44,84 @@ def fill_cells(width: int, state: str, pct: int) -> int:
     return max(1, min(width, round(width * pct / 100)))
 
 
+def from_ls(tab: dict, windows: list) -> tuple[str, int] | None:
+    """The same answer as `of_tab`, from a `kitty @ ls` tab and its windows.
+
+    A window may carry `progress: {state, percent}`. When the tab omits the counters, they are derived the way kitty
+    does: only `set` and `paused` windows count toward the average. No last-focused window means no progress."""
+    from types import SimpleNamespace
+    by_id = {}
+    derived_n, derived_total = 0, 0
+    for w in windows or []:
+        if not isinstance(w, dict):
+            continue
+        prog = w.get("progress") if isinstance(w.get("progress"), dict) else None
+        if prog and prog.get("state"):
+            state, pct = str(prog.get("state")), int(prog.get("percent") or 0)
+            by_id[w.get("id")] = SimpleNamespace(progress=SimpleNamespace(state=SimpleNamespace(name=state), percent=pct))
+            if state in ("set", "paused"):
+                derived_n += 1
+                derived_total += pct
+        else:
+            by_id[w.get("id")] = SimpleNamespace(progress=None)
+    wid = int(tab.get("last_focused_window_with_progress_id") or 0)
+    if not wid:
+        return None
+    n = tab.get("num_of_windows_with_progress")
+    total = tab.get("total_progress")
+    if n is None:
+        n, total = derived_n, derived_total
+    stub = SimpleNamespace(num_of_windows_with_progress=n or 0, total_progress=total or 0,
+                           last_focused_window_with_progress_id=wid)
+    return of_tab(stub, by_id)
+
+
+def save_reports(path, reports) -> None:
+    """Write `{tab id: [state, percent]}` for states the bar draws. Atomic replace, mode 0600, directory 0700."""
+    import json
+    import os
+    from pathlib import Path
+    clean = {}
+    for key, value in (reports or {}).items():
+        try:
+            tid = int(key)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(value, (tuple, list)) and len(value) == 2 and value[0] in TINT:
+            clean[str(tid)] = [value[0], int(value[1])]
+    dest = Path(path)
+    dest.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    tmp = dest.with_name(dest.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, json.dumps(clean).encode())
+    finally:
+        os.close(fd)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, dest)
+
+
+def load_reports(path) -> dict:
+    """`{tab id: (state, percent)}`. A missing or unreadable file is no progress, not an error."""
+    import json
+    from pathlib import Path
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+    for key, value in raw.items():
+        try:
+            tid = int(key)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(value, (list, tuple)) and len(value) == 2 and value[0] in TINT:
+            out[tid] = (value[0], int(value[1]))
+    return out
+
+
 def label(state: str, pct: int) -> str:
     """The short text in the tab number's place."""
     if state == "error":

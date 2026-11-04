@@ -53,6 +53,7 @@ class Graphics:
         self.serial = 0
         self.pending = set()
         self.size = None
+        self.place = None          # (col, row, z) of the root image; a size-stable update keeps it
         self.upload_bytes = 0
         self.spinner_ready = False
 
@@ -95,19 +96,24 @@ class Graphics:
                 more = int(offset + 4096 < len(encoded))
                 self.command(f"{header},t=d,m={more}" if offset == 0 else f"m={more}", chunk)
 
-    def show(self, data, w, h):
+    def show(self, data, w, h, col=1, row=1, z=-2):
         self.validate(data, w, h)
-        if self.size == (w, h):
+        place = (int(col), int(row), int(z))
+        if self.size == (w, h) and self.place == place:
             # Updating root frame data preserves placements. Reusing a=T deletes
             # them first (kitty graphics.c handle_add_command).
             self.upload("a=f,i=1,r=1,X=1", data, w, h)
         else:
-            self.out.write("\x1b[H")
-            self.upload("a=T,i=1,p=1,C=1,z=-2", data, w, h)
+            if place == (1, 1, -2):
+                self.out.write("\x1b[H")
+            else:
+                self.out.write(f"\x1b[{place[1]};{place[0]}H")
+            self.upload(f"a=T,i=1,p=1,C=1,z={place[2]}", data, w, h)
             self.size = w, h
+            self.place = place
         self.out.flush()
 
-    def spinner(self, frames, size, positions, cell, gap):
+    def spinner(self, frames, size, positions, cell, gap, z=-1):
         if not frames or not positions:
             return
         if not self.spinner_ready:
@@ -122,7 +128,14 @@ class Graphics:
         for placement, (x, y) in enumerate(positions, 1):
             col, row = int(x // cw), int(y // ch)
             self.out.write(f"\x1b[{row + 1};{col + 1}H")
-            self.command(f"a=p,i=10,p={placement},C=1,z=-1,X={round(x - col * cw)},Y={round(y - row * ch)},q=1")
+            self.command(f"a=p,i=10,p={placement},C=1,z={int(z)},X={round(x - col * cw)},Y={round(y - row * ch)},q=1")
+        self.out.flush()
+
+    def clear_spinner(self):
+        """Drop spinner placements. The frame data stays, so the next `spinner` call does not upload it again."""
+        if not self.spinner_ready:
+            return
+        self.command("a=d,d=i,i=10")
         self.out.flush()
 
     def close(self):
@@ -135,3 +148,16 @@ class Graphics:
             except FileNotFoundError:
                 pass
         self.pending.clear()
+        self.spinner_ready = False
+        self.size = None
+        self.place = None
+
+
+def rgba_of(surf) -> bytes:
+    """Native premultiplied cairo ARGB32 to the protocol's straight RGBA (f=32)."""
+    import sys
+    from PIL import Image
+    surf.flush()
+    return Image.frombuffer("RGBA", (surf.get_width(), surf.get_height()), bytes(surf.get_data()),
+                            "raw", "BGRa" if sys.byteorder == "little" else "aRGB",
+                            surf.get_stride(), 1).tobytes()

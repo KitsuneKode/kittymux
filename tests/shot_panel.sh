@@ -66,11 +66,26 @@ CONF
 printf 'new_tab shell\nlaunch sh\nnew_tab web\nlaunch sh\nlaunch sh\nnew_tab api\nlaunch sh\nfocus_tab 0\n' > "$T/session"       # web has TWO panes: a split to open and close
 
 env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_DATA_HOME=$T/data \
-  KITTYMUX_USAGE_HOME=$T/world/home KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
+  KITTYMUX_USAGE_HOME=$T/world/home KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 ${KMX_DECKPX:+KITTYMUX_DECKPX=1} \
   kitty -o linux_display_server=x11 --class kmx-panel --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
 for _ in $(seq 240); do [ -S "$T/sock" ] && break; sleep 0.25; done
 [ -S "$T/sock" ] || fail "kitty never opened its control socket"
 sleep 3
+if [ "${KMX_DECKPX:-}" = 1 ]; then
+  # the rig hides the tab bar, so the bar never writes this file; the panel reads the same one
+  kitty @ --to "$SOCK" ls | STATE="$STATE" KPID="$KPID" HOME_DIR="$HOME_DIR" python3 -c '
+import json, os, sys
+sys.path.insert(0, os.environ["HOME_DIR"] + "/python")
+import kittymux_progress as P
+tabs = [t["id"] for o in json.load(sys.stdin) for t in o.get("tabs", [])]
+reports = {}
+if tabs:
+    reports[tabs[0]] = ("set", 42)
+if len(tabs) > 1:
+    reports[tabs[1]] = ("error", 0)
+P.save_reports(os.path.join(os.environ["STATE"], "progress-%s.json" % os.environ["KPID"]), reports)
+'
+fi
 
 # the panel is a kitten in an overlay over the first window, started the way the ctrl+alt+b chord does (an absolute path: a relative one is read from the config dir)
 kitty @ --to "$SOCK" kitten --match id:1 "$HOME_DIR/python/sidebar-kit.py" || fail "could not start the panel kitten"
@@ -94,7 +109,11 @@ wait_text() {                 # wait_text PATTERN  (up to 10 s)
 shot() { redraw; DISPLAY=$DISP import -window root -crop "${GW}x${GH}+${GX}+${GY}" +repage "$OUT/$1.png" 2>/dev/null || fail "could not capture $1"; echo "wrote $OUT/$1.png"; }
 key() { X key --clearmodifiers "$@"; sleep 0.5; }
 
-wait_text "tabs" || fail "the Agents view never drew its header"
+if [ "${KMX_DECKPX:-}" = 1 ]; then
+  wait_text "Agents" || fail "the Agents view never drew its header"
+else
+  wait_text "tabs" || fail "the Agents view never drew its header"
+fi
 screen | grep -q "▦\|Agents" || fail "the Agents view has no tab strip"
 shot agents
 
@@ -130,6 +149,17 @@ screen | grep -q "▏" && fail "Agents: Esc did not close the search"
 X mousemove $((GX + GW - 4)) $((GY + 4)); sleep 0.4        # pointer away: nothing stays lit
 
 # a split's panes are listed only when you open it: ▸ closed, ▾ open; keys and a click on the marker both toggle; hovering and refreshes never do
+# the pixel list draws those marks in the image, so get-text cannot see them; the shot still records the list
+if [ "${KMX_DECKPX:-}" = 1 ]; then
+  # the marks live in the image, so open with the same keys the cell view uses, then record it
+  key j; key o; sleep 0.6
+  shot agents-open
+  key h; sleep 0.4
+  key slash; X type --delay 60 zzzz; sleep 0.6
+  shot agents-empty-search
+  key Escape; key Escape; sleep 0.4
+  screen | grep -q "zzzz" && fail "Agents: Esc did not clear the search"
+else
 panes_shown() { screen | grep -c '[├└]'; }
 screen | grep -q "▸" || fail "Agents: the split tab (web) has no closed marker ▸"
 [ "$(panes_shown)" = 0 ] || fail "Agents: a closed split still lists its panes"
@@ -155,6 +185,7 @@ screen | grep -q "esc clears" || fail "Agents: the empty search does not say how
 shot agents-empty-search
 key Escape; key Escape; sleep 0.4
 screen | grep -q "No tab matches" && fail "Agents: Esc did not clear the search"
+fi
 
 # ? shows this view's keys inside the panel; any key closes it; the footer's ? keycap does the same by click
 key question
@@ -240,5 +271,9 @@ ev = [e for e in I.load('$STATE') if e['status'] == 'dismissed']
 I.restore('$STATE', time.time(), [e['id'] for e in ev])" && key r   # put the fixture back as it was found
 
 key a
-wait_text "tabs" || fail "a did not return to the Agents view"
+if [ "${KMX_DECKPX:-}" = 1 ]; then
+  wait_text "Agents" || fail "a did not return to the Agents view"
+else
+  wait_text "tabs" || fail "a did not return to the Agents view"
+fi
 echo "PASS: Agents, Usage (four providers) and Inbox views drew from the synthetic world; PNGs in $OUT"
