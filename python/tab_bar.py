@@ -1128,8 +1128,8 @@ def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: in
             screen.cursor.bg = bar
             _put(screen, 1, _fit(badge, cols - 3), _rgb(pal.waiting), True)
         return
-    # Rex-style: the session's name, in full weight, over this machine and how many tabs (it said `TABS` / `N tabs`).
-    name = _compact_session_name(getattr(tab, "session_name", "") or "")
+    # Rex-style: the focused session's name, in full weight, over this machine and how many tabs (it said `TABS` / `N tabs`).
+    name = _compact_session_name(getattr(tab, "active_session_name", "") or getattr(tab, "session_name", "") or "")
     name = "Tabs" if name == "—" else name
     btn_x = cols - kittymux_layout.TOGGLE_CELLS
     mascot = _mascot_ready()
@@ -1140,12 +1140,14 @@ def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: in
     _put(screen, 3 if mascot else 1, _fit(name, max(4, room)), _rgb(pal.text), True)
     info_y = y + (1 if rows > 1 else 0)
     parts = _attention_parts(counts, pal)
+    badge_cells = sum(_cells(t) for t, _c, _b in parts)
     count_txt = (f"{_host()} · {total} tabs" if rows > 1 else f"{total} tabs") if total else ""
     x = 1
     screen.cursor.y = info_y
     screen.cursor.bg = bar
     if rows > 1 and count_txt:
-        x = _put(screen, 1, count_txt, _rgb(pal.faint)) + 2
+        host_room = max(1, btn_x - 2 - badge_cells)
+        x = _put(screen, 1, _fit(count_txt, host_room), _rgb(pal.faint)) + 2
     elif rows == 1 and count_txt and room - _cells(name) - 2 >= _cells(count_txt):
         x = _put(screen, 1 + _cells(name) + 2, count_txt, _rgb(pal.faint)) + 2
     for text, color, bold in parts:
@@ -1344,6 +1346,10 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         # full bar: state mark at the right edge; rail: tucked right after the number so the row reads as one cluster
         _put(screen, 5 if compact else cols - 1 - sep_cols - ins, _glyph(state), _rgb(state_fg),
              bold=state in kittymux_agents.NEEDS_YOU)
+    if progress and not want_sub and not compact:
+        idx = kittymux_progress.label(*progress)
+        idx_fg = {"error": pal.alert, "paused": pal.waiting}.get(progress[0], pal.text if active else pal.muted)
+        _put(screen, cols - sep_cols - ins - _cells(idx), idx, _rgb(idx_fg))
     title_y = y
 
     if want_sub and n_rows > (2 if header else 1):
