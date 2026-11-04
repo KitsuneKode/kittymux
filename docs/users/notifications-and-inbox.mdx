@@ -97,7 +97,7 @@ Everything that wants your attention is a typed event in one private store, from
 | `question`   | The agent asks you something.                                        | Yes.                                                                                                |
 | `limit`      | A usage or rate limit. The reset time is parsed when it is shown.    | Yes, once per agent per reset.                                                                      |
 | `done`       | A run finished.                                                      | Only if the agent said so itself after 15 seconds of work, or if inferred from a quiet screen after 60 seconds. |
-| `error`      | The agent reported a failure.                                        | Inbox only.                                                                                         |
+| `error`      | The agent reported a failure.                                        | Yes when it is the agent's own status report (OSC 7501). A failure only mentioned in other text stays in the inbox. |
 | `info`       | Anything else the agent said.                                        | Inbox only.                                                                                         |
 
 Text from an agent is classified conservatively. What is not recognised is `info`, never guessed into a completion. "Waiting for your input" is an idle notice, not a new completion.

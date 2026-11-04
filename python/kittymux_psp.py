@@ -198,11 +198,21 @@ def apply_to_view(rec: dict | None, view: dict, marker: str, line: str) -> tuple
     if state == "working":
         view["status"], view["ts_status"] = "working", t
         return ("" if marker == "waiting" else marker), line
-    if state in ("done", "error"):
+    if state == "done":
         if t > float(view.get("agent_done_ts") or 0):
             view["agent_done_ts"] = t
         view["done_source"] = "agent"
         return ("" if marker == "waiting" else marker), line
+    if state == "error":
+        # Not a completion: a quiet screen must not grow a checkmark, and a busy one must not hide the failure.
+        view.pop("agent_done_ts", None)
+        view.pop("done_source", None)
+        view["status"], view["ts_status"] = "error", t
+        if text:
+            view["msg"] = text
+        if marker in ("limited", "waiting"):          # a prompt or a limit still outranks a reported failure
+            return marker, line
+        return "error", text
     if state == "idle":
         view["status"], view["ts_status"] = "idle", t
     return marker, line

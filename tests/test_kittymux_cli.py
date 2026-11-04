@@ -600,6 +600,19 @@ class FanoutCliTests(unittest.TestCase):
             self.assertTrue(os.path.isdir(path) and path.endswith(f".worktrees/fix-{title.split(' ')[0]}"), path)
         self.assertEqual(sorted(self.m.kittymux_fanout.load(self.state)["fix"]["agents"][i]["agent"] for i in range(3)), ["claude", "devin", "opencode"])
         self.assertIn("fanout compare fix", out)
+        for a in self.launched:
+            self.assertNotIn("mux-pty", " ".join(a))                       # the relay stays off until its switch is on
+
+    def test_fanout_starts_the_status_relay_when_the_switch_is_on(self):
+        os.environ.pop("KITTYMUX_RELAY", None)
+        open(os.path.join(self.state, "relay-on"), "a").close()
+        rc, _out, err = self.run_cli("fix it", "claude", "--name", "rel", "--cwd", self.repo)
+        self.assertEqual(rc, 0, err)
+        a = self.launched[0]
+        i = a.index("--")
+        relay = os.path.join(self.m.HOME_DIR, "bin", "mux-pty")
+        self.assertEqual(a[i + 1:i + 3], [relay, "--"])
+        self.assertTrue(a[i + 3].endswith("/claude"), a)
 
     def test_a_hostile_prompt_reaches_the_agent_as_one_argument(self):
         evil = 'x"; touch /tmp/pwned; `id` $(id)'

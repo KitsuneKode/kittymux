@@ -10,6 +10,7 @@ States, most important first — a state needs positive evidence, and silence is
 |---|---|---|
 | `limited` | "usage limit reached" / quota text on screen | `⊘`, alert colour |
 | `waiting` | a permission/question prompt on screen, or a hook message that is a real request | `!`, bold, rail stripe |
+| `error` | the agent reported `error` over OSC 7501; the message is kept. A quiet screen is not a completion, and a screen that still looks busy does not hide it. A prompt or a usage limit on screen still outranks it | `✕`, alert colour |
 | `working` | an activity marker on screen (`esc to interrupt`, Claude's `Verb… (6m 52s · ↓ tokens)`), or a hook inside its grace | animated spinner |
 | `done` | it was busy and is not, or a Stop hook — *unseen*; focusing the pane clears it | dim `✓` |
 | `idle` | an agent runs and nothing above applies | nothing |
@@ -21,6 +22,7 @@ States, most important first — a state needs positive evidence, and silence is
   if no completion was reported yet this turn (`completed`).
 - Question/limit text on screen only counts when no activity hint is drawn BELOW it (stale prose above a live spinner), unless dialog chrome (`esc to cancel`, `(esc)`) is present.
 - A completion notifies only with a KNOWN duration ≥ 15 s (`worked is not None`) and after the 5 s settle.
+- An OSC 7501 `error` is never a completion and never a "done" notification. It is an inbox event of kind `error` and, when you are not looking and not muted, a notification that keeps the message. A mute or `notify-off` holds the popup; the event still reaches the inbox. A failure only mentioned in other text stays inbox-only.
 - Claude hooks installed by `kittymux hooks --install`: `UserPromptSubmit`/`PostToolUse` → working, `Notification` → waiting, `Stop` → done, `SessionEnd` → idle.
   `kittymux doctor` reports missing events. Change `HOOK_EVENTS`, README's snippet and the tests together.
 

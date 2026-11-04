@@ -199,6 +199,7 @@ panel and the `ctrl+alt+y` jump queue all show the *same* one:
 | ⠋⠙⠹… (animated) | **working** | the agent is busy — the spinner runs at 10 fps, on any window |
 | **!** | **waiting** | it is asking you something (a permission prompt, a question) — the question is shown as the reason |
 | **⊘** | **limited** | usage limit / quota exhausted — nothing will happen until you act |
+| **✕** | **error** | the agent reported an error; the message stays, and it is not a finished run |
 | ✓ | **done** | it finished while you were looking elsewhere; clears the moment you focus it |
 | *(nothing)* | idle | an agent is running but not doing anything |
 | • | unread | output arrived in a tab that has no agent |
@@ -212,7 +213,7 @@ Works for Claude, Codex, Devin, Gemini, Cursor, OpenCode, Amp, Antigravity (`agy
 with no setup; the others with a logo (grok, qwen, kimi, goose, kilo, vibe, junie, auggie) and aider/crush
 use hooks or title activity. Logos are the real brand marks, compiled into the bundled icon font.
 The design follows how t3code's sidebar resolves thread status: one ordered
-resolver (limited › waiting › working › done › idle), "done" only while unseen.
+resolver (limited › waiting › error › working › done › idle), "done" only while unseen. An error the agent reports is not a completion.
 
 **Splits.** A split tab shows a to-scale **mini-map** of its panes under its title (a row of quadrant blocks: left/right and top/bottom splits at their real proportions, each pane tinted by its state — amber waiting, blue working, red limited — the focused one brighter), and lists each agent pane on its own: in the deck/panel as indented child lines
 (`├ ◆ claude !`, `└ ⠋ codex`) you can hover (live preview of *that* pane) and click (focus it); in the bar as

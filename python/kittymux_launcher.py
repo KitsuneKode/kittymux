@@ -16,8 +16,8 @@ import unicodedata
 SPAWN_ORDER = ["claude", "codex", "devin", "cursor-agent", "opencode", "agy", "grok", "droid", "gemini", "amp"]
 ALIASES = {"cursor": "cursor-agent", "antigravity": "agy", "c": "claude", "x": "codex", "d": "devin", "u": "cursor-agent", "o": "opencode", "a": "agy", "g": "grok"}
 _AGENT_NAME = re.compile(r"^[a-z][a-z0-9-]{0,30}$")
-STATE_GLYPH = {"limited": "⊘", "waiting": "◆", "working": "◐", "done": "✓", "idle": "·", "": "·"}
-STATE_RANK = {"limited": 0, "waiting": 1, "done": 2, "working": 3, "idle": 4, "": 5}
+STATE_GLYPH = {"limited": "⊘", "waiting": "◆", "error": "✕", "working": "◐", "done": "✓", "idle": "·", "": "·"}
+STATE_RANK = {"limited": 0, "waiting": 1, "error": 2, "done": 3, "working": 4, "idle": 5, "": 6}
 
 
 # What the bar's header shows while a keyboard mode is armed (kitty names the mode; the keys are ours).

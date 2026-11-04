@@ -9,7 +9,7 @@ import tempfile
 import time
 from pathlib import Path
 from kittymux_files import read_json
-STATES = ('limited', 'waiting', 'working', 'done', 'idle')
+STATES = ('limited', 'waiting', 'error', 'working', 'done', 'idle')
 
 def summary(state_dir, version, kitty_version, features, env=None):
     env = os.environ if env is None else env

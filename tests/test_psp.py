@@ -116,9 +116,20 @@ class ViewTests(unittest.TestCase):
         self.assertEqual(P.apply_to_view(None, view, "working", "l"), ("working", "l"))
         self.assertEqual(view, {})
 
+    def test_error_is_its_own_state_and_keeps_the_message(self):
+        view = {"agent_done_ts": 1, "done_source": "agent"}
+        marker, line = P.apply_to_view({"state": "error", "msg": "build failed", "t": 9}, view, "", "")
+        self.assertEqual((marker, line), ("error", "build failed"))
+        self.assertEqual(view.get("status"), "error")
+        self.assertNotIn("agent_done_ts", view)
+        self.assertNotIn("done_source", view)
+        self.assertEqual(P.apply_to_view({"state": "error", "title": "boom", "t": 2}, {}, "working", "esc to interrupt"), ("error", "boom"))
 
-if __name__ == "__main__":
-    unittest.main()
+    def test_a_prompt_or_a_limit_still_outranks_an_error(self):
+        view = {}
+        self.assertEqual(P.apply_to_view({"state": "error", "msg": "build failed", "t": 4}, view, "waiting", "Do you want to proceed?"),
+                         ("waiting", "Do you want to proceed?"))
+        self.assertEqual(P.apply_to_view({"state": "error", "msg": "build failed", "t": 4}, {}, "limited", "usage limit reached")[0], "limited")
 
 
 class BoundaryTests(unittest.TestCase):
@@ -136,3 +147,7 @@ class BoundaryTests(unittest.TestCase):
         self.assertTrue(b.feed(b"C\x1b\\text"))
         self.assertFalse(b.feed(b"\x1b]8;;http://x"))
         self.assertTrue(b.feed(b"\x1b\\link\x1b]8;;\x1b\\"))
+
+
+if __name__ == "__main__":
+    unittest.main()

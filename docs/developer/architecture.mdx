@@ -24,12 +24,12 @@ Python files run under kitty's bundled interpreter, so `kitty.*` and `kittens.*`
 
 ## One answer for status
 
-`kittymux_state` (pure) and `kittymux_scan` (in kitty) are the only place agent state is decided. Twice a second the scanner reads the bottom of each agent pane's screen, combines it with hook state and publishes `scan-<pid>.json`. Every consumer reads that merged view through `kittymux_agents.load_panes`, `merge_scan` and `resolve_status`. The order is limited, waiting, working, done, idle.
+`kittymux_state` (pure) and `kittymux_scan` (in kitty) are the only place agent state is decided. Twice a second the scanner reads the bottom of each agent pane's screen, combines it with hook state and an agent's own OSC 7501 report, and publishes `scan-<pid>.json`. Every consumer reads that merged view through `kittymux_agents.load_panes`, `merge_scan` and `resolve_status`. The order is limited, waiting, error, working, done, idle. An error keeps its message and is not a completion.
 
 Rules that keep it honest:
 
 - **A state needs positive evidence.** Silence is never waiting.
-- **Who decides "done".** A turn a hook announced ends only with the agent's own `Stop` hook. A quiet screen, a repaint or an interrupt is never "finished". A completion notifies only with a known duration of at least 15 seconds and after a five-second settle.
+- **Who decides "done".** A turn a hook announced ends only with the agent's own `Stop` hook. A quiet screen, a repaint, an interrupt or an OSC 7501 error is never "finished". A completion notifies only with a known duration of at least 15 seconds and after a five-second settle.
 - **Every answer says why.** `kittymux_state.resolve` records a static, human reason at each return. The scanner publishes it and writes every state change and notification outcome to the decision log, which `kittymux explain` reads. A new state or suppression rule must set a reason. A reason is static text, because a clock or counter in it would change the published verdict every tick.
 - **One event model.** Every needs-you, limit and completion is a typed event in `inbox.jsonl`. `kittymux_scan._announce` is the one place that decides popup or inbox only.
 - **Restore asks.** A restored agent never auto-resumes without the user's switch. The prompt validates its record and replaces itself with the answer.

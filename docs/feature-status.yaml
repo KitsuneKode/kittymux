@@ -84,7 +84,7 @@ features:
   - id: agent-status
     label: Agent status
     status: shipped
-    description: One ordered state per agent (limited, waiting, working, done, idle) read from the screen and hooks, shown identically everywhere.
+    description: One ordered state per agent (limited, waiting, error, working, done, idle) read from the screen, hooks and the agent's own report, shown identically everywhere.
   - id: agent-hooks
     label: Agent hooks
     status: shipped
