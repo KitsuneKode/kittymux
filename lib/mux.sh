@@ -459,7 +459,11 @@ if len(matches) == 1 and matches[0]:
 raise SystemExit(1)
 " "$title" 2>/dev/null || true)"
     [[ -n "$address" ]] || return 1
-    hyprctl dispatch focuswindow "address:${address}" >/dev/null 2>&1
+    # One dispatcher for Python and this shell (agent picker, focus_os_window_by_id, focus_moved_window).
+    # Hyprland 0.57 rejects `dispatch focuswindow`; the helper probes and picks the form that answers.
+    local py
+    py="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../python"
+    python3 "$py/kittymux_wmfocus.py" focus "$address"
 }
 
 # Focus an OS window by its ID (Kitty first, then Hyprland by title).

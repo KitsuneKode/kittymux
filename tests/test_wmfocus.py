@@ -19,23 +19,34 @@ def ls(*os_windows):
 
 
 class Fake:
-    """A run() that answers kitty @ ls and hyprctl clients, and records everything it is asked to do."""
+    """A run() that answers kitty @ ls and hyprctl clients, and records everything it is asked to do.
 
-    def __init__(self, kitty_ls, clients, retitle=None):
-        self.kitty_ls, self.clients, self.retitle, self.calls = kitty_ls, clients, retitle, []
+    `lua` is what a probe of a fake address reports: True means the Lua expression says the window
+    was not found (Hyprland 0.57), False means only the classic dispatcher does, None means neither.
+    """
+
+    def __init__(self, kitty_ls, clients, retitle=None, lua=True):
+        self.kitty_ls, self.clients, self.retitle, self.lua, self.calls = kitty_ls, clients, retitle, lua, []
 
     def __call__(self, argv, **kw):
         self.calls.append(argv)
+        joined = " ".join(argv)
+        if argv[:2] == ["hyprctl", "dispatch"] and F.PROBE_ADDRESS in joined:
+            lua_probe = "hl.dsp.focus" in joined
+            if (self.lua is True and lua_probe) or (self.lua is False and not lua_probe):
+                return SimpleNamespace(returncode=0, stdout="", stderr="window not found")
+            return SimpleNamespace(returncode=0, stdout="", stderr="')' expected near 'address'")
         if argv[:2] == ["kitty", "@"] and argv[4] == "ls":
-            return SimpleNamespace(returncode=0, stdout=json.dumps(self.kitty_ls))
+            return SimpleNamespace(returncode=0, stdout=json.dumps(self.kitty_ls), stderr="")
         if argv[:3] == ["hyprctl", "clients", "-j"]:
-            return SimpleNamespace(returncode=0, stdout=json.dumps(self.clients))
+            return SimpleNamespace(returncode=0, stdout=json.dumps(self.clients), stderr="")
         if argv[:2] == ["kitty", "@"] and argv[4] == "set-window-title" and len(argv) == 8 and self.retitle:
             self.retitle(self, argv[7])
-        return SimpleNamespace(returncode=0, stdout="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     def dispatched(self):
-        return [a for a in self.calls if a[:2] == ["hyprctl", "dispatch"] and "hl.dsp.focus" in a[2]]
+        """Real focus dispatches. The probe names PROBE_ADDRESS and is not one of them."""
+        return [a for a in self.calls if a[:2] == ["hyprctl", "dispatch"] and F.PROBE_ADDRESS not in " ".join(a)]
 
 
 class PickTests(unittest.TestCase):
@@ -68,6 +79,22 @@ class FocusTests(unittest.TestCase):
             self.assertTrue(F.focus("unix:/s", 200, 42, run=run, env=HYPR))
         self.assertEqual(run.dispatched(), [["hyprctl", "dispatch", "hl.dsp.focus({window = 'address:0xws3'})"]])
         self.assertFalse(any("pid:" in " ".join(a) for a in run.calls))
+        self.assertTrue(any(F.PROBE_ADDRESS in " ".join(a) for a in run.calls))   # the dispatcher was read, not assumed
+
+    def test_an_older_hyprland_still_gets_the_classic_dispatcher(self):
+        # The Lua probe does not say "window not found"; the classic one does. The old code always sends Lua.
+        data = ls((1, [(10, True, [(100, True, "agent")])]))
+        run = Fake(data, [{"pid": 42, "address": "0xa", "title": "agent"}], lua=False)
+        with mock.patch.object(F.shutil, "which", return_value="/usr/bin/hyprctl"):
+            self.assertTrue(F.focus("unix:/s", 100, 42, run=run, env=HYPR))
+        self.assertEqual(run.dispatched(), [["hyprctl", "dispatch", "focuswindow", "address:0xa"]])
+
+    def test_no_dispatch_when_neither_probe_names_a_missing_window(self):
+        data = ls((1, [(10, True, [(100, True, "agent")])]))
+        run = Fake(data, [{"pid": 42, "address": "0xa", "title": "agent"}], lua=None)
+        with mock.patch.object(F.shutil, "which", return_value="/usr/bin/hyprctl"):
+            self.assertTrue(F.focus("unix:/s", 100, 42, run=run, env=HYPR))
+        self.assertEqual(run.dispatched(), [])
 
     def test_kitty_focuses_first_so_the_tab_switches(self):
         data = ls((1, [(10, False, [(100, True, "other tab")]), (11, True, [(110, True, "agent")])]))

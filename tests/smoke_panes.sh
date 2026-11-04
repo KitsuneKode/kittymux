@@ -77,6 +77,47 @@ we=$(cols "${IDS[0]}"); re=$(cols "${IDS[1]}")
 d=$(( we > re ? we - re : re - we ))
 [ "$d" -le 2 ] || fail "alt+shift+= did not equalize the columns (pane 1 has $we, pane 2 has $re)"
 echo "equalize: pane 1 and pane 2 are $we and $re columns wide"
+# zoom fills a corner pane on both axes (plain maximize is horizontal only), then the same chord restores it.
+# The script is a background launch, so poll. Stack is not this rig (enabled_layouts splits).
+geom() { kitty @ --to "$SOCK" ls | python3 -c 'import json,sys
+want=int(sys.argv[1]); field=sys.argv[2]
+for w in json.load(sys.stdin)[0]["tabs"][0]["windows"]:
+    if w["id"]==want: print(w[field])' "$1" "$2"; }
+read -r ZID ZC ZL <<EOF
+$(kitty @ --to "$SOCK" ls | python3 -c '
+import json, sys
+ws = json.load(sys.stdin)[0]["tabs"][0]["windows"]
+mc, ml = max(w["columns"] for w in ws), max(w["lines"] for w in ws)
+for w in ws:
+    if w["columns"] < mc and w["lines"] < ml:
+        print(w["id"], w["columns"], w["lines"])
+        break
+else:
+    print("0 0 0")
+')
+EOF
+[ "$ZID" != 0 ] || fail "no corner pane: zoom on both axes has nothing to grow"
+n=1
+for id in "${IDS[@]}"; do [ "$id" = "$ZID" ] && break; n=$((n + 1)); done
+X key --clearmodifiers "ctrl+alt+$n"; sleep 0.4
+X key --clearmodifiers "ctrl+alt+z"
+c1=$ZC; l1=$ZL; grew=0
+for _ in $(seq 25); do
+    c1=$(geom "$ZID" columns); l1=$(geom "$ZID" lines)
+    [ -n "$c1" ] && [ -n "$l1" ] && [ "$c1" -gt "$ZC" ] && [ "$l1" -gt "$ZL" ] && { grew=1; break; }
+    sleep 0.2
+done
+[ "$grew" = 1 ] || fail "ctrl+alt+z did not grow the corner pane on both axes ($ZC x $ZL -> ${c1:-?} x ${l1:-?})"
+echo "zoom: corner pane $ZC x $ZL -> $c1 x $l1"
+X key --clearmodifiers "ctrl+alt+z"
+back=0
+for _ in $(seq 25); do
+    c2=$(geom "$ZID" columns); l2=$(geom "$ZID" lines)
+    dc=$(( c2 > ZC ? c2 - ZC : ZC - c2 )); dl=$(( l2 > ZL ? l2 - ZL : ZL - l2 ))
+    [ "$dc" -le 2 ] && [ "$dl" -le 2 ] && { back=1; break; }
+    sleep 0.2
+done
+[ "$back" = 1 ] || fail "ctrl+alt+z again did not restore the corner pane ($ZC x $ZL, now ${c2:-?} x ${l2:-?})"
 # the overview's digits agree with the direct keys
 for n in 1 2 3 4; do
     X key --clearmodifiers "ctrl+alt+1"; sleep 0.4
@@ -96,4 +137,4 @@ X key --clearmodifiers ctrl+alt+Home; sleep 0.8; home=$(top)
 X key --clearmodifiers ctrl+alt+End; sleep 0.8; back=$(top)
 [ "$back" = "$live" ] || fail "ctrl+alt+End did not return to the live screen ($back vs $live)"
 [ "$(others)" = "$OTHERS_BEFORE" ] || fail "another kitty on this machine changed its focus while this rig ran (tripwire)"
-echo "PASS: ctrl+alt+1..4, ctrl+alt+0 (last pane), alt+shift+h/l resize, alt+shift+= equalize and the ctrl+alt+e overview agree on pane numbers; ctrl+alt+PgUp/Home/End scroll the scrollback"
+echo "PASS: ctrl+alt+1..4, ctrl+alt+0 (last pane), alt+shift+h/l resize, alt+shift+= equalize, ctrl+alt+z zoom on both axes, and the ctrl+alt+e overview agree on pane numbers; ctrl+alt+PgUp/Home/End scroll the scrollback"

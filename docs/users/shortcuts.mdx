@@ -35,7 +35,8 @@ Press `ctrl+alt+/` at any time to open the keymap overlay. It reads your generat
 | `ctrl+alt+1` to `9`, and `ctrl+alt+0`   | Focus pane N directly, using those numbers; `ctrl+alt+0` is the last pane.          |
 | `ctrl+alt+shift+y`                      | Number every pane, then press a digit to swap with it.                              |
 | `ctrl+alt+enter` and `ctrl+shift+enter` | Split below, and split to the right.                                                |
-| `ctrl+alt+z` and `alt+shift+=`          | Zoom a pane, and equalize (every split the same size again).                        |
+| `ctrl+alt+space`                        | Cycle layout: splits, then stack.                                                   |
+| `ctrl+alt+z` and `alt+shift+=`          | Zoom the focused pane so it fills the tab (both axes; press again to restore), and equalize. On the stack layout the pane already fills the tab, so zoom does nothing. |
 | `alt+shift+h` `j` `k` `l`               | Resize a pane, about 3 columns a press.                                             |
 | `ctrl+alt+q`                            | Close the pane. It asks if a process is running.                                    |
 | `ctrl+alt+d`                            | Turn the pane into its own tab.                                                     |
@@ -107,7 +108,8 @@ Leader mode is optional. Install with `install.sh --leader`, or `--leader=ctrl+a
 | After the leader        | Action                                                                  |
 | ----------------------- | ----------------------------------------------------------------------- |
 | `h` `j` `k` `l`, `o`    | Focus a pane, last pane.                                                |
-| `\`, `-`, `z`, `=`, `x`, `d` | Split right, split down, zoom, equalize, close pane, pane to tab.  |
+| `\`, `-`, `z`, `=`, `x`, `d` | Split right, split down, zoom (fills the tab; already full on stack), equalize, close pane, pane to tab. |
+| `space`                      | Cycle layout: splits, then stack.                                           |
 | `c` `n` `p` `1`…`9` `r` `X` | New, next, previous and Nth tab, rename, close tab.                 |
 | `s`, `P`                | Kitty Home, project picker.                                             |
 | `a` `w` `g` `;`         | Agent picker, next waiting agent, new worktree agent, send prompt.      |

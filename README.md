@@ -150,7 +150,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+enter` · `ctrl+shift+enter` | split below · split to the right |
 | `ctrl+alt+space` | cycle layout — splits ↔ stack |
 | `ctrl+alt+d` / `+shift` | pane → new tab / chooser · `ctrl+alt+shift+c` shows/hides pane title bars (the drag handles) |
-| `ctrl+alt+z` / `alt+shift+=` | zoom pane (fills the whole tab; press again to restore) / equalize |
+| `ctrl+alt+z` / `alt+shift+=` | zoom pane (fills the whole tab on both axes; press again to restore; on stack it already does) / equalize |
 | `ctrl+alt+i` (×2) | cwd pill → detail card (copy path/branch) |
 | `ctrl+alt+u` | agent usage HUD |
 | `ctrl+alt+g` | agent picker — every agent pane, live preview + status + message |
@@ -383,7 +383,7 @@ tab bar shows a LEADER badge while it is armed.
 | after leader | |
 |---|---|
 | `h j k l` `o` | focus pane · last pane |
-| `\` `-` `z` `=` `x` `d` | split right/down · zoom · equalize · close pane · pane → tab |
+| `\` `-` `z` `=` `x` `d` `space` | split right/down · zoom (fills the tab; already full on stack) · equalize · close pane · pane → tab · cycle layout |
 | `c` `n` `p` `1…9` `r` `X` | new / next / prev / Nth tab · rename · close tab |
 | `s` `P` | Kitty Home · project picker |
 | `a` `w` `g` `;` | agent picker · **next waiting agent** · new worktree agent · send prompt |

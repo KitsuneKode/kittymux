@@ -21,7 +21,7 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
   `bash tests/smoke_click.sh` (tab clicks with wobble and slowness; a middle-click spares an agent tab),
   `bash tests/smoke_native.sh` (kitty ≥ 0.49.2: the native divider's pixels, the real X cursor name over it, a native drag, the single-pane fallback),
   `bash tests/smoke_resize.sh` (a fast pointer burst: the bar edge reaches the pointer, every tab re-flows on release),
-  `bash tests/smoke_panes.sh` (`ctrl+alt+1..9`, `ctrl+alt+0` = last pane and the `ctrl+alt+e` overview agree on pane numbers; `alt+1..9` / `alt+0` jump tabs; `alt+shift+h/l` resize ~3 columns and `alt+shift+=` equalizes; ends with a focus tripwire on every OTHER kitty; `ctrl+alt+PgUp/Home/End` scroll — real key events),
+  `bash tests/smoke_panes.sh` (`ctrl+alt+1..9`, `ctrl+alt+0` = last pane and the `ctrl+alt+e` overview agree on pane numbers; `alt+1..9` / `alt+0` jump tabs; `alt+shift+h/l` resize ~3 columns and `alt+shift+=` equalizes; `ctrl+alt+z` zooms a corner pane on both axes and restores it; ends with a focus tripwire on every OTHER kitty; `ctrl+alt+PgUp/Home/End` scroll — real key events),
   `bash tests/smoke_prompts.sh` (a script printing sudo's prompt, a copy of bash named pacman/ssh: one fixed-text event each, cleared by answering, acknowledged when looked at, the switch silences it),
   `bash tests/smoke_legacy_socket.sh` (the socket in a private runtime dir, a key bound to a script that looks ONLY at <legacy dir>/mykitty-$PPID opens its tab; control: with `socketlink` off it does not; dead links are pruned),
   `bash tests/smoke_place.sh` (the folder line: twins, hidden duplicates, worktrees, a split's room, every switch on its own, all-off = the old line),

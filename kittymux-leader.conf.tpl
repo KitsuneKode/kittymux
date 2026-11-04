@@ -25,11 +25,11 @@ map --mode leader o nth_window -1
 map --mode leader backslash launch --location=vsplit --cwd=current
 # split down (cwd)
 map --mode leader minus launch --location=hsplit --cwd=current
-# zoom / unzoom pane
-map --mode leader z layout_action maximize
+# zoom the focused pane so it fills the tab (press again to restore; on stack it already does)
+map --mode leader z launch --type=background @KITTYMUX_HOME@/bin/mux-zoom.sh
 # equalize panes
 map --mode leader equal layout_action equalize
-# next layout
+# cycle layout: splits, then stack
 map --mode leader space next_layout
 # close pane (confirms if busy)
 map --mode leader x close_window_with_confirmation

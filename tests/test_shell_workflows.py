@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import socket
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -121,6 +122,47 @@ class ShellWorkflows(unittest.TestCase):
         path = self.root / 'calls'
         rows = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
         return [r for r in rows if command is None or r[r.index('--to') + 2] == command]
+
+    def test_title_focus_uses_the_probed_dispatcher_not_focuswindow(self):
+        """Hyprland 0.57 rejects `dispatch focuswindow`. The shell must call the shared helper, which
+        probes a fake address and, when that says the window is missing, sends the Lua expression."""
+        sys.path.insert(0, str(ROOT / "python"))
+        import kittymux_wmfocus as F
+        mux = (ROOT / "lib" / "mux.sh").read_text(encoding="utf-8")
+        code = "\n".join(line for line in mux.splitlines() if not line.lstrip().startswith("#"))
+        self.assertIn("kittymux_wmfocus.py", code)
+        self.assertNotIn("focuswindow", code)
+        for rel in ("bin/mux-agents.sh", "bin/mux-movetab.sh"):
+            self.assertNotIn("focuswindow", (ROOT / rel).read_text(encoding="utf-8"))
+        probe = F.PROBE_ADDRESS
+        script = self.root / "bin" / "hyprctl"
+        script.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, pathlib, sys\n"
+            "root = pathlib.Path(os.environ['MOCK_ROOT'])\n"
+            "args = sys.argv[1:]\n"
+            "(root / 'hypr-calls').open('a').write(json.dumps(args) + '\\n')\n"
+            "joined = ' '.join(args)\n"
+            "probe = os.environ['MOCK_PROBE']\n"
+            "if args[:2] == ['clients', '-j']:\n"
+            "    print(json.dumps([{'class': 'kitty', 'title': 'agent', 'address': '0xabc'}]))\n"
+            "elif args[:1] == ['dispatch'] and probe in joined:\n"
+            "    if 'hl.dsp.focus' in joined:\n"
+            "        print('hl.focus: window not found', file=sys.stderr)\n"
+            "    else:\n"
+            "        print(\")' expected near 'address'\", file=sys.stderr)\n"
+            "elif args[:1] == ['dispatch']:\n"
+            "    print('ok')\n"
+            "else:\n"
+            "    print('[]')\n"
+        )
+        script.chmod(0o755)
+        self.env["MOCK_PROBE"] = probe
+        result = self.run_shell('source lib/mux.sh; focus_hyprland_by_title agent')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = [json.loads(line) for line in (self.root / "hypr-calls").read_text().splitlines()]
+        real = [c for c in calls if c[:1] == ["dispatch"] and probe not in " ".join(c)]
+        self.assertEqual(real, [["dispatch", "hl.dsp.focus({window = 'address:0xabc'})"]])
 
     def test_regex_names(self):
         result = self.run_shell("source lib/mux.sh; regex_escape '-a.b+[x](y)'; regex_escape 'plain'")

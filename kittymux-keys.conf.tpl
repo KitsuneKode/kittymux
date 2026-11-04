@@ -201,10 +201,10 @@ map alt+shift+equal       layout_action equalize
 # ============================================
 # LAYOUTS
 # ============================================
-# cycle layouts — pruned to splits ↔ stack (enabled_layouts lives in kittymux.conf)
+# ctrl+alt+space — cycle layout: splits, then stack
 map ctrl+alt+space       next_layout
-# zoom: the focused pane fills the whole tab (tmux-style); press again to restore
-map ctrl+alt+z           combine : layout_action maximize horizontal : layout_action maximize vertical
+# ctrl+alt+z — zoom the focused pane so it fills the tab; press again to restore. On stack the pane already fills the tab, so this does nothing
+map ctrl+alt+z           launch --type=background @KITTYMUX_HOME@/bin/mux-zoom.sh
 
 # ============================================
 # SESSIONS — Kitty Home is the one shortcut to remember

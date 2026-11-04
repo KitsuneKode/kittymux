@@ -8,6 +8,12 @@ Hyprland client of that pid with that title. When two OS windows show the same t
 unique title for a moment so its client can be told apart, and the title is handed back to the program afterwards.
 
 Without Hyprland only kitty's own focus happens (the compositor decides the rest). Never raises.
+
+The compositor call is `focus_address`, for this module and for the shell (`lib/mux.sh`
+`focus_hyprland_by_title`, which the agent picker, `focus_os_window_by_id` and
+`focus_moved_window` all use). Hyprland 0.57 dispatches Lua; an older Hyprland dispatches
+`focuswindow`. Which one answers is read from a probe that names `PROBE_ADDRESS` and must
+say the window was not found.
 """
 from __future__ import annotations
 
@@ -15,9 +21,12 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 
 TAG_WAIT = 0.6          # seconds to wait for the compositor to see a tagged title
+# Not a window. Probes dispatch only this, so a check never focuses a real client.
+PROBE_ADDRESS = "0xdeadbeefdeadbeef"
 
 
 def os_window_title(ls: list, window_id: int) -> str | None:
@@ -52,6 +61,50 @@ def _json(run, argv: list[str]):
         return None
 
 
+def _captured(run, argv: list[str]) -> str:
+    try:
+        out = run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=4)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return f"{getattr(out, 'stdout', '') or ''}\n{getattr(out, 'stderr', '') or ''}"
+
+
+def _missing_window(text: str) -> bool:
+    return "window not found" in (text or "").lower()
+
+
+def focus_argv(address: str, lua: bool) -> list[str]:
+    """hyprctl argv that focuses this address. `lua` is Hyprland 0.57's expression; otherwise the classic dispatcher."""
+    if lua:
+        return ["hyprctl", "dispatch", f"hl.dsp.focus({{window = 'address:{address}'}})"]
+    return ["hyprctl", "dispatch", "focuswindow", f"address:{address}"]
+
+
+def dispatcher_lua(run=subprocess.run) -> bool | None:
+    """True when the Lua focus expression runs, False when only `focuswindow` does, None when neither
+    answered `window not found`. A probe uses `PROBE_ADDRESS` only."""
+    if _missing_window(_captured(run, focus_argv(PROBE_ADDRESS, True))):
+        return True
+    if _missing_window(_captured(run, focus_argv(PROBE_ADDRESS, False))):
+        return False
+    return None
+
+
+def focus_address(address: str, run=subprocess.run) -> bool:
+    """Focus this Hyprland client. False when the address is empty, is the probe, or no dispatcher answered."""
+    if not address or address == PROBE_ADDRESS:
+        return False
+    lua = dispatcher_lua(run)
+    if lua is None:
+        return False
+    quiet = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+    try:
+        run(focus_argv(address, lua), **quiet)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return True
+
+
 def focus(socket: str, window_id: int | str, pid: int | str, run=subprocess.run, env=None, sleep=time.sleep) -> bool:
     """Focus kitty window `window_id` (and its tab) in the kitty at `socket`, then its OS window in the compositor.
     True if kitty took the focus."""
@@ -74,11 +127,7 @@ def focus(socket: str, window_id: int | str, pid: int | str, run=subprocess.run,
     if address is None and sum(1 for c in clients if c.get("pid") == kpid) > 1:
         address = _tagged(socket, wid, kpid, run, sleep)
     if address:
-        try:
-            # Hyprland 0.57+ dispatches Lua expressions (classic syntax is gone).
-            run(["hyprctl", "dispatch", f"hl.dsp.focus({{window = 'address:{address}'}})"], **q)
-        except (OSError, subprocess.SubprocessError):
-            pass
+        focus_address(address, run=run)
     return True
 
 
@@ -104,3 +153,14 @@ def _tagged(socket: str, wid: int, kpid: int, run, sleep) -> str | None:
             run(["kitty", "@", "--to", socket, "set-window-title", "--match", f"id:{wid}"], **q)
         except (OSError, subprocess.SubprocessError):
             pass
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) != 2 or args[0] != "focus" or not args[1]:
+        return 2
+    return 0 if focus_address(args[1]) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
