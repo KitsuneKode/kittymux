@@ -148,8 +148,9 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+shift+o` then `c` `x` `d` `u` `o` `a` `g` | **spawn** claude · codex · devin · cursor · opencode · agy · grok in a new tab (`shift` + letter: split right) in the current directory |
 | `ctrl+alt+shift+u` | reopen the agent conversation you closed last (it asks before resuming) |
 | `ctrl+alt+enter` · `ctrl+shift+enter` | split below · split to the right |
+| `ctrl+alt+space` | cycle layout — splits ↔ stack |
 | `ctrl+alt+d` / `+shift` | pane → new tab / chooser · `ctrl+alt+shift+c` shows/hides pane title bars (the drag handles) |
-| `ctrl+alt+z` / `alt+shift+=` | zoom pane / equalize (every split the same size again) |
+| `ctrl+alt+z` / `alt+shift+=` | zoom pane (fills the whole tab; press again to restore) / equalize |
 | `ctrl+alt+i` (×2) | cwd pill → detail card (copy path/branch) |
 | `ctrl+alt+u` | agent usage HUD |
 | `ctrl+alt+g` | agent picker — every agent pane, live preview + status + message |

@@ -75,7 +75,8 @@ def focus(socket: str, window_id: int | str, pid: int | str, run=subprocess.run,
         address = _tagged(socket, wid, kpid, run, sleep)
     if address:
         try:
-            run(["hyprctl", "dispatch", "focuswindow", f"address:{address}"], **q)
+            # Hyprland 0.57+ dispatches Lua expressions (classic syntax is gone).
+            run(["hyprctl", "dispatch", f"hl.dsp.focus({{window = 'address:{address}'}})"], **q)
         except (OSError, subprocess.SubprocessError):
             pass
     return True

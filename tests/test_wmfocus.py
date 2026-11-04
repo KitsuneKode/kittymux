@@ -35,7 +35,7 @@ class Fake:
         return SimpleNamespace(returncode=0, stdout="")
 
     def dispatched(self):
-        return [a for a in self.calls if a[:3] == ["hyprctl", "dispatch", "focuswindow"]]
+        return [a for a in self.calls if a[:2] == ["hyprctl", "dispatch"] and "hl.dsp.focus" in a[2]]
 
 
 class PickTests(unittest.TestCase):
@@ -66,7 +66,7 @@ class FocusTests(unittest.TestCase):
         run = Fake(data, clients)
         with mock.patch.object(F.shutil, "which", return_value="/usr/bin/hyprctl"):
             self.assertTrue(F.focus("unix:/s", 200, 42, run=run, env=HYPR))
-        self.assertEqual(run.dispatched(), [["hyprctl", "dispatch", "focuswindow", "address:0xws3"]])
+        self.assertEqual(run.dispatched(), [["hyprctl", "dispatch", "hl.dsp.focus({window = 'address:0xws3'})"]])
         self.assertFalse(any("pid:" in " ".join(a) for a in run.calls))
 
     def test_kitty_focuses_first_so_the_tab_switches(self):
@@ -85,7 +85,7 @@ class FocusTests(unittest.TestCase):
         run = Fake(data, clients, retitle=retitle)
         with mock.patch.object(F.shutil, "which", return_value="/usr/bin/hyprctl"):
             F.focus("unix:/s", 200, 42, run=run, env=HYPR, sleep=lambda s: None)
-        self.assertEqual(run.dispatched(), [["hyprctl", "dispatch", "focuswindow", "address:0xb"]])
+        self.assertEqual(run.dispatched(), [["hyprctl", "dispatch", "hl.dsp.focus({window = 'address:0xb'})"]])
         self.assertIn(["kitty", "@", "--to", "unix:/s", "set-window-title", "--match", "id:200"], run.calls)   # title handed back
 
     def test_no_guess_when_it_cannot_be_told(self):
