@@ -77,6 +77,59 @@ class ArgumentTests(unittest.TestCase):
     def test_wrong_argument_count(self):
         with mock.patch.object(self.m.shutil, "which", return_value="x"):
             self.assertEqual(self.m.main(["mux-notify", "a"]), 2)
+            self.assertEqual(self.m.main(["mux-notify"] + ["x"] * 15), 2)
+
+    def test_hints_keep_the_old_ones_and_add_the_new(self):
+        with mock.patch.object(self.m.subprocess, "run", return_value=mock.Mock(returncode=0, stdout="")) as run:
+            self.m.notify("normal", "kittymux.attention", "kitty", "t", "b", False, where=("42", "7"),
+                          hints=["string:x-kittymux-event:abc-42-1", "string:x-kittymux-agent:claude",
+                                 "string:x-kittymux-brand:claude", "string:x-kittymux-state:waiting",
+                                 "string:x-kittymux-source:agent"])
+        cmd = run.call_args[0][0]
+        for hint in ("string:x-kittymux-pid:42", "string:x-kittymux-window:7", "string:x-kittymux-event:abc-42-1",
+                     "string:x-kittymux-agent:claude", "string:x-kittymux-brand:claude", "string:x-kittymux-state:waiting",
+                     "string:x-kittymux-source:agent"):
+            self.assertIn(hint, cmd)
+
+    def test_jump_with_an_event_acks_that_window_and_a_bare_click_does_not(self):
+        import kittymux_inbox
+        import kittymux_layout
+        base = ["mux-notify", "unix:/tmp/s", "7", "42", "normal", "kittymux.attention", "kitty", "t", "b"]
+
+        def run(extra, focused=True):
+            with mock.patch.object(self.m.shutil, "which", return_value="notify-send"), \
+                    mock.patch.object(self.m, "notify", return_value="jump") as notify, \
+                    mock.patch.object(self.m, "focus", return_value=focused) as focus, \
+                    mock.patch.object(kittymux_inbox, "ack") as ack, \
+                    mock.patch.object(kittymux_layout, "state_dir", return_value="/tmp/kmx-state"):
+                rc = self.m.main(base + extra)
+            return rc, notify, focus, ack
+
+        rc, notify, focus, ack = run(["abc-42-1", "claude", "claude", "waiting", "agent"])
+        self.assertEqual(rc, 0)
+        focus.assert_called_once_with("unix:/tmp/s", "7", "42")
+        self.assertEqual(ack.call_args.kwargs["window"], "7")
+        self.assertEqual(ack.call_args.kwargs["pid"], 42)
+        hints = notify.call_args.kwargs["hints"]
+        self.assertIn("string:x-kittymux-event:abc-42-1", hints)
+        self.assertIn("string:x-kittymux-source:agent", hints)
+
+        rc, notify, focus, ack = run([])
+        self.assertEqual(rc, 0)
+        focus.assert_called_once()
+        ack.assert_not_called()
+
+        rc, notify, focus, ack = run(["abc-42-1", "sudo", "", "waiting", "tool"], focused=False)
+        ack.assert_not_called()
+        self.assertNotIn("string:x-kittymux-brand:", " ".join(notify.call_args.kwargs["hints"]))
+        self.assertIn("string:x-kittymux-source:tool", notify.call_args.kwargs["hints"])
+
+        rc, notify, focus, ack = run(["bad id", "claude", "claude", "nope", "shell"])
+        ack.assert_not_called()
+        joined = " ".join(notify.call_args.kwargs["hints"])
+        self.assertNotIn("bad id", joined)
+        self.assertNotIn("nope", joined)
+        self.assertNotIn("shell", joined)
 
 
 class ScannerSideTests(unittest.TestCase):

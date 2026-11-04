@@ -22,7 +22,9 @@ Before kittymux filtered anything, each event could notify **twice**: once from 
    mascot badge sits in the corner). Unknown agents get kittymux's mascot, else the `kitty` icon from your theme.
 3. **Click behaviour.** kitty's native notifications focus the window when clicked. Ours carry a "Jump to it"
    action (`bin/mux-notify` → `kitty @ focus-window` → `hyprctl`), which lands on the pane that is asking.
-   With dunst the action is middle-click (or `dunstctl action`); other daemons differ.
+   The same hints a shell can read are `x-kittymux-pid`, `x-kittymux-window`, `x-kittymux-event`, `x-kittymux-agent`,
+   `x-kittymux-brand`, `x-kittymux-state` and `x-kittymux-source`. Jump with an event id focuses that window and
+   acknowledges it, the same end state as `kittymux inbox jump`. With dunst the action is middle-click (or `dunstctl action`); other daemons differ.
 
 ## When is something "finished"? (false completions)
 

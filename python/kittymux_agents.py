@@ -37,8 +37,37 @@ AGENTS: dict[str, Agent] = {
     "junie":        Agent("\ue0f7", 0xfe315d),
     "auggie":       Agent("\ue0f8", 0x4fd1c5),
 }
+# The one map from an agent CLI to the SVG in assets/icons (tools/build-icons.py). Notify PNGs stay
+# named by the agent (assets/notify/<agent>.png): a shell copies the SVG, the desktop notification does not.
+# aider and crush have no mark. Everything that names a brand file calls brand_of; do not keep a second table.
+BRANDS: dict[str, str] = {
+    "claude": "claude",
+    "codex": "openai",
+    "cursor-agent": "cursor",
+    "cursor": "cursor",
+    "gemini": "googlegemini",
+    "opencode": "opencode",
+    "amp": "amp",
+    "devin": "devin",
+    "agy": "antigravity",
+    "antigravity": "antigravity",
+    "grok": "grok",
+    "droid": "factorydroid",
+    "qwen": "qwen",
+    "kimi": "kimi",
+    "goose": "goose",
+    "kilo": "kilo",
+    "vibe": "mistralvibe",
+    "junie": "junie",
+    "auggie": "auggie",
+}
 FALLBACK = Agent("⚡", 0x94e2d5)
 MASCOT_GLYPH = "\ue0f9"      # the kittymux mascot (assets/icons/kittymux.svg → the icon font)
+
+
+def brand_of(agent: str) -> str:
+    """Basename of this agent's mark in assets/icons, or "" when we have none (aider, crush, a tool prompt)."""
+    return BRANDS.get(str(agent or "").strip().lower(), "")
 
 
 def compact_age(seconds) -> str:

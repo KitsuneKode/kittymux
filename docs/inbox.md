@@ -28,6 +28,10 @@ completion. Claude's "waiting for your input" is its idle notice (it finished a 
 The same occurrence reported by several sources inside 45 s is **one** event (`sources: ["agent","screen"]`, `count` > 1) and **one** popup. Focusing a window
 acknowledges everything it reported (`status: read`). `kittymux explain` shows, per decision, why a popup was or was not shown.
 
+`sources` (plural) is who reported the event: `agent`, `hook` or `screen`. `source` (singular) is what the event is about: `agent` for an agent, `tool` for a
+password or yes/no prompt (`sudo`, `ssh`, `git`, `pacman`, `paru`, a login). A sudo prompt is therefore `sources: ["screen"]` and `source: "tool"`, with `agent`
+set to the program name. An event written before this field has no `source`; treat that as an agent. Adding the field did not change `version`.
+
 ## Files (state dir: `$KITTYMUX_STATE` or `~/.local/state/kittymux`, all mode 0600)
 
 - `inbox.jsonl` — append-only operations, safe for several kitty processes to write at once (`O_APPEND`, plus a lock for compaction): `{"op":"add",…}`, `{"op":"ack",…}`, `{"op":"clear"}`, `{"op":"restore","ids":[…]}` (undoes a dismissal: the event is unread again and forgets its `ack_t`; events that are not dismissed are left alone; an older reader ignores the op). Compacted past 256 KB.
@@ -37,7 +41,7 @@ acknowledges everything it reported (`status: read`). `kittymux explain` shows, 
 {"version": 1, "updated": 1790000000.0, "unread": 2, "needs_you": 1,
  "events": [ {"id": "18f3a…-4321-7", "t": 1790000000.0, "pid": 4321, "w": "77", "kind": "permission", "severity": "needs-you",
               "agent": "claude", "tab": "Kitty lightweight tm", "title": "claude needs permission", "body": "Claude needs your permission to use Bash",
-              "sources": ["agent", "screen"], "confidence": "high", "status": "unread", "count": 2},
+              "sources": ["agent", "screen"], "source": "agent", "confidence": "high", "status": "unread", "count": 2},
              {"kind": "limit", "reset_at": 1790009000, "…": "…"} ] }
 ```
 
@@ -45,6 +49,63 @@ acknowledges everything it reported (`status: read`). `kittymux explain` shows, 
 `id` is stable. New fields may be added; consumers must ignore unknown ones (bumping `version` only for breaking changes). Two optional fields come from folding the log: `t0`, when the
 event first appeared (`t` moves to the newest report of a merged event), and `ack_t`, when it first stopped being unread (you focused its window, read or dismissed it). `kittymux inbox ledger`
 turns them into how long agents waited on you.
+
+## agents.json — who is working, without parsing a menu
+
+`$KITTYMUX_STATE/agents.json` (or `~/.local/state/kittymux/agents.json`) is the live list a shell panel watches when it wants every agent in every running kitty.
+The scanner writes it: each kitty replaces only its own rows and keeps rows whose process is still alive. Mode `0600`. Rewritten atomically (a temporary file, then
+rename) and only when the document apart from `t` changed, so a poll does not rewrite the file every tick. Schema version **1**.
+
+```json
+{"version": 1, "t": 1793780793.0, "agents": [
+  {"key": "w4035.20", "kitty_pid": 4035, "window_id": 20, "agent": "codex", "brand": "openai", "source": "agent",
+   "state": "limited", "since": 1793780600.0, "title": "Review the parser", "tab_title": "parser",
+   "cwd": "~/work/calm-otter", "project": "calm-otter", "session": "calm-otter", "question": null,
+   "progress": null, "limit_reset": 1793784393, "error": null, "action": {"op": "jump", "pid": 4035, "w": "20"}},
+  {"key": "w4035.19", "kitty_pid": 4035, "window_id": 19, "agent": "claude", "brand": "claude", "source": "agent",
+   "state": "working", "since": 1793780700.0, "title": "Port the configs", "tab_title": "calm-otter",
+   "cwd": "~/work/calm-otter", "project": "calm-otter", "session": "calm-otter", "question": null,
+   "progress": 0.42, "limit_reset": null, "error": null, "action": {"op": "jump", "pid": 4035, "w": "19"}}
+], "counts": {"working": 1, "waiting": 0, "done": 0, "idle": 0, "limited": 1, "error": 0}}
+```
+
+| Field | Meaning |
+|---|---|
+| `version` | `1`. A new field keeps this number. A rename, a removal, or a change of meaning bumps it. |
+| `t` | When this document was built, epoch seconds. Not a reason to reread the rows. |
+| `key` | `w<kitty_pid>.<window_id>`. Stable for the life of that window. |
+| `kitty_pid`, `window_id` | The kitty process and the window. `window_id` is an integer. |
+| `agent` | The CLI name (`claude`, `codex`, …). |
+| `brand` | Basename of the SVG in `assets/icons`, from `kittymux_agents.brand_of` (one table). `codex` is `openai`, `gemini` is `googlegemini`, `droid` is `factorydroid`, `vibe` is `mistralvibe`, `agy` is `antigravity`, `cursor-agent` is `cursor`. Empty when we have no mark (`aider`, `crush`). Notify PNGs stay named by the agent. |
+| `source` | `agent` on every row. Tool prompts are not rows; they are inbox events with `source: tool`. |
+| `state` | A status-contract name: `limited`, `waiting`, `error`, `working`, `done`, `idle`. The usage-limit state is `limited`. An older note called it `limit`; that string is not used here. |
+| `since` | Epoch seconds when the row entered this `state`. A title or progress change does not move it. |
+| `title`, `tab_title` | The window title, cleaned the way the bar cleans it, and the tab's own title. |
+| `cwd` | The window's directory, with the home directory written as `~`. |
+| `project` | The git project, or the folder name when the directory is not a repository. Empty when the directory is unknown. |
+| `session` | The kitty session name, or `""`. |
+| `question` | The prompt, when `state` is `waiting`. Otherwise `null`. |
+| `progress` | OSC 9;4 as a fraction from 0 to 1 when the program reported an amount. `null` when it did not, including an indeterminate report. |
+| `limit_reset` | Epoch seconds when a `limited` row lifts, when that time is known. Otherwise `null`. |
+| `error` | The message when `state` is `error`. Otherwise `null`. |
+| `action` | The object `kittymux act` accepts: `{"op":"jump","pid":<int>,"w":"<digits>"}`. |
+| `counts` | How many rows are in each state. The keys are always `working`, `waiting`, `done`, `idle`, `limited`, `error`. |
+
+Rows are ordered by importance (`limited`, `waiting`, `error`, `working`, `done`, `idle`), then by `key`. An empty `agents` array means no known agent is in the foreground of a kitty that is still running. `panes-<pid>.json` and `scan-<pid>.json` are not this list: each is one kitty process, and `{}` means that process currently has nothing to report.
+
+## Notification hints
+
+`bin/mux-notify` already set `x-kittymux-pid` and `x-kittymux-window`. It also sets these, when the value is a short token:
+
+| Hint | Value |
+|---|---|
+| `x-kittymux-event` | The inbox event id, so a shell can `kittymux inbox jump ID` or `ack` that id. |
+| `x-kittymux-agent` | The agent or the tool (`sudo`, `pacman`, …). |
+| `x-kittymux-brand` | The `assets/icons` basename. Omitted when we have no mark. |
+| `x-kittymux-state` | `working`, `waiting`, `limited`, `error`, `done` or `idle`. |
+| `x-kittymux-source` | `agent` or `tool`. |
+
+Invoking the notification's Jump action focuses that window and, when `x-kittymux-event` was set, acknowledges that window's events. That is the same end state as `kittymux inbox jump ID` (focus, then ack by window and pid). A notification with no event id only focuses, as before. The click does not shell out to `inbox jump`: a private kitty's socket is not named `mykitty-<pid>`, and the helper was given the socket directly.
 
 ## CLI (what an add-on calls)
 
@@ -59,7 +120,7 @@ kittymux inbox ledger [--json]                 how long agents waited on you (fi
 
 ## Building an add-on
 
-A shell panel needs only: **watch `inbox-snapshot.json`**, render `events`, and run `kittymux inbox jump ID` / `ack ID` on click. See
+A shell panel needs only: **watch `inbox-snapshot.json`** for events and **`agents.json`** for who is working, render those, and run `kittymux inbox jump ID` / `ack ID` (or the row's `action`) on click. See
 [`addons/quickshell/`](../addons/quickshell/README.md) — a minimal Quickshell sample following exactly this contract. It is **not tested here** (Quickshell is not installed on the
 author's machine); the contract above is what is tested (`tests/test_inbox.py`, `tests/smoke_inbox.sh`).
 

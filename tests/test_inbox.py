@@ -259,6 +259,28 @@ class RestoreStoreTests(unittest.TestCase):
             self.assertNotIn("ack_t", got)
 
 
+class SourceTests(unittest.TestCase):
+    def test_source_is_the_subject_and_an_old_event_without_it_still_folds(self):
+        made = ev("permission")
+        self.assertEqual(made["source"], "agent")
+        self.assertEqual(ev("permission", src="hook")["sources"], ["hook"])
+        tool = ev("permission", agent="sudo", origin="tool")
+        self.assertEqual((tool["source"], tool["sources"], tool["agent"]), ("tool", ["screen"], "sudo"))
+        old = {"op": "add", "id": "old-1", "t": 1.0, "pid": 1, "w": "1", "kind": "permission", "severity": "needs-you",
+               "agent": "claude", "tab": "", "title": "t", "body": "b", "sources": ["screen"], "confidence": "high",
+               "status": "unread", "count": 1}
+        folded = I.fold([old])
+        self.assertNotIn("source", folded[0])
+        self.assertEqual(folded[0]["sources"], ["screen"])
+        merged = I.fold([ev("permission", t=10.0), ev("permission", t=12.0, origin="tool")])
+        self.assertEqual(merged[0]["source"], "tool")
+
+    def test_the_snapshot_keeps_source(self):
+        with tempfile.TemporaryDirectory() as d:
+            I.add(d, ev("permission", agent="sudo", origin="tool", t=10.0))
+            self.assertEqual(jload(I.snapshot_path(d))["events"][0]["source"], "tool")
+
+
 class ConcurrencyTests(unittest.TestCase):
     def test_several_processes_append_without_losing_events(self):
         d = tempfile.mkdtemp()

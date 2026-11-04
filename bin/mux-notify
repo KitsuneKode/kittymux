@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """mux-notify — one desktop notification for an agent window, with a "Jump" action.
 
-usage: mux-notify SOCKET WINDOW_ID KITTY_PID URGENCY CATEGORY ICON TITLE BODY
+usage: mux-notify SOCKET WINDOW_ID KITTY_PID URGENCY CATEGORY ICON TITLE BODY [EVENT AGENT BRAND STATE SOURCE]
 
 ICON is a PNG inside this checkout's assets/ directory, or a bare icon-theme name (default: kitty).
 Nothing else is accepted — the icon is never taken from agent output.
@@ -12,8 +12,11 @@ notification daemon reports the "jump" action being invoked, it focuses that win
 kitty's remote control, then the compositor — so the notification takes you to the agent.
 Daemons without action support still show the notification; they just cannot jump.
 
-The notification also carries where it came from as hints (x-kittymux-pid, x-kittymux-window), so a notification
-center can jump there itself later, after this process has gone: `kittymux act '{"op":"jump","pid":P,"w":W}'`.
+The notification also carries where it came from as hints (x-kittymux-pid, x-kittymux-window, and when the
+scanner passed them x-kittymux-event, x-kittymux-agent, x-kittymux-brand, x-kittymux-state, x-kittymux-source),
+so a notification center can jump there itself later, after this process has gone: `kittymux act '{"op":"jump","pid":P,"w":W}'`
+or `kittymux inbox jump ID`. Invoking Jump focuses that window and, when an event id was passed, acknowledges
+that window the same way `kittymux inbox jump` does. Without an event id it only focuses, as before.
 """
 import os
 import re
@@ -27,6 +30,9 @@ import kittymux_wmfocus  # noqa: E402
 
 TIMEOUT = 30            # seconds; also what bounds the lifetime of this process
 EXPIRE_MS = 20000
+_HINT = re.compile(r"[A-Za-z0-9._-]{1,80}")
+_STATES = frozenset({"working", "waiting", "limited", "error", "done", "idle"})
+_SOURCES = frozenset({"agent", "tool"})
 
 
 ASSETS = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "assets")
@@ -44,12 +50,23 @@ def safe_icon(icon: str) -> str:
     return "kitty"
 
 
+def _hint(name: str, value: str, allowed: frozenset | None = None) -> str | None:
+    if not value or not _HINT.fullmatch(value):
+        return None
+    if allowed is not None and value not in allowed:
+        return None
+    return f"string:x-kittymux-{name}:{value}"
+
+
 def notify(urgency: str, category: str, icon: str, title: str, body: str, with_action: bool,
-           where: tuple[str, str] | None = None) -> str:
+           where: tuple[str, str] | None = None, hints: list | None = None) -> str:
     cmd = ["notify-send", "-a", "kittymux", "-i", safe_icon(icon), "-u", urgency, "-c", category,
            "-t", str(EXPIRE_MS)]
     if where:
         cmd += ["-h", f"string:x-kittymux-pid:{where[0]}", "-h", f"string:x-kittymux-window:{where[1]}"]
+    for hint in hints or ():
+        if hint:
+            cmd += ["-h", hint]
     if with_action:
         cmd += ["--wait", "--action=jump=Jump to it"]
     cmd += ["--", title, body]        # `--`: text starting with "-" must not parse as an option
@@ -60,28 +77,53 @@ def notify(urgency: str, category: str, icon: str, title: str, body: str, with_a
     return run.stdout.strip() if run.returncode == 0 else "\0failed"
 
 
-def focus(socket: str, window_id: str, kitty_pid: str) -> None:
+def focus(socket: str, window_id: str, kitty_pid: str) -> bool:
     """The window and its tab in kitty, then exactly its OS window in the compositor (never `pid:`, see kittymux_wmfocus)."""
-    if shutil.which("kitty"):
-        kittymux_wmfocus.focus(socket, window_id, kitty_pid)
+    if not shutil.which("kitty"):
+        return False
+    return bool(kittymux_wmfocus.focus(socket, window_id, kitty_pid))
+
+
+def jump(socket: str, window_id: str, kitty_pid: str) -> None:
+    """Same end state as `kittymux inbox jump`: focus, and only then acknowledge that window. The socket is the one this
+    process was given (a private rig is not named mykitty-<pid>, so this does not shell out to the CLI)."""
+    if not focus(socket, window_id, kitty_pid):
+        return
+    try:
+        import kittymux_inbox
+        import kittymux_layout
+        kittymux_inbox.ack(kittymux_layout.state_dir(), time.time(), window=window_id, pid=int(kitty_pid))
+    except Exception:
+        pass
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 9 or not shutil.which("notify-send"):
+    if not 9 <= len(argv) <= 14 or not shutil.which("notify-send"):
         return 2
-    socket, window_id, kitty_pid, urgency, category, icon, title, body = argv[1:]
+    socket, window_id, kitty_pid, urgency, category, icon, title, body = argv[1:9]
+    event, agent, brand, state, source = (list(argv[9:]) + ["", "", "", "", ""])[:5]
     if not window_id.isdigit() or not kitty_pid.isdigit() or urgency not in ("low", "normal", "critical") \
             or not re.fullmatch(r"[A-Za-z0-9._-]{1,40}", category) or (socket and not socket.startswith("unix:")):
         return 2
+    hints = [h for h in (
+        _hint("event", event),
+        _hint("agent", agent),
+        _hint("brand", brand),
+        _hint("state", state, _STATES),
+        _hint("source", source, _SOURCES),
+    ) if h]
     started = time.monotonic()
     answer = ""
     if socket:
-        answer = notify(urgency, category, icon, title, body, with_action=True, where=(kitty_pid, window_id))
+        answer = notify(urgency, category, icon, title, body, with_action=True, where=(kitty_pid, window_id), hints=hints)
     if not socket or (answer == "\0failed" and time.monotonic() - started < 2):
-        notify(urgency, category, icon, title, body, with_action=False, where=(kitty_pid, window_id))      # libnotify without --action
+        notify(urgency, category, icon, title, body, with_action=False, where=(kitty_pid, window_id), hints=hints)      # libnotify without --action
         return 0
     if answer == "jump":
-        focus(socket, window_id, kitty_pid)
+        if _HINT.fullmatch(event or ""):
+            jump(socket, window_id, kitty_pid)
+        else:
+            focus(socket, window_id, kitty_pid)
     return 0
 
 
