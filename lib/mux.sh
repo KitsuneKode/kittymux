@@ -428,36 +428,53 @@ raise SystemExit(1)
 
 # Hyprland assist: focus the desktop client whose title matches exactly.
 # Kitty remote focus alone can leave you on the source workspace under Wayland.
+# The match is this kitty's pid (the socket's peer) and a unique title. The first kitty
+# with that title can be a different process, or the other OS window of this one.
 focus_hyprland_by_title() {
     local title="$1"
     [[ -n "$title" ]] || return 1
     command -v hyprctl >/dev/null 2>&1 || return 1
 
-    local address
+    local address sock
+    sock="${KITTY_SOCKET#unix:}"
     address="$(hyprctl clients -j 2>/dev/null | python3 -c "
-import json, sys
-title = sys.argv[1]
+import json, socket, struct, sys
+title, sock = sys.argv[1], sys.argv[2]
 clients = json.load(sys.stdin)
-# Exact title first (Kitty and Hyprland share the active tab title).
-for c in clients:
+pid = None
+if sock:
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(0.5)
+        s.connect(sock)
+        pid = struct.unpack('3i', s.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))[0]
+        s.close()
+    except OSError:
+        pid = None
+
+def mine(c):
     if c.get('class') != 'kitty':
-        continue
-    if c.get('title') == title:
-        print(c.get('address') or '')
-        raise SystemExit(0)
-# Soft fallback: unique substring match when titles truncate differently.
-matches = []
+        return False
+    if pid is not None and c.get('pid') not in (None, pid):
+        return False
+    return True
+
+exact = [c.get('address') or '' for c in clients if mine(c) and c.get('title') == title]
+if len(exact) == 1 and exact[0]:
+    print(exact[0])
+    raise SystemExit(0)
+soft = []
 for c in clients:
-    if c.get('class') != 'kitty':
+    if not mine(c):
         continue
     ct = c.get('title') or ''
     if title and (title in ct or ct in title):
-        matches.append(c.get('address') or '')
-if len(matches) == 1 and matches[0]:
-    print(matches[0])
+        soft.append(c.get('address') or '')
+if len(soft) == 1 and soft[0]:
+    print(soft[0])
     raise SystemExit(0)
 raise SystemExit(1)
-" "$title" 2>/dev/null || true)"
+" "$title" "$sock" 2>/dev/null || true)"
     [[ -n "$address" ]] || return 1
     # One dispatcher for Python and this shell (agent picker, focus_os_window_by_id, focus_moved_window).
     # Hyprland 0.57 rejects `dispatch focuswindow`; the helper probes and picks the form that answers.

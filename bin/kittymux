@@ -896,7 +896,7 @@ def inbox_jump(ev: dict) -> int:
     # kitty focuses the window (and its tab), then the compositor gets THAT OS window: one kitty often has several, on
     # other workspaces, and `focuswindow pid:` took whichever Hyprland listed first (kittymux_wmfocus).
     if not kittymux_wmfocus.focus(sock, ev["w"], ev.get("pid"), run=_wm_run):
-        print("kittymux inbox: that window is gone", file=sys.stderr)
+        print("kittymux inbox: that window is gone, or its OS window could not be raised", file=sys.stderr)
         return 1
     kittymux_inbox.ack(kittymux_layout.state_dir(), time.time(), window=ev["w"], pid=ev.get("pid"))
     return 0
@@ -1612,11 +1612,13 @@ def _headroom_hints(installed: list) -> dict:
 _LS_MEMO: dict = {}
 
 
-def _ls(sock: str) -> list | None:
-    """`kitty @ ls` of one socket (~22 ms), remembered for 2 s: one picker run asks the same question for focus, rows and the working directory."""
-    hit = _LS_MEMO.get(sock)
-    if hit and time.monotonic() - hit[0] < 2.0:
-        return hit[1]
+def _ls(sock: str, *, fresh: bool = False) -> list | None:
+    """`kitty @ ls` of one socket (~22 ms), remembered for 2 s: one picker run asks the same question for focus, rows and the working directory.
+    `fresh` is for a read that follows a focus change: the memo would still name the previous OS window."""
+    if not fresh:
+        hit = _LS_MEMO.get(sock)
+        if hit and time.monotonic() - hit[0] < 2.0:
+            return hit[1]
     rc, out = _run(["kitty", "@", "--to", sock, "ls"], 6)
     data = None
     if rc == 0:
@@ -1652,7 +1654,7 @@ def _focus_wm(pid, sock: str | None = None) -> None:
     is often several OS windows on other workspaces)."""
     if not str(pid).isdigit() or not sock:
         return
-    data = _ls(sock) or []
+    data = _ls(sock, fresh=True) or []
     osw = next((o for o in data if o.get("is_active")), None) or next((o for o in data if o.get("last_focused")), None)
     tab = next((t for t in (osw or {}).get("tabs", []) if t.get("is_active")), None)
     win = next((w for w in (tab or {}).get("windows", []) if w.get("is_active")), None)
