@@ -48,6 +48,7 @@ import kittymux_progress  # noqa: E402
 import kittymux_reload  # noqa: E402
 import kittymux_scan  # noqa: E402
 import kittymux_state  # noqa: E402
+import kittymux_tabsnap  # noqa: E402
 import kittymux_theme  # noqa: E402
 import kittymux_titles  # noqa: E402
 
@@ -1281,7 +1282,9 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         if subtitle and not extra_data.for_layout:
             _dump_row(tab.tab_id, legacy=True, pieces=[[subtitle[0][0], "legacy"]])
     home_only = _clean_visible_title(tab.title or "").strip() == "~"   # the folder line would only repeat it, so it hides
-    if not compact and not info and (not subtitle or (home_only and all(isinstance(t, _Place) for t, _c in subtitle))):
+    place_is_folder = bool(subtitle) and all(isinstance(t, _Place) for t, _c in subtitle)
+    # same rule as tabs.json (`show_program`): no agent, and no place line or only the home folder
+    if not compact and kittymux_tabsnap.show_program(info is not None, bool(subtitle), home_only, place_is_folder):
         subtitle = []
         # the app it runs, else the shell itself (the label skips shells: they are what every tab runs)
         program = _best_process_label(foreground, _last_cmd) or next(
@@ -1391,8 +1394,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     elif title_room >= 3:
         title = _shown_title(tab, max(4, title_room), info, cwd)
         title = title if _features().get("titles", True) else _fit(title, title_room)
-        if title.strip() == "~":
-            title = "Home"                                # the home folder by name, not a bare tilde
+        title = kittymux_tabsnap.display_title(title)   # "~" is Home; tabs.json uses the same substitution
         _put(screen, tx, title,
              _rgb(pal.text) if active else _rgb(pal.muted), bold=active)
         if _BAR_DUMP and not extra_data.for_layout:
@@ -1499,6 +1501,128 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     return screen.cursor.x
 
 
+# ── tabs.json ────────────────────────────────────────────────────────────────
+# The shell's tab list. Built from the same helpers this bar draws with, once per real pass (not the
+# layout measure), then coalesced: at most one write per 250 ms, with the last snapshot kept for a
+# trailing write. The timer id lives in sys.modules so a config reload cannot drop it or free the
+# callable kitty still holds (kittymux_timers). Nothing here is a module-level timer.
+
+
+def _tabs_rt():
+    ns = sys.modules.setdefault("_kittymux_tabs_rt", types.SimpleNamespace(gate=None, timer=None))
+    if ns.gate is None:
+        ns.gate = kittymux_tabsnap.Gate()
+    return ns
+
+
+def _emit_tabs(windows) -> None:
+    kittymux_tabsnap.publish(kittymux_features.state_dir(), os.getpid(), windows, time.time())
+
+
+def _tabs_flush(timer_id) -> None:
+    """Trailing tabs.json write. Ignore a tick whose timer was already replaced."""
+    rt = _tabs_rt()
+    if timer_id is not None and timer_id != rt.timer:
+        return
+    rt.timer = None
+    try:
+        item = rt.gate.fire(time.monotonic())
+        if item is not None:
+            _emit_tabs(item)
+    except Exception:
+        pass
+
+
+def _tabs_row(tab, index, pal, pid, home, folder, keys, now_m, wall, active_tab):
+    """One tab, using the bar's title, place line, verdict, age and progress. None when it cannot be jumped to."""
+    window = tab.active_window
+    if window is None:
+        return None
+    cwd, foreground, last_cmd = _active_window_info(tab.id)
+    info = _agent_from_fg(foreground)
+    stub = types.SimpleNamespace(title=(tab.name or tab.title or "kitty"), tab_id=tab.id)
+    title = _shown_title(stub, _UNCUT, info, cwd)
+    facts = _facts(cwd) if cwd else None
+    title_key = keys.get(tab.id, title)
+    program = _best_process_label(foreground, last_cmd) or next(
+        (_basename(c[0]).lstrip("-") for c in foreground or () if c), "")
+    state, entry = _tab_verdict(tab.id)
+    entry = entry or {}
+    try:
+        progress = kittymux_progress.of_tab(tab, get_boss().window_id_map)
+    except Exception:
+        progress = None
+    return kittymux_tabsnap.build_tab(
+        tab_id=int(tab.id), index=index, active=tab is active_tab, title=title, program=program,
+        has_agent=info is not None, agent=info[2] if info else "", facts=facts, folder=folder,
+        cwd=cwd or "", home=home, hue=_tab_hue(cwd, pal) if cwd else None, state=state or "",
+        ts_state=entry.get("ts_state"), now=now_m, reset_at=entry.get("reset_at"), wall=wall,
+        progress=progress, panes=_pane_count(tab.id, len(tab)), window_id=int(window.id), kitty_pid=pid,
+        home_only=_clean_visible_title(stub.title).strip() == "~",
+        hide_project=kittymux_place.redundant(title_key, facts) if facts is not None else False,
+        hide_worktree=kittymux_place.worktree_named(title_key, facts) if facts is not None else False,
+        title_key=title_key,
+    )
+
+
+def _tabs_window(tm, osw_id, pal, pid, home, folder, focused_id, now_m, wall) -> dict:
+    active = tm.active_tab
+    session = ""
+    if active is not None:
+        session = getattr(active, "active_session_name", "") or getattr(active, "created_in_session_name", "") or ""
+    tabs = []
+    keys = _title_keys(osw_id)
+    for index, tab in enumerate(tm.tabs, 1):
+        try:
+            row = _tabs_row(tab, index, pal, pid, home, folder, keys, now_m, wall, active)
+        except Exception:
+            row = None
+        if row is not None:
+            tabs.append(row)
+    wm = kittymux_place.clean(getattr(tm, "wm_class", "") or "kitty")[:64] or "kitty"
+    return {
+        "kitty_pid": pid, "os_window_id": osw_id, "wm_class": wm,
+        "focused": bool(focused_id) and osw_id == focused_id,
+        "session": kittymux_place.clean(session)[:80], "tabs": tabs,
+    }
+
+
+def _tabs_windows(pal) -> list:
+    boss = get_boss()
+    try:
+        from kitty.fast_data_types import current_focused_os_window_id
+        focused_id = int(current_focused_os_window_id() or 0)
+    except Exception:
+        focused_id = 0
+    home = os.path.expanduser("~")
+    folder = bool(_features().get("folder", True))
+    pid = os.getpid()
+    now_m, wall = time.monotonic(), time.time()
+    out = []
+    for osw_id, tm in sorted(getattr(boss, "os_window_map", {}).items(), key=lambda kv: kv[0]):
+        try:
+            out.append(_tabs_window(tm, int(osw_id), pal, pid, home, folder, focused_id, now_m, wall))
+        except Exception:
+            continue
+    return out
+
+
+def _queue_tabs(pal) -> None:
+    """Remember this pass's windows and write now, or arm one trailing timer. Never raises."""
+    try:
+        windows = _tabs_windows(pal)
+        rt = _tabs_rt()
+
+        def arm(delay, _rt=rt):
+            import kittymux_timers
+            _rt.timer = kittymux_timers.add(__name__, "_tabs_flush", delay, False)
+            return _rt.timer is not None
+
+        kittymux_tabsnap.submit(rt.gate, windows, time.monotonic(), _emit_tabs, arm)
+    except Exception:
+        pass
+
+
 # ── entry point ──────────────────────────────────────────────────────────────
 _PROFILE = os.environ.get("KITTYMUX_PROFILE") == "1"     # opt-in: per-draw timing → tab_bar-profile.log
 _prof = {"n": 0, "total": 0.0, "max": 0.0, "since": 0.0}
@@ -1562,6 +1686,8 @@ def _draw_tab(
             _new_pass()                          # a new redraw pass starts at tab 1: nothing memoised before it is reused
         _remember_progress(tab)                  # every tab, including the rail: the panel reads this file, the bar does not have to draw the fill
         pal = _palette(draw_data)
+        if index == 1 and not extra_data.for_layout:
+            _queue_tabs(pal)                     # tabs.json: one snapshot per pass, coalesced; the layout pass only measures
         if draw_data.tab_bar_edge in ("left", "right"):
             end = _draw_vertical(draw_data, screen, tab, index, extra_data, pal)
         else:

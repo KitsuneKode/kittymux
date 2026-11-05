@@ -149,11 +149,30 @@ It measures how fast you got to each agent, not how long an answer took. One wai
 
 `state` is `working`, `waiting`, `limited`, `error`, `done` or `idle`. The usage limit is `limited`. `brand` is the icon file in `assets/icons` (`codex` is `openai`, `gemini` is `googlegemini`, `droid` is `factorydroid`). `action` is what `kittymux act` accepts. `question` is set only while the agent is waiting, `error` only in the error state, and `limit_reset` only while it is limited and the reset time is known. `progress` is a fraction from 0 to 1, or `null`. `counts` always has all six states.
 
+## The tab list
+
+`~/.local/state/kittymux/tabs.json` is every tab in every running kitty, including a plain shell. It is the vertical bar's own title, place line, state, age and progress, so a shell can draw the tabs in real pixels without working them out again. Mode `0600`, schema version 1. A new field keeps the version. A rename or a change of meaning bumps it. Each kitty replaces only its own windows. The file is rewritten at most once every 250 ms, and only when something other than the timestamp changed.
+
+```json
+{"version": 1, "t": 1793780793.0, "windows": [
+  {"kitty_pid": 4035, "os_window_id": 1, "wm_class": "kitty", "focused": true, "session": "calm-otter",
+   "tabs": [
+     {"tab_id": 4, "index": 2, "active": false, "title": "Port the configs", "subtitle": "calm-otter/src  main",
+      "project": "calm-otter", "hue": "#a3d4a0", "branch": "main", "cwd": "~/work/calm-otter",
+      "agent": "claude", "brand": "claude", "state": "working", "age": "4m",
+      "progress": {"state": "set", "pct": 42}, "panes": 2, "needs_you": false,
+      "action": {"op": "jump", "pid": 4035, "w": "20"}}
+   ]}
+]}
+```
+
+`title` is the tidied title, and a bare `~` is `Home`. `subtitle` is the place line's words, or the program (`zsh`) when that is what the bar draws. `hue` is `#rrggbb` or `null`. `state` uses the same names as `agents.json`; a tab with no agent is `idle`. `progress` is `null` when the program reported none. `action` is what `kittymux act` accepts, aimed at the tab's focused window. `focused` is true for the OS window kitty considers focused.
+
 ## Hints on a notification
 
 A notification carries `x-kittymux-pid`, `x-kittymux-window`, `x-kittymux-event` (the inbox id), `x-kittymux-agent`, `x-kittymux-brand`, `x-kittymux-state` and `x-kittymux-source` (`agent` or `tool`). The brand hint is left off when there is no icon. Jump focuses that window and, when the event id is present, acknowledges it. That is the same end state as `kittymux inbox jump`.
 
-A panel needs only to watch that file, render `events`, and run `kittymux inbox jump ID` or `ack ID` on click. For a status bar, `kittymux inbox --waybar` prints a ready module:
+A panel needs only to watch the inbox snapshot for events, `agents.json` for who is working and `tabs.json` for the tab list, and run `kittymux inbox jump ID` or `ack ID` (or a row's `action`) on click. For a status bar, `kittymux inbox --waybar` prints a ready module:
 
 ```jsonc
 // ~/.config/waybar/config.jsonc

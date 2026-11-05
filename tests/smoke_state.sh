@@ -131,6 +131,36 @@ for row in doc["agents"]:
 print("  ok   agents.json version 1, private, working/waiting/idle, jump action")
 PY
 
+python3 - "$STATE" <<'PY' || fail "tabs.json is not the versioned tab list"
+import json, os, stat, sys
+path = os.path.join(sys.argv[1], "tabs.json")
+info = os.stat(path)
+assert stat.S_IMODE(info.st_mode) == 0o600, oct(info.st_mode)
+doc = json.load(open(path, encoding="utf-8"))
+assert doc["version"] == 1, doc.get("version")
+assert isinstance(doc["t"], (int, float)) and not isinstance(doc["t"], bool)
+names = {"working", "waiting", "limited", "error", "done", "idle"}
+tabs = [t for w in doc["windows"] for t in w["tabs"]]
+assert len(tabs) == 5, len(tabs)
+for w in doc["windows"]:
+    assert isinstance(w["focused"], bool)
+    assert isinstance(w["kitty_pid"], int) and not isinstance(w["kitty_pid"], bool)
+    assert isinstance(w["wm_class"], str) and w["wm_class"]
+for t in tabs:
+    assert t["state"] in names, t["state"]
+    assert isinstance(t["needs_you"], bool)
+    assert t["needs_you"] == (t["state"] in ("waiting", "limited"))
+    assert t["action"]["op"] == "jump"
+    assert isinstance(t["action"]["pid"], int) and not isinstance(t["action"]["pid"], bool)
+    assert str(t["action"]["w"]).isdigit()
+    hue = t["hue"]
+    assert hue is None or (isinstance(hue, str) and len(hue) == 7 and hue.startswith("#")), hue
+    prog = t["progress"]
+    assert prog is None or (isinstance(prog, dict) and isinstance(prog.get("pct"), int)
+                            and not isinstance(prog.get("pct"), bool)), prog
+print("  ok   tabs.json version 1, private, 5 tabs, jump action")
+PY
+
 # a question in a split the user is not looking at: the scanner must still see it (the tab bar rolls
 # every pane of the tab up — kittymux_agents.tab_verdict — so the tab lights up too)
 read -r ID_S ID_SH < <(kitty @ --to "$SOCK" ls | python3 -c '
