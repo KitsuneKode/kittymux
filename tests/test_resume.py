@@ -93,6 +93,8 @@ class ResumeArgvTests(unittest.TestCase):
 class DetectionTests(unittest.TestCase):
     def test_names_runtimes_and_helpers(self):
         self.assertEqual(R.agent_of(AGENTS, ["/home/u/.local/bin/claude", "--x"]), ("claude", 0))
+        self.assertEqual(R.agent_of(AGENTS, ["/opt/kittymux/bin/mux-pty", "--", "claude", "--resume", "x"]), ("claude", 2))
+        self.assertEqual(R.agent_of(AGENTS, ["mux-pty", "--", "node", "/opt/x/codex"]), ("codex", 3))
         self.assertEqual(R.agent_of(AGENTS, ["node", "/opt/x/codex", "--y"]), ("codex", 1))
         self.assertEqual(R.agent_of(AGENTS, ["cursor"]), ("cursor-agent", 0))      # alias
         self.assertEqual(R.agent_of(AGENTS, ["antigravity"]), ("agy", 0))

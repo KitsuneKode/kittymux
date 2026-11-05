@@ -380,11 +380,16 @@ def scan_window(window, now: float) -> bool:
     elif changed and not old_state and new in agents.NEEDS_YOU:
         _record("notify", wid, agent, state=new, outcome="suppressed: first sight of this window (a scanner restart must not replay old events)")
     if new == "error":
-        if old_state and old_state != "error":
-            outcome = _announce(window, "error", agent, "agent", reason, confidence="high", tag="psp")
-            _record("notify", wid, agent, state="error", source="agent", outcome=outcome)
-        elif not old_state:
+        # One announcement per report. A second, different message is a new report. Blinking away
+        # (waiting, limited) and back to the same message is not.
+        announced = book.get("error_report")
+        if not old_state:
+            book["error_report"] = reason
             _record("notify", wid, agent, state="error", outcome="suppressed: first sight of this window (a scanner restart must not replay old events)")
+        elif reason != announced:
+            outcome = _announce(window, "error", agent, "agent", reason, confidence="high", tag="psp")
+            book["error_report"] = reason
+            _record("notify", wid, agent, state="error", source="agent", outcome=outcome)
     if new == "done":
         if old_state and old_state != "done":
             # first sight of a window (no previous verdict) never notifies: after a scanner restart every
@@ -946,10 +951,16 @@ def _announce(window, kind: str, agent: str, source: str, detail: str, *, confid
         tab = agents.strip_agent_prefix(agents.strip_title_prefix(window.title or ""), agent) or agent
         ev = inbox.make_event(kind, agent, wid, source, time.time(), pid=os.getpid(), tab=tab, title=f"{agent or 'agent'} {_TEXT_BY_KIND.get(kind, kind)}",
                               body=detail, confidence=confidence, reset_at=reset_at, private=_private(), tag=tag)
+        # A text-only error is inbox-only. If the agent's own OSC 7501 error then merges into it, the
+        # popup was never sent. A different message is a different report even inside the merge window.
+        prior = inbox.matching_unread(state_dir(), ev) if kind == "error" and tag == "psp" else None
         is_new, _ = inbox.add(state_dir(), ev)
         if is_new:
             vars(_RT).setdefault("unread", set()).add(wid)
         if not is_new:
+            same = prior is not None and prior.get("tag") == "psp" and (prior.get("body") or "") == (ev.get("body") or "")
+            if kind == "error" and tag == "psp" and not same:
+                return _notify(window, "error", detail, agent)
             return "merged into an earlier report of the same thing: no second popup"
         if kind in ("permission", "question"):
             return _notify(window, "waiting", detail, agent)
@@ -1152,7 +1163,8 @@ def _notify(window, state: str, detail: str, agent: str = "") -> str:
             return "suppressed: notify-send is not installed"
         now = time.monotonic()
         wid = str(window.id)
-        if now - _RT.notified.get(wid, -1e9) < NOTIFY_EVERY:
+        # A new error report is a different occurrence. The 10 s cooldown is for a repeated needs-you, not a second failure.
+        if state != "error" and now - _RT.notified.get(wid, -1e9) < NOTIFY_EVERY:
             return f"suppressed: this window was notified less than {int(NOTIFY_EVERY)} s ago"
         if not _within_budget(now):
             return "suppressed: global notification rate limit"

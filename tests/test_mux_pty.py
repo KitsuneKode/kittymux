@@ -3,6 +3,7 @@ import base64
 import os
 import pty
 import select
+import signal
 import sys
 import time
 import unittest
@@ -44,7 +45,16 @@ def run_under_pty(argv, seconds=6.0):
             if not chunk:
                 break
             out += chunk
-    _, status = os.waitpid(pid, 0)
+    grace_end = time.monotonic() + 5
+    while True:
+        done, status = os.waitpid(pid, os.WNOHANG)
+        if done:
+            break
+        if time.monotonic() >= grace_end:
+            os.kill(pid, signal.SIGKILL)
+            _, status = os.waitpid(pid, 0)
+            break
+        time.sleep(0.05)
     return out, os.waitstatus_to_exitcode(status)
 
 
@@ -60,6 +70,11 @@ class RelayTests(unittest.TestCase):
                  for v in out.split(b"\x1b]1337;SetUserVar=kittymux_psp=")[1:]]
         self.assertTrue(any('"state":"blocked"' in v and "Proceed?" in v for v in vars_), vars_)
         self.assertIn('"state":"done"', vars_[-1])                          # done outlives the program
+
+    def test_plain_output_clears_a_stale_summary(self):
+        out, code = run_under_pty([sys.executable, RELAY, "--", "sh", "-c", "printf hi"])
+        self.assertEqual(code, 0)
+        self.assertIn(b"\x1b]1337;SetUserVar=kittymux_psp=\x07", out)
 
     def test_without_a_terminal_it_just_runs_the_command(self):
         import subprocess

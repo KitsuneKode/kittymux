@@ -1193,6 +1193,49 @@ class PspErrorTests(ScanBase):
         self.assertEqual(len(events), 1)
         self.assertIn("build failed", events[0]["body"])
 
+    def test_a_new_error_message_is_announced_and_the_same_one_is_not(self):
+        w = FakeWindow(1, "claude", WORKING, title="build")
+        w.user_vars = {}
+        self.add(w)
+        KS.scan_window(w, 100.0)
+        vars(KS._RT).pop("notify_log", None)
+        KS._RT.notified.clear()
+        with mock.patch.dict(os.environ, {"KITTYMUX_NOTIFY": "1"}), \
+             mock.patch("kittymux_scan.shutil.which", return_value="notify-send"), \
+             mock.patch("kittymux_scan.subprocess.Popen") as popen:
+            w.user_vars = self.report("build failed")
+            w.screen = IDLE
+            KS.scan_window(w, 101.0)
+            self.assertEqual(popen.call_count, 1)
+            KS.scan_window(w, 102.0)                                 # the same report, still error
+            self.assertEqual(popen.call_count, 1)
+            w.screen = PERMISSION
+            w.user_vars = {}
+            KS.scan_window(w, 103.0)                                 # a prompt outranks the error
+            self.assertNotEqual(KS._RT.verdicts["1"]["state"], "error")
+            w.user_vars = self.report("build failed")
+            w.screen = IDLE
+            KS.scan_window(w, 104.0)                                 # the same report again: not a new one
+            self.assertEqual(KS._RT.verdicts["1"]["state"], "error")
+            self.assertEqual(popen.call_count, 1)
+            w.user_vars = self.report("tests failed")
+            KS.scan_window(w, 105.0)
+            self.assertEqual(popen.call_count, 2)
+
+    def test_a_text_only_error_does_not_swallow_the_osc_notification(self):
+        w = FakeWindow(1, "claude", IDLE, title="build")
+        self.add(w)
+        KS.scan_window(w, 100.0)                                     # first sight, so the next announce is allowed
+        with mock.patch.dict(os.environ, {"KITTYMUX_NOTIFY": "1"}), \
+             mock.patch("kittymux_scan.shutil.which", return_value="notify-send"), \
+             mock.patch("kittymux_scan.subprocess.Popen") as popen:
+            quiet = KS._announce(w, "error", "claude", "agent", "mentioned in the log")
+            self.assertEqual(quiet, "inbox only")
+            popen.assert_not_called()
+            outcome = KS._announce(w, "error", "claude", "agent", "build failed", tag="psp")
+        self.assertNotIn("merged", outcome)
+        self.assertEqual(popen.call_count, 1)
+
 
 class QuietTests(ScanBase):
     """`kittymux notify mute` and `kittymux snooze`: quiet the interruption, never lose the news."""

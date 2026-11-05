@@ -193,6 +193,8 @@ def apply_to_view(rec: dict | None, view: dict, marker: str, line: str) -> tuple
     state, t = rec["state"], float(rec.get("t") or 0)
     text = rec.get("msg") or rec.get("title") or ""
     if state == "blocked":
+        if marker == "limited":                 # a usage limit on screen outranks a permission prompt (status contract)
+            return "limited", line
         view["why"] = "it reports it is blocked (OSC 7501)"
         return "waiting", text or line or ({"auth": "Needs a login", "question": "Has a question"}.get(rec.get("kind", ""), "Needs your permission"))
     if state == "working":
@@ -227,15 +229,24 @@ class Boundary:
 
     def __init__(self) -> None:
         self.state = self.GROUND
+        self.utf_left = 0                     # continuation bytes still owed by a character split across reads
 
     def feed(self, data: bytes) -> bool:
         i, n = 0, len(data)
         while i < n:
+            if self.utf_left:
+                b = data[i]
+                if 0x80 <= b <= 0xBF:
+                    i += 1
+                    self.utf_left -= 1
+                    continue
+                self.utf_left = 0             # a non-continuation: the previous character was cut; resync here
             s = self.state
             if s == self.GROUND:
                 e = data.find(b"\x1b", i)
                 if e < 0:
-                    return _utf8_complete(data[max(i, n - 4):])
+                    self.utf_left = _utf8_need(data[max(i, n - 4):])
+                    return self.utf_left == 0
                 self.state, i = self.ESC, e + 1
             elif s == self.ESC:
                 c = data[i]
@@ -269,16 +280,24 @@ class Boundary:
                     self.state, i = self.GROUND, i + 1
                 else:
                     self.state = self.ESC                             # ESC + other: a new sequence begins
-        return self.state == self.GROUND and (n == 0 or _utf8_complete(data[-4:]))
+        if self.state != self.GROUND or self.utf_left:
+            return False
+        self.utf_left = _utf8_need(data[-4:] if n else b"")
+        return self.utf_left == 0
+
+
+def _utf8_need(tail: bytes) -> int:
+    """How many continuation bytes a trailing UTF-8 character still needs. 0 when `tail` ends on a boundary."""
+    for back in range(1, min(4, len(tail)) + 1):
+        b = tail[-back]
+        if b < 0x80:
+            return 0
+        if b >= 0xC0:                                                 # a lead byte: how long should it be?
+            need = 2 if b < 0xE0 else 3 if b < 0xF0 else 4 if b < 0xF8 else 1
+            return max(0, need - back)
+    return 0
 
 
 def _utf8_complete(tail: bytes) -> bool:
     """True unless `tail` ends partway through a UTF-8 character."""
-    for back in range(1, min(4, len(tail)) + 1):
-        b = tail[-back]
-        if b < 0x80:
-            return True
-        if b >= 0xC0:                                                 # a lead byte: how long should it be?
-            need = 2 if b < 0xE0 else 3 if b < 0xF0 else 4
-            return back >= need
-    return True
+    return _utf8_need(tail) == 0

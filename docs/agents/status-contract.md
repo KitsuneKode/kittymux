@@ -22,7 +22,7 @@ States, most important first — a state needs positive evidence, and silence is
   if no completion was reported yet this turn (`completed`).
 - Question/limit text on screen only counts when no activity hint is drawn BELOW it (stale prose above a live spinner), unless dialog chrome (`esc to cancel`, `(esc)`) is present.
 - A completion notifies only with a KNOWN duration ≥ 15 s (`worked is not None`) and after the 5 s settle.
-- An OSC 7501 `error` is never a completion and never a "done" notification. It is an inbox event of kind `error` and, when you are not looking and not muted, a notification that keeps the message. A mute or `notify-off` holds the popup; the event still reaches the inbox. A failure only mentioned in other text stays inbox-only.
+- An OSC 7501 `error` is never a completion and never a "done" notification. It is an inbox event of kind `error` and, when you are not looking and not muted, a notification that keeps the message. A later, different report is announced again; the same report is not, including when it returns after a prompt or a limit. A text-only error already in the inbox does not swallow that popup. A mute or `notify-off` holds the popup; the event still reaches the inbox. A failure only mentioned in other text stays inbox-only. The words shown are the OSC reason, then the hook message.
 - Claude hooks installed by `kittymux hooks --install`: `UserPromptSubmit`/`PostToolUse` → working, `Notification` → waiting, `Stop` → done, `SessionEnd` → idle.
   `kittymux doctor` reports missing events. Change `HOOK_EVENTS`, README's snippet and the tests together.
 

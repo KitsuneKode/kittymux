@@ -120,6 +120,9 @@ class AgentTableTests(unittest.TestCase):
     def test_antigravity_is_recognised_by_both_names(self):
         self.assertEqual(A.agent_in(["/home/u/.local/bin/agy"]), "agy")
         self.assertEqual(A.agent_in(["node", "/opt/antigravity/bin/antigravity"]), "antigravity")
+        self.assertEqual(A.agent_in(["/opt/kittymux/bin/mux-pty", "--", "claude"]), "claude")
+        self.assertEqual(A.agent_in(["mux-pty", "--", "droid"]), "droid")          # strict names only match as the command
+        self.assertIsNone(A.agent_in(["mux-pty", "--"]))
         self.assertEqual(A.AGENTS["agy"], A.AGENTS["antigravity"])
 
     def test_every_agent_with_a_pua_glyph_is_in_the_icon_font(self):
@@ -131,6 +134,14 @@ class AgentTableTests(unittest.TestCase):
         self.assertLessEqual(max(bmp) - 0xE0D8, count - 1)                    # every glyph has an icon behind it
 
 
+class PickerStateTests(unittest.TestCase):
+    def test_error_is_kept_and_idle_is_not(self):
+        self.assertEqual(A.picker_state("error"), "error")
+        self.assertEqual(A.picker_state("waiting"), "waiting")
+        self.assertEqual(A.picker_state("idle"), "")
+        self.assertEqual(A.picker_state(""), "")
+
+
 class MsgTests(unittest.TestCase):
     def test_msg_only_for_waiting_limited_and_done(self):
         e = {"msg": "needs approval"}
@@ -138,7 +149,7 @@ class MsgTests(unittest.TestCase):
         self.assertEqual(A.resolve_msg(e, "done"), "needs approval")
         self.assertEqual(A.resolve_msg(e, "limited"), "needs approval")
         self.assertEqual(A.resolve_msg({"reason": "build failed"}, "error"), "build failed")
-        self.assertEqual(A.resolve_msg({"msg": "hook says", "reason": "screen says"}, "error"), "hook says")
+        self.assertEqual(A.resolve_msg({"msg": "hook says", "reason": "build failed"}, "error"), "build failed")
         self.assertEqual(A.resolve_msg(e, "working"), "")
         self.assertEqual(A.resolve_msg(e, ""), "")
 
