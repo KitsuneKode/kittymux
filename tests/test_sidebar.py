@@ -319,6 +319,11 @@ class SidebarTests(unittest.TestCase):
 
     def setUp(self):
         self.m = load_sidebar()
+        # a private state dir: the panel reads `panel-mode` (summoned → it hands the keyboard back after a jump) and other
+        # files from it, and the user's real one must never decide what a test sees
+        self._state = tempfile.TemporaryDirectory()
+        self.addCleanup(self._state.cleanup)
+        self.m._STATE_DIR = Path(self._state.name)
 
     def sidebar(self):
         s = self.m.Sidebar()
