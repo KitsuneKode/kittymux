@@ -130,6 +130,78 @@ class WorkflowArgvTests(unittest.TestCase):
         import kittymux_sockets as S
         self.assertIsNone(S.target(lambda:'unix:/valid',[],lambda p:False,{'KITTYMUX_TARGET':'unix:/invalid'}))
 
+class FindSessionTests(unittest.TestCase):
+    def test_a_missing_snapshot_waits_then_logs_once(self):
+        import os
+        import tempfile
+        from io import StringIO
+        from unittest import mock
+        sleeps = []
+        def fetch():
+            raise ValueError("kitty snapshot unavailable")
+        with tempfile.TemporaryDirectory() as d:
+            err = StringIO()
+            with mock.patch("sys.stderr", err):
+                self.assertIsNone(W.fetch_snapshot(fetch, d, sleep=sleeps.append, clock=lambda: 1000.0))
+            self.assertEqual(sleeps, [0.5, 1.0, 2.0])
+            log = open(os.path.join(d, "cli-errors.log"), encoding="utf-8").read()
+            self.assertEqual(log.count("workflow find-session: ValueError: kitty snapshot unavailable"), 1)
+            self.assertEqual(err.getvalue().count("kitty snapshot unavailable"), 1)
+            sleeps.clear()
+            err = StringIO()
+            with mock.patch("sys.stderr", err):
+                self.assertIsNone(W.fetch_snapshot(fetch, d, sleep=sleeps.append, clock=lambda: 1001.0))
+            self.assertEqual(sleeps, [])
+            self.assertEqual(err.getvalue(), "")
+            self.assertEqual(open(os.path.join(d, "cli-errors.log"), encoding="utf-8").read().count("kitty snapshot unavailable"), 1)
+
+    def test_a_retry_that_succeeds_does_not_log_and_an_invalid_snapshot_is_not_retried(self):
+        import os
+        import tempfile
+        sleeps = []
+        n = {"i": 0}
+        def fetch():
+            n["i"] += 1
+            if n["i"] < 2:
+                raise ValueError("kitty snapshot unavailable")
+            return [{"id": 4, "tabs": []}]
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(W.fetch_snapshot(fetch, d, sleep=sleeps.append, clock=lambda: 1.0), [{"id": 4, "tabs": []}])
+            self.assertEqual(sleeps, [0.5])
+            self.assertFalse(os.path.exists(os.path.join(d, "cli-errors.log")))
+            sleeps.clear()
+            def bad():
+                raise ValueError("invalid kitty snapshot")
+            with self.assertRaises(ValueError):
+                W.fetch_snapshot(bad, d, sleep=sleeps.append, clock=lambda: 2.0)
+            self.assertEqual(sleeps, [])
+
+    def test_find_session_retries_then_prints_the_os_window(self):
+        import json
+        import os
+        import tempfile
+        from io import StringIO
+        from unittest import mock
+        sleeps = []
+        tries = {"n": 0}
+        def rc(argv, timeout):
+            if len(argv) > 4 and argv[4] == "ls" and any(str(a).startswith("session:") for a in argv):
+                tries["n"] += 1
+                if tries["n"] < 3:
+                    return 1, ""
+                return 0, json.dumps([{"id": 4, "is_focused": True, "tabs": [{"id": 5, "is_active": True, "windows": [{"id": 6, "is_focused": True}]}]}])
+            return 0, "[]"
+        snap = [{"id": 1, "is_focused": True, "tabs": [{"id": 2, "is_active": True, "title": "t", "windows": [{"id": 3, "is_focused": True}]}]}]
+        out = StringIO()
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {"KITTY_WINDOW_ID": ""}, clear=False), \
+                mock.patch.object(W.time, "sleep", side_effect=lambda s: sleeps.append(s)), \
+                mock.patch("sys.stdout", out):
+            status = W.run(["find-session", "calm-otter"], "unix:/private", rc, snap, d)
+        self.assertEqual(status, 0)
+        self.assertEqual(out.getvalue().strip(), "4")
+        self.assertEqual(sleeps, [0.5, 1.0])
+
+
 class SocketHandleTests(unittest.TestCase):
     def test_native_inherited_socket_handle_is_preserved_but_closed_fd_rejected(self):
         import socket

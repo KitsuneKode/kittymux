@@ -112,6 +112,25 @@ expect "devin thinking"        "$ID_D" working
 expect "claude permission"     "$ID_C" waiting
 expect "codex idle prompt"     "$ID_X" idle
 
+python3 - "$STATE" <<'PY' || fail "agents.json is not the versioned shell feed"
+import json, os, stat, sys
+path = os.path.join(sys.argv[1], "agents.json")
+info = os.stat(path)
+assert stat.S_IMODE(info.st_mode) == 0o600, oct(info.st_mode)
+doc = json.load(open(path, encoding="utf-8"))
+assert doc["version"] == 1, doc.get("version")
+for name in ("working", "waiting", "done", "idle", "limited", "error"):
+    assert name in doc["counts"], name
+states = {row["state"] for row in doc["agents"]}
+assert {"working", "waiting", "idle"} <= states, sorted(states)
+for row in doc["agents"]:
+    assert row["source"] == "agent", row["source"]
+    assert row["action"]["op"] == "jump"
+    assert isinstance(row["action"]["pid"], int) and not isinstance(row["action"]["pid"], bool)
+    assert str(row["action"]["w"]).isdigit()
+print("  ok   agents.json version 1, private, working/waiting/idle, jump action")
+PY
+
 # a question in a split the user is not looking at: the scanner must still see it (the tab bar rolls
 # every pane of the tab up — kittymux_agents.tab_verdict — so the tab lights up too)
 read -r ID_S ID_SH < <(kitty @ --to "$SOCK" ls | python3 -c '

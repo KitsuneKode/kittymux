@@ -5,7 +5,8 @@ kitty's notification pipeline), the agent's hooks, then what we read off its scr
 
     kind      permission | question | limit | done | error | info
     severity  needs-you | warn | info            (derived from kind)
-    source    agent | hook | screen              (who said so; `sources` lists every one that agreed)
+    sources   agent | hook | screen              (who said so)
+    source    agent | tool                        (what it is about: an agent, or a tool prompt such as sudo. Old events omit it)
     confidence  high | low                        (a "done" read only off a screen is low: shown in the inbox and the bar, never a popup on its own)
 
 The store is `inbox.jsonl` in the state dir (0600): append-only operations — {"op":"add",…} / {"op":"ack",…} / {"op":"clear"} — so several kitty
@@ -104,14 +105,17 @@ _SEQ = [0]
 
 
 def make_event(kind: str, agent: str, window: int | str, source: str, now: float, *, pid: int = 0, tab: str = "", title: str = "",
-               body: str = "", confidence: str = "high", reset_at: float | None = None, private: bool = False, tag: str = "") -> dict:
-    """A new event dict. `private` drops the body (the agent's own words may contain a command or a path)."""
+               body: str = "", confidence: str = "high", reset_at: float | None = None, private: bool = False, tag: str = "",
+               origin: str = "agent") -> dict:
+    """A new event dict. `source` is who reported it (agent, hook, screen). `origin` is what it is about (`source` on the event: agent or tool).
+    `private` drops the body (the agent's own words may contain a command or a path)."""
     if kind not in KINDS:
         kind = "info"
     _SEQ[0] += 1
     ev = {"op": "add", "id": f"{int(now * 1000):x}-{pid}-{_SEQ[0]}", "t": round(now, 1), "pid": pid, "w": str(window), "kind": kind,
           "severity": SEVERITY[kind], "agent": clean(agent, 24), "tab": clean(tab, TITLE_MAX), "title": clean(title, TITLE_MAX),
-          "body": "" if private else clean(body, BODY_MAX), "sources": [source], "confidence": confidence, "status": "unread", "count": 1}
+          "body": "" if private else clean(body, BODY_MAX), "sources": [source], "source": origin if origin in ("agent", "tool") else "agent",
+          "confidence": confidence, "status": "unread", "count": 1}
     if tag:
         ev["tag"] = clean(tag, 24)
     if reset_at:
@@ -147,7 +151,7 @@ def fold(ops: list[dict]) -> list[dict]:
                 prev["sources"] = sorted(set(prev.get("sources", [])) | set(op.get("sources", [])))
                 if op.get("confidence") == "high":
                     prev["confidence"] = "high"                      # any authoritative source upgrades it
-                for field in ("body", "title", "tab", "reset_at", "tag"):
+                for field in ("body", "title", "tab", "reset_at", "tag", "source"):
                     if op.get(field):
                         prev[field] = op[field]
                 continue

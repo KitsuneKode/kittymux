@@ -49,7 +49,7 @@ verdict() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(*[v
 sleep 2
 
 touch "$T/go1"
-wait_for 'e["kind"]=="permission" and "agent" in e["sources"] and e["severity"]=="needs-you"' || fail "the agent's own permission notification never reached the inbox"
+wait_for 'e["kind"]=="permission" and "agent" in e["sources"] and e.get("source")=="agent" and e["severity"]=="needs-you"' || fail "the agent's own permission notification never reached the inbox"
 echo "  ok   OSC 99 'needs your permission' → a permission event from the agent (needs-you)"
 
 touch "$T/go2"
