@@ -84,6 +84,10 @@ PANE_TITLE_MIN = (0, 49, 2)          # window_title_template with `{custom}` (wi
 PANE_TITLE_TEMPLATE = '"{fmt.fg.red}{bell_symbol}{activity_symbol}{fmt.fg.window}{custom or title}"'
 DIM_SHADER_MIN = (0, 49, 2)          # dim-inactive-windows stopped dimming the tab bar here (custom_shaders itself is 0.49.0)
 DIM_FLAG = "dim-inactive"            # $KITTYMUX_STATE/dim-inactive present → dim the windows that are not focused
+CARDS_SHADER_MIN = (0, 49, 0)        # custom_shaders
+CARDS_FLAG = "bar-cards"             # $KITTYMUX_STATE/bar-cards present → the bar's cards finished in pixels (assets/shaders)
+# the shipped pipeline, by absolute path (kitty resolves its shaders next to it); realpath: the config dir links here
+CARDS_PIPELINE = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "assets", "shaders", "kittymux-cards.pipeline")
 
 
 # POSIX-ERE for `path/to/file.py:42[:7]`; kittymux_openref.DETECT_REGEX must stay identical (a unit test pins it —
@@ -126,8 +130,13 @@ def gated_conf(version: tuple, sdir: str, slangc: bool = False) -> str:
         lines.append(f"detect_url_regex {DETECT_URL_REGEX}")
     if version >= PANE_TITLE_MIN:
         lines.append(f"window_title_template {PANE_TITLE_TEMPLATE}")
+    shaders = []                                     # ONE custom_shaders line: a second one would replace the first
     if version >= DIM_SHADER_MIN and slangc and os.path.exists(os.path.join(sdir, DIM_FLAG)):
-        lines.append("custom_shaders dim-inactive-windows")
+        shaders.append("dim-inactive-windows")
+    if version >= CARDS_SHADER_MIN and slangc and os.path.exists(os.path.join(sdir, CARDS_FLAG)) and os.path.exists(CARDS_PIPELINE):
+        shaders.append(CARDS_PIPELINE)
+    if shaders:
+        lines.append("custom_shaders " + " ".join(shaders))
     return "".join(line + "\n" for line in lines)
 
 

@@ -4,6 +4,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 
 ## [Unreleased]
 
+### Added
+- **`kittymux cards`: the bar's cards in pixels.** kitty 0.49's custom shaders post-process the rendered frame, and kittymux now ships one (`assets/shaders/kittymux-cards`) that touches only the tab bar: the active card's square cell corners become anti-aliased rounded ones, its top edge catches a faint sheen, a soft shadow falls under it, and on a tab change it glows and settles (kitty's `tab-change` animation, 420 ms ease-out). The shader derives the bar and card colours from kitty's own background and foreground exactly as `kittymux_theme` does (sRGB blend, rounded per channel), so every theme works without a generated file. Opt-in, gated on kitty ≥ 0.49.0 and `slangc`, and shares the one `custom_shaders` line with `kittymux dim`.
+
 ### Fixed
 - **The pixel Agents list keeps the accent for one thing.** A keyboard selection was a pink ring on top of the current tab's pink bar and a pink mascot tile; it is now the same raised neutral card as the active row, the chevron and the mascot tile are neutral, and the accent marks only the tab you are in.
 - **The bar says something on a plain shell.** A shell in your home folder titles its tab `~`, the folder line then repeats the title and hides, and the row was a bare tilde with a lone number under it. Now the tab is called **Home** and its second line names the program it runs (`zsh`, or the app in front). With no session name the header names the machine (`archlinux` over `2 tabs`) instead of a generic `Tabs` over the host, and the mascot is drawn in the text colour — the accent stays for selection and focus.

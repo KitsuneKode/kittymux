@@ -2772,6 +2772,39 @@ def dim(argv: list[str]) -> int:
     return 0
 
 
+def cards(argv: list[str]) -> int:
+    """`cards [on|off|toggle|show]`: the vertical bar's cards finished in pixels by kittymux's own shader
+    (assets/shaders/kittymux-cards: rounded corners, a top sheen, a soft shadow, a short glow on a tab change).
+    A flag file turns it on for every kitty ≥ 0.49.0 with the shader compiler (kittymux_layout.gated_conf)."""
+    cmd = argv[0] if argv else "toggle"
+    flag = os.path.join(kittymux_layout.state_dir(), kittymux_layout.CARDS_FLAG)
+    on = os.path.exists(flag)
+    if cmd == "show":
+        print("bar cards: " + ("on" if on else "off"))
+        return 0
+    if cmd not in ("on", "off", "toggle"):
+        print("usage: kittymux cards [on|off|toggle|show]", file=sys.stderr)
+        return 2
+    want = (not on) if cmd == "toggle" else cmd == "on"
+    if want and not kittymux_layout.have_slangc():
+        print(f"{BAD} the bar cards need kitty's shader compiler, which is not installed: add the `shader-slang` package "
+              "(Arch: pacman -S shader-slang; or set $SLANGC to your slangc)", file=sys.stderr)
+        return 1
+    if want:
+        os.makedirs(os.path.dirname(flag), mode=0o700, exist_ok=True)
+        open(flag, "a").close()
+    elif on:
+        os.unlink(flag)
+    ver = _kitty_version()
+    if want and ver and ver < kittymux_layout.CARDS_SHADER_MIN:
+        print(f"{WARN} kitty {'.'.join(map(str, ver))} has no custom shaders (0.49.0+) — the flag is set and takes effect after an update")
+    sock = _focused_socket()
+    if sock:
+        _run(["kitty", "@", "--to", sock, "load-config"], 6)
+    print("bar cards: " + ("on" if want else "off"))
+    return 0
+
+
 def screenshot(argv: list[str]) -> int:
     """`screenshot [--tab|--window] [FILE]`: kitty's own PNG of the OS window (tab bar included), the active tab, or the focused
     window. The file is private (0600): a screenshot of agent sessions can hold anything that was on screen."""
@@ -3103,6 +3136,8 @@ def _dispatch(argv: list[str]) -> int:
         return layout(argv[1:])
     if cmd == "dim":
         return dim(argv[1:])
+    if cmd == "cards":
+        return cards(argv[1:])
     if cmd == "explain":
         return explain(argv[1:])
     if cmd == "inbox":
