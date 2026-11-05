@@ -1,0 +1,14 @@
+# kittymux cards: the vertical bar's cards in pixels (rounded, sheen, shadow) and a short glow on a tab change.
+# Opt-in (`kittymux cards on`); emitted by the layout geninclude only for kitty >= 0.49.0 with slangc installed.
+startgroup
+    # static: redrawn only when the frame changes
+    animation_step 0
+    shaders kittymux-cards
+endgroup
+startgroup
+    animation_start tab-change
+    animation_stop 420
+    animation_curve ease-out
+    animation_step 16
+    shaders kittymux-glow
+endgroup
