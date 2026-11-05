@@ -212,11 +212,16 @@ class Peek(Handler):
                         "done": kittymux_theme.blend(p.done, p.bg, 0.65)}.get(st)
             agent = kittymux_agents.AGENTS.get(card["agent"])
             glyph = agent.glyph if agent else kittymux_agents.TOOLS.get(card["tool"], "")
+            title = card["title"] or "—"
             head = [(" ", p.text, False), (glyph or " ", agent.brand if agent else p.muted, False), (" ", p.text, False),
-                    (card["title"] or "—", p.text, True)]
+                    (title, p.text, True)]
             right = f"{kittymux_agents.state_glyph(st)} {st} " if state_fg is not None else ""
             header_room = max(0, width - _cells(right))
+            prefix = 1 + _cells(glyph or " ") + 1
             lines.append(self._line(head, header_room, bg) + self._seg(right, fg=state_fg, bg=bg, bold=True))
+            # The header already shows the opening of a long title. The rows under it are only the cut-off tail.
+            for text in deck.wrap_detail(deck.clipped_suffix(title, max(0, header_room - prefix), _cells), width - 2, _cells):
+                lines.append(self._line([(" " + text, p.faint, False)], width, bg))
             lines.append(self._line([("─" * width, p.line, False)], width, bg))
             if card["reason"]:
                 lines.append(self._line([(" " + card["reason"], state_fg or p.text, True)], width, bg))

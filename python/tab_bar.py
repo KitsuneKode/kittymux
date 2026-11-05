@@ -349,6 +349,21 @@ def _compact_session_name(session_name: str) -> str:
     return _truncate(session_name, _SESSION_SOFT_MAX)
 
 
+def _group_label(index: int, tab, prev_tab) -> str | None:
+    """Session-folder heading for this tab, or None when it continues the group above.
+
+    The header names the focused session (`active_session_name`), not tab 1's. Tab 1 still needs
+    a heading when it belongs to a different session."""
+    this = getattr(tab, "session_name", "") or ""
+    if index <= 1:
+        if this == (getattr(tab, "active_session_name", "") or ""):
+            return None
+    elif prev_tab is None or this == (getattr(prev_tab, "session_name", "") or ""):
+        return None
+    label = _compact_session_name(this)
+    return "Other tabs" if label == "—" else label
+
+
 def _title_from_cmdline(cmdline: list[str]) -> str:
     if not cmdline:
         return ""
@@ -1147,7 +1162,7 @@ def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: in
     screen.cursor.y = info_y
     screen.cursor.bg = bar
     if rows > 1 and count_txt:
-        host_room = max(1, btn_x - 2 - badge_cells)
+        host_room = max(1, btn_x - 4 - badge_cells)   # the host, then the two-cell gap `_put` returns before the badges
         x = _put(screen, 1, _fit(count_txt, host_room), _rgb(pal.faint)) + 2
     elif rows == 1 and count_txt and room - _cells(name) - 2 >= _cells(count_txt):
         x = _put(screen, 1 + _cells(name) + 2, count_txt, _rgb(pal.faint)) + 2
@@ -1192,21 +1207,18 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     lines_avail = (hdr_rows + 1) if compact else min(max(1, draw_data.max_tab_title_lines),
                                                        screen.lines - y0)
     # Session folders (Rex's sidebar groups): where a tab's kitty session differs from the tab above it, a heading row
-    # with that session's name goes first (`Other tabs` for tabs in no session). The first tab's session is already
-    # the bar's header. Drawn in the layout pass too, so kitty counts the row.
-    if not compact and index > 1 and extra_data.prev_tab is not None and lines_avail >= 3:
-        this = getattr(tab, "session_name", "") or ""
-        if this != (getattr(extra_data.prev_tab, "session_name", "") or ""):
-            label = _compact_session_name(this)
-            label = "Other tabs" if label == "—" else label
-            _paint_rows(screen, y0, 1, _rgb(pal.bar))
-            screen.cursor.y = y0
-            _put(screen, 1, "\u2304 " + _fit(label, max(4, cols - 4 - sep_cols)), _rgb(pal.faint), True)
-            screen.cursor.bold = False
-            _sep_column(screen, y0, 1, _rgb(pal.bar), pal, native)
-            y0 += 1
-            screen.cursor.y = y0
-            lines_avail -= 1
+    # with that session's name goes first (`Other tabs` for tabs in no session). Tab 1 gets one too when its
+    # session is not the focused session the header names. Drawn in the layout pass too, so kitty counts the row.
+    label = None if compact or lines_avail < 3 else _group_label(index, tab, getattr(extra_data, "prev_tab", None))
+    if label:
+        _paint_rows(screen, y0, 1, _rgb(pal.bar))
+        screen.cursor.y = y0
+        _put(screen, 1, "\u2304 " + _fit(label, max(4, cols - 4 - sep_cols)), _rgb(pal.faint), True)
+        screen.cursor.bold = False
+        _sep_column(screen, y0, 1, _rgb(pal.bar), pal, native)
+        y0 += 1
+        screen.cursor.y = y0
+        lines_avail -= 1
     active = tab.is_active
     # Full bar: the active tab is an inset card (one bar-coloured column each side, Rex-style), so content sits one
     # column further in: the waiting stripe at 0, the logo at 2, the title at 4. The rail keeps its tight layout.
@@ -1322,6 +1334,10 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     elif not compact:
         _put(screen, gx, _ICON_SHELL, _rgb(pal.muted if active else pal.faint))
     title_room = cols - tx - 1 - sep_cols - ins
+    prog_label = ""
+    if progress and not want_sub and not compact:
+        prog_label = kittymux_progress.label(*progress)
+        title_room -= _cells(prog_label) + 1      # the percent sits left of the age and the state glyph
     if age and state_fg is not None and cols >= 6:
         title_room -= _cells(age) + 1             # the age sits just left of the state glyph
     if compact:
@@ -1347,10 +1363,11 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         # full bar: state mark at the right edge; rail: tucked right after the number so the row reads as one cluster
         _put(screen, 5 if compact else cols - 1 - sep_cols - ins, _glyph(state), _rgb(state_fg),
              bold=state in kittymux_agents.NEEDS_YOU)
-    if progress and not want_sub and not compact:
-        idx = kittymux_progress.label(*progress)
+    if prog_label:
         idx_fg = {"error": pal.alert, "paused": pal.waiting}.get(progress[0], pal.text if active else pal.muted)
-        _put(screen, cols - sep_cols - ins - _cells(idx), idx, _rgb(idx_fg))
+        glyph_x = cols - 1 - sep_cols - ins
+        age_cells = (_cells(age) + 1) if age and state_fg is not None and cols >= 6 else 0
+        _put(screen, glyph_x - age_cells - _cells(prog_label), prog_label, _rgb(idx_fg))
     title_y = y
 
     if want_sub and n_rows > (2 if header else 1):

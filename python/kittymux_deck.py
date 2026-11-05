@@ -390,6 +390,21 @@ def hint(width: int) -> str:
     return ""
 
 
+def clipped_suffix(text: str, width: int, cells: Callable[[str], int] = len) -> str:
+    """The tail `fit` does not draw. Empty when `text` fits in `width`."""
+    if cells(text) <= width:
+        return ""
+    if width <= 1:
+        return text
+    used = 0
+    for i, ch in enumerate(text):
+        w = cells(ch)
+        if used + w > width - 1:
+            return text[i:]
+        used += w
+    return ""
+
+
 def fit(text: str, width: int, cells: Callable[[str], int] = len) -> str:
     """Truncate to `width` cells with a trailing … (cells: width function)."""
     if width <= 0:

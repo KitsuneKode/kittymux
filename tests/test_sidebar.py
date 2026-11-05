@@ -188,6 +188,7 @@ class SidebarTests(unittest.TestCase):
             s.sel = 2
             s.on_click(self.click(8, y_of[0]))
             jump.assert_called_once()
+            self.assertEqual(s.sel, 0)
         s.finalize()
 
     def test_a_click_on_the_marker_toggles_and_does_not_jump_but_a_click_elsewhere_does(self):
@@ -732,6 +733,16 @@ class SidebarTests(unittest.TestCase):
         self.assertEqual(s._usage_sel, 1)
         s.on_click(self.click(12, 9))
         self.assertEqual(s._usage_sel, 1)
+        s._usage_sel = 0
+        s._usage_scroll = 3
+        s._usage_regions = [(10, 18, 5, 6, 1)]          # one line: screen row 4 when scrolled, row 7 when not
+        s.on_click(self.click(12, 4))
+        self.assertEqual(s._usage_sel, 1)
+        s._usage_sel = 0
+        s._usage_scroll = 3
+        s._usage_regions = [(10, 18, 5, 6, 1)]
+        s.on_click(self.click(12, 7))                   # where the tile sits with no scroll
+        self.assertEqual(s._usage_sel, 0)
         s.finalize()
 
     def test_clicking_inbox_buttons_chips_and_cards(self):
@@ -746,6 +757,16 @@ class SidebarTests(unittest.TestCase):
         with patch.object(s, "_inbox_act") as act:
             s.on_click(self.click(3, 9))
             act.assert_called_once_with("jump", 1)
+        s._inbox_sel = 0
+        s._inbox_scroll = 4
+        s._inbox_regions = ([], [(8, 9, 1)], [])        # one card line: screen row 6 scrolled, row 10 unscrolled
+        s.on_click(self.click(3, 6))
+        self.assertEqual(s._inbox_sel, 1)
+        s._inbox_sel = 0
+        s._inbox_scroll = 4
+        s._inbox_regions = ([], [(8, 9, 1)], [])
+        s.on_click(self.click(3, 10))
+        self.assertEqual(s._inbox_sel, 0)
         s.finalize()
 
     def test_a_changed_inbox_redraws_only_when_the_badge_moved_or_the_inbox_is_up(self):
