@@ -120,9 +120,8 @@ class FocusTests(unittest.TestCase):
         clients = [{"pid": 42, "address": "0xa", "title": "zsh"}, {"pid": 42, "address": "0xb", "title": "zsh"}]
         run = Fake(data, clients)                 # the tag never shows up
         with mock.patch.object(F.shutil, "which", return_value="/usr/bin/hyprctl"):
-            F.focus("unix:/s", 200, 42, run=run, env=HYPR, sleep=lambda s: None)
+            self.assertFalse(F.focus("unix:/s", 200, 42, run=run, env=HYPR, sleep=lambda s: None))
         self.assertEqual(run.dispatched(), [])
-        self.assertFalse(F.focus("unix:/s", 200, 42, run=run, env=HYPR, sleep=lambda s: None))
 
     def test_a_session_title_matches_when_the_window_title_does_not(self):
         # goto_session set the OS window title to the session name. Hyprland shows that, not the active window title.
