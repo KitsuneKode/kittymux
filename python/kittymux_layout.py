@@ -86,7 +86,9 @@ DIM_SHADER_MIN = (0, 49, 2)          # dim-inactive-windows stopped dimming the 
 DIM_FLAG = "dim-inactive"            # $KITTYMUX_STATE/dim-inactive present → dim the windows that are not focused
 CARDS_SHADER_MIN = (0, 49, 0)        # custom_shaders
 CARDS_FLAG = "bar-cards"             # $KITTYMUX_STATE/bar-cards present → the bar's cards finished in pixels (assets/shaders)
-# the shipped pipeline, by absolute path (kitty resolves its shaders next to it); realpath: the config dir links here
+GLASS_FLAG = "bar-cards-glass"       # $KITTYMUX_STATE/bar-cards-glass → the bar's own pixels go translucent (text stays opaque)
+# the shipped pipeline, by absolute path (kitty resolves its shaders next to it); realpath: the config dir links here.
+# when cards are on, the geninclude writes a copy into the state dir with this kitty's cell height and fill colours.
 CARDS_PIPELINE = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "assets", "shaders", "kittymux-cards.pipeline")
 
 
@@ -122,6 +124,67 @@ def have_slangc(env=None) -> bool:
     return (os.path.isfile(exe) and os.access(exe, os.X_OK)) if "/" in exe else shutil.which(exe) is not None
 
 
+def _import_here(name: str):
+    """Import a neighbour. This file is a geninclude: its directory is not on sys.path, and it must not raise."""
+    import sys
+    folder = os.path.dirname(os.path.realpath(__file__))
+    if folder and folder not in sys.path:
+        sys.path.insert(0, folder)
+    return __import__(name)
+
+
+def cards_cell_height() -> int:
+    """The asking kitty's cell height in pixels, or 0 when this is not running inside kitty (the shader then guesses)."""
+    try:
+        from kitty.fast_data_types import get_boss, viewport_for_window
+        boss = get_boss()
+        for osw in list(getattr(boss, "os_window_map", {}) or {}):
+            h = int(viewport_for_window(osw)[5])
+            if h > 0:
+                return h
+    except Exception:
+        return 0
+    return 0
+
+
+def cards_fills():
+    """The eight OSC 9;4 fill colours, or None when kitty's palette cannot be read (the shader then rounds only the active card)."""
+    try:
+        from kitty.fast_data_types import get_options
+        from kitty.rgb import color_as_int
+        o = get_options()
+        bg = None
+        for cand in (getattr(o, "tab_bar_background", None), getattr(o, "background", None)):
+            if cand is None:
+                continue
+            try:
+                bg = color_as_int(cand)
+            except Exception:
+                continue
+            if isinstance(bg, int):
+                break
+        if not isinstance(bg, int):
+            return None
+        theme = _import_here("kittymux_theme")
+        colors = theme.colors_from_options(o, bg, color_as_int)
+        if not colors:
+            return None
+        return _import_here("kittymux_cards").fill_rgbs(theme.from_colors(colors))
+    except Exception:
+        return None
+
+
+def cards_pipeline(sdir: str) -> str:
+    """Pipeline path for the custom_shaders line. A generated copy carries this kitty's cell height, glass flag and
+    fill colours; any failure falls back to the shipped pipeline (hover still works, glass and the extra fills do not)."""
+    try:
+        glass = os.path.exists(os.path.join(sdir, GLASS_FLAG))
+        return _import_here("kittymux_cards").install_pipeline(
+            sdir, os.path.dirname(CARDS_PIPELINE), glass, cards_cell_height(), cards_fills())
+    except Exception:
+        return CARDS_PIPELINE
+
+
 def gated_conf(version: tuple, sdir: str, slangc: bool = False) -> str:
     """Config lines for features the asking kitty supports. `version` is that kitty's (major, minor, patch);
     `slangc` says the shader compiler is installed (custom shaders cannot build without it)."""
@@ -134,7 +197,7 @@ def gated_conf(version: tuple, sdir: str, slangc: bool = False) -> str:
     if version >= DIM_SHADER_MIN and slangc and os.path.exists(os.path.join(sdir, DIM_FLAG)):
         shaders.append("dim-inactive-windows")
     if version >= CARDS_SHADER_MIN and slangc and os.path.exists(os.path.join(sdir, CARDS_FLAG)) and os.path.exists(CARDS_PIPELINE):
-        shaders.append(CARDS_PIPELINE)
+        shaders.append(cards_pipeline(sdir))
     if shaders:
         lines.append("custom_shaders " + " ".join(shaders))
     return "".join(line + "\n" for line in lines)

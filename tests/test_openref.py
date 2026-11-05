@@ -101,8 +101,12 @@ class GatedConfTests(unittest.TestCase):
             line = [x for x in out.splitlines() if x.startswith("custom_shaders ")]
             self.assertEqual(len(line), 1)
             path = line[0].split(" ", 1)[1]
-            self.assertTrue(os.path.isabs(path) and path.endswith("assets/shaders/kittymux-cards.pipeline"), path)
-            self.assertTrue(os.path.exists(path))                                     # the shipped pipeline, not a guess
+            self.assertTrue(os.path.isabs(path) and path.endswith("kittymux-cards.pipeline"), path)
+            self.assertTrue(os.path.exists(path))
+            body = open(path, encoding="utf-8").read()
+            self.assertIn("shaders kittymux-cards", body)                             # the real shader, beside the pipeline
+            self.assertIn("var bool GLASS = false", body)
+            self.assertNotIn("var bool GLASS = true", body)
             self.assertNotIn("custom_shaders", L.gated_conf((0, 48, 9), d, True))      # custom_shaders is 0.49.0+
             self.assertNotIn("custom_shaders", L.gated_conf((0, 49, 2), d, False))     # no slangc
             open(os.path.join(d, L.DIM_FLAG), "w").close()
