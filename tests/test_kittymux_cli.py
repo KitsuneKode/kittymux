@@ -1809,3 +1809,22 @@ class SettingsCmdTests(unittest.TestCase):
         code, _, err = self.run_cmd("off", "hue")
         self.assertEqual(code, 1)
         self.assertIn("cannot save", err)
+
+
+class LsMemoTests(unittest.TestCase):
+    def test_a_fresh_read_skips_the_two_second_memo(self):
+        m = load()
+        m._LS_MEMO.clear()
+        answers = iter([(0, '[{"id": 1}]'), (0, '[{"id": 2}]')])
+        with mock.patch.object(m, "_run", side_effect=lambda *a, **k: next(answers)) as run:
+            self.assertEqual(m._ls("unix:/s"), [{"id": 1}])
+            self.assertEqual(m._ls("unix:/s"), [{"id": 1}])
+            self.assertEqual(run.call_count, 1)
+            self.assertEqual(m._ls("unix:/s", fresh=True), [{"id": 2}])
+            self.assertEqual(run.call_count, 2)
+
+    def test_focus_wm_asks_for_a_fresh_listing(self):
+        m = load()
+        with mock.patch.object(m, "_ls", return_value=[]) as ls:
+            m._focus_wm(42, "unix:/s")
+        ls.assert_called_once_with("unix:/s", fresh=True)

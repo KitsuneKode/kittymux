@@ -22,6 +22,7 @@ class RecordingScreen:
     def draw(self, text: str) -> None:
         self.drawn.append((self.cursor.y, self.cursor.x, text))
         self.fgs.append((text, self.cursor.fg))
+        self.cursor.x += len(text)
 
 
 def load_tab_bar():
@@ -119,6 +120,13 @@ class HeaderSessionTests(unittest.TestCase):
         mascot = self.tb.kittymux_agents.MASCOT_GLYPH
         colours = [fg for t, fg in screen.fgs if t == mascot]
         self.assertEqual(colours, [self.tb._rgb(2)])        # pal.text; the accent (8) is for selection and focus
+    def test_tab_one_is_labelled_when_it_is_not_the_focused_session(self):
+        tab = types.SimpleNamespace(session_name="alpha", active_session_name="beta")
+        other = types.SimpleNamespace(session_name="beta", active_session_name="beta")
+        self.assertEqual(self.tb._group_label(1, tab, None), "alpha")
+        self.assertIsNone(self.tb._group_label(1, other, None))
+        self.assertEqual(self.tb._group_label(2, tab, other), "alpha")
+        self.assertIsNone(self.tb._group_label(2, other, other))
 
 
 if __name__ == "__main__":

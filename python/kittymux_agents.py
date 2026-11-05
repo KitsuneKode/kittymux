@@ -140,10 +140,20 @@ _STRICT = frozenset({"droid", "qwen", "kimi", "goose", "kilo", "vibe", "junie", 
 _RUNTIMES = frozenset({"node", "nodejs", "bun", "deno", "python", "python3", "uv", "uvx", "npx", "bunx", "sh", "bash", "zsh"})
 
 
+def command_argv(argv: Iterable[str]) -> tuple[list[str], int]:
+    """(the program's own argv, how many leading tokens were the relay). `mux-pty -- agent …` is the
+    transport: the agent is what follows `--`. The shift is an index into the original argv."""
+    args = [str(a) for a in argv]
+    if args and os.path.basename(args[0]).lower() == "mux-pty" and "--" in args:
+        shift = args.index("--") + 1
+        return args[shift:], shift
+    return args, 0
+
+
 def agent_in(cmdline_args: Iterable[str]) -> str | None:
     """The known agent CLI this command line runs, else None. Ordinary agent names match any
     argument's basename (lowercased); the short common ones in _STRICT only where a command goes."""
-    args = [str(a) for a in cmdline_args]
+    args, _shift = command_argv(cmdline_args)
     for i, arg in enumerate(args):
         name = os.path.basename(arg).lower()
         if name not in AGENTS:
@@ -156,6 +166,12 @@ def agent_in(cmdline_args: Iterable[str]) -> str | None:
 
 STATES = ("working", "waiting", "limited", "error", "done", "idle")
 NEEDS_YOU = ("waiting", "limited")      # states that ask for the user (jump queue, notifications, counts)
+PICKER_STATES = ("waiting", "limited", "error", "working", "done")
+
+
+def picker_state(state: str) -> str:
+    """The join picker's row mark. `error` is kept (it has a glyph); idle and unknown are blank."""
+    return state if state in PICKER_STATES else ""
 SCAN_FRESH = 8.0                        # seconds: how old the watcher's own verdict may be and still be trusted
 
 
@@ -346,6 +362,10 @@ def resolve_msg(entry: dict | None, status: str) -> str:
     if status not in ("waiting", "done", "limited", "error"):
         return ""
     entry = entry or {}
+    if status == "error":
+        # The scanner's reason is the OSC 7501 failure. A hook `msg` from an earlier waiting turn stays
+        # until a later hook clears it, and must not hide the failure.
+        return sanitize_text(entry.get("reason") or entry.get("msg") or "")
     return sanitize_text(entry.get("msg") or (entry.get("reason") if status != "done" else "") or "")
 
 
@@ -389,7 +409,7 @@ def tool_in(cmdlines: Iterable[Iterable[str]]) -> str | None:
     `git commit -m vim` is git, not vim."""
     best: str | None = None
     for cmdline in cmdlines:
-        argv = [str(a) for a in cmdline]
+        argv, _shift = command_argv(cmdline)
         if "--" in argv:                         # `trmw --profile x -- nvim file`
             argv = argv[argv.index("--") + 1:]
         while argv and os.path.basename(argv[0]).lower() in _WRAPPERS:

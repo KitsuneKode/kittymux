@@ -50,6 +50,19 @@ class PeekTests(unittest.TestCase):
         self.assertTrue(all(len(s) <= 40 for s in writes[1:]))
         self.assertIn("chosen pane", "".join(writes))
 
+    def test_a_long_title_shows_only_the_cut_off_tail(self):
+        m, p = self.peek()
+        p.card["title"] = "OPENMARK " + ("m" * 70) + " ENDMARK"
+        p.draw_screen()
+        writes = [a.args[0] for a in p.write.call_args_list]
+        self.assertTrue(all(len(s) <= 40 for s in writes[1:]))
+        drawn = "".join(writes)
+        self.assertEqual(drawn.count("OPENMARK"), 1)
+        self.assertEqual(drawn.count("ENDMARK"), 1)
+        header = writes[1]
+        self.assertIn("OPENMARK", header)
+        self.assertNotIn("ENDMARK", header)
+
     def test_selected_preview_uses_its_own_directory_and_branch(self):
         m, p = self.peek()
         tab = {"title": "split", "active_window_history": [7],

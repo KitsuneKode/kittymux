@@ -184,6 +184,19 @@ def fold(ops: list[dict]) -> list[dict]:
     return [events[i] for i in order]
 
 
+def matching_unread(state_dir: str, ev: dict) -> dict | None:
+    """The still-unread event `ev` would merge into, or None. Reads the log and does not write it."""
+    try:
+        existing = fold(read_ops(store_path(state_dir)))
+    except Exception:
+        return None
+    key = merge_key(ev)
+    for old in reversed(existing):
+        if merge_key(old) == key and old.get("status") == "unread" and abs(ev.get("t", 0) - old.get("t", 0)) <= MERGE_WINDOW_S:
+            return old
+    return None
+
+
 def is_duplicate(existing: list[dict], ev: dict) -> bool:
     """Would adding `ev` merge into a still-unread event? (The caller then skips the popup: it was already shown.)"""
     key = merge_key(ev)

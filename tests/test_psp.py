@@ -101,6 +101,12 @@ class ViewTests(unittest.TestCase):
         view = {}
         self.assertEqual(P.apply_to_view({"state": "blocked", "msg": "Run tests?", "t": 3}, view, "", ""), ("waiting", "Run tests?"))
 
+    def test_a_usage_limit_on_screen_outranks_blocked(self):
+        view = {}
+        self.assertEqual(P.apply_to_view({"state": "blocked", "msg": "Run tests?", "t": 3}, view, "limited", "usage limit reached"),
+                         ("limited", "usage limit reached"))
+        self.assertNotIn("why", view)
+
     def test_working_clears_a_stale_prompt(self):
         view = {}
         self.assertEqual(P.apply_to_view({"state": "working", "t": 3}, view, "waiting", "old"), ("", "old"))
@@ -147,6 +153,15 @@ class BoundaryTests(unittest.TestCase):
         self.assertTrue(b.feed(b"C\x1b\\text"))
         self.assertFalse(b.feed(b"\x1b]8;;http://x"))
         self.assertTrue(b.feed(b"\x1b\\link\x1b]8;;\x1b\\"))
+
+    def test_a_character_split_across_three_reads_is_not_a_clean_point(self):
+        euro = "€".encode()                                          # e2 82 ac, one character, three bytes
+        self.assertEqual(len(euro), 3)
+        b = P.Boundary()
+        self.assertFalse(b.feed(euro[:1]))
+        self.assertFalse(b.feed(euro[1:2]))                          # a continuation byte alone used to look complete
+        self.assertTrue(b.feed(euro[2:]))
+        self.assertTrue(b.feed(b"ok"))
 
 
 if __name__ == "__main__":

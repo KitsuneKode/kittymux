@@ -29,15 +29,41 @@ TAG_WAIT = 0.6          # seconds to wait for the compositor to see a tagged tit
 PROBE_ADDRESS = "0xdeadbeefdeadbeef"
 
 
-def os_window_title(ls: list, window_id: int) -> str | None:
-    """The title the OS window holding `window_id` shows: its active tab's active window's title."""
+def _os_window(ls: list, window_id: int):
     for osw in ls or []:
-        if not any(w.get("id") == window_id for t in osw.get("tabs", []) for w in t.get("windows", [])):
-            continue
-        tab = next((t for t in osw.get("tabs", []) if t.get("is_active")), None)
-        win = next((w for w in (tab or {}).get("windows", []) if w.get("is_active")), None)
-        return (win or {}).get("title")
+        if any(w.get("id") == window_id for t in osw.get("tabs", []) for w in t.get("windows", [])):
+            return osw
     return None
+
+
+def _active_win(osw) -> dict:
+    tab = next((t for t in (osw or {}).get("tabs", []) if t.get("is_active")), None)
+    return next((w for w in (tab or {}).get("windows", []) if w.get("is_active")), {}) or {}
+
+
+def os_window_title(ls: list, window_id: int) -> str | None:
+    """The title the OS window holding `window_id` shows when kitty is tracking the active window's title."""
+    osw = _os_window(ls, window_id)
+    if osw is None:
+        return None
+    return _active_win(osw).get("title")
+
+
+def os_window_session(ls: list, window_id: int) -> str:
+    """Session name of that OS window's active window. `goto_session` writes it with set-os-window-title,
+    and that is the title Hyprland shows while the override lasts. `wm_name` in `kitty @ ls` is only the
+    name from OS-window creation (kitty 0.49.2 `TabManager.wm_name`); it is not this override."""
+    return str(_active_win(_os_window(ls, window_id)).get("session_name") or "")
+
+
+def window_title(ls: list, window_id: int) -> tuple[str, bool]:
+    """(title, title_overridden) of this kitty window, for putting a tagged title back."""
+    for osw in ls or []:
+        for tab in osw.get("tabs", []):
+            for w in tab.get("windows", []):
+                if w.get("id") == window_id:
+                    return str(w.get("title") or ""), bool(w.get("title_overridden"))
+    return "", False
 
 
 def pick_address(clients: list, pid: int, title: str | None) -> str | None:
@@ -107,7 +133,7 @@ def focus_address(address: str, run=subprocess.run) -> bool:
 
 def focus(socket: str, window_id: int | str, pid: int | str, run=subprocess.run, env=None, sleep=time.sleep) -> bool:
     """Focus kitty window `window_id` (and its tab) in the kitty at `socket`, then its OS window in the compositor.
-    True if kitty took the focus."""
+    True when kitty took the focus and, if Hyprland is running, that OS window was raised."""
     env = os.environ if env is None else env
     try:
         wid, kpid = int(window_id), int(pid)
@@ -121,36 +147,54 @@ def focus(socket: str, window_id: int | str, pid: int | str, run=subprocess.run,
         return False
     if not _hyprland(env):
         return True
-    title = os_window_title(_json(run, ["kitty", "@", "--to", socket, "ls"]) or [], wid)
-    clients = _json(run, ["hyprctl", "clients", "-j"]) or []
+    data = _json(run, ["kitty", "@", "--to", socket, "ls"]) or []
+    title = os_window_title(data, wid)
+    clients = _json(run, ["hyprctl", "clients", "-j"])
+    if clients is None:
+        return False                                          # Hyprland is up and we could not read it: do not claim the window was raised
+    if not any(c.get("pid") == kpid for c in clients):
+        return True                                           # this kitty is not a client of this Hyprland (an X11 window, another session)
     address = pick_address(clients, kpid, title)
+    session = os_window_session(data, wid)
+    if address is None and session and session != (title or ""):
+        address = pick_address(clients, kpid, session)
     if address is None and sum(1 for c in clients if c.get("pid") == kpid) > 1:
-        address = _tagged(socket, wid, kpid, run, sleep)
-    if address:
-        focus_address(address, run=run)
-    return True
+        address = _tagged(socket, wid, kpid, run, sleep, window_title(data, wid))
+    if not address:
+        return False
+    return focus_address(address, run=run)
 
 
-def _tagged(socket: str, wid: int, kpid: int, run, sleep) -> str | None:
-    """Two OS windows look alike: title ours uniquely for a moment, find it, hand the title back."""
+def _tagged(socket: str, wid: int, kpid: int, run, sleep, restore: tuple[str, bool] = ("", False)) -> str | None:
+    """Two OS windows look alike: title ours uniquely for a moment, find it, hand the title back.
+
+    The wait is wall time. A slow `hyprctl` must not multiply TAG_WAIT by the query's own timeout.
+    A title set with `set-window-title` (an override) is put back as that string; clearing it would
+    show the program's title instead (`kitty/window.py` `set_title`). `--temporary` writes the tag
+    into the child title (`rc/set_window_title.py`), so the tag is a normal override and then restored.
+    """
     q = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
     tag = f"kittymux-focus-{os.getpid()}-{time.monotonic_ns() % 1_000_000}"
+    prev, overridden = restore
     try:
         run(["kitty", "@", "--to", socket, "set-window-title", "--match", f"id:{wid}", tag], **q)
-        waited = 0.0
-        while waited < TAG_WAIT:
+        deadline = time.monotonic() + TAG_WAIT
+        while True:
             clients = _json(run, ["hyprctl", "clients", "-j"]) or []
             hit = pick_address(clients, kpid, tag)
             if hit:
                 return hit
+            if time.monotonic() >= deadline:
+                return None
             sleep(0.05)
-            waited += 0.05
-        return None
     except (OSError, subprocess.SubprocessError):
         return None
     finally:
-        try:      # no title: kitty goes back to the one the program set
-            run(["kitty", "@", "--to", socket, "set-window-title", "--match", f"id:{wid}"], **q)
+        try:
+            argv = ["kitty", "@", "--to", socket, "set-window-title", "--match", f"id:{wid}"]
+            if overridden and prev:
+                argv.append(prev)
+            run(argv, **q)
         except (OSError, subprocess.SubprocessError):
             pass
 

@@ -93,7 +93,7 @@ class FocusTests(unittest.TestCase):
         data = ls((1, [(10, True, [(100, True, "agent")])]))
         run = Fake(data, [{"pid": 42, "address": "0xa", "title": "agent"}], lua=None)
         with mock.patch.object(F.shutil, "which", return_value="/usr/bin/hyprctl"):
-            self.assertTrue(F.focus("unix:/s", 100, 42, run=run, env=HYPR))
+            self.assertFalse(F.focus("unix:/s", 100, 42, run=run, env=HYPR))
         self.assertEqual(run.dispatched(), [])
 
     def test_kitty_focuses_first_so_the_tab_switches(self):
@@ -120,8 +120,73 @@ class FocusTests(unittest.TestCase):
         clients = [{"pid": 42, "address": "0xa", "title": "zsh"}, {"pid": 42, "address": "0xb", "title": "zsh"}]
         run = Fake(data, clients)                 # the tag never shows up
         with mock.patch.object(F.shutil, "which", return_value="/usr/bin/hyprctl"):
-            F.focus("unix:/s", 200, 42, run=run, env=HYPR, sleep=lambda s: None)
+            self.assertFalse(F.focus("unix:/s", 200, 42, run=run, env=HYPR, sleep=lambda s: None))
         self.assertEqual(run.dispatched(), [])
+
+    def test_a_session_title_matches_when_the_window_title_does_not(self):
+        # goto_session set the OS window title to the session name. Hyprland shows that, not the active window title.
+        # Two clients, so a title match is required (one client is unambiguous without it).
+        data = [{"id": 1, "tabs": [{"id": 10, "is_active": True, "windows": [
+            {"id": 100, "is_active": True, "title": "agent", "session_name": "wave"}]}]},
+                {"id": 2, "tabs": [{"id": 20, "is_active": True, "windows": [
+                    {"id": 200, "is_active": True, "title": "notes", "session_name": "notes"}]}]}]
+        clients = [{"pid": 42, "address": "0xother", "title": "notes"}, {"pid": 42, "address": "0xws", "title": "wave"}]
+        run = Fake(data, clients)
+        with mock.patch.object(F.shutil, "which", return_value="/usr/bin/hyprctl"):
+            self.assertTrue(F.focus("unix:/s", 100, 42, run=run, env=HYPR))
+        self.assertEqual(run.dispatched(), [["hyprctl", "dispatch", "hl.dsp.focus({window = 'address:0xws'})"]])
+        self.assertFalse(any(len(a) > 4 and a[4] == "set-window-title" for a in run.calls))
+
+    def test_an_overridden_window_title_is_put_back_after_the_tag(self):
+        data = [{"id": 1, "tabs": [{"is_active": True, "windows": [
+            {"id": 100, "is_active": True, "title": "My name", "title_overridden": True}]}]},
+                {"id": 2, "tabs": [{"is_active": True, "windows": [
+                    {"id": 200, "is_active": True, "title": "My name", "title_overridden": True}]}]}]
+        clients = [{"pid": 42, "address": "0xa", "title": "My name"}, {"pid": 42, "address": "0xb", "title": "My name"}]
+
+        def retitle(fake, tag):
+            fake.clients = [clients[0], {"pid": 42, "address": "0xb", "title": tag}]
+        run = Fake(data, clients, retitle=retitle)
+        with mock.patch.object(F.shutil, "which", return_value="/usr/bin/hyprctl"):
+            F.focus("unix:/s", 200, 42, run=run, env=HYPR, sleep=lambda s: None)
+        self.assertIn(["kitty", "@", "--to", "unix:/s", "set-window-title", "--match", "id:200", "My name"], run.calls)
+
+    def test_a_slow_compositor_does_not_stretch_the_tag_wait(self):
+        data = ls((1, [(10, True, [(100, True, "zsh")])]), (2, [(20, True, [(200, True, "zsh")])]))
+        clients = [{"pid": 42, "address": "0xa", "title": "zsh"}, {"pid": 42, "address": "0xb", "title": "zsh"}]
+        clock = {"t": 1000.0}
+        queries = []
+
+        def run(argv, **kw):
+            if argv[:3] == ["hyprctl", "clients", "-j"]:
+                queries.append(argv)
+                clock["t"] += 4.0                                 # each query burns its own timeout
+            return Fake(data, clients)(argv, **kw)
+
+        with mock.patch.object(F.time, "monotonic", lambda: clock["t"]), \
+             mock.patch.object(F.shutil, "which", return_value="/usr/bin/hyprctl"):
+            self.assertFalse(F.focus("unix:/s", 200, 42, run=run, env=HYPR, sleep=lambda s: None))
+        self.assertEqual(len(queries), 2)                         # the first look, then one tagged look, then the deadline
+
+    def test_a_kitty_that_is_not_on_this_hyprland_is_still_focused(self):
+        # An Xvfb kitty while the developer is in a Hyprland session: the compositor is up, but this pid is not one of its clients.
+        data = ls((1, [(10, True, [(100, True, "agent")])]))
+        clients = [{"pid": 99, "address": "0xother", "title": "notes"}]
+        run = Fake(data, clients)
+        with mock.patch.object(F.shutil, "which", return_value="/usr/bin/hyprctl"):
+            self.assertTrue(F.focus("unix:/s", 100, 42, run=run, env=HYPR))
+        self.assertEqual(run.dispatched(), [])
+
+    def test_an_unreadable_client_list_is_not_a_raised_window(self):
+        data = ls((1, [(10, True, [(100, True, "agent")])]))
+
+        def run(argv, **kw):
+            if argv[:3] == ["hyprctl", "clients", "-j"]:
+                return SimpleNamespace(returncode=1, stdout="", stderr="")
+            return Fake(data, [])(argv, **kw)
+
+        with mock.patch.object(F.shutil, "which", return_value="/usr/bin/hyprctl"):
+            self.assertFalse(F.focus("unix:/s", 100, 42, run=run, env=HYPR))
 
     def test_without_hyprland_only_kitty_focuses(self):
         run = Fake(ls((1, [(10, True, [(100, True, "x")])])), [])

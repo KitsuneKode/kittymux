@@ -60,7 +60,7 @@ def main(argv: list[str]) -> int:
     signal.signal(signal.SIGWINCH, resize)
 
     scanner, records, edge = P.Scanner(), P.Records(), P.Boundary()
-    shown = None                                          # the summary kitty has
+    shown = ""                                            # "" is not a summary: the first clean read clears a stale kittymux_psp
     old = termios.tcgetattr(0)
     tty.setraw(0)
     try:
@@ -118,7 +118,14 @@ def main(argv: list[str]) -> int:
         time.sleep(0.05)
     else:
         os.kill(pid, signal.SIGTERM)
-        _, status = os.waitpid(pid, 0)
+        for _ in range(40):
+            done, status = os.waitpid(pid, os.WNOHANG)
+            if done:
+                break
+            time.sleep(0.05)
+        else:
+            os.kill(pid, signal.SIGKILL)
+            _, status = os.waitpid(pid, 0)
     code = os.waitstatus_to_exitcode(status)
     return 128 - code if code < 0 else code
 

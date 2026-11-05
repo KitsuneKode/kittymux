@@ -83,17 +83,17 @@ geom() { kitty @ --to "$SOCK" ls | python3 -c 'import json,sys
 want=int(sys.argv[1]); field=sys.argv[2]
 for w in json.load(sys.stdin)[0]["tabs"][0]["windows"]:
     if w["id"]==want: print(w[field])' "$1" "$2"; }
-read -r ZID ZC ZL <<EOF
+read -r ZID ZC ZL MC ML <<EOF
 $(kitty @ --to "$SOCK" ls | python3 -c '
 import json, sys
 ws = json.load(sys.stdin)[0]["tabs"][0]["windows"]
 mc, ml = max(w["columns"] for w in ws), max(w["lines"] for w in ws)
 for w in ws:
     if w["columns"] < mc and w["lines"] < ml:
-        print(w["id"], w["columns"], w["lines"])
+        print(w["id"], w["columns"], w["lines"], mc, ml)
         break
 else:
-    print("0 0 0")
+    print("0 0 0 0 0")
 ')
 EOF
 [ "$ZID" != 0 ] || fail "no corner pane: zoom on both axes has nothing to grow"
@@ -108,6 +108,9 @@ for _ in $(seq 25); do
     sleep 0.2
 done
 [ "$grew" = 1 ] || fail "ctrl+alt+z did not grow the corner pane on both axes ($ZC x $ZL -> ${c1:-?} x ${l1:-?})"
+# full zoom reaches the tab: at least as wide as the widest pane and as tall as the tallest (a cell or two of border)
+dc=$(( MC > c1 ? MC - c1 : 0 )); dl=$(( ML > l1 ? ML - l1 : 0 ))
+[ "$dc" -le 2 ] && [ "$dl" -le 2 ] || fail "ctrl+alt+z did not fill the tab ($c1 x $l1, extent $MC x $ML)"
 echo "zoom: corner pane $ZC x $ZL -> $c1 x $l1"
 X key --clearmodifiers "ctrl+alt+z"
 back=0

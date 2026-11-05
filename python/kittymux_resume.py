@@ -222,6 +222,10 @@ def agent_of(agents: dict, argv: list[str]) -> tuple[str, int] | None:
     `codex app-server …`: the agent's `helpers` subcommands) is not the interactive agent and is skipped."""
     if not argv:
         return None
+    import kittymux_agents
+    argv, shift = kittymux_agents.command_argv(argv)
+    if not argv:
+        return None
     for i in (0, 1):
         if i >= len(argv) or (i == 1 and os.path.basename(argv[0]).lower() not in _RUNTIMES):
             continue
@@ -231,7 +235,7 @@ def agent_of(agents: dict, argv: list[str]) -> tuple[str, int] | None:
                 rest = [t for t in argv[i + 1:] if not t.startswith("-")]
                 if rest and rest[0] in d.get("helpers", []):
                     return None
-                return name, i
+                return name, i + shift
     return None
 
 
