@@ -43,6 +43,23 @@ class ZoomActionTests(unittest.TestCase):
         self.assertEqual(Z.active_layout(ls), "splits")
         self.assertEqual(Z.active_layout([]), "")
 
+    def test_no_focus_uses_the_last_focused_os_window(self):
+        ls = [
+            {"id": 1, "is_focused": False, "last_focused": False, "tabs": [{"is_active": True, "layout": "stack"}]},
+            {"id": 2, "is_focused": False, "last_focused": True, "tabs": [{"is_active": True, "layout": "splits"}]},
+        ]
+        self.assertEqual(Z.active_layout(ls), "splits")
+
+    def test_an_axis_already_maximized_is_not_toggled_off(self):
+        self.assertEqual(Z.zoom_actions("splits", {"horizontal"}), (("layout_action", "maximize", "vertical"),))
+        self.assertEqual(Z.zoom_actions("splits", {"vertical"}), (("layout_action", "maximize", "horizontal"),))
+        self.assertEqual(Z.zoom_actions("splits", {"horizontal", "vertical"}), Z.ZOOM)
+
+    def test_maximized_axes_follow_the_focused_windows_group(self):
+        tab = {"windows": [{"id": 7, "is_active": True}], "groups": [{"id": 3, "windows": [7]}],
+               "layout_state": {"maximized": [{"window_id": 3, "is_horizontal": True}]}}
+        self.assertEqual(Z.maximized_axes(tab, 7), {"horizontal"})
+
 
 class ZoomChordTests(unittest.TestCase):
     def test_both_chords_call_the_same_script(self):
@@ -76,9 +93,11 @@ class ZoomScriptTests(unittest.TestCase):
             "(root / 'zoom-calls').open('a').write(json.dumps(args) + '\\n')\n"
             "if 'ls' in args:\n"
             "    layout = os.environ.get('MOCK_LAYOUT', 'splits')\n"
-            "    print(json.dumps([{'id': 1, 'is_focused': True, 'tabs': [{'is_active': True, 'layout': layout}]}]))\n"
+            "    wid = int(os.environ.get('MOCK_WID', '7'))\n"
+            "    print(json.dumps([{'id': 1, 'is_focused': True, 'last_focused': True, 'tabs': [{'is_active': True, "
+            "'layout': layout, 'windows': [{'id': wid, 'is_active': True, 'is_focused': True}]}]}]))\n"
             "elif 'action' in args:\n"
-            "    raise SystemExit(0)\n"
+            "    raise SystemExit(int(os.environ.get('MOCK_ACTION_RC', '0')))\n"
             "else:\n"
             "    raise SystemExit('unexpected ' + ' '.join(args))\n"
         )
@@ -119,9 +138,21 @@ class ZoomScriptTests(unittest.TestCase):
         calls = self._run("splits")
         actions = [c[c.index("action"):] for c in calls if "action" in c]
         self.assertEqual(actions, [
-            ["action", "layout_action", "maximize", "horizontal"],
-            ["action", "layout_action", "maximize", "vertical"],
+            ["action", "--match", "id:7", "layout_action", "maximize", "horizontal"],
+            ["action", "--match", "id:7", "layout_action", "maximize", "vertical"],
         ])
+
+    def test_a_failed_action_is_a_notification(self):
+        note = self.root / "bin" / "notify-send"
+        note.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$MOCK_ROOT/notes\"\n")
+        note.chmod(note.stat().st_mode | stat.S_IEXEC)
+        self.env["MOCK_ACTION_RC"] = "1"
+        result = subprocess.run(
+            ["bash", str(ROOT / "bin" / "mux-zoom.sh")],
+            cwd=ROOT, env=self.env, text=True, capture_output=True, timeout=10,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Zoom did not finish", (self.root / "notes").read_text())
 
 
 if __name__ == "__main__":
