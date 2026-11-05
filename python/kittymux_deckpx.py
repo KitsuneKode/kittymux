@@ -43,7 +43,7 @@ class Agent:
     progress: float | None = None   # OSC 9;4 hairline, 0..1 (0 and None draw nothing)
     active: bool = False     # raised card (the demo's selection, and the panel's keyboard row)
     current: bool = False    # the tab you are looking at: an accent bar, distinct from the selection
-    selected: bool = False   # keyboard selection ring, distinct from hover
+    selected: bool = False   # keyboard selection: the same raised card as the active row, distinct from hover
     progress_state: str = "" # set | paused | error | indeterminate (the hairline's colour)
     can_open: bool = False   # a split tab: a chevron, never opened by hover
     opened: bool = False
@@ -406,8 +406,8 @@ def render(model: Model, pal: th.Palette, width: float, height: float, scale: fl
     y = 12.0
 
     # header: mascot · session over 'host · N tabs' ----------------------------------------------------------------------
-    pt.fill_rrect(pad, y, 30, 30, 9, th.blend(p.accent, bar, 0.16))
-    pt.icon("kittymux", pad + 6, y + 6, 18, p.accent)
+    pt.card(pad, y, 30, 30, 9, p.card, lift=0.5)          # a neutral tile: the accent marks only where you are
+    pt.icon("kittymux", pad + 6, y + 6, 18, p.text)
     tx = pad + 40
     pt.text(tx, y + 9, model.session, 14, p.text, weight=Pango.Weight.SEMIBOLD, family=DISPLAY_FONT, width=inner - 40 - 26)
     pt.text(tx, y + 23, f"{model.host} · {len(model.agents)} agents", 11, p.muted, width=inner - 40 - 26)
@@ -497,7 +497,9 @@ def render(model: Model, pal: th.Palette, width: float, height: float, scale: fl
 def _paint_row(pt, p, bar, frame, pad, inner, y, h, ag, index, pane, hit):
     """One agent or child-pane row. `index` is the agent index or the flat pane index."""
     hovered = (frame.hover_pane == index) if pane else (frame.hover == index)
-    if ag.active:
+    # one meaning per colour: the selection (active or keyboard) is a raised neutral card, the accent only marks the
+    # tab you are in; a hover is a flatter fill, so the two never read alike
+    if ag.active or ag.selected:
         pt.card(pad, y, inner, h, 8, p.card_hi, lift=frame.reveal)
     elif hovered:
         pt.fill_rrect(pad, y, inner, h, 8, p.card if pt.dark else th.blend(p.fg, bar, 0.05))
@@ -507,7 +509,7 @@ def _paint_row(pt, p, bar, frame, pad, inner, y, h, ag, index, pane, hit):
     # the row rect goes in first; the chevron, appended after, wins the overlap
     hit("pane" if pane else "agent", index, pad, y, inner, h)
     if not pane and ag.can_open:
-        pt.text(pad + 5, y + h / 2, "▾" if ag.opened else "▸", 11, p.accent if ag.active else p.muted, weight=Pango.Weight.MEDIUM)
+        pt.text(pad + 5, y + h / 2, "▾" if ag.opened else "▸", 11, p.text if ag.active else p.muted, weight=Pango.Weight.MEDIUM)
         hit("toggle", index, pad, y, 16, h)
     icon_x = pad + 8 + inset
     icon = ICON_FILE.get(ag.agent, ag.agent)
@@ -531,5 +533,4 @@ def _paint_row(pt, p, bar, frame, pad, inner, y, h, ag, index, pane, hit):
         tx0, tw = title_x, max(2, right - aw - title_x)
         pt.fill_rrect(tx0, y + h - 4, tw, 2, 1, p.track)
         pt.fill_rrect(tx0, y + h - 4, max(2, tw * ag.progress), 2, 1, _progress_color(p, ag.progress_state))
-    if ag.selected:
-        pt.stroke_rrect(pad + 0.5, y + 0.5, inner - 1, h - 1, 8, p.accent, width=1.4)
+
