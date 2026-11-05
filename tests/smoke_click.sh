@@ -33,7 +33,7 @@ launch sh
 focus_tab 0
 S
 env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP \
-  KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 KITTYMUX_DEBUG=1 \
+  KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 KITTYMUX_DEBUG=1 ${KMX_DECKPX:+KITTYMUX_DECKPX=1} \
   kitty -o linux_display_server=x11 --class kmx-click --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
 for _ in $(seq 240); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 4
 X() { DISPLAY=$DISP xdotool "$@"; }

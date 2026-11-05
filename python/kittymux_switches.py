@@ -99,6 +99,7 @@ CATALOG: tuple[Switch, ...] = (
     Switch("usage-live", "Opt-in", "Live usage requests", "Ask each provider for your quota, with your own login.", False, risk=NETWORK,
            consequence="kittymux will contact each provider's API with your own login to read your quotas, about every 5 minutes.",
            **_legacy_on("KITTYMUX_USAGE_LIVE", ("1", "on", "true", "yes"), "usage-live-on")),
+    Switch("deckpx", "Opt-in", "Pixel Agents list", "Draw the panel's Agents list in pixels. Off keeps the cell list.", False),
 )
 
 BY_ID = {s.id: s for s in CATALOG}

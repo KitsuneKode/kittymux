@@ -65,7 +65,7 @@ CONF
 printf 'new_tab shell\nlaunch sh\nnew_tab web\nlaunch sh\nnew_tab api\nlaunch sh\nfocus_tab 0\n' > "$T/session"
 
 env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_DATA_HOME=$T/data \
-  KITTYMUX_USAGE_HOME=$T/world/home KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
+  KITTYMUX_USAGE_HOME=$T/world/home KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 ${KMX_DECKPX:+KITTYMUX_DECKPX=1} \
   kitty -o linux_display_server=x11 --class kmx-panel --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
 for _ in $(seq 240); do [ -S "$T/sock" ] && break; sleep 0.25; done
 [ -S "$T/sock" ] || fail "kitty never opened its control socket"
@@ -101,7 +101,8 @@ stat_of() { echo "rss_kb=$(awk '/VmRSS/{print $2}' /proc/$PID/status) fds=$(ls /
 cpu_ticks() { awk '{print $14+$15}' /proc/$PID/stat; }
 cell_xy() { python3 -c "print(($1 * $GW + $GW // 2) // $COLS + $GX, ($2 * $GH + $GH // 2) // $LINES_N + $GY)"; }
 sleep 2
-wait_text "tabs" || fail "the Agents view never drew"
+for _ in $(seq 40); do screen | grep -qE 'tabs|Agents' && break; sleep 0.25; done
+screen | grep -qE 'tabs|Agents' || fail "the Agents view never drew"
 cycle() {
   for c in 3 10 18 25 12 30; do for r in 3 5 8 30 31 40; do read -r px py <<<"$(cell_xy $c $r)"; X mousemove "$px" "$py"; done; done
   X key --clearmodifiers u; X key --clearmodifiers Right; X key --clearmodifiers d; X key --clearmodifiers d
@@ -133,5 +134,5 @@ if bad:
     print("; ".join(bad)); sys.exit(1)
 PY
 [ -s "$T/world/state/sidebar-kit-err.log" ] && { echo "--- the panel logged errors:"; tail -30 "$T/world/state/sidebar-kit-err.log"; fail "the panel raised exceptions under stress"; }
-screen | grep -q "tabs" || fail "the panel is not drawing after the stress"
+screen | grep -qE 'tabs|Agents' || fail "the panel is not drawing after the stress"
 echo "PASS: $CYCLES cycles of mouse and key events: no memory, descriptor or thread growth, idle CPU ${IDLE_PCT}%, no errors logged"

@@ -109,7 +109,37 @@ _MISS = object()
 
 
 def _new_pass() -> None:
+    _publish_progress()                      # the previous pass's OSC 9;4, then this pass refills `_PROG["cur"]`
     _MEMO.clear()
+
+
+# OSC 9;4 for the panel. Not a timer: published once per bar pass, and only when the tuples changed.
+_PROG: dict = {"cur": {}, "sig": None}
+
+
+def _remember_progress(tab) -> None:
+    try:
+        rep = _tab_progress(tab)
+        if rep:
+            _PROG["cur"][int(tab.tab_id)] = rep
+    except Exception:
+        pass
+
+
+def _publish_progress() -> None:
+    snap = _PROG["cur"]
+    _PROG["cur"] = {}
+    try:
+        sig = tuple(sorted((int(k), v[0], int(v[1])) for k, v in snap.items()))
+    except Exception:
+        sig = ()
+    if sig == _PROG["sig"]:
+        return
+    _PROG["sig"] = sig
+    try:
+        kittymux_progress.save_reports(_PANES_JSON.with_name(f"progress-{os.getpid()}.json"), snap)
+    except Exception:
+        pass
 
 
 def _per_pass(fn):
@@ -1513,6 +1543,7 @@ def _draw_tab(
         kittymux_scan.ensure_started()          # idempotent: a no-op once the timer runs
         if index == 1:
             _new_pass()                          # a new redraw pass starts at tab 1: nothing memoised before it is reused
+        _remember_progress(tab)                  # every tab, including the rail: the panel reads this file, the bar does not have to draw the fill
         pal = _palette(draw_data)
         if draw_data.tab_bar_edge in ("left", "right"):
             end = _draw_vertical(draw_data, screen, tab, index, extra_data, pal)

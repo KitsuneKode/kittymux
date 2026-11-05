@@ -57,6 +57,7 @@ import kittymux_usageview  # noqa: E402
 import kittymux_place  # noqa: E402
 import kittymux_titles  # noqa: E402
 import kittymux_files  # noqa: E402
+import kittymux_progress  # noqa: E402
 
 _STATE_DIR = Path(os.environ["KITTYMUX_STATE"]) if os.environ.get("KITTYMUX_STATE") else \
     Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))) / "kittymux"
@@ -261,6 +262,7 @@ class Collector:
             self._tidy = True
         children = deck.children_map(_proc_ppids())
         listeners = _listeners()
+        reports = _progress_reports(data)
         rows, current_session = [], ""
         for osw in data:
             for tab in osw.get("tabs", []):
@@ -295,6 +297,10 @@ class Collector:
                                       for p in deck.ports_for(int(pid), children, listeners)}))
                 raw_title = kittymux_agents.strip_agent_prefix(tab.get("title") or "", name)
                 shown = kittymux_titles.tidy(tab.get("title") or "", name, self._project(cwd)).text if self._tidy else raw_title
+                try:
+                    progress = reports.get(tab.get("id")) or kittymux_progress.from_ls(tab, wins)
+                except Exception:
+                    progress = None
                 rows.append(deck.RowData(
                     tab_id=tab["id"], win_id=jump_to, session=session,
                     title=shown or raw_title, raw_title=raw_title,
@@ -305,12 +311,69 @@ class Collector:
                     msg=kittymux_agents.resolve_msg(panes.get(str(deciding or aw["id"])), st) if st else "",
                     age=(lambda e: kittymux_agents.state_age(st, e.get("ts_state"), now, reset_at=e.get("reset_at"), wall=time.time()))(panes.get(str(deciding or aw["id"])) or {}) if st else "",
                     pr=self._pr.get(cwd, branch), ports=ports, pane_rows=pane_rows,
-                    win_ids=tuple(w["id"] for w in wins)))
+                    win_ids=tuple(w["id"] for w in wins), progress=progress))
         return Snapshot(rows, current_session)
+
+
+def _kitty_pid(data: list) -> int:
+    """The kitty this panel is drawing for: the same process `_panes_state` reads, or 0 when it cannot be checked."""
+    try:
+        pid = os.getppid()
+        if _TARGET:
+            pid = int(os.environ.get("KITTYMUX_TARGET_PID", "0"))
+            if pid <= 0 or deck.target_pid(data) != pid:
+                return 0
+        return pid
+    except Exception:
+        return 0
+
+
+def _progress_reports(data: list) -> dict:
+    """OSC 9;4 the bar published for this kitty. Missing file, or a future `ls` that carries progress itself."""
+    try:
+        pid = _kitty_pid(data)
+        if not pid:
+            return {}
+        return kittymux_progress.load_reports(_STATE_DIR / f"progress-{pid}.json")
+    except Exception:
+        return {}
+
+
+class _PxOut:
+    """Graphics commands join the kitten's own write buffer. flush is the loop's job."""
+
+    def __init__(self, handler):
+        self.handler = handler
+
+    def write(self, data: str) -> None:
+        self.handler.write(data)
+
+    def flush(self) -> None:
+        pass
+
+
+class _GfxProbe:
+    """Kitty delivers graphics replies only to the image manager. This one never touches /tmp and never hangs."""
+
+    def __init__(self, handler):
+        self.handler = handler
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def handle_response(self, apc) -> None:
+        try:
+            self.handler._gfx_reply(apc)
+        except Exception:
+            pass
 
 
 class Sidebar(Handler):
     mouse_tracking = MouseTracking.full
+    image_manager_class = _GfxProbe
 
     def initialize(self) -> None:
         self.pal = kittymux_theme.from_colors(
@@ -339,6 +402,16 @@ class Sidebar(Handler):
         self._help = False                      # the `?` card is showing instead of the view body
         self._open = None                       # tab ids whose panes are listed under them; None until the first snapshot (then: the tab you are in)
         self.query, self.searching, self.full = "", False, None     # the `/` search
+        self._gfx = None                        # None until the graphics probe, then "wait" | "ok" | "no"
+        self._px = None
+        self._px_active = False
+        self._px_sig = None
+        self._px_hits = []
+        self._px_scroll = 0.0
+        self._px_hover = None
+        self._px_hpane = None
+        self._px_sel_key = None
+        self._px_model = None
         self._alive = True
         self._preview_worker = deck.LatestWorker(
             self._fetch_preview, lambda generation, lines: self._post(self._apply_preview, generation, lines))
@@ -364,6 +437,7 @@ class Sidebar(Handler):
             self._resize_worker.close(drain=True)  # release writes must outlive a closing UI
         if self._can_drag():
             self._pointer("")
+        self._px_clear()
 
     # ---- data (worker threads → event loop) -------------------------------
     def _request_refresh(self) -> None:
@@ -880,7 +954,7 @@ class Sidebar(Handler):
         self.full = snap                         # the unfiltered view; self.snap is what the `/` search leaves of it
         self.snap = snap.with_query(self.query) if self.query else snap
         snap = self.snap
-        self._hover_pane = (-1, -1)             # row indices changed under it
+        self._clear_pointer_hover()              # row indices changed under it
         if not snap.rows:
             self._request_preview()
             self.draw_screen()
@@ -904,6 +978,8 @@ class Sidebar(Handler):
 
     # ---- spinner: redraw at frame rate only while something is working ----
     def _schedule_spin(self) -> None:
+        if self._deckpx_on():                    # the spinner is a kitty animation; a timer here would spend idle CPU
+            return
         if getattr(self, "_spin_pending", False) or not self._alive or getattr(self, "_view", "agents") != "agents":
             return
         if self._motion() and any(r.status == "working" for r in self.snap.rows):
@@ -1098,11 +1174,320 @@ class Sidebar(Handler):
     def _pane_line(self, r, j: int, bar_w: int, hovered: bool) -> str:
         return self._ansi(kittymux_agentsview.pane_row(self.kit, r, j, hovered, bar_w, self._motion()))
 
+    # ---- pixel Agents list (opt-in `deckpx`; the cell list below is unchanged) ----
+    def _pxmods(self):
+        cached = getattr(self, "_px_mods", None)
+        if cached is False:
+            return None
+        if cached:
+            return cached
+        try:
+            # kitty replaces sys.path after the kitten loads, so a later import would miss the repo
+            for _d in (_CONFIG_DIR, _source_dir()):
+                if _d and _d not in sys.path:
+                    sys.path.insert(0, _d)
+            import kittymux_deckadapt
+            import kittymux_deckpx
+            import kittymux_decktransport
+            self._px_mods = (kittymux_deckpx, kittymux_deckadapt, kittymux_decktransport)
+        except Exception:
+            _log_error()
+            try:
+                here = _source_dir()
+                _log_line("deckpx path " + repr(sys.path[:6]))
+                _log_line("deckpx source " + here + " exists=" + str(os.path.exists(os.path.join(here, "kittymux_deckadapt.py"))))
+            except Exception:
+                _log_error()
+            self._px_mods = False
+            return None
+        return self._px_mods
+
+    def _deckpx_enabled(self) -> bool:
+        try:
+            on = kittymux_switches.enabled("deckpx", str(_STATE_DIR))
+        except Exception:
+            on = False
+        if on and not getattr(self, "_px_switch", False) and getattr(self, "_gfx", None) == "no":
+            self._gfx = None                         # turned back on: ask the terminal once more
+        self._px_switch = on
+        return on
+
+    def _deckpx_on(self) -> bool:
+        return bool(getattr(self, "_px_active", False)) and getattr(self, "_view", "agents") == "agents" and not self._help
+
+    def _px_clear(self) -> None:
+        gfx = getattr(self, "_px", None)
+        self._px_active = False
+        self._px_sig = None
+        self._px_hits = []
+        if gfx is None:
+            return
+        self._px = None
+        try:
+            gfx.close()
+        except Exception:
+            _log_error()
+
+    def _clear_pointer_hover(self) -> None:
+        self._hover_pane = (-1, -1)
+        self._px_hover = None
+        self._px_hpane = None
+
+    def _gfx_probe(self) -> None:
+        self._gfx = "wait"
+        self.write("\x1b_Ga=q,i=999,f=24,s=1,v=1;AAAA\x1b\\")
+        try:
+            self.asyncio_loop.call_later(0.7, self._gfx_timeout)
+        except Exception:
+            self._gfx = "no"
+
+    def _gfx_timeout(self) -> None:
+        if getattr(self, "_gfx", None) == "wait":
+            self._px_note("graphics probe timed out")
+            self._gfx = "no"
+            if self._alive:
+                self.draw_screen()
+
+    def _gfx_reply(self, apc) -> None:
+        mods = self._pxmods()
+        if not mods:
+            return
+        verdict = mods[1].graphics_verdict(apc, False)
+        if verdict == "wait":
+            return
+        if verdict == "no" and getattr(self, "_gfx", None) != "wait":
+            return
+        self._gfx = verdict
+        if verdict == "ok" and self._alive:
+            self.draw_screen()
+
+    def _px_note(self, msg: str) -> None:
+        if getattr(self, "_px_noted", False):
+            return
+        self._px_noted = True
+        _log_line("deckpx: " + msg)
+
+    def _px_host(self) -> str:
+        host = getattr(self, "_px_host_name", "")
+        if not host:
+            import socket
+            host = (socket.gethostname().split(".")[0] or "this machine")
+            self._px_host_name = host
+        return host
+
+    def _px_frames(self, deckpx, transport, pal):
+        if getattr(self, "_px_spin_key", None) != pal.working:
+            size, frames = 14, []
+            for i in range(12):
+                surf = deckpx.cairo.ImageSurface(deckpx.cairo.FORMAT_ARGB32, size, size)
+                deckpx.Painter(deckpx.cairo.Context(surf), 1, pal).spinner(size / 2, size / 2, 4.6, pal.working, i / 12)
+                frames.append(transport.rgba_of(surf))
+            self._px_spin_key, self._px_spin_frames = pal.working, (size, frames)
+        return self._px_spin_frames
+
+    def _px_inside(self, mouse_event) -> bool:
+        ch = self.screen_size.cell_height or 1
+        return ch <= mouse_event.pixel_y < ch + getattr(self, "_px_h", 0) and 0 <= mouse_event.pixel_x < getattr(self, "_px_w", 0)
+
+    def _px_hit(self, mouse_event):
+        mods = self._pxmods()
+        if not mods:
+            return None
+        ch = self.screen_size.cell_height or 1
+        return mods[0].hit_at(self._px_hits, mouse_event.pixel_x, mouse_event.pixel_y - ch)
+
+    def _draw_agents_chrome(self, cols, rows_n, bar_w) -> None:
+        """Tab strip (or the search line), footer, drawer and preview. The list between them is the image."""
+        p, w, snap = self.pal, self.write, self.snap
+        dr = self._drawer_rows()
+        self._foot_y = rows_n - 1 - dr
+        if self.searching or self.query:
+            total = len(self.full.rows) if self.full is not None else len(snap.rows)
+            line = [(" / ", p.accent, True), (self.query, p.text, True), ("▏" if self.searching else "", p.accent, False),
+                    (f"   {len(snap.rows)}/{total}", p.faint, False)]
+            w(set_cursor_position(0, 0) + self._line(line, bar_w, p.surface))
+        else:
+            w(set_cursor_position(0, 0) + self._tabs_line(bar_w))
+        blank = self._seg(" " * bar_w, bg=p.bar)
+        for yy in range(1, self._foot_y):
+            w(set_cursor_position(0, yy) + blank)
+        w(set_cursor_position(0, self._foot_y) + self._footer(
+            [], [("⏎", "jump", "ENTER"), ("/", "find", "/"), ("a", "join", "A"), ("t", "detach", "T")], bar_w))
+        if dr and snap.rows:
+            r = snap.rows[self.sel]
+            row, pane = self._hover_pane
+            pd = r.pane_rows[pane] if row == self.sel and 0 <= pane < len(r.pane_rows) else None
+            top = rows_n - dr
+            w(set_cursor_position(0, top) + self._line([("─" * bar_w, p.line, False)], bar_w, p.bar))
+            who = pd.title if pd else r.title
+            w(set_cursor_position(0, top + 1) + self._line(
+                [(" " + deck.fit(f"{who} · {_short_home(pd.cwd if pd else r.cwd)}", bar_w - 2, _cells), p.faint, True)], bar_w, p.bar))
+            body = deck.tidy_preview(self.preview, dr - 2)
+            for j in range(dr - 2):
+                text = body[j] if j < len(body) else ""
+                w(set_cursor_position(0, top + 2 + j) + self._line([(" " + text, p.muted, False)], bar_w, p.bar))
+        if cols >= 64:
+            px = bar_w + 2
+            pw = cols - px - 1
+            for y2 in range(rows_n):
+                w(set_cursor_position(bar_w, y2) + self._seg("▕", fg=p.line, bg=p.bar))
+                w(set_cursor_position(bar_w + 1, y2) + " " * (cols - bar_w - 1))
+            if snap.rows:
+                r = snap.rows[self.sel]
+                row, pane = self._hover_pane
+                pd = r.pane_rows[pane] if row == self.sel and 0 <= pane < len(r.pane_rows) else None
+                who = pd.title if pd else r.title
+                w(set_cursor_position(px, 0) + self._seg(
+                    deck.fit(f"{who or 'pane'} · {_short_home(pd.cwd if pd else r.cwd)}", pw, _cells), fg=p.faint))
+                drawing = deck.numbered_layout(self._preview_rects, min(32, pw), min(10, max(5, r.panes * 3 + 1)), self.preview_for) if {rect[0] for rect in self._preview_rects} == {child.win_id for child in r.pane_rows} else []
+                body = drawing + ([f"{r.panes} panes · [{next((i + 1 for i, child in enumerate(r.pane_rows) if child.win_id == self.preview_for), 1)}] preview"] if drawing else []) + self.preview
+                for j, ln in enumerate(body[:rows_n - 2]):
+                    w(set_cursor_position(px, j + 2) + self._seg(deck.fit(ln, pw, _cells), fg=p.muted))
+        self._draw_handle(cols, rows_n)
+
+    def _draw_agents_px(self) -> bool:
+        if not self._deckpx_enabled():
+            return False
+        mods = self._pxmods()
+        if not mods:
+            self._px_note("pixel modules did not import")
+            return False
+        deckpx, adapt, transport = mods
+        if getattr(self, "_gfx", None) is None:
+            self._gfx_probe()
+            return False
+        if self._gfx != "ok":
+            self._px_note(f"graphics probe is {self._gfx}")
+            return False
+        cols, rows_n, bar_w = self._geom()
+        ss = self.screen_size
+        cw, ch = ss.cell_width or 1, ss.cell_height or 1
+        dr = self._drawer_rows()
+        foot = rows_n - 1 - dr
+        px_w = min(getattr(ss, "width", 0) or bar_w * cw, bar_w * cw)
+        px_h = max(0, (foot - 1) * ch)
+        self._px_w, self._px_h = px_w, px_h
+        if px_w < 40 or px_h < deckpx.HEADER_END + 40:
+            return False
+        snap = self.snap
+        model = adapt.to_model(snap, self.sel, self._hover_pane, self._px_host(), snap.current_session or "kitty")
+        self._px_model = model
+        items = deckpx.body_items(model)
+        view_h = px_h - deckpx.HEADER_END
+        key = (self.sel, self._hover_pane)
+        scroll = getattr(self, "_px_scroll", 0.0)
+        if key != getattr(self, "_px_sel_key", None):
+            target = adapt.selected_target(model)
+            if target:
+                scroll = deckpx.scroll_to_item(items, scroll, view_h, target[0], target[1])
+            self._px_sel_key = key
+        scroll = deckpx.clamp_scroll(scroll, deckpx.content_height(model), view_h)
+        self._px_scroll = scroll
+        frame = deckpx.Frame(hover=self._px_hover, hover_pane=self._px_hpane, scroll=scroll)
+        motion = self._motion()
+        working = any(a.state == "working" or any(c.state == "working" for c in a.children) for a in model.agents) or any(s.state == "working" for s in model.spaces)
+        tokens = (self.pal.bg, self.pal.fg, self.pal.bar, self.pal.accent, self.pal.working, self.pal.waiting,
+                  self.pal.done, self.pal.alert, self.pal.text, self.pal.muted, self.pal.card, self.pal.card_hi)
+        sig = (px_w, px_h, round(scroll, 1), frame.hover, frame.hover_pane, model, tokens, motion and working)
+        self._draw_agents_chrome(cols, rows_n, bar_w)
+        if sig != getattr(self, "_px_sig", None) or getattr(self, "_px", None) is None:
+            hits: list = []
+            slots: list = []
+            resources = getattr(self, "_px_res", None) or deckpx.Resources()
+            self._px_res = resources
+            surf = deckpx.render(model, self.pal, px_w, px_h, 1, frame, hits=hits, resources=resources,
+                                 spinners=slots if motion and working else None)
+            if getattr(self, "_px", None) is None:
+                self._px = transport.Graphics(_PxOut(self), "auto")
+            self._px.show(transport.rgba_of(surf), surf.get_width(), surf.get_height(), col=1, row=2, z=1)
+            if slots:
+                size, frames = self._px_frames(deckpx, transport, self.pal)
+                positions = [(round(cx - size / 2), round(cy + ch - size / 2)) for cx, cy, _r, _c in slots]
+                self._px.spinner(frames, size, positions, (cw, ch), 80, z=2)
+            else:
+                self._px.clear_spinner()
+            self._px_hits = hits
+            self._px_sig = sig
+        self._px_active = True
+        self.flush()
+        return True
+
+    def _px_click(self, mouse_event) -> None:
+        hit = self._px_hit(mouse_event)
+        model = getattr(self, "_px_model", None)
+        mods = self._pxmods()
+        if not hit or model is None or not mods:
+            return
+        kind, index = hit
+        adapt = mods[1]
+        if kind == "search":
+            self.searching = True
+            self.draw_screen()
+            return
+        if kind == "space":
+            return
+        row, pane = adapt.hit_target(model, kind, index)
+        if row < 0:
+            return
+        if kind == "toggle":
+            self._toggle_open(row)
+            return
+        self.sel = row
+        if kind == "pane":
+            self._hover_pane = (row, pane)
+            self._px_hover, self._px_hpane = None, index
+            self.draw_screen()
+            self._jump(row, pane)
+            return
+        self._clear_pointer_hover()
+        self.draw_screen()
+        self._jump()
+
+    def _px_move(self, mouse_event) -> None:
+        if not self._px_inside(mouse_event):
+            if self._px_hover is not None or self._px_hpane is not None:
+                self._px_hover = self._px_hpane = None
+                self.draw_screen()
+            return
+        hit = self._px_hit(mouse_event)
+        model = getattr(self, "_px_model", None)
+        mods = self._pxmods()
+        if not hit or model is None or not mods or hit[0] not in ("agent", "pane"):
+            if self._px_hover is not None or self._px_hpane is not None:
+                self._px_hover = self._px_hpane = None
+                self.draw_screen()
+            return
+        kind, index = hit
+        row, pane = mods[1].hit_target(model, kind, index)
+        if row < 0:
+            return
+        if kind == "pane":
+            hover, px_h, px_p = (row, pane), None, index
+        else:
+            hover, px_h, px_p = (-1, -1), index, None
+        if row != self.sel or hover != self._hover_pane or px_h != self._px_hover or px_p != self._px_hpane:
+            self.sel, self._hover_pane = row, hover
+            self._px_hover, self._px_hpane = px_h, px_p
+            self._request_preview(delay=True)
+            self.draw_screen()
+
     @Handler.atomic_update
     def draw_screen(self) -> None:
+        view = getattr(self, "_view", "agents")
+        pixel = False
+        if view == "agents" and not self._help:
+            try:
+                pixel = bool(self._draw_agents_px())
+            except Exception:
+                _log_error()
+                self._gfx = "no"
+                self._px_clear()
+        if not pixel:
+            self._px_clear()
+        if pixel:
+            return
         cols, rows_n, bar_w = self._geom()
         p = self.pal
-        view = getattr(self, "_view", "agents")
         if self._help:
             self._draw_help(cols, rows_n, view)
             return
@@ -1198,7 +1583,7 @@ class Sidebar(Handler):
         if self.full is None:
             return
         self.snap = self.full.with_query(self.query)
-        self._hover_pane = (-1, -1)
+        self._clear_pointer_hover()
         self.sel = 0
         self._clamp()
         self._request_preview()
@@ -1344,7 +1729,7 @@ class Sidebar(Handler):
             return
         else:
             return
-        self._hover_pane = (-1, -1)
+        self._clear_pointer_hover()
         self._clamp()
         self._request_preview()
         self.draw_screen()
@@ -1374,6 +1759,14 @@ class Sidebar(Handler):
                 self._handle_hot = over
                 self._pointer("ew-resize" if over else "")     # the resize cursor, like a split border
                 self.draw_screen()
+        if self._deckpx_on() and not getattr(self, "_drag", False) and mouse_event.buttons in (MouseButton.WHEEL_UP, MouseButton.WHEEL_DOWN):
+            cols = self.screen_size.cols
+            over = self._can_drag() and deck.in_grab_zone(mouse_event.pixel_x // max(1, self.screen_size.cell_width), cols)
+            if not over:
+                step = -48 if mouse_event.buttons == MouseButton.WHEEL_UP else 48
+                self._px_scroll = getattr(self, "_px_scroll", 0.0) + step
+                self.draw_screen()
+                return
         super().on_mouse_event(mouse_event)
 
     def _pointer(self, shape: str) -> None:
@@ -1433,6 +1826,9 @@ class Sidebar(Handler):
             self.draw_screen()
         if hit or getattr(self, "_view", "agents") != "agents":
             return
+        if self._deckpx_on():
+            self._px_move(mouse_event)
+            return
         if mouse_event.cell_x >= self._geom()[2]:
             return
         idx = self._row_at(mouse_event.cell_y)
@@ -1455,7 +1851,7 @@ class Sidebar(Handler):
             self._help = False
             self.draw_screen()
             return
-        if y == 1 and not self.searching:                              # the tab strip, in every view
+        if y == (0 if self._deckpx_on() else 1) and not self.searching:  # the tab strip: row 0 when the list is pixels, else under the summary
             for x0, x1, name in self._tab_regions:
                 if x0 <= x < x1:
                     if name != view:
@@ -1494,6 +1890,9 @@ class Sidebar(Handler):
             return
         if mouse_event.cell_x >= self._geom()[2]:
             return
+        if self._deckpx_on() and self._px_inside(mouse_event):
+            self._px_click(mouse_event)
+            return
         line_row, line = deck.row_line_at(self.snap.items, self.scroll, self._avail(), mouse_event.cell_y - 2)
         if line_row >= 0 and line == 1 and 1 <= x <= 3 and len(self.snap.rows[line_row].pane_rows) >= 2:
             self._toggle_open(line_row)                  # the ▸ / ▾ in front of the context line: open or close this tab's panes (it does not jump)
@@ -1507,11 +1906,12 @@ class Sidebar(Handler):
         idx = self._row_at(mouse_event.cell_y)
         if idx >= 0:
             self.sel = idx
-            self._hover_pane = (-1, -1)
+            self._clear_pointer_hover()
             self._jump()
 
     def on_resize(self, new_size) -> None:
         self.screen_size = new_size
+        self._px_clear()
         self._clamp()
         self.draw_screen()
 
@@ -1527,7 +1927,7 @@ class Sidebar(Handler):
         (self._open.add if want else self._open.discard)(tab)
         self.full = self.full.with_open(self._open) if self.full is not None else None
         self.snap = self.snap.with_open(self._open)
-        self._hover_pane = (-1, -1)
+        self._clear_pointer_hover()
         self.sel = next((i for i, r in enumerate(self.snap.rows) if r.tab_id == tab), self.sel)
         self._clamp()
         self._request_preview()
