@@ -13,6 +13,7 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
   `bash tests/smoke_resume.sh` (fake agents → `sessions save` → a second kitty restores them: claude started with `--resume <id>` and its flags, a lone opencode with `-c`, ambiguous droids as saved; autosave + pruning),
   `bash tests/smoke_psp.sh` (OSC 7501 through `bin/mux-pty` in a private kitty: the relayed window carries the report, a control window without the relay carries none),
   `bash tests/smoke_spawn.sh` (spawn by CLI and by real keys, pick through a fake rofi, reopen, mute/snooze),
+  `bash tests/smoke_closeguard.sh` (real close keys on a working fake agent: the tab's row asks, the question lapses, the key twice closes, an idle pane and `closeguard` off close at once, a pane title bar asks in full),
   `bash tests/smoke_fanout.sh` (one prompt → three fake agents in three real worktrees in a real kitty, each CLI's own prompt form, compare/clean, main checkout untouched),
   `bash tests/smoke_changes.sh` (a fake agent edits a real git repo: baseline at run start, summary at run end, dirty-before and ignored files excluded, repo untouched),
   `bash tests/smoke_socket.sh` (`allow_remote_control socket-only` refuses a printed escape sequence — `yes` obeys it, the control — and the `$XDG_RUNTIME_DIR` socket is discovered),

@@ -12,8 +12,8 @@ import kittymux_ui as U
 KEYS = {
     "agents": [
         ("j k", "move down / up"), ("⏎", "go to the tab (the pane that asks)"), ("/", "find a tab"), ("→ ← o", "open / close a split's panes"),
-        ("a", "pull this tab's panes into yours"), ("t", "turn the pane into its own tab"), ("J K", "next / previous session"), ("g G", "first / last"),
-        ("u i s", "Usage / Inbox / Settings"), ("q", "quit the panel"),
+        ("a", "pull this tab's panes into yours"), ("t", "turn the pane into its own tab"), ("J K", "next / previous session"), ("g", "group by space / by state"),
+        ("m", "mute / unmute (no popups, never needs you)"), ("home G", "first / last"), ("u i s", "Usage / Inbox / Settings"), ("q", "quit the panel"),
     ],
     "usage": [
         ("← →", "pick a provider"), ("1-9", "pick by number"), ("r", "refresh now"), ("d", "details and sources"), ("↑ ↓", "scroll"),
@@ -29,7 +29,7 @@ KEYS = {
     ],
 }
 MOUSE = {
-    "agents": [("hover", "preview a tab or pane"), ("click", "go to it"), ("▸ ▾", "open / close a split's panes"), ("drag edge", "resize the panel")],
+    "agents": [("hover", "preview a tab or pane"), ("click", "go to it"), ("right-click", "mute / unmute it"), ("▸ ▾", "open / close a split's panes"), ("drag edge", "resize the panel")],
     "usage": [("click a tile", "pick that provider")],
     "inbox": [("click a card", "pick it"), ("Jump / Dismiss", "act on the picked card"), ("a chip", "filter")],
     "settings": [("a row", "pick it"), ("a state", "turn it on or off"), ("a preset", "apply it"), ("a button", "answer the question")],

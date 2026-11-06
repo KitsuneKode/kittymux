@@ -27,6 +27,7 @@
   kittymux reopen      bring back the most recently closed agent conversation in a new tab (it asks before resuming)
   kittymux notify      quiet the popups and bells (everything still lands in the inbox): notify status | mute [1h] | unmute | off | on | done off|on
   kittymux snooze      no popups for ONE agent window for a while: snooze [1h] [--window ID] [--clear]
+  kittymux mute        mute ONE agent until you unmute it (listed with a bell-slash, never "needs you"): mute [TAB] | mute --list | unmute [TAB]
   kittymux explain     why each agent pane is in its state, and every recent decision (state changes, notifications sent or held back):
                          explain [--window ID] [--last N] [--all] [--json]
   kittymux features    pick which optional pieces of the bar you want — the project/branch line under each tab, a colour per project, emphasis on look-alike tabs:
@@ -2634,6 +2635,49 @@ def snooze(argv: list[str]) -> int:
     return 0
 
 
+def mute_cmd(argv: list[str], on: bool) -> int:
+    """`kittymux mute [TAB] [--list]` / `kittymux unmute [TAB]` — one agent stays listed (with a bell-slash) but sends no popup or bell and never counts as
+    "needs you", until you unmute it. TAB: nothing = the tab you run it in, a number (the focused window's Nth tab), `id:N`, or words of its title.
+    Stored per kitty in the private state dir (kittymux_quiet), never as a window variable. `agents.json` carries `muted` for other surfaces."""
+    verb = "mute" if on else "unmute"
+    if any(a in ("-h", "--help") for a in argv):
+        print(f"usage: kittymux {verb} [TAB]   (TAB: a number, id:N, or words of the title; none = the tab you are in)" + ("\n       kittymux mute --list" if on else ""))
+        return 0
+    sock = _focused_socket()
+    if not sock:
+        return _no_socket(verb)
+    data = _ls(sock, fresh=True) or []
+    pid = _socket_pid(sock)
+    if pid is None:                                  # a socket not named mykitty-<pid> (a rig, a custom listen_on): the owner of its windows
+        import kittymux_deck
+        pid = kittymux_deck.target_pid(data) or None
+    if pid is None:
+        return _no_socket(verb)
+    sdir = kittymux_layout.state_dir()
+    if "--list" in argv:
+        muted = kittymux_quiet.load_mutes(sdir, pid)
+        rows = [(t.get("title") or "", w.get("id")) for o in data for t in o.get("tabs", []) for w in t.get("windows", []) if str(w.get("id")) in muted]
+        if not rows:
+            print("no agent is muted")
+        for title, wid in rows:
+            print(f"{wid:>6}  {kittymux_journal.redact_argv([title])[0] if title else ''}")
+        return 0
+    spec = " ".join(a for a in argv if not a.startswith("--"))
+    here = os.environ.get("KITTY_WINDOW_ID") if sock == _own_kitty_socket() else None
+    found = kittymux_quiet.tab_windows(data, spec, here)
+    if found is None:
+        print(f"kittymux {verb}: no tab matches {spec!r}" if spec else f"usage: kittymux {verb} [TAB]   (run it inside the tab, or name the tab)", file=sys.stderr)
+        return 1 if spec else 2
+    title, ids = found
+    changed = [w for w in ids if kittymux_quiet.set_muted(sdir, pid, w, on)]
+    what = title or f"window {ids[0]}"
+    if on:
+        print(f"{OK} muted {what}: no popups or bells, never 'needs you' (its events still reach the inbox)" if changed else f"{what} was already muted")
+    else:
+        print(f"{OK} unmuted {what}" if changed else f"{what} was not muted")
+    return 0
+
+
 # ── explain ──────────────────────────────────────────────────────────────────
 def describe_event(ev: dict) -> str:
     """One decision-log event as a human sentence (kittymux_scan._record writes them)."""
@@ -3158,6 +3202,8 @@ def _dispatch(argv: list[str]) -> int:
         return notify_cmd(argv[1:])
     if cmd == "snooze":
         return snooze(argv[1:])
+    if cmd in ("mute", "unmute"):
+        return mute_cmd(argv[1:], cmd == "mute")
     if cmd == "features":
         return features_cmd(argv[1:])
     if cmd == "settings":

@@ -44,6 +44,13 @@ autosaves (`_maybe_autosave`: baseline → settle 20 s → min gap 60 s → peri
 An agent-announced completion feeds the resolver like a Stop hook (`agent_done_ts`). Never log/store screen text beyond the bounded event body (empty in private mode). Adding a source or kind = update the
 inbox schema doc, the tests, and keep `version` stable (consumers ignore unknown fields).
 
+**Muted** (`kittymux_quiet.mutes-<kitty pid>.json`: window ids, set by `kittymux mute`, `m` or a right-click in the panel; pruned as windows close) is not a state: the state stays
+true everywhere. A muted window gets no popup and no bell (`kittymux_quiet.quiet_reason`, the same path as snooze), never counts as "needs you" (`kittymux_deck.asks`, the panel's chip, a
+space's roll-up, `agents.json`'s `needs_you`), and is drawn quietly with a bell-slash. Its events still reach the inbox. `agents.json` rows carry `muted` (additive, version 1).
+
+**Closing a busy agent** (`python/close-kit.py`, rules in `kittymux_closeguard`): a close key on a pane or tab whose agent is `working`, `waiting` or `limited` shows a one-line question for
+`CONFIRM_S` (4 s) on the tab's row in the bar (`tab_bar._close_ask`, short form) and on the pane title bar when kitty draws one (`kittymux_panetitle.close_question`, full form); the same key again closes. No dialog, no overlay, no focus change, no Escape (Escape belongs to the agent). Nothing busy closes exactly as kitty would.
+
 `sources` (who reported it: `agent`, `hook`, `screen`) is not `source` (what it is about). `source` is `agent` or `tool`. A sudo/ssh/git/pacman/paru/login prompt is an inbox event with `source: tool` and `agent` set to that program; it is not an agent row. Old events omit `source`. The field is additive: inbox `version` stays 1.
 
 **The shell's list** (`python/kittymux_agentsnap.py`, pure; the scanner calls `publish` from `scan_all`, `poke` and `ensure_started`): `$KITTYMUX_STATE/agents.json`, schema version 1, mode 0600, one document for every running kitty. Each process replaces only its own rows and keeps a row whose kitty pid is still alive (`/proc`). The file is rewritten only when the serialized document minus `t` changes. States are the names in the table above (`limited`, never `limit`). Every row has `source: agent`. `action` is a `jump` that `kittymux_palette.validate_action` accepts. The icon basename is `kittymux_agents.brand_of` — one table, the SVG in `assets/icons`, not the notify PNG name. Shape, the version rule and the notification hints are `docs/inbox.md`.

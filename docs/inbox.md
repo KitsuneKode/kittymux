@@ -61,12 +61,12 @@ rename) and only when the document apart from `t` changed, so a poll does not re
   {"key": "w4035.20", "kitty_pid": 4035, "window_id": 20, "agent": "codex", "brand": "openai", "source": "agent",
    "state": "limited", "since": 1793780600.0, "title": "Review the parser", "tab_title": "parser",
    "cwd": "~/work/calm-otter", "project": "calm-otter", "session": "calm-otter", "question": null,
-   "progress": null, "limit_reset": 1793784393, "error": null, "action": {"op": "jump", "pid": 4035, "w": "20"}},
+   "progress": null, "limit_reset": 1793784393, "error": null, "action": {"op": "jump", "pid": 4035, "w": "20"}, "muted": false},
   {"key": "w4035.19", "kitty_pid": 4035, "window_id": 19, "agent": "claude", "brand": "claude", "source": "agent",
    "state": "working", "since": 1793780700.0, "title": "Port the configs", "tab_title": "calm-otter",
    "cwd": "~/work/calm-otter", "project": "calm-otter", "session": "calm-otter", "question": null,
-   "progress": 0.42, "limit_reset": null, "error": null, "action": {"op": "jump", "pid": 4035, "w": "19"}}
-], "counts": {"working": 1, "waiting": 0, "done": 0, "idle": 0, "limited": 1, "error": 0}}
+   "progress": 0.42, "limit_reset": null, "error": null, "action": {"op": "jump", "pid": 4035, "w": "19"}, "muted": false}
+], "counts": {"working": 1, "waiting": 0, "done": 0, "idle": 0, "limited": 1, "error": 0}, "needs_you": 1}
 ```
 
 | Field | Meaning |
@@ -89,7 +89,9 @@ rename) and only when the document apart from `t` changed, so a poll does not re
 | `limit_reset` | Epoch seconds when a `limited` row lifts, when that time is known. Otherwise `null`. |
 | `error` | The message when `state` is `error`. Otherwise `null`. |
 | `action` | The object `kittymux act` accepts: `{"op":"jump","pid":<int>,"w":"<digits>"}`. |
-| `counts` | How many rows are in each state. The keys are always `working`, `waiting`, `done`, `idle`, `limited`, `error`. |
+| `muted` | `true` when you muted this agent (`kittymux mute`, `m` or a right-click in the panel). It is still listed and its `state` is still true, but it sends no popup or bell and does not need you: a shell should show it quietly and leave it out of any "needs you" badge. Added in version 1. |
+| `counts` | How many rows are in each state. The keys are always `working`, `waiting`, `done`, `idle`, `limited`, `error`. Muted rows count in their state. |
+| `needs_you` | How many rows ask for you: `waiting` or `limited`, and not `muted`. The number for a badge. Added in version 1. |
 
 Rows are ordered by importance (`limited`, `waiting`, `error`, `working`, `done`, `idle`), then by `key`. An empty `agents` array means no known agent is in the foreground of a kitty that is still running. `panes-<pid>.json` and `scan-<pid>.json` are not this list: each is one kitty process, and `{}` means that process currently has nothing to report.
 
