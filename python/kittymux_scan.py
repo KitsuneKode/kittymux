@@ -490,10 +490,13 @@ def _publish_agents(boss) -> None:
     try:
         _ensure_path()
         import kittymux_agentsnap
+        import kittymux_quiet
+        muted = kittymux_quiet.load_mutes(state_dir(), os.getpid())
         specs = []
         for window in list(getattr(boss, "all_windows", None) or []):
             spec = _agent_spec(window)
             if spec is not None:
+                spec["muted"] = str(spec.get("window_id")) in muted
                 specs.append(spec)
         kittymux_agentsnap.publish(state_dir(), os.getpid(), specs, time.time())
     except Exception:
@@ -550,6 +553,7 @@ def scan_all(timer_id=None) -> None:
         if age_due:
             vars(_RT)["age_refresh"] = now
             _sweep_cover(boss)
+            _prune_mutes(live)
         _maybe_autosave(now, live)
         _journal_tick(boss, live, time.time())
         for table in (_RT.notified, vars(_RT).get("alerted", {})):
@@ -564,6 +568,16 @@ def scan_all(timer_id=None) -> None:
         _publish_agents(boss)
         _sync_spinner()
         _retime(SCAN_FAST if n_agents else SCAN_IDLE)
+    except Exception:
+        _debug()
+
+
+def _prune_mutes(live) -> None:
+    """A closed window's mute goes with it (kittymux_quiet.prune_mutes): the file never outgrows the windows."""
+    try:
+        _ensure_path()
+        import kittymux_quiet
+        kittymux_quiet.prune_mutes(state_dir(), os.getpid(), live)
     except Exception:
         _debug()
 

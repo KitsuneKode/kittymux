@@ -215,7 +215,10 @@ class OverlayCloseBindTests(unittest.TestCase):
 
     # ctrl+alt+b opens the deck as a `kitten`, but the DOCKED PANEL is the same program (sidebar-kit.py) in a window of its own, and a twin keyed on its command
     # line would close the panel when ctrl+alt+b is pressed in it. A twin needs a match that tells the two apart (`state:overlay`), checked in a real kitty first.
-    EXEMPT = {"ctrl+alt+b": "the docked panel runs the same program"}
+    EXEMPT = {"ctrl+alt+b": "the docked panel runs the same program",
+              # the close guard is a no-UI kitten (it runs inside kitty, opens nothing): a second press is the answer to its question
+              "ctrl+alt+q": "close-kit.py has no window", "ctrl+shift+w": "close-kit.py has no window",
+              "ctrl+shift+q": "close-kit.py has no window", "ctrl+alt+shift+w": "close-kit.py has no window"}
 
     def binds(self):
         tpl = open(os.path.join(ROOT, "kittymux-keys.conf.tpl"), encoding="utf-8").read()

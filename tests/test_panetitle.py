@@ -332,3 +332,29 @@ class DrawTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CloseQuestionTests(unittest.TestCase):
+    """Closing a busy agent asks on the pane's own title bar, in the waiting colour, on one line (kittymux_closeguard)."""
+
+    def setUp(self):
+        import kittymux_closeguard as G
+        self.G = G
+        G.clear()
+        self.addCleanup(G.clear)
+        self.pal = T.from_colors({"background": 0x101014, "foreground": 0xE6E6EA})
+
+    def test_only_the_asking_window_shows_the_question_and_it_fits(self):
+        G = self.G
+        self.assertEqual(PT.close_question(7, 80, self.pal, self.pal.bar), "")
+        G.decide("window", 7, [7])
+        G.set_text(G.question("Claude Code", "working", "ctrl+shift+w"), G.short("ctrl+shift+w"))
+        line = PT.close_question(7, 80, self.pal, self.pal.bar)
+        self.assertIn("Close Claude Code? It is working", line)
+        self.assertEqual(PT.close_question(8, 80, self.pal, self.pal.bar), "")
+        narrow = re.sub(r"\x1b\[[0-9;]*m", "", PT.close_question(7, 30, self.pal, self.pal.bar))
+        self.assertEqual(narrow.strip(), "Close? Press again")                    # what to do survives a narrow pane
+        tiny = re.sub(r"\x1b\[[0-9;]*m", "", PT.close_question(7, 12, self.pal, self.pal.bar))
+        self.assertLessEqual(len(tiny), 12)
+        self.assertTrue(tiny.rstrip().endswith("…"))
+        self.assertNotIn("\n", line)

@@ -190,6 +190,18 @@ class RendererTests(unittest.TestCase):
         self.assertTrue(slots)
         self.assertTrue(all(dp.HEADER_END <= cy - r and cy + r <= bottom for _cx, cy, r, _c in slots), slots)
 
+    def test_a_muted_agent_never_needs_you_and_its_word_is_quiet(self):
+        """Mute: listed, but out of the chip's count, and its state word is not drawn in the waiting colour."""
+        pal = th.from_colors({"background": 0x101014, "foreground": 0xE6E6EA})
+        loud = dp.Agent("ask", "claude", 0, "core", state="waiting")
+        quiet = dp.Agent("ask", "claude", 0, "core", state="waiting", muted=True)
+        self.assertEqual(dp.needs_you(dp.Model("s", "h", agents=[loud, quiet])), 1)
+        parts = dp._second_line(pal, quiet, pal.bar, 0x808080)
+        self.assertEqual(parts[0][0], "Needs you")                  # the state is still true and readable
+        self.assertNotEqual(parts[0][1], th.ensure_contrast(pal.waiting, pal.bar, 4.5))
+        hits = []
+        dp.render(dp.Model("s", "h", agents=[quiet]), pal, 300, 200, hits=hits)    # draws (the bell-slash) without raising
+
     def test_crossfade_interpolates_and_never_mixes_sizes(self):
         a = dp.cairo.ImageSurface(dp.cairo.FORMAT_ARGB32, 4, 4)
         b = dp.cairo.ImageSurface(dp.cairo.FORMAT_ARGB32, 4, 4)

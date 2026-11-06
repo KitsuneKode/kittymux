@@ -425,6 +425,28 @@ def _dump(window_id: int, text: str) -> None:
         pass
 
 
+def close_question(window_id, columns: int, pal, bg: int, cells=len) -> str:
+    """The close guard's one-line question in the waiting colour, fitted to the bar; '' when none stands for this window."""
+    try:
+        import kittymux_closeguard
+        if not kittymux_closeguard.asking(window_id):
+            return ""
+        line = kittymux_closeguard.text()
+        short = kittymux_closeguard.short_for([window_id])
+    except Exception:
+        return ""
+    if not line:
+        return ""
+    ink = kittymux_theme.ensure_contrast(pal.waiting, bg, 4.5)
+    room = max(1, columns - 2)
+    if cells(line) > room and short:
+        line = short                                   # a narrow pane keeps the part that matters: which key, again
+    while line and cells(line) > room:
+        line = line[:-2] + "…"
+    r, g, b = ink >> 16 & 255, ink >> 8 & 255, ink & 255
+    return f"\x1b[1;38;2;{r};{g};{b}m {line}\x1b[22m"
+
+
 def draw(data) -> str:
     try:
         if not _enabled():
@@ -441,6 +463,10 @@ def draw(data) -> str:
         active = bool(data.is_active)
         fg, bg = _bar_colours(opts, active, as_int)
         pal = _palette(opts, as_int)
+        asking = close_question(data.window_id, int(window.screen.columns), pal, bg, cells)
+        if asking:                                   # closing this busy agent asks first, on this one line (kittymux_closeguard)
+            _dump(data.window_id, asking)
+            return asking
         f = kittymux_place.facts(cwd, kittymux_git.info(cwd))
         rt = sys.modules.get("_kittymux_scan_rt")
         hook = (getattr(rt, "panes", (None, {}))[1].get(str(data.window_id)) or {})

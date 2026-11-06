@@ -25,7 +25,7 @@ COUNTS = ("working", "waiting", "done", "idle", "limited", "error")
 _AGENT = re.compile(r"[a-z][a-z0-9-]{0,30}")
 _FIELDS = ("key", "kitty_pid", "window_id", "agent", "brand", "source", "state", "since",
            "title", "tab_title", "cwd", "project", "session", "question", "progress",
-           "limit_reset", "error", "action")
+           "limit_reset", "error", "action", "muted")
 
 
 def path_for(state_dir: str) -> str:
@@ -130,6 +130,7 @@ def _row(kitty_pid: int, spec: dict, home: str) -> dict | None:
         "limit_reset": _epoch(spec.get("limit_reset")) if state == "limited" else None,
         "error": reason if failed else None,
         "action": action,
+        "muted": bool(spec.get("muted")),     # `kittymux mute`: still listed, never "needs you", no popup or bell
     }
     return {k: row[k] for k in _FIELDS}
 
@@ -219,7 +220,8 @@ def publish(state_dir: str, kitty_pid: int, specs, now: float, alive=None, home:
                 _apply_since(row, previous, now)
             rows = [r for r in old if _keep(r, pid, check)] + fresh
             rows.sort(key=lambda r: (RANK.index(r["state"]) if r.get("state") in RANK else len(RANK), str(r.get("key") or "")))
-            doc = {"version": VERSION, "t": round(float(now), 1), "agents": rows, "counts": _counts(rows)}
+            doc = {"version": VERSION, "t": round(float(now), 1), "agents": rows, "counts": _counts(rows),
+                   "needs_you": sum(1 for r in rows if r.get("state") in kittymux_agents.NEEDS_YOU and not r.get("muted"))}
             if os.path.isfile(dest):
                 try:
                     with open(dest, encoding="utf-8") as handle:

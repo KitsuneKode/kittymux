@@ -81,6 +81,7 @@ class Agent:
     children: list = field(default_factory=list)
     meta: str = ""           # quiet facts after the state word: "#123", ":3000"
     panes: int = 1
+    muted: bool = False      # `kittymux mute`: a bell-slash, the state word quiet, never "needs you"
 
 
 @dataclass
@@ -173,9 +174,10 @@ def needs_you(model: Model) -> int:
     """Tabs and panes that ask for you (waiting or limited): the header chip's count."""
     n = 0
     for ag in model.agents:
-        if ag.state in ("waiting", "limited"):
+        asks = ag.state in ("waiting", "limited") and not ag.muted
+        if asks:
             n += 1
-        n += sum(1 for ch in ag.children if ch.state in ("waiting", "limited") and ag.state not in ("waiting", "limited"))
+        n += sum(1 for ch in ag.children if ch.state in ("waiting", "limited") and not ch.muted and not asks)
     return n
 
 
@@ -752,6 +754,8 @@ def _second_line(p, ag, bar, lo):
     col = state_color(p, ag.state)
     if not is_agent and ag.state == "idle":
         word, col = "Shell", None
+    if ag.muted:
+        col = None                       # muted: the state stays true, but it is not drawn in its colour (the bell-slash says why)
     if word:
         parts.append((word, th.ensure_contrast(col, bar, 4.5) if col is not None else lo, col is not None))
     if ag.progress:
@@ -773,7 +777,7 @@ def _paint_tab(pt, p, bar, frame, pad, inner, y, h, ag, index, hit, tones):
     _row_surface(pt, p, pad, y, inner, h, current=ag.current, selected=selected, hovered=hovered)
     hit("agent", index, pad, y, inner, h)
     cx, cy = pad + h / 2, y + h / 2
-    ring(pt, cx, cy, RING_R, ag.state, frame.phase, bar)
+    ring(pt, cx, cy, RING_R, _ring_state(ag), frame.phase, bar)
     lit = selected or ag.current or ag.state not in ("idle", "")
     _mark(pt, p, ag, cx, cy, MARK, hi if lit else mid)
     tx = pad + h + 4
@@ -790,6 +794,9 @@ def _paint_tab(pt, p, bar, frame, pad, inner, y, h, ag, index, hit, tones):
         pt.text(right - 9, cy - 8, chev, T_META, mid if selected else lo, weight=Pango.Weight.MEDIUM)
         hit("toggle", index, pad + inner - cw - 20, y, cw + 20, h)
         meta_right = cxr - 6
+    if ag.muted:
+        _bell_slash(pt, meta_right - 5, cy - 8, lo)
+        meta_right -= 16
     aw = 0.0
     if ag.age:
         aw = pt.text_w(ag.age, T_META, tnum=True)
@@ -816,6 +823,35 @@ def _paint_tab(pt, p, bar, frame, pad, inner, y, h, ag, index, hit, tones):
         pt.fill_rrect(tx, y + h - 5, max(2.0, bw * ag.progress), 1.5, .75, _progress_color(p, ag.progress_state))
 
 
+def _ring_state(ag) -> str:
+    """A muted agent that asks for you draws a neutral ring: orange means "needs you", and a muted one never does."""
+    return "idle" if ag.muted and ag.state in ("waiting", "limited") else ag.state
+
+
+def _bell_slash(pt, cx, cy, color):
+    """A small bell with a slash through it, centred on (cx, cy): a muted agent. Drawn, so it needs no font."""
+    s, cr = pt.s, pt.cr
+    cr.new_path()
+    cr.set_source_rgba(*rgb(color))
+    cr.set_line_width(1.2 * s)
+    cr.arc(cx * s, (cy - 0.5) * s, 3.2 * s, math.pi, 2 * math.pi)        # the dome
+    cr.line_to((cx + 3.2) * s, (cy + 2.2) * s)
+    cr.line_to((cx + 4.4) * s, (cy + 3.4) * s)                              # the flare
+    cr.line_to((cx - 4.4) * s, (cy + 3.4) * s)
+    cr.line_to((cx - 3.2) * s, (cy + 2.2) * s)
+    cr.close_path()
+    cr.stroke()
+    cr.new_path()
+    cr.arc(cx * s, (cy + 4.9) * s, 1.0 * s, 0, 2 * math.pi)                 # the clapper
+    cr.fill()
+    cr.new_path()
+    cr.move_to((cx - 5.0) * s, (cy - 4.6) * s)                              # the slash
+    cr.line_to((cx + 5.0) * s, (cy + 5.6) * s)
+    cr.set_line_cap(cairo.LINE_CAP_ROUND)
+    cr.stroke()
+    cr.set_line_cap(cairo.LINE_CAP_BUTT)
+
+
 def _paint_pane(pt, p, bar, frame, pad, inner, y, h, ch, index, hit, tones):
     """An open split's pane: indented under its tab's ring, a smaller ring and mark, the title, the state word right."""
     hi, mid, lo = tones
@@ -828,13 +864,16 @@ def _paint_pane(pt, p, bar, frame, pad, inner, y, h, ch, index, hit, tones):
     c, a = pt.veil(0.10)
     pt.fill_rrect(pad + AGENT_H / 2 - 0.5, y - 2, 1, h + 4, 0.5, c, a)
     cx, cy = x0 + h / 2, y + h / 2
-    ring(pt, cx, cy, PANE_RING_R, ch.state, frame.phase, bar, width=1.6)
+    ring(pt, cx, cy, PANE_RING_R, _ring_state(ch), frame.phase, bar, width=1.6)
     _mark(pt, p, ch, cx, cy, PANE_MARK, hi if selected or ch.state not in ("idle", "") else mid)
     right = pad + inner - 12
     word = STATE_WORD.get(ch.state, "") if ch.state != "idle" else ""
     ww = 0.0
+    if ch.muted:
+        _bell_slash(pt, right - 5, cy, lo)
+        right -= 16
     if word:
-        col = th.ensure_contrast(state_color(p, ch.state), bar, 4.5)
+        col = lo if ch.muted else th.ensure_contrast(state_color(p, ch.state), bar, 4.5)
         ww = pt.text_w(word, T_META, weight=Pango.Weight.SEMIBOLD)
         pt.text(right - ww, cy, word, T_META, col, weight=Pango.Weight.SEMIBOLD)
         ww += 8

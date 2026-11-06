@@ -83,6 +83,7 @@ CATALOG: tuple[Switch, ...] = (
     # ── Safety and recovery ────────────────────────────────────────────────────────────────────────────────────────────
     Switch("autosave", "Safety and recovery", "Autosave sessions", "Save the layout and its agents now and then, so a crash can be restored.", True,
            **_legacy_off("KITTYMUX_AUTOSAVE", "autosave-off")),
+    Switch("closeguard", "Safety and recovery", "Confirm closing a busy agent", "Closing a working or waiting agent asks on its tab row first.", True),
     Switch("journal", "Safety and recovery", "Session journal", "Remember every agent session: what it ran, how long, in which folder.", True,
            **_legacy_off("KITTYMUX_JOURNAL", "journal-off")),
     Switch("changes", "Safety and recovery", "Track what an agent changed", "Take a snapshot at a run's start and end (never written into your repo).", True,

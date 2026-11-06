@@ -20,6 +20,11 @@ ICON_BRANCH = ""
 ICON_FOLDER = ""
 RAIL = "▌"
 NEEDS = kittymux_agents.NEEDS_YOU
+BELL_SLASH = "\uf1f6"      # nerd-font bell-slash: a muted agent (`kittymux mute`), still listed, never "needs you"
+
+
+def _asks(r) -> bool:
+    return r.status in NEEDS and not getattr(r, "muted", False)
 TINT = 0.09                    # how much of the warning colour a needs-you row carries (quiet: the stripe and the mark do the shouting)
 
 
@@ -35,7 +40,7 @@ def row_bg(p, r, selected: bool, hovered: bool) -> int:
         base = p.surface
     else:
         base = p.bar
-    if r.status in NEEDS and not selected:
+    if _asks(r) and not selected:
         return T.blend(_state_color(p, r.status), base, TINT)
     return base
 
@@ -48,7 +53,7 @@ def title_row(kit: U.Kit, r, selected: bool, hovered: bool, width: int, animate:
     p = kit.p
     bg = row_bg(p, r, selected, hovered)
     lit = selected or hovered or r.current
-    needs = r.status in NEEDS
+    needs = _asks(r)
     stripe = (p.accent if r.current else p.waiting if needs else None)
     rail = U.S(RAIL if stripe is not None else " ", stripe, bg)
     brand = kittymux_agents.AGENTS[r.agent].brand if r.agent in kittymux_agents.AGENTS else p.muted
@@ -60,6 +65,9 @@ def title_row(kit: U.Kit, r, selected: bool, hovered: bool, width: int, animate:
     title_fg = p.text if (lit or needs) else p.muted
     sc = _state_color(p, r.status)
     mark = [U.S(" ", None, bg), U.S(kittymux_agents.state_glyph(r.status, animate=animate), kit.ink(sc, bg, 3.0), bg, bold=needs), U.S(" ", None, bg)] if sc is not None else [U.S("   ", None, bg)]
+    if getattr(r, "muted", False):
+        still = kittymux_agents.state_glyph(r.status, animate=False) or " "       # quiet: the state stays readable, faint, beside the bell-slash
+        mark = [U.S(still, kit.ink(p.faint, bg, 3.0), bg), U.S(BELL_SLASH, kit.ink(p.faint, bg, 3.0), bg), U.S(" ", None, bg)]
     left = [rail, icon, U.S(" ", None, bg)]
     room = width - U.line_cells(left, kit.cells) - U.line_cells(mark, kit.cells)
     shown = kittymux_titles.shorten(kittymux_place.clean(r.title or "—"), max(0, room), kit.cells)          # cut at a word, not in the middle of one
@@ -74,7 +82,7 @@ def context_row(kit: U.Kit, r, selected: bool, hovered: bool, width: int, home: 
     p = kit.p
     bg = row_bg(p, r, selected, hovered)
     lit = selected or hovered or r.current
-    needs = r.status in NEEDS
+    needs = _asks(r)
     stripe = (p.accent if r.current else p.waiting if needs else None)
     rail = U.S(RAIL if stripe is not None else " ", stripe, bg)
     sub = kit.ink(p.muted if lit else p.faint, bg, 3.0)
@@ -128,7 +136,7 @@ def pane_row(kit: U.Kit, r, j: int, hovered: bool, width: int, animate: bool = T
     p = kit.p
     pd = r.pane_rows[j]
     last = j == min(len(r.pane_rows), kittymux_deck.MAX_PANE_ROWS) - 1
-    needs = pd.state in NEEDS
+    needs = pd.state in NEEDS and not getattr(pd, "muted", False)
     bg = p.surface if hovered else p.bar
     lit = pd.active or hovered or needs
     brand = kittymux_agents.AGENTS[pd.agent].brand if pd.agent in kittymux_agents.AGENTS else p.muted

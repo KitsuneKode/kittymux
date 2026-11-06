@@ -59,6 +59,7 @@ import kittymux_titles  # noqa: E402
 import kittymux_files  # noqa: E402
 import kittymux_progress  # noqa: E402
 import kittymux_layout  # noqa: E402
+import kittymux_quiet  # noqa: E402
 
 _STATE_DIR = Path(os.environ["KITTYMUX_STATE"]) if os.environ.get("KITTYMUX_STATE") else \
     Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))) / "kittymux"
@@ -128,6 +129,14 @@ def _panes_state(data: list) -> dict:
         return kittymux_agents.load_panes(str(_STATE_DIR / f"panes-{pid}.json"))
     except Exception:
         return {}
+
+
+def _watched_kitty_pid() -> int:
+    """The kitty whose tabs this panel lists (the one `_panes_state` reads): the target in panel mode, else the kitty we run in."""
+    try:
+        return int(os.environ.get("KITTYMUX_TARGET_PID", "0")) if _TARGET else os.getppid()
+    except ValueError:
+        return 0
 
 
 def _short_home(p: str) -> str:
@@ -201,20 +210,50 @@ def _listeners() -> list:
         return []
 
 
-class Snapshot:
-    __slots__ = ("rows", "items", "current_session", "source", "query", "open_tabs")
+_GROUP_FILE = "panel-group"          # "state" = the Agents list grouped by state (`g`); absent = by space
 
-    def __init__(self, rows: list, current_session: str, query: str = "", open_tabs=None):
-        self.source, self.query, self.open_tabs = rows, query, open_tabs
+
+def _group_mode() -> str:
+    try:
+        return (_STATE_DIR / _GROUP_FILE).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def _set_group_mode(by_state: bool) -> None:
+    path = _STATE_DIR / _GROUP_FILE
+    try:
+        if by_state:
+            _STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+            tmp = path.with_name(path.name + ".tmp")
+            tmp.write_text("state\n", encoding="utf-8")
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, path)
+        else:
+            path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+class Snapshot:
+    __slots__ = ("rows", "items", "current_session", "source", "query", "open_tabs", "by_state")
+
+    def __init__(self, rows: list, current_session: str, query: str = "", open_tabs=None, by_state: bool = False):
+        self.source, self.query, self.open_tabs, self.by_state = rows, query, open_tabs, by_state
         groups = deck.filter_groups(deck.group_rows(rows, current_session), query)   # indexes are assigned BEFORE filtering
-        self.items, self.rows = deck.flatten(groups, current_session, open_tabs)
+        if by_state:
+            groups = deck.group_by_state(groups)       # `g`: Needs you → Working → Finished → Idle, across every session
+        self.items, self.rows = deck.flatten(groups, current_session, open_tabs, headed=by_state)
         self.current_session = current_session
 
     def with_query(self, query: str) -> "Snapshot":
-        return Snapshot(self.source, self.current_session, query, self.open_tabs)
+        return Snapshot(self.source, self.current_session, query, self.open_tabs, self.by_state)
 
     def with_open(self, open_tabs) -> "Snapshot":
-        return Snapshot(self.source, self.current_session, self.query, None if open_tabs is None else frozenset(open_tabs))
+        return Snapshot(self.source, self.current_session, self.query, None if open_tabs is None else frozenset(open_tabs), self.by_state)
+
+    def with_grouping(self, by_state: bool) -> "Snapshot":
+        return self if bool(by_state) == self.by_state else Snapshot(self.source, self.current_session, self.query, self.open_tabs, bool(by_state))
 
 
 class Collector:
@@ -262,6 +301,10 @@ class Collector:
             return None
         panes = _panes_state(data)
         try:
+            mutes = kittymux_quiet.load_mutes(str(_STATE_DIR), _watched_kitty_pid())
+        except Exception:
+            mutes = set()
+        try:
             self._tidy = kittymux_features.enabled("titles", str(_STATE_DIR))
         except Exception:
             self._tidy = True
@@ -292,6 +335,10 @@ class Collector:
                 status = ("" if st == "idle" else st) if st else ("unread" if unread else "")
                 jump_to = int(deciding) if deciding and st in kittymux_agents.NEEDS_YOU else aw["id"]
                 pane_rows = tuple(self._pane(w, aw["id"], panes, now) for w in wins) if len(wins) >= 2 else ()
+                for pd in pane_rows:
+                    pd.muted = str(pd.win_id) in mutes
+                agent_ids = [str(w["id"]) for w in wins if kittymux_agents.identify(w)[0]] or [str(w["id"]) for w in wins]
+                muted = bool(mutes) and all(i in mutes for i in agent_ids)
                 current = bool((osw.get("is_focused") or (_PANEL and osw.get("last_focused"))) and tab.get("is_active"))
                 session = aw.get("session_name", "") or ""
                 if current:
@@ -316,7 +363,7 @@ class Collector:
                     msg=kittymux_agents.resolve_msg(panes.get(str(deciding or aw["id"])), st) if st else "",
                     age=(lambda e: kittymux_agents.state_age(st, e.get("ts_state"), now, reset_at=e.get("reset_at"), wall=time.time()))(panes.get(str(deciding or aw["id"])) or {}) if st else "",
                     pr=self._pr.get(cwd, branch), ports=ports, pane_rows=pane_rows,
-                    win_ids=tuple(w["id"] for w in wins), progress=progress))
+                    win_ids=tuple(w["id"] for w in wins), progress=progress, muted=muted))
         return Snapshot(rows, current_session)
 
 
@@ -406,6 +453,7 @@ class Sidebar(Handler):
         self._hover_pane = (-1, -1)             # (row, pane) of the child line under the pointer
         self._help = False                      # the `?` card is showing instead of the view body
         self._open = None                       # tab ids whose panes are listed under them; None until the first snapshot (then: the tab you are in)
+        self._by_state = _group_mode() == "state"   # `g`: by space (sessions, repos) or by state; remembered in $STATE/panel-group
         self.query, self.searching, self.full = "", False, None     # the `/` search
         self._gfx = None                        # None until the graphics probe, then "wait" | "ok" | "no"
         self._px = None
@@ -956,7 +1004,7 @@ class Sidebar(Handler):
         if self._open is None:
             self._open = {r.tab_id for r in snap.rows if r.current and len(r.pane_rows) >= 2}      # the first look: your own tab is open, the rest are one line each
         self._open &= alive                      # a closed tab does not keep a seat
-        snap = snap.with_open(self._open)        # panes appear under a split tab only when it is open: nothing moves under the pointer by itself
+        snap = snap.with_open(self._open).with_grouping(self._by_state)        # panes appear under a split tab only when it is open: nothing moves under the pointer by itself
         self.full = snap                         # the unfiltered view; self.snap is what the `/` search leaves of it
         self.snap = snap.with_query(self.query) if self.query else snap
         snap = self.snap
@@ -1680,7 +1728,7 @@ class Sidebar(Handler):
         w = self.write
         snap = self.snap
         # header: counts + hint
-        waiting = sum(1 for r in snap.rows if r.status in kittymux_agents.NEEDS_YOU)
+        waiting = sum(1 for r in snap.rows if deck.asks(r))          # a muted agent never counts as needing you
         working = sum(1 for r in snap.rows if r.status == "working")
         w(set_cursor_position(0, 0) + self._ansi(kittymux_agentsview.summary_row(self.kit, len(snap.rows), waiting, working, bar_w, self._motion())))
         if self.searching or self.query:
@@ -1882,10 +1930,16 @@ class Sidebar(Handler):
             self.sel = deck.step_group(self.snap.rows, self.sel, 1) if n else 0
         elif k == "K" and shifted:
             self.sel = deck.step_group(self.snap.rows, self.sel, -1) if n else 0
-        elif k == "G" and not shifted:
+        elif k == "HOME":
             self.sel = 0
-        elif k == "G" and shifted:
+        elif k == "G" and not shifted:
+            self._toggle_grouping()                    # Rex's "group by priority": by space <-> by state (Home is the first row)
+            return
+        elif k == "END" or (k == "G" and shifted):
             self.sel = max(0, n - 1)
+        elif k == "M" and not shifted:
+            self._toggle_mute(self.sel)
+            return
         elif k == "ENTER":
             self._jump()
             return
@@ -2017,9 +2071,31 @@ class Sidebar(Handler):
             self._request_preview(delay=True)
             self.draw_screen()
 
+    def _row_under(self, mouse_event) -> int:
+        """The tab row under the pointer in the Agents list (pixels or cells), else -1."""
+        if mouse_event.cell_x >= self._geom()[2]:
+            return -1
+        if self._deckpx_on():
+            hit = self._px_hit(mouse_event) if self._px_inside(mouse_event) else None
+            model, mods = getattr(self, "_px_model", None), self._pxmods()
+            if not hit or model is None or not mods or hit[0] not in ("agent", "pane", "toggle"):
+                return -1
+            return mods[1].hit_target(model, hit[0], hit[1])[0]
+        row, _pane = self._pane_at(mouse_event.cell_y)
+        return row if row >= 0 else self._row_at(mouse_event.cell_y)
+
     def on_click(self, mouse_event) -> None:
         x, y = mouse_event.cell_x, mouse_event.cell_y
         view = getattr(self, "_view", "agents")
+        button = int(getattr(mouse_event, "buttons", 0) or 0)
+        if button > 0 and button & int(getattr(MouseButton, "RIGHT", 4)):      # wheel "buttons" are negative
+            # a right-click on a tab mutes (or unmutes) its agent, like `m`; it never jumps
+            if view == "agents" and not self._help:
+                row = self._row_under(mouse_event)
+                if row >= 0:
+                    self.sel = row
+                    self._toggle_mute(row)
+            return
         hit = self._foot_hit(mouse_event)
         if hit and not (self.searching and view == "agents"):
             self._press(hit[1])
@@ -2091,6 +2167,47 @@ class Sidebar(Handler):
         self._px_clear()
         self._clamp()
         self.draw_screen()
+
+    def _toggle_grouping(self) -> None:
+        """`g`: the list by space (sessions, repos) or by state (Needs you -> Working -> Finished -> Idle). The selected tab stays selected."""
+        keep = self.snap.rows[self.sel].tab_id if self.snap.rows else None
+        self._by_state = not self._by_state
+        _set_group_mode(self._by_state)
+        if self.full is not None:
+            self.full = self.full.with_grouping(self._by_state)
+            self.snap = self.full.with_query(self.query) if self.query else self.full
+        else:
+            self.snap = self.snap.with_grouping(self._by_state)
+        self._clear_pointer_hover()
+        if keep is not None:
+            self.sel = next((i for i, r in enumerate(self.snap.rows) if r.tab_id == keep), 0)
+        self._px_scroll = 0.0
+        self._clamp()
+        self.draw_screen()
+
+    def _toggle_mute(self, row: int) -> None:
+        """`m` or a right-click: mute (or unmute) the agents of that tab. Muted: listed with a bell-slash, no popup or bell, never "needs you"."""
+        if not (0 <= row < len(self.snap.rows)):
+            return
+        r = self.snap.rows[row]
+        pid = _watched_kitty_pid()
+        if pid <= 0:
+            return
+        want = not r.muted
+        ids = [p.win_id for p in r.pane_rows if p.agent] or list(r.win_ids or (r.win_id,))
+        try:
+            for wid in ids:
+                kittymux_quiet.set_muted(str(_STATE_DIR), pid, wid, want)
+        except OSError:
+            _log_error()
+            return
+        for target in [r] + [p for p in r.pane_rows if p.win_id in ids]:
+            target.muted = want                        # show it at once; the next collect agrees
+        if not r.pane_rows:
+            r.muted = want
+        self._px_sig = None
+        self.draw_screen()
+        self._request_refresh()
 
     def _toggle_open(self, row: int, to=None) -> None:
         """Show or hide the panes of split tab `row`. Only a click on its ▸/▾ or →/←/o does this: hovering and an agent starting to ask never do."""

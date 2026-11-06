@@ -1828,3 +1828,48 @@ class LsMemoTests(unittest.TestCase):
         with mock.patch.object(m, "_ls", return_value=[]) as ls:
             m._focus_wm(42, "unix:/s")
         ls.assert_called_once_with("unix:/s", fresh=True)
+
+
+class MuteCommandTests(unittest.TestCase):
+    """`kittymux mute [TAB]` / `unmute`: the store is per kitty, the tab is resolved from `ls`, and nothing is touched without a kitty."""
+
+    LS = [{"id": 1, "is_focused": True, "tabs": [
+        {"id": 3, "title": "api", "windows": [{"id": 30, "foreground_processes": [{"cmdline": ["zsh"]}]}]},
+        {"id": 4, "title": "pricing review", "windows": [{"id": 40, "foreground_processes": [{"cmdline": ["codex"]}]},
+                                                         {"id": 41, "foreground_processes": [{"cmdline": ["zsh"]}]}]}]}]
+
+    def setUp(self):
+        self.m = load()
+        self.dir = tempfile.mkdtemp()
+        for p in (mock.patch.object(self.m, "_focused_socket", lambda: "unix:/tmp/mykitty-4321"),
+                  mock.patch.object(self.m, "_own_kitty_socket", lambda: None),
+                  mock.patch.object(self.m, "_ls", lambda sock, fresh=False: self.LS),
+                  mock.patch.object(self.m.kittymux_layout, "state_dir", lambda: self.dir)):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_mute_a_tab_by_number_then_unmute_it_by_title(self):
+        import io, contextlib
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.m.mute_cmd(["2"], True), 0)
+        self.assertEqual(self.m.kittymux_quiet.load_mutes(self.dir, 4321), {"40"})       # the agent window, not the shell beside it
+        self.assertIn("muted pricing review", out.getvalue())
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(self.m.mute_cmd(["pricing"], False), 0)
+        self.assertEqual(self.m.kittymux_quiet.load_mutes(self.dir, 4321), set())
+
+    def test_an_unknown_tab_and_no_tab_outside_kitty_are_errors(self):
+        import io, contextlib
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(self.m.mute_cmd(["nothing"], True), 1)
+            self.assertEqual(self.m.mute_cmd([], True), 2)
+        self.assertEqual(self.m.kittymux_quiet.load_mutes(self.dir, 4321), set())
+
+    def test_list_names_the_muted_windows(self):
+        import io, contextlib
+        self.m.kittymux_quiet.set_muted(self.dir, 4321, 40, True)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.m.mute_cmd(["--list"], True), 0)
+        self.assertIn("pricing review", out.getvalue())

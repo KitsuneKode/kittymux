@@ -579,6 +579,18 @@ def _panes_state() -> dict:
 
 
 @_per_pass
+def _close_ask(tab_id: int) -> str:
+    """The close guard's short question for this tab, when one of its panes is asking; '' otherwise (and always when the guard never ran)."""
+    guard = sys.modules.get("kittymux_closeguard")
+    if guard is None:
+        return ""
+    try:
+        tab = get_boss().tab_for_id(tab_id)
+        return guard.short_for([w.id for w in tab.windows]) if tab is not None else ""
+    except Exception:
+        return ""
+
+
 def _tab_verdict(tab_id: int) -> tuple[str, dict | None]:
     """(state, entry) for a tab: every pane rolled up (kittymux_agents.tab_verdict), plus the
     entry of the pane that decided it (its message says what the agent wants)."""
@@ -955,10 +967,18 @@ def _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal) -> i
     if screen.cursor.x < x0 + 3:
         screen.cursor.x = x0 + 3
 
-    screen.cursor.fg = _rgb(pal.text) if tab.is_active else _rgb(pal.muted)
-    screen.cursor.bold = tab.is_active
-    screen.draw(f"{index}:{title}")
+    asking = _close_ask(tab.tab_id)               # closing a busy agent asks here first (kittymux_closeguard): the question takes the title's place
+    if asking:
+        screen.cursor.fg = _rgb(pal.waiting)
+        screen.cursor.bold = True
+        screen.draw(f"{index}:{asking}")
+    else:
+        screen.cursor.fg = _rgb(pal.text) if tab.is_active else _rgb(pal.muted)
+        screen.cursor.bold = tab.is_active
+        screen.draw(f"{index}:{title}")
     screen.cursor.bold = False
+    if _BAR_DUMP and not extra_data.for_layout:
+        _dump_row(tab.tab_id, alert=asking)               # test hook
     if state:
         screen.cursor.fg = _rgb(_state_color(state, pal))
         screen.cursor.bold = state in kittymux_agents.NEEDS_YOU
@@ -1278,6 +1298,9 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         if pane_map or chips:
             subtitle.append((pane_map, pal.faint) if pane_map else (chips, pal.faint))
     msg = kittymux_agents.resolve_msg(_tab_verdict(tab.tab_id)[1], state)
+    asking = _close_ask(tab.tab_id)               # closing a busy agent asks on this row first (kittymux_closeguard)
+    if asking:
+        msg = asking
     # Identity stays in its own row even when an alert arrives. The title's state glyph
     # remains visible when the height cap leaves no room for the separate alert row.
     if msg and hdr_rows > 1 and not compact:
@@ -1451,10 +1474,12 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         screen.cursor.y, screen.cursor.bg = last_row, row_bg
         if stripe:
             _put(screen, 0, _RAIL, _rgb(pal.waiting))
-        _put(screen, tx, _fit(kittymux_place.clean(msg), max(1, cols - tx - 1 - sep_cols - ins)), _rgb(state_fg), True)
+        _put(screen, tx, _fit(kittymux_place.clean(msg), max(1, cols - tx - 1 - sep_cols - ins)), _rgb(pal.waiting if asking else state_fg), True)
         screen.cursor.bold = False
         if not extra_data.for_layout:
             _dump_row(tab.tab_id, alert=kittymux_place.clean(msg))
+    elif _BAR_DUMP and not extra_data.for_layout:
+        _dump_row(tab.tab_id, alert="")                   # test hook: an alert that went away is gone from the dump too
     # Tabs are separated by their blank row alone (no hairline): spacing, not rules, as in Rex's sidebar.
     if extra_data.next_tab is not None and not extra_data.for_layout and last_row + 1 < screen.lines:
         _sep_column(screen, last_row + 1, 1, bar, pal, native)

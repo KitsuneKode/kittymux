@@ -74,6 +74,30 @@ class AdaptTests(unittest.TestCase):
         calm = adapt.to_model(snap([row(1, "api", status="working")], "work"), 0, (-1, -1), "demo", "work")
         self.assertEqual(adapt.first_waiting(calm), (-1, -1))
 
+    def test_a_muted_question_neither_lights_its_space_nor_takes_the_chip(self):
+        rows = [row(1, "quiet", status="waiting", muted=True), row(2, "loud", status="waiting"), row(3, "busy", status="working")]
+        model = adapt.to_model(snap(rows, "work"), 0, (-1, -1), "demo", "work")
+        self.assertTrue(model.agents[0].muted)
+        self.assertEqual(adapt.first_waiting(model), (model.agents[1].row, -1))
+        self.assertEqual(model.spaces[0].counts, {"waiting": 1, "working": 1})
+        alone = adapt.to_model(snap([row(1, "quiet", status="waiting", muted=True)], "work"), 0, (-1, -1), "demo", "work")
+        self.assertEqual(alone.spaces[0].state, "idle")
+        self.assertEqual(adapt.first_waiting(alone), (-1, -1))
+
+    def test_by_state_the_spaces_are_the_states(self):
+        rows = [row(1, "a", status="working", branch="main"), row(2, "b", status="waiting", session="other"), row(3, "c", status="done")]
+        groups = deck.group_by_state(deck.group_rows(rows, "work"))
+        items, flat = deck.flatten(groups, "work", None, headed=True)
+
+        class Snap:
+            pass
+        s = Snap()
+        s.items, s.rows, s.query, s.current_session, s.by_state = items, flat, "", "work", True
+        model = adapt.to_model(s, 0, (-1, -1), "demo", "work")
+        self.assertEqual([sp.name for sp in model.spaces], ["Needs you", "Working", "Finished"])
+        self.assertEqual({sp.branch for sp in model.spaces}, {""})                 # a state spans repos: no branch
+        self.assertEqual([a.title for a in model.agents], ["b", "a", "c"])
+
     def test_states_progress_and_empty_wording(self):
         rows = [
             row(1, "api", status="working", progress=("set", 42), current=True, branch="feat"),

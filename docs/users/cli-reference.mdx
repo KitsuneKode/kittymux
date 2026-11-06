@@ -155,6 +155,16 @@ No popups for one agent window for a while.
 kittymux snooze [1h] [--window ID] [--clear]
 ```
 
+## `kittymux mute`
+
+Mute one agent until you unmute it. It keeps running and stays listed with a bell-slash, but it sends no popup or bell and never counts as "needs you". Its events still reach the inbox, and `agents.json` marks it `muted` for other surfaces. In the panel, `m` or a right-click on a tab does the same.
+
+```sh
+kittymux mute [TAB]       # TAB: nothing = the tab you are in, a number, id:N, or words of its title
+kittymux mute --list
+kittymux unmute [TAB]
+```
+
 ## `kittymux explain`
 
 Why each agent pane is in its state, and every recent decision: state changes and notifications sent or held back.
