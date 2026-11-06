@@ -4,6 +4,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 
 ## [Unreleased]
 
+### Added (the kittymux client)
+
+- **`kittymux client`**: a sidebar beside kitty, drawn by Quickshell on the GPU instead of in terminal cells. It shows every tab of every running kitty with a two-line header (where you are, then what needs you), the tabs grouped by space or by state (`g`, shared with the panel), a state ring around each agent's mark (a calm turning arc while working, the percent when the program reports one, orange when it needs you, green when finished, red on error), one hover highlight that glides between rows, rolling tabular numbers, and an inline right-click menu (Jump, Mute). Colours come from the live kitty theme. It uses no CPU at rest and about 1% while an agent works (measured under Xvfb). See the client page in the user guides.
+- **`tabs.json`**: every tab of every running kitty, with the pane that speaks for it, its project, branch and hue, and the kitty theme's palette, published by the scanner only when something changed (docs/inbox.md). kuwai's Agents tab already reads it.
+- **`kittymux mute --pid P --window W`** (and `unmute`): mute one pane of a named kitty without a socket, for a client that runs outside kitty.
+
 ### Added
 - **Group by priority.** `g` in the panel lists every tab, across sessions, under Needs you, Working, Finished and Idle; `g` again goes back to spaces, and the panel remembers which. `Home` (and `G`/`End`) still go to the ends.
 - **Mute an agent.** `kittymux mute [TAB]` (`unmute`, `mute --list`), `m` on a tab in the panel, or a right-click. A muted agent keeps running and stays listed with a bell-slash, but sends no popup or bell and never counts as "needs you" (not in the panel's chip, not in a space's ring). Its events still reach the inbox. `agents.json` rows gain `muted` and the document gains `needs_you` (additive, version 1), so a desktop shell can honour it.

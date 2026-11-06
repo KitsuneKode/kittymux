@@ -499,6 +499,53 @@ def _publish_agents(boss) -> None:
                 spec["muted"] = str(spec.get("window_id")) in muted
                 specs.append(spec)
         kittymux_agentsnap.publish(state_dir(), os.getpid(), specs, time.time())
+        _publish_tabs(boss, muted)
+    except Exception:
+        _debug()
+
+
+def _publish_tabs(boss, muted) -> None:
+    """This kitty's OS windows and tabs into the shared tabs.json (kittymux_tabsnap), for a client drawn outside kitty."""
+    try:
+        import kittymux_tabsnap
+        focused = getattr(boss, "active_tab_manager", None)
+        colors = {}
+        try:
+            import kittymux_theme
+            from kitty.fast_data_types import get_options
+            from kitty.utils import color_as_int
+            o = get_options()
+            colors = kittymux_theme.colors_from_options(o, color_as_int(o.background), color_as_int)
+        except Exception:
+            colors = {}
+        specs = []
+        for osw, tm in list((getattr(boss, "os_window_map", None) or {}).items()):
+            tabs = []
+            active_tab = getattr(tm, "active_tab", None)
+            for tab in list(getattr(tm, "tabs", None) or []):
+                lead = getattr(tab, "active_window", None)
+                wins = []
+                for w in list(tab):
+                    spec = _agent_spec(w) or {}
+                    child = getattr(w, "child", None)
+                    cwd = (getattr(child, "current_cwd", None) or getattr(child, "cwd", None) or "") if child is not None else ""
+                    wins.append({"window_id": w.id, "active": w is lead, "cwd": cwd, "agent": spec.get("agent") or "",
+                                 "state": spec.get("state") or "", "reason": spec.get("reason") or "",
+                                 "progress": spec.get("progress"), "limit_reset": spec.get("limit_reset"),
+                                 "muted": str(w.id) in muted})
+                tabs.append({"tab_id": tab.id, "title": getattr(tab, "name", "") or getattr(tab, "title", "") or "",
+                             "active": tab is active_tab, "windows": wins})
+            specs.append({"os_window_id": osw, "wm_class": getattr(tm, "wm_class", "") or "kitty", "focused": tm is focused,
+                          "session": "", "colors": colors, "tabs": tabs})
+        # Most scans change nothing a client draws: skip the file (its read, git lookups, compare) when this kitty's tabs are what
+        # was published last, except once per AGE_REFRESH so a kitty that exited is still pruned from the shared file.
+        key = repr(specs)
+        rt = vars(_RT)
+        now = time.monotonic()
+        if key == rt.get("tabs_key") and now - rt.get("tabs_at", 0.0) < AGE_REFRESH:
+            return
+        kittymux_tabsnap.publish(state_dir(), os.getpid(), specs, time.time())
+        rt["tabs_key"], rt["tabs_at"] = key, now
     except Exception:
         _debug()
 

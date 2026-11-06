@@ -120,6 +120,8 @@ jobs:
           bash tests/smoke_panetitle.sh
           bash tests/smoke_pane_ux.sh
           bash tests/smoke_closeguard.sh
+      - name: tabs.json for a client drawn outside kitty
+        run: bash tests/smoke_tabsnap.sh
       - name: join tabs (CLI and picker), exit save, workflow argv
         run: |
           bash tests/smoke_join.sh

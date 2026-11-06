@@ -35,6 +35,7 @@
   kittymux settings    every on/off setting in one list (bar, notifications, safety, opt-in), what each does and why it is on or off:
                          settings [list] | on NAME [--yes] | off NAME | reset NAME|GROUP|all | apply | open     (the panel's Settings view is the same list: press s)
   kittymux panel       persistent agent-and-usage panel: panel [toggle|start|stop|status|summon|dock|wider|narrower|width N]
+  kittymux client      the GPU sidebar beside kitty (Quickshell, Wayland): client [start|stop|toggle|status]
   kittymux usage       provider quotas, resets and local usage: usage [--window] (Mod+N → Usage opens a separate window from any app)
   kittymux peek        the peek card (a right-click on a tab) from the keyboard: peek [TAB_ID | --waiting]  (--waiting: the agent that needs you longest)
   kittymux palette     one searchable list of what needs you, every tab, agents to reopen or start, and a few actions (ctrl+alt+shift+space): palette
@@ -2539,6 +2540,52 @@ def act_cmd(argv: list[str]) -> int:
     return _do_row({"action": a}, "open", sock)               # reopen | spawn | usage: the same code `pick` runs
 
 
+def _client_running(path: str) -> list[int]:
+    """The pids of the Quickshell instances running the client's config."""
+    try:
+        out = subprocess.run(["qs", "list", "-j", "-p", path], capture_output=True, text=True, timeout=4).stdout
+        rows = json.loads(out or "[]")
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return []
+    rows = rows if isinstance(rows, list) else [rows]
+    return [int(r["pid"]) for r in rows if isinstance(r, dict) and str(r.get("pid", "")).isdigit()]
+
+
+def client_cmd(argv: list[str]) -> int:
+    """`kittymux client [start|stop|toggle|status]` — the client in client/: a Quickshell sidebar drawn on the GPU beside kitty, from tabs.json.
+    It only reads kittymux's files and runs `kittymux act` / `kittymux mute --pid --window` on a click; it never starts or restarts a kitty."""
+    action = argv[0] if argv else "toggle"
+    if action not in ("start", "stop", "toggle", "status") or len(argv) > 1:
+        print("usage: kittymux client [start|stop|toggle|status]", file=sys.stderr)
+        return 2
+    if not shutil.which("qs"):
+        print("kittymux client: needs Quickshell (`qs`): https://quickshell.org (Arch: pacman -S quickshell)", file=sys.stderr)
+        return 1
+    path = os.path.join(HOME_DIR, "client")
+    running = _client_running(path)
+    if action == "status":
+        print(f"running (pid {', '.join(map(str, running))})" if running else "not running")
+        return 0 if running else 1
+    if running and action in ("stop", "toggle"):
+        for pid in running:
+            subprocess.run(["qs", "kill", "--pid", str(pid)], capture_output=True, timeout=4)
+        print(f"{OK} client stopped")
+        return 0
+    if action == "stop" or running:
+        print("client is not running" if action == "stop" else "client is already running")
+        return 0
+    env = {**os.environ, "KITTYMUX_BIN": os.path.join(HOME_DIR, "bin", "kittymux"), "KITTYMUX_ICONS": os.path.join(HOME_DIR, "assets", "icons"),
+           "KITTYMUX_STATE": kittymux_layout.state_dir()}
+    if os.environ.get("KITTYMUX_CLIENT_GPU") != "1":
+        env.setdefault("QT_QUICK_BACKEND", "software")      # repaints only what changed: a turning ring costs ~1% CPU, nothing at rest (docs/agents/verify.md)
+    rc = subprocess.run(["qs", "-n", "-d", "-p", path], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10).returncode
+    if rc != 0:
+        print("kittymux client: Quickshell would not start it (see `qs log -p " + path + "`)", file=sys.stderr)
+        return 1
+    print(f"{OK} client started (kittymux client stop to close it)")
+    return 0
+
+
 def panel_cmd(argv: list[str]) -> int:
     action = argv[0] if argv else "toggle"
     if action not in {"toggle", "start", "stop", "status", "summon", "dock", "wider", "narrower", "width"} or (action == "width" and (len(argv) != 2 or not argv[1].isdigit())) or (action != "width" and len(argv) > 1):
@@ -2635,14 +2682,45 @@ def snooze(argv: list[str]) -> int:
     return 0
 
 
+def _mute_direct(argv: list[str], on: bool, verb: str) -> int | None:
+    """`--pid P --window W`: mute one pane of a named kitty, as a client drawn outside kitty does (it knows both from tabs.json, and must
+    never act on 'the focused kitty'). No socket: the mute is a file the scanner of that kitty reads on its next pass. None: not this form."""
+    if "--pid" not in argv and "--window" not in argv:
+        return None
+    vals = {}
+    for flag in ("--pid", "--window"):
+        i = argv.index(flag) if flag in argv else -1
+        v = argv[i + 1] if 0 <= i < len(argv) - 1 else ""
+        if not v.isdigit():
+            print(f"usage: kittymux {verb} --pid KITTY_PID --window WINDOW_ID", file=sys.stderr)
+            return 2
+        vals[flag] = int(v)
+    pid = vals["--pid"]
+    try:
+        with open(f"/proc/{pid}/comm", encoding="utf-8") as f:
+            alive = f.read().strip().startswith("kitty")
+    except OSError:
+        alive = False
+    if not alive:
+        print(f"kittymux {verb}: no kitty runs as pid {pid}", file=sys.stderr)
+        return 1
+    changed = kittymux_quiet.set_muted(kittymux_layout.state_dir(), pid, vals["--window"], on)
+    print(f"{OK} {verb}d window {vals['--window']}" if changed else f"window {vals['--window']} was {'already' if on else 'not'} muted")
+    return 0
+
+
 def mute_cmd(argv: list[str], on: bool) -> int:
     """`kittymux mute [TAB] [--list]` / `kittymux unmute [TAB]` — one agent stays listed (with a bell-slash) but sends no popup or bell and never counts as
     "needs you", until you unmute it. TAB: nothing = the tab you run it in, a number (the focused window's Nth tab), `id:N`, or words of its title.
     Stored per kitty in the private state dir (kittymux_quiet), never as a window variable. `agents.json` carries `muted` for other surfaces."""
     verb = "mute" if on else "unmute"
     if any(a in ("-h", "--help") for a in argv):
-        print(f"usage: kittymux {verb} [TAB]   (TAB: a number, id:N, or words of the title; none = the tab you are in)" + ("\n       kittymux mute --list" if on else ""))
+        print(f"usage: kittymux {verb} [TAB]   (TAB: a number, id:N, or words of the title; none = the tab you are in)"
+              f"\n       kittymux {verb} --pid KITTY_PID --window WINDOW_ID" + ("\n       kittymux mute --list" if on else ""))
         return 0
+    direct = _mute_direct(argv, on, verb)
+    if direct is not None:
+        return direct
     sock = _focused_socket()
     if not sock:
         return _no_socket(verb)
@@ -3214,6 +3292,8 @@ def _dispatch(argv: list[str]) -> int:
         return join_cmd(argv[1:])
     if cmd == "panel":
         return panel_cmd(argv[1:])
+    if cmd == "client":
+        return client_cmd(argv[1:])
     if cmd == "usage":
         return usage_cmd(argv[1:])
     if cmd == "peek":

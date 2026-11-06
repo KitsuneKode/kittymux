@@ -1859,6 +1859,26 @@ class MuteCommandTests(unittest.TestCase):
             self.assertEqual(self.m.mute_cmd(["pricing"], False), 0)
         self.assertEqual(self.m.kittymux_quiet.load_mutes(self.dir, 4321), set())
 
+    def test_pid_and_window_mute_one_pane_of_a_named_kitty_without_a_socket(self):
+        import builtins, io, contextlib
+        real_open = builtins.open
+        def fake_open(path, *a, **kw):                                  # /proc/<pid>/comm: 4321 is a kitty, 999 is not
+            if path == "/proc/4321/comm":
+                return io.StringIO("kitty\n")
+            if path == "/proc/999/comm":
+                return io.StringIO("bash\n")
+            return real_open(path, *a, **kw)
+        with mock.patch.object(self.m, "_focused_socket", side_effect=AssertionError("a named kitty needs no focus guess")), \
+             mock.patch("builtins.open", fake_open), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(self.m.mute_cmd(["--pid", "4321", "--window", "41"], True), 0)
+            self.assertEqual(self.m.kittymux_quiet.load_mutes(self.dir, 4321), {"41"})
+            self.assertEqual(self.m.mute_cmd(["--pid", "4321", "--window", "41"], False), 0)
+            self.assertEqual(self.m.kittymux_quiet.load_mutes(self.dir, 4321), set())
+            self.assertEqual(self.m.mute_cmd(["--pid", "999", "--window", "41"], True), 1)        # not a kitty: nothing written
+            self.assertEqual(self.m.mute_cmd(["--pid", "4321"], True), 2)                         # half the form
+            self.assertEqual(self.m.mute_cmd(["--pid", "x", "--window", "41"], True), 2)
+        self.assertEqual(self.m.kittymux_quiet.load_mutes(self.dir, 999), set())
+
     def test_an_unknown_tab_and_no_tab_outside_kitty_are_errors(self):
         import io, contextlib
         with contextlib.redirect_stderr(io.StringIO()):
