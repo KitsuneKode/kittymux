@@ -410,3 +410,36 @@ class StrictNamesTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RunningLabelTests(unittest.TestCase):
+    """A split's pane row says what runs in it (wave 3.1: two rows both said the repo, "website")."""
+
+    @staticmethod
+    def win(*cmdlines):
+        return {"foreground_processes": [{"pid": 100 + i, "cmdline": list(c)} for i, c in enumerate(cmdlines)]}
+
+    def test_an_agent_is_its_product_name(self):
+        self.assertEqual(A.running_label(self.win(["node", "/usr/lib/node_modules/@openai/codex/bin/codex"])), "Codex")
+        self.assertEqual(A.running_label(self.win(["claude", "--resume"])), "Claude Code")
+        self.assertEqual(A.running_label(self.win(["opencode"])), "OpenCode")
+
+    def test_a_command_is_its_program_and_first_word(self):
+        self.assertEqual(A.running_label(self.win(["-zsh"], ["pnpm", "dev"])), "pnpm dev")
+        self.assertEqual(A.running_label(self.win(["/usr/bin/nvim", "README.md"])), "nvim README.md")
+        self.assertEqual(A.running_label(self.win(["npm", "run", "--silent", "dev"])), "npm run")
+
+    def test_wrappers_and_relays_are_skipped(self):
+        self.assertEqual(A.running_label(self.win(["sudo", "pacman", "-Syu"])), "pacman")
+        self.assertEqual(A.running_label(self.win(["mux-pty", "--", "htop"])), "htop")
+
+    def test_a_bare_shell_is_the_shell(self):
+        self.assertEqual(A.running_label(self.win(["-zsh"])), "zsh")
+        self.assertEqual(A.running_label(self.win(["/bin/bash", "--login"])), "bash")
+
+    def test_nothing_known_is_empty(self):
+        self.assertEqual(A.running_label({}), "")
+        self.assertEqual(A.running_label(self.win([])), "")
+
+    def test_a_long_argument_is_shortened_to_its_name(self):
+        self.assertEqual(A.running_label(self.win(["python3", "/home/x/very/deep/tools/serve.py", "--port", "8000"])), "python3 serve.py")

@@ -132,6 +132,15 @@ point() {                     # point COL ROW: the pointer to the middle of that
   px=$(( ($1 * GW + GW / 2) / COLS + GX )); py=$(( ($2 * GH + GH / 2) / LINES_N + GY ))
   X mousemove $((px - 8)) $((py - 3)); sleep 0.15; X mousemove $((px - 3)) $((py - 1)); sleep 0.15; X mousemove "$px" "$py"; sleep 0.6
 }
+if [ "${KMX_DECKPX:-}" = 1 ]; then
+  # the pixel list draws its key hints in the image (get-text cannot see them): a real click on the `?` at its bottom-right corner opens
+  # the help card, the same as the key, and there is no cell keycap row left
+  cell "jump" | grep -q . && fail "Agents: the pixel list still draws the cell keycap row"
+  X mousemove $((GX + GW - 22)) $((GY + GH - 14)); sleep 0.5; X click 1; sleep 0.8
+  screen | grep -q "Agents keys" || fail "Agents: clicking the pixel ? hint did not open the help card"
+  key Escape; sleep 0.4
+  X mousemove $((GX + GW - 4)) $((GY + 4)); sleep 0.4
+else
 read -r JC JR <<<"$(cell find)"                               # jump and find fit even in a 26-column panel; join and detach are dropped there on purpose
 [ -n "${JC:-}" ] || fail "Agents: the action bar (jump / find / join / detach) is not drawn"
 cell jump | grep -q . || fail "Agents: the jump button is not drawn"
@@ -147,6 +156,7 @@ screen | grep -q "▏" || fail "Agents: clicking the find button did not open th
 key Escape
 screen | grep -q "▏" && fail "Agents: Esc did not close the search"
 X mousemove $((GX + GW - 4)) $((GY + 4)); sleep 0.4        # pointer away: nothing stays lit
+fi
 
 # a split's panes are listed only when you open it: ▸ closed, ▾ open; keys and a click on the marker both toggle; hovering and refreshes never do
 # the pixel list draws those marks in the image, so get-text cannot see them; the shot still records the list
@@ -194,8 +204,12 @@ screen | grep -q "esc closes" || fail "Agents: the keys card does not say how to
 shot agents-help
 key Escape
 screen | grep -q "Agents keys" && fail "Agents: a key did not close the keys card"
-read -r QC QR <<<"$(cell "jump")"
-point $((COLS - 2)) "$QR"; X click 1; sleep 0.8
+if [ "${KMX_DECKPX:-}" = 1 ]; then                                  # the pixel ? hint (checked above): bottom-right of the image
+  X mousemove $((GX + GW - 22)) $((GY + GH - 14)); sleep 0.5; X click 1; sleep 0.8
+else
+  read -r QC QR <<<"$(cell "jump")"
+  point $((COLS - 2)) "$QR"; X click 1; sleep 0.8
+fi
 screen | grep -q "Agents keys" || fail "Agents: clicking the ? keycap did not open the keys card"
 X click 1; sleep 0.6
 screen | grep -q "Agents keys" && fail "Agents: a click did not close the keys card"

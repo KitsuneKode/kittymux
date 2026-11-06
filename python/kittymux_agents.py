@@ -330,8 +330,13 @@ def is_default_title(title: str, agent: str | None) -> bool:
 
 def product_label(agent: str) -> str:
     """The words drawn for an agent that has not named this conversation ("Claude Code", "Codex"). The same names `is_default_title` knows."""
+    if agent in _STYLED:
+        return _STYLED[agent]
     raw = _NAMES.get(agent, (str(agent).replace("-", " "),))[0]
     return " ".join(part[:1].upper() + part[1:] for part in raw.split())
+
+
+_STYLED = {"opencode": "OpenCode"}      # products whose own spelling is not a plain capital
 
 
 # The short word each state is called wherever there is room for a word (the pixel panel, a pane header's pill).
@@ -425,3 +430,42 @@ def tool_in(cmdlines: Iterable[Iterable[str]]) -> str | None:
         if name in TOOLS and (best is None or _TOOL_RANK[name] < _TOOL_RANK[best]):
             best = name
     return best
+
+
+_SHELLS = frozenset({"zsh", "bash", "sh", "fish", "dash", "nu", "ksh", "tcsh", "xonsh", "elvish"})
+
+
+def _program_words(cmdline) -> list[str]:
+    """argv without the relay (`mux-pty --`), a `--` wrapper separator, and env/sudo-style wrappers."""
+    argv, _shift = command_argv(cmdline or [])
+    if "--" in argv[1:]:
+        argv = argv[argv.index("--") + 1:]
+    while argv and os.path.basename(argv[0]).lower() in _WRAPPERS:
+        argv = argv[1:]
+    return argv
+
+
+def running_label(window: dict) -> str:
+    """What runs in a pane, in a word or two: an agent's product name ("Codex"), else the foreground program and its first
+    non-flag argument ("pnpm dev", "nvim README.md"), else the shell ("zsh"). '' when kitty reports no process."""
+    procs = (window or {}).get("foreground_processes") or []
+    for proc in procs:
+        name = agent_in(proc.get("cmdline") or [])
+        if name:
+            return product_label(name)
+    shell = ""
+    for proc in reversed(procs):
+        argv = _program_words(proc.get("cmdline"))
+        if not argv:
+            continue
+        prog = os.path.basename(argv[0]).lstrip("-")
+        if not prog:
+            continue
+        if prog.lower() in _SHELLS:
+            shell = shell or prog
+            continue
+        word = next((a for a in argv[1:] if a and not a.startswith("-")), "")
+        if "/" in word:
+            word = os.path.basename(word.rstrip("/"))
+        return f"{prog} {word}".strip()
+    return shell

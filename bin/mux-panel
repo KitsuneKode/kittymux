@@ -91,9 +91,24 @@ except Exception:
     echo "panel started → watching $target"
 }
 
+give_back_bars() {   # a killed panel cannot uncover the bar it hid (python/kittymux_layout.py cover): drop its cover, reload that kitty
+    local f pid owner sock
+    for f in "$STATE"/bar-covered-*; do
+        [[ -f "$f" ]] || continue
+        pid="${f##*bar-covered-}"; owner="$(cat "$f" 2>/dev/null)"
+        [[ "$pid" =~ ^[0-9]+$ ]] || continue
+        [[ "$owner" =~ ^[0-9]+$ ]] && kill -0 "$owner" 2>/dev/null && continue
+        rm -f "$f"
+        sock="$(mux_socket_for_pid "$pid")" && kitty @ --to "$sock" load-config >/dev/null 2>&1
+    done
+}
+
 stop() {
     if alive; then
-        kill -- "-$(cat "$PIDFILE")" 2>/dev/null || kill "$(cat "$PIDFILE")" 2>/dev/null
+        local panel; panel="$(cat "$PIDFILE")"
+        kill -- "-$panel" 2>/dev/null || kill "$panel" 2>/dev/null
+        for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$panel" 2>/dev/null || break; sleep 0.1; done
+        give_back_bars
         rm -f "$PIDFILE" "$SOCK" "$MODEFILE"
         echo "panel stopped"
     else

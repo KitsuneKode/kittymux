@@ -1040,28 +1040,11 @@ def _sep_column(screen: Screen, y0: int, n: int, bg: int, pal, native: bool = Fa
         screen.draw(_LEFT_BLOCK[SEP_EIGHTS])
 
 
-# While a tab with OSC 9;4 progress is drawn: ((first_row, end_row), x_from, x_to, fill_bg). Text drawn into those
-# cells keeps the fill behind it instead of the row's colour (kittymux_progress). Reset by every _draw_vertical.
-_fill: tuple | None = None
-
-
 def _put(screen: Screen, x: int, text: str, fg: int, bold: bool = False) -> int:
     screen.cursor.x = x
     screen.cursor.fg = fg
     screen.cursor.bold = bold
-    f = _fill
-    if f and text and f[0][0] <= screen.cursor.y < f[0][1] and f[1] <= x < f[2]:
-        split, cx = 0, x
-        while split < len(text) and cx < f[2]:
-            cx += max(0, wcswidth(text[split]))
-            split += 1
-        bg = screen.cursor.bg
-        screen.cursor.bg = f[3]
-        screen.draw(text[:split])
-        screen.cursor.bg = bg
-        screen.draw(text[split:])
-    else:
-        screen.draw(text)
+    screen.draw(text)
     return screen.cursor.x
 
 
@@ -1222,8 +1205,6 @@ def _native_edge(os_window_id: int) -> bool:
 
 
 def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
-    global _fill
-    _fill = None
     cols = screen.columns
     y0 = screen.cursor.y
     native = _native_edge(draw_data.os_window_id)
@@ -1326,20 +1307,9 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         _paint_rows(screen, y0, n_rows, row_bg)
     if active and not compact:                       # the card: the bar's colour back at both edges
         _paint_edges(screen, y0 + hdr_rows, n_rows - hdr_rows, bar, cols - sep_cols)
-    # OSC 9;4 progress: the card fills from the left (Rex's tab progress), the percent in the number's place.
+    # OSC 9;4 progress: the percent in the tab number's place, coloured only when it needs you (paused) or failed. No fill: a
+    # tinted block across the card read as a glitch next to the state colours (wave 3.1).
     progress = None if compact else _tab_progress(tab)
-    if progress:
-        p_state, p_pct = progress
-        x_from, x_to = 1, cols - sep_cols - ins
-        k = kittymux_progress.fill_cells(x_to - x_from, p_state, p_pct)
-        tint = {"error": pal.alert, "paused": pal.waiting}.get(p_state, pal.accent)
-        fill_bg = _rgb(kittymux_theme.blend(tint, pal.surface_hi if active else pal.bar, kittymux_progress.TINT[p_state]))
-        if k:
-            screen.cursor.bg = fill_bg
-            for r in range(y0 + hdr_rows, min(y0 + n_rows, screen.lines)):
-                screen.cursor.x, screen.cursor.y = x_from, r
-                screen.draw(" " * k)
-            _fill = ((y0 + hdr_rows, y0 + n_rows), x_from, x_from + k, fill_bg)
     if index == 1 and not extra_data.for_layout:
         # one full-height separator line, drawn once; each tab re-asserts its rows
         _sep_column(screen, 0, screen.lines, bar, pal, native)
@@ -1495,7 +1465,6 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     screen.cursor.bg = bar
     screen.cursor.fg = 0
     screen.cursor.bold = False
-    _fill = None
     return screen.cursor.x
 
 

@@ -58,6 +58,7 @@ import kittymux_place  # noqa: E402
 import kittymux_titles  # noqa: E402
 import kittymux_files  # noqa: E402
 import kittymux_progress  # noqa: E402
+import kittymux_layout  # noqa: E402
 
 _STATE_DIR = Path(os.environ["KITTYMUX_STATE"]) if os.environ.get("KITTYMUX_STATE") else \
     Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))) / "kittymux"
@@ -243,9 +244,13 @@ class Collector:
             state = kittymux_agents.resolve_status(panes.get(str(w["id"])), agent is not None, now, _STALE_AFTER)
         else:
             state = kittymux_agents.fresh_verdict(panes.get(str(w["id"])), now)
-        title = (w.get("title") or "").strip() or _short_home(w.get("cwd", ""))
-        if self._tidy:
-            title = kittymux_titles.tidy(title, name, self._project(w.get("cwd", ""))).text or title
+        # a pane row says what RUNS there (an agent, a command, the shell): its tab row already names the repo, and two panes
+        # in one repo used to read "website" twice. The window title is the fallback when kitty reports no process.
+        title = kittymux_agents.running_label(w)
+        if not title:
+            title = (w.get("title") or "").strip() or _short_home(w.get("cwd", ""))
+            if self._tidy:
+                title = kittymux_titles.tidy(title, name, self._project(w.get("cwd", ""))).text or title
         return deck.PaneData(win_id=w["id"], glyph=agent.glyph if agent else kittymux_agents.TOOLS.get(tool, ""),
                              agent=name or "", tool=bool(tool and not agent), state=state,
                              title=kittymux_agents.strip_title_prefix(title), active=w["id"] == active_id, cwd=w.get("cwd", ""))
@@ -428,6 +433,7 @@ class Sidebar(Handler):
 
     def finalize(self) -> None:
         self._alive = False
+        self._drop_cover()
         if self._preview_timer is not None:
             self._preview_timer.cancel()
             self._preview_timer = None
@@ -1018,6 +1024,8 @@ class Sidebar(Handler):
             self.preview_for = 0
             self.preview = []
             return
+        if self._deckpx_on() and self.screen_size.cols < 64:
+            return                                   # the narrow pixel list shows no preview (the pane already shows its prompt): fetch none
         r = self.snap.rows[self.sel]
         row, pane = self._hover_pane
         wid = r.pane_rows[pane].win_id if row == self.sel and 0 <= pane < len(r.pane_rows) else r.win_id
@@ -1176,6 +1184,74 @@ class Sidebar(Handler):
     def _pane_line(self, r, j: int, bar_w: int, hovered: bool) -> str:
         return self._ansi(kittymux_agentsview.pane_row(self.kit, r, j, hovered, bar_w, self._motion()))
 
+    # ---- the pixel panel covers the cell bar (kittymux_layout.cover) ----------
+    # The pixel list repeats every tab of the kitty it watches, so while the panel runs in pixels that kitty's bar is hidden.
+    # Tied to the panel's pixel MODE, not the view on screen: flipping to Usage must not resize the user's panes. Settled for
+    # COVER_SETTLE_S so a burst (a probe, a switch toggled twice) is one reload. A killed panel is undone by `mux-panel stop`
+    # and by the scanner's sweep in the watched kitty.
+    COVER_SETTLE_S = 0.8
+
+    def _cover_target(self) -> int:
+        try:
+            return int(os.environ.get("KITTYMUX_TARGET_PID", "0")) if (_PANEL and _TARGET) else 0
+        except ValueError:
+            return 0
+
+    def _want_cover(self) -> bool:
+        return (self._cover_target() > 0 and bool(getattr(self, "_px_switch", False)) and getattr(self, "_gfx", None) == "ok"
+                and kittymux_layout.cover_switch_on(str(_STATE_DIR)))
+
+    def _sync_cover(self) -> None:
+        want = self._want_cover()
+        if want == getattr(self, "_cover_want", False):
+            return
+        self._cover_want = want
+        handle = getattr(self, "_cover_timer", None)
+        if handle is not None:
+            handle.cancel()
+        try:
+            self._cover_timer = self.asyncio_loop.call_later(self.COVER_SETTLE_S, self._apply_cover)
+        except Exception:
+            self._cover_timer = None
+            self._apply_cover()
+
+    def _apply_cover(self) -> None:
+        self._cover_timer = None
+        pid = self._cover_target()
+        if pid <= 0:
+            return
+        try:
+            if getattr(self, "_cover_want", False) and self._alive:
+                changed = kittymux_layout.cover(str(_STATE_DIR), pid, os.getpid())
+            else:
+                changed = kittymux_layout.uncover(str(_STATE_DIR), pid, os.getpid())
+        except Exception:
+            _log_error()
+            return
+        if changed:
+            self._reload_target()
+
+    def _drop_cover(self) -> None:
+        handle = getattr(self, "_cover_timer", None)
+        if handle is not None:
+            handle.cancel()
+        self._cover_timer = None
+        self._cover_want = False
+        pid = self._cover_target()
+        try:
+            if pid > 0 and kittymux_layout.uncover(str(_STATE_DIR), pid, os.getpid()):
+                self._reload_target()
+        except Exception:
+            _log_error()
+
+    def _reload_target(self) -> None:
+        """Re-read the watched kitty's config (its layout geninclude prints the cover). Never waits: the UI stays live."""
+        try:
+            subprocess.Popen(["kitty", "@", "--to", _TARGET, "load-config"], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        except Exception:
+            _log_error()
+
     # ---- pixel Agents list (opt-in `deckpx`; the cell list below is unchanged) ----
     def _pxmods(self):
         cached = getattr(self, "_px_mods", None)
@@ -1220,6 +1296,7 @@ class Sidebar(Handler):
     def _px_clear(self) -> None:
         gfx = getattr(self, "_px", None)
         self._px_active = False
+        self._px_hot_key = None
         self._px_sig = None
         self._px_hits = []
         self._px_last = None
@@ -1299,10 +1376,10 @@ class Sidebar(Handler):
         return mods[0].hit_at(self._px_hits, mouse_event.pixel_x, mouse_event.pixel_y - ch)
 
     def _draw_agents_chrome(self, cols, rows_n, bar_w) -> None:
-        """Tab strip (or the search line), footer, drawer and preview. The list between them is the image."""
+        """Tab strip (or the search line), and the preview column on a wide window. The list, its key hints and the
+        bottom are the image: no cell footer and no preview drawer under it."""
         p, w, snap = self.pal, self.write, self.snap
-        dr = self._drawer_rows()
-        self._foot_y = rows_n - 1 - dr
+        self._foot_y, self._foot_regions = -1, []
         if self.searching or self.query:
             total = len(self.full.rows) if self.full is not None else len(snap.rows)
             line = [(" / ", p.accent, True), (self.query, p.text, True), ("▏" if self.searching else "", p.accent, False),
@@ -1311,23 +1388,8 @@ class Sidebar(Handler):
         else:
             w(set_cursor_position(0, 0) + self._tabs_line(bar_w))
         blank = self._seg(" " * bar_w, bg=p.bar)
-        for yy in range(1, self._foot_y):
+        for yy in range(1, rows_n):
             w(set_cursor_position(0, yy) + blank)
-        w(set_cursor_position(0, self._foot_y) + self._footer(
-            [], [("⏎", "jump", "ENTER"), ("/", "find", "/"), ("a", "join", "A"), ("t", "detach", "T")], bar_w))
-        if dr and snap.rows:
-            r = snap.rows[self.sel]
-            row, pane = self._hover_pane
-            pd = r.pane_rows[pane] if row == self.sel and 0 <= pane < len(r.pane_rows) else None
-            top = rows_n - dr
-            w(set_cursor_position(0, top) + self._line([("─" * bar_w, p.line, False)], bar_w, p.bar))
-            who = pd.title if pd else r.title
-            w(set_cursor_position(0, top + 1) + self._line(
-                [(" " + deck.fit(f"{who} · {_short_home(pd.cwd if pd else r.cwd)}", bar_w - 2, _cells), p.faint, True)], bar_w, p.bar))
-            body = deck.tidy_preview(self.preview, dr - 2)
-            for j in range(dr - 2):
-                text = body[j] if j < len(body) else ""
-                w(set_cursor_position(0, top + 2 + j) + self._line([(" " + text, p.muted, False)], bar_w, p.bar))
         if cols >= 64:
             px = bar_w + 2
             pw = cols - px - 1
@@ -1347,6 +1409,9 @@ class Sidebar(Handler):
                     w(set_cursor_position(px, j + 2) + self._seg(deck.fit(ln, pw, _cells), fg=p.muted))
         self._draw_handle(cols, rows_n)
 
+    # the Agents view's key hints, most useful first (a narrow panel drops them from the right); the pixel list draws them itself
+    _AGENT_KEYS = (("\u23ce", "jump", "ENTER"), ("/", "find", "/"), ("a", "join", "A"), ("t", "detach", "T"))
+
     def _draw_agents_px(self) -> bool:
         if not self._deckpx_enabled():
             return False
@@ -1364,10 +1429,10 @@ class Sidebar(Handler):
         cols, rows_n, bar_w = self._geom()
         ss = self.screen_size
         cw, ch = ss.cell_width or 1, ss.cell_height or 1
-        dr = self._drawer_rows()
-        foot = rows_n - 1 - dr
+        # the image runs from under the tab strip to the bottom: the key hints are its own pixels, and there is no preview
+        # drawer (the pane already shows its prompt)
         px_w = min(getattr(ss, "width", 0) or bar_w * cw, bar_w * cw)
-        px_h = max(0, (foot - 1) * ch)
+        px_h = max(0, (rows_n - 1) * ch)
         self._px_w, self._px_h = px_w, px_h
         if px_w < 40 or px_h < deckpx.HEADER_END + 40:
             return False
@@ -1376,7 +1441,8 @@ class Sidebar(Handler):
                                project_of=self._collector._project)
         self._px_model = model
         items = deckpx.body_items(model)
-        view_h = px_h - deckpx.HEADER_END
+        keys = [(k, label) for k, label, _t in self._AGENT_KEYS]
+        view_h = deckpx.body_bottom(px_h, keys) - deckpx.HEADER_END
         key = (self.sel, self._hover_pane)
         scroll = getattr(self, "_px_scroll", 0.0)
         if key != getattr(self, "_px_sel_key", None):
@@ -1386,12 +1452,13 @@ class Sidebar(Handler):
             self._px_sel_key = key
         scroll = deckpx.clamp_scroll(scroll, deckpx.content_height(model), view_h)
         self._px_scroll = scroll
-        frame = deckpx.Frame(hover=self._px_hover, hover_pane=self._px_hpane, scroll=scroll)
+        frame = deckpx.Frame(hover=self._px_hover, hover_pane=self._px_hpane, scroll=scroll,
+                             hot_key=getattr(self, "_px_hot_key", None))
         motion = self._motion()
         working = any(a.state == "working" or any(c.state == "working" for c in a.children) for a in model.agents) or any(s.state == "working" for s in model.spaces)
         tokens = (self.pal.bg, self.pal.fg, self.pal.bar, self.pal.accent, self.pal.working, self.pal.waiting,
                   self.pal.done, self.pal.alert, self.pal.text, self.pal.muted, self.pal.card, self.pal.card_hi)
-        sig = (px_w, px_h, round(scroll, 1), frame.hover, frame.hover_pane, model, tokens, motion and working)
+        sig = (px_w, px_h, round(scroll, 1), frame.hover, frame.hover_pane, frame.hot_key, model, tokens, motion and working)
         self._draw_agents_chrome(cols, rows_n, bar_w)
         if sig != getattr(self, "_px_sig", None) or getattr(self, "_px", None) is None:
             hits: list = []
@@ -1399,7 +1466,7 @@ class Sidebar(Handler):
             resources = getattr(self, "_px_res", None) or deckpx.Resources()
             self._px_res = resources
             surf = deckpx.render(model, self.pal, px_w, px_h, 1, frame, hits=hits, resources=resources,
-                                 spinners=slots if motion and working else None)
+                                 spinners=slots if motion and working else None, keys=keys)
             if getattr(self, "_px", None) is None:
                 self._px = transport.Graphics(_PxOut(self), "auto")
             states = _px_states(model)
@@ -1493,6 +1560,10 @@ class Sidebar(Handler):
             return
         kind, index = hit
         adapt = mods[1]
+        if kind == "key":                                # a key hint does exactly what its key does
+            token = self._AGENT_KEYS[index][2] if 0 <= index < len(self._AGENT_KEYS) else "?"
+            self._press(token)
+            return
         if kind == "search":
             self.searching = True
             self.draw_screen()
@@ -1527,11 +1598,17 @@ class Sidebar(Handler):
 
     def _px_move(self, mouse_event) -> None:
         if not self._px_inside(mouse_event):
-            if self._px_hover is not None or self._px_hpane is not None:
-                self._px_hover = self._px_hpane = None
+            if self._px_hover is not None or self._px_hpane is not None or getattr(self, "_px_hot_key", None) is not None:
+                self._px_hover = self._px_hpane = self._px_hot_key = None
                 self.draw_screen()
             return
         hit = self._px_hit(mouse_event)
+        hot = hit[1] if hit and hit[0] == "key" else None
+        if hot != getattr(self, "_px_hot_key", None):     # the hint under the pointer lights up: a button before it is pressed
+            self._px_hot_key = hot
+            self.draw_screen()
+            if hot is not None:
+                return
         model = getattr(self, "_px_model", None)
         mods = self._pxmods()
         if not hit or model is None or not mods or hit[0] not in ("agent", "pane"):
@@ -1566,6 +1643,7 @@ class Sidebar(Handler):
                 self._px_clear()
         if not pixel:
             self._px_clear()
+        self._sync_cover()
         if pixel:
             return
         cols, rows_n, bar_w = self._geom()

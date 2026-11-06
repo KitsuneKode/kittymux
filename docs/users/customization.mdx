@@ -38,7 +38,7 @@ kittymux features -h               # help
 
 `folder`, `hue`, `collide`, `panetitle`, `motion`, `titles`, `sudo`, `loginprompt`, `pkgprompt` and `socketlink` are live (the last three are notifications for a terminal waiting on you: see [Notifications and the inbox](/docs/users/notifications-and-inbox#when-a-plain-terminal-is-waiting-for-you)). `sheet` and `hover` are planned: the switch is saved and the command says so, but nothing reads it yet. See [The tab bar](/docs/users/the-tab-bar#choose-which-pieces-you-want).
 
-`kittymux settings on deckpx` draws the panel's Agents list in pixels. It is off by default, and `KITTYMUX_DECKPX=1` turns it on the same way. The other panel views stay cells. [The panel](/docs/users/peek-deck-and-panel#agents) says what you see.
+`kittymux settings on deckpx` draws the panel's Agents list in pixels. It is off by default, and `KITTYMUX_DECKPX=1` turns it on the same way. The other panel views stay cells. While a docked panel draws in pixels, the tab bar of the kitty it watches is hidden, since the panel already lists every tab; the bar comes back when the panel closes. `kittymux settings off pxcover` (or `KITTYMUX_PXCOVER=0`) keeps the bar. [The panel](/docs/users/peek-deck-and-panel#agents) says what you see.
 
 ## Layout
 
@@ -66,6 +66,7 @@ Every colour comes from your live kitty theme. To pin the accent, set `KITTYMUX_
 | `KITTYMUX_ACCENT=#rrggbb`      |                                  | Pin the accent colour.                                              |
 | `KITTYMUX_ROFI_THEME=user`     |                                  | Leave your own rofi theme in charge of `pick`.                      |
 | `KITTYMUX_PROJECTS`            |                                  | The root the project picker lists.                                  |
+| `KITTYMUX_PXCOVER=0`           | `pxcover-off`                    | Keep the tab bar while the pixel Agents panel shows.                |
 | `KITTYMUX_USAGE_LIVE=1`        | `usage-live-on`                  | Let usage collectors fetch live quotas over the network. Only an explicit yes turns it on (`1`, `on`, `true`, `yes`). |
 | `KITTYMUX_DEBUG=1`             |                                  | Log bar drag errors to `barsize-debug.log`.                         |
 | `KITTYMUX_STATE`               |                                  | Use another state directory.                                        |

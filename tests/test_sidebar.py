@@ -254,6 +254,13 @@ class SidebarTests(unittest.TestCase):
         self.assertEqual(self.collect("Claude Code").title, "myproj")
         self.assertEqual(self.collect("Port Hyprland configs to Lua").title, "Port Hyprland configs to Lua")
 
+    def test_a_split_pane_row_says_what_runs_there_not_the_repo(self):
+        """Two panes in one repo used to read "myproj" twice; each pane row names its agent or command."""
+        r = self.collect("website", extra_win=True)
+        self.assertEqual([p.title for p in r.pane_rows], ["Claude Code", "Claude Code"])
+        plain = self.collect("website", agent=False, extra_win=True)
+        self.assertEqual([p.title for p in plain.pane_rows], ["zsh", "zsh"])
+
     def test_with_the_switch_off_the_title_is_the_old_one(self):
         r = self.collect("I can't do that. I don't have access", tidy=False)
         self.assertEqual(r.title, "I can't do that. I don't have access")

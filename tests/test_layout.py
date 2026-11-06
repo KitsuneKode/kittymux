@@ -425,3 +425,74 @@ class AttentionConfTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CoverTests(unittest.TestCase):
+    """The pixel Agents panel lists every tab, so the cell bar hides while it shows (wave 3.1: both drew the same tabs)."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+
+    @staticmethod
+    def dead_pid() -> int:
+        import subprocess
+        p = subprocess.Popen(["true"])
+        p.wait()
+        return p.pid
+
+    def test_a_live_panel_covers_its_kitty_only(self):
+        L.cover(self.dir, 4242, os.getpid())
+        self.assertTrue(L.covered(self.dir, 4242))
+        self.assertFalse(L.covered(self.dir, 4243))
+        self.assertEqual(L.cover_conf(self.dir, 4242), "tab_bar_min_tabs 9999\n")
+        self.assertEqual(L.cover_conf(self.dir, 4243), "")
+        self.assertEqual(stat.S_IMODE(os.stat(os.path.join(self.dir, "bar-covered-4242")).st_mode), 0o600)
+
+    def test_a_dead_panel_never_hides_the_bar(self):
+        L.cover(self.dir, 4242, self.dead_pid())
+        self.assertFalse(L.covered(self.dir, 4242))
+        self.assertEqual(L.cover_conf(self.dir, 4242), "")
+
+    def test_uncover_removes_only_its_own_cover(self):
+        L.cover(self.dir, 4242, os.getpid())
+        self.assertFalse(L.uncover(self.dir, 4242, os.getpid() + 1))     # another panel's cover stays
+        self.assertTrue(L.covered(self.dir, 4242))
+        self.assertTrue(L.uncover(self.dir, 4242, os.getpid()))
+        self.assertFalse(L.covered(self.dir, 4242))
+        self.assertFalse(L.uncover(self.dir, 4242, os.getpid()))         # nothing left: no change, no reload needed
+
+    def test_the_switch_off_keeps_the_bar(self):
+        L.cover(self.dir, 4242, os.getpid())
+        open(os.path.join(self.dir, "pxcover-off"), "w").close()
+        self.assertEqual(L.cover_conf(self.dir, 4242), "")
+
+    def test_main_hides_the_bar_after_the_layout(self):
+        L.save(self.dir, os.getpid(), L.Layout("left", "full"))
+        L.cover(self.dir, os.getpid(), os.getpid())
+        with mock.patch.object(L, "hypr_focus_on_activate", return_value=None), \
+             mock.patch.dict(os.environ, KITTYMUX_STATE=self.dir, KITTYMUX_LAYOUT_PID=str(os.getpid())):
+            import io, contextlib
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                L.main()
+        out = buf.getvalue()
+        self.assertIn("tab_bar_min_tabs 2", out)
+        self.assertGreater(out.index("tab_bar_min_tabs 9999"), out.index("tab_bar_min_tabs 2"))   # the later line wins
+
+    def test_cleanup_drops_a_dead_panels_cover(self):
+        L.cover(self.dir, 4242, self.dead_pid())
+        L.cleanup_stale(self.dir)
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "bar-covered-4242")))
+
+
+class SweepCoverTests(CoverTests):
+    def test_sweep_removes_a_dead_panels_cover_and_says_so(self):
+        L.cover(self.dir, 4242, self.dead_pid())
+        self.assertTrue(L.sweep_cover(self.dir, 4242))          # the kitty must reload to get its bar back
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "bar-covered-4242")))
+        self.assertFalse(L.sweep_cover(self.dir, 4242))
+
+    def test_sweep_leaves_a_live_panel_alone(self):
+        L.cover(self.dir, 4242, os.getpid())
+        self.assertFalse(L.sweep_cover(self.dir, 4242))
+        self.assertTrue(L.covered(self.dir, 4242))

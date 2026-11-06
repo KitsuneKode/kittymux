@@ -549,6 +549,7 @@ def scan_all(timer_id=None) -> None:
             dirty = True
         if age_due:
             vars(_RT)["age_refresh"] = now
+            _sweep_cover(boss)
         _maybe_autosave(now, live)
         _journal_tick(boss, live, time.time())
         for table in (_RT.notified, vars(_RT).get("alerted", {})):
@@ -563,6 +564,17 @@ def scan_all(timer_id=None) -> None:
         _publish_agents(boss)
         _sync_spinner()
         _retime(SCAN_FAST if n_agents else SCAN_IDLE)
+    except Exception:
+        _debug()
+
+
+def _sweep_cover(boss) -> None:
+    """The pixel panel hides this kitty's bar while it lives (kittymux_layout.cover). A panel that was killed or crashed
+    cannot give it back, so every AGE_REFRESH the scanner drops a dead panel's cover and reloads the config once."""
+    try:
+        import kittymux_layout
+        if kittymux_layout.sweep_cover(state_dir(), os.getpid()):
+            boss.load_config_file()
     except Exception:
         _debug()
 
