@@ -29,10 +29,8 @@ from kitty.utils import color_as_int
 # The token/agent modules live next to this file (repo checkout) or, when the
 # installer copied/symlinked them, in the kitty config dir.
 _here = globals().get("__file__")
-for _d in (os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty"),
-           (os.path.dirname(os.path.realpath(_here)) if _here else "")):   # own dir inserted LAST → searched FIRST
-    if _d and _d not in sys.path:
-        sys.path.insert(0, _d)
+import kittymux_reload  # noqa: E402
+kittymux_reload.prefer_own(_here)
 import importlib  # noqa: E402
 import kittymux_agents  # noqa: E402
 import kittymux_barsize  # noqa: E402

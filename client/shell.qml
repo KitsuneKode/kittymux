@@ -1,8 +1,8 @@
 // kittymux client: kitty stays the terminal; this draws the UI on the GPU (Qt Quick) from kittymux's published files.
 //   kittymux client [start|stop|toggle]       (bin/kittymux runs `qs -p <this dir>` with KITTYMUX_BIN / KITTYMUX_ICONS set)
 // Modes (KITTYMUX_CLIENT_MODE):
-//   attach (default on Hyprland)  laid over each kitty window's own vertical bar, so the sidebar is part of the window (AttachedBar)
-//   dock                          a layer-shell column on the screen's edge (KITTYMUX_CLIENT_EDGE=left|right, KITTYMUX_CLIENT_WIDTH)
+//   attach (experimental, opt-in) laid over each kitty window's own vertical bar, so the sidebar is part of the window (AttachedBar)
+//   dock (default)                a layer-shell column on the screen's edge (KITTYMUX_CLIENT_EDGE=left|right, KITTYMUX_CLIENT_WIDTH)
 // KITTYMUX_CLIENT_FLOAT=1: an ordinary window instead (X11, rigs); with mode attach, sized to the first kitty's bar and painted with
 // kitty's bar colour, so a rig can lay it over a real kitty and take the picture.
 import QtQuick
@@ -15,7 +15,9 @@ import qs.components
 ShellRoot {
     id: shell
     readonly property bool floating: Quickshell.env("KITTYMUX_CLIENT_FLOAT") === "1"
-    readonly property string mode: Quickshell.env("KITTYMUX_CLIENT_MODE") || (Hypr.available && !floating ? "attach" : "dock")
+    // Attach is experimental and opt-in: a separate surface has to guess where kitty is and at what scale, and on a live fractional-
+    // scale desktop it landed off the bar with its type too small (user report). The native bar is the default way in kitty.
+    readonly property string mode: Quickshell.env("KITTYMUX_CLIENT_MODE") === "attach" ? "attach" : "dock"
     readonly property bool right: Quickshell.env("KITTYMUX_CLIENT_EDGE") === "right"
     readonly property int panelWidth: Math.max(220, Math.min(520, Number(Quickshell.env("KITTYMUX_CLIENT_WIDTH") || 300) || 300))
     readonly property int gap: 8

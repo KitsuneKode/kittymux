@@ -5,7 +5,11 @@ description: "kitty's sidebar drawn as a real interface: in the window's own bar
 
 kitty draws its tab bar in terminal cells. The kittymux client draws that sidebar as a real interface instead, with proportional type, rings and smooth motion. It is a small [Quickshell](https://quickshell.org) program. kitty stays your terminal and does not change; the client only reads what kittymux publishes and acts when you click.
 
-On Hyprland the client sits **in each kitty window's own vertical bar**. kitty keeps the bar's place, background, blur and divider and stops drawing tabs there; the client draws the content on top, so the sidebar belongs to the window. Elsewhere it docks to the edge of the screen.
+By default it docks to the edge of the screen. On Hyprland it can also sit **in each kitty window's own vertical bar** (attach mode, experimental): kitty keeps the bar's place, background, blur and divider and stops drawing tabs there, and the client draws the content on top.
+
+<Callout type="warn" title="Attach mode is experimental">
+  A separate surface has to work out where kitty is and at what scale. On a desktop with fractional scaling it has landed beside the bar instead of on it, with its text smaller than kitty's. Turn it on with `KITTYMUX_CLIENT_MODE=attach` only to try it; kitty's own bar is the way to use kittymux inside the window.
+</Callout>
 
 ![kitty's own vertical bar drawn in cells, beside it the same window with the client in that bar: the header, two projects, each tab with its agent's mark in a ring](/assets/client-attached-before-dark.png)
 
@@ -21,8 +25,8 @@ It needs Quickshell and a Wayland compositor with layer-shell. Your kitty needs 
 
 | Mode | Where | When |
 | --- | --- | --- |
-| attach | in each kitty window's own vertical bar | Hyprland, the default |
-| dock | a column on the screen's edge, beside your windows | other compositors, or `KITTYMUX_CLIENT_MODE=dock` |
+| dock | a column on the screen's edge, beside your windows | the default |
+| attach | in each kitty window's own vertical bar | Hyprland, experimental: `KITTYMUX_CLIENT_MODE=attach` |
 
 In dock mode, `KITTYMUX_CLIENT_EDGE=right` and `KITTYMUX_CLIENT_WIDTH=340` change where and how wide. Bind `kittymux client` in your window manager to toggle it from any app.
 

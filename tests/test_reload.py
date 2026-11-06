@@ -21,6 +21,16 @@ class OrderTests(unittest.TestCase):
                 self.assertLess(order.index(dep), order.index(mod), f"{dep} must be reloaded before {mod}")
         self.assertEqual(sorted(order), sorted(deps))
 
+
+    def test_a_checkout_stays_in_front_of_the_installed_config(self):
+        # runpy has already put the checkout on the path. Putting the installed config in front of it
+        # is how a trial kitty kept running the scanner from ~/.config/kitty, which never publishes the bar.
+        path = ["/checkout/python", "/usr/lib/kitty"]
+        out = R.prefer_own("/checkout/python/tab_bar.py", path, cfg="/home/installed/.config/kitty")
+        self.assertEqual(out[0], "/checkout/python")
+        self.assertEqual(out[1], "/home/installed/.config/kitty")
+        self.assertEqual(out[2], "/usr/lib/kitty")
+
     def test_the_order_is_deterministic(self):
         deps = {"kittymux_b": {"kittymux_a"}, "kittymux_c": set(), "kittymux_a": set()}
         self.assertEqual(R.order(deps), R.order(dict(reversed(list(deps.items())))))

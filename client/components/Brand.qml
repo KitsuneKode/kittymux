@@ -35,12 +35,35 @@ Item {
     }
     Label {
         anchors.centerIn: parent
-        visible: b.source === ""
-        text: b.agent ? b.agent.charAt(0).toUpperCase() : ""
-        font.family: b.agent ? Theme.font : Theme.fontGlyph
-        size: b.agent ? Theme.tCaption : Theme.tBody
+        visible: b.source === "" && b.agent !== ""
+        text: b.agent.charAt(0).toUpperCase()
+        font.family: Theme.font
+        size: Theme.tCaption
         weight: Theme.wSemibold
         color: b.color
         elide: Text.ElideNone
+    }
+    // No agent and no brand file: a terminal outline. A private-use glyph depends on a font the row may not have.
+    Item {
+        anchors.centerIn: parent
+        visible: b.source === "" && b.agent === ""
+        width: Math.round(b.width * 0.78)
+        height: Math.round(b.height * 0.66)
+        Rectangle {
+            anchors.fill: parent
+            radius: 2
+            color: "transparent"
+            border.width: 1
+            border.color: b.color
+        }
+        Rectangle {
+            width: Math.max(3, Math.round(parent.width * 0.34))
+            height: 2
+            radius: 1
+            color: b.color
+            anchors.left: parent.left
+            anchors.leftMargin: 3
+            anchors.verticalCenter: parent.verticalCenter
+        }
     }
 }

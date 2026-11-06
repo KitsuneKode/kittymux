@@ -59,11 +59,8 @@ def _ensure_path() -> None:
     global _helper_dirs_done
     if _helper_dirs_done:
         return
-    here = globals().get("__file__")
-    for d in (os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty"),
-              (os.path.dirname(os.path.realpath(here)) if here else "")):   # own dir inserted LAST → searched FIRST
-        if d and d not in sys.path:
-            sys.path.insert(0, d)
+    import kittymux_reload
+    kittymux_reload.prefer_own(globals().get("__file__"))
     _helper_dirs_done = True
 
 
@@ -509,11 +506,14 @@ def _os_window_geometry(osw, tm) -> dict:
     pixels), its logical size and scale, and the background opacity. {} when kitty cannot say."""
     try:
         from kitty.fast_data_types import get_options, get_os_window_size, viewport_for_window
-        _central, bar, vw, vh, cell_w, cell_h = viewport_for_window(osw)
+        central, bar, vw, vh, cell_w, cell_h = viewport_for_window(osw)
         size = get_os_window_size(osw) or {}
         visible = bool(getattr(tm, "tab_bar_should_be_visible", False)) and not getattr(tm, "tab_bar_hidden", False)
+        # `central` is the terminal. geometry_of drops a bar that does not push it aside.
         return {"vw": vw, "vh": vh, "width": size.get("width"), "height": size.get("height"),
-                "bar": [bar.left, bar.top, bar.right, bar.bottom] if visible else None, "cell": [cell_w, cell_h],
+                "bar": [int(bar.left), int(bar.top), int(bar.right), int(bar.bottom)] if visible else None,
+                "central": [int(central.left), int(central.top), int(central.right), int(central.bottom)],
+                "cell": [cell_w, cell_h],
                 "opacity": float(getattr(get_options(), "background_opacity", 1.0))}
     except Exception:
         return {}

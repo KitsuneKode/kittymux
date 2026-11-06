@@ -18,10 +18,8 @@ import time
 import types
 
 _here = globals().get("__file__")
-for _d in (os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty"),
-           (os.path.dirname(os.path.realpath(_here)) if _here else "")):   # own dir inserted LAST → searched FIRST
-    if _d and _d not in sys.path:
-        sys.path.insert(0, _d)
+import kittymux_reload  # noqa: E402
+kittymux_reload.prefer_own(_here)
 import kittymux_layout as L  # noqa: E402
 
 # Live state lives in sys.modules, NOT in module globals: changing the width makes kitty re-run

@@ -35,6 +35,30 @@ def order(deps: dict) -> list:
     return out
 
 
+
+def prefer_own(here, path=None, cfg=None) -> list:
+    """This file's directory is searched before the installed kitty config.
+
+    runpy puts the script directory on sys.path before the script runs. A loop that skips a directory
+    already present, then inserts ~/.config/kitty, leaves the installed copy in front: a kitty started
+    from a checkout runs the installed scanner, and the checkout's bar is never published.
+    """
+    import os
+    seq = sys.path if path is None else path
+    own = os.path.dirname(os.path.realpath(here)) if here else ""
+    if cfg is None:
+        cfg = os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty")
+    for d in (cfg, own):
+        if d:
+            while d in seq:
+                seq.remove(d)
+    if cfg:
+        seq.insert(0, cfg)
+    if own:
+        seq.insert(0, own)
+    return seq
+
+
 def reload_all(modules=None, only_prefix: str = "kittymux_") -> dict:
     """Reload every loaded module whose name starts with `only_prefix` (and that has a source file), dependencies first.
     Returns {"reloaded": [names], "failed": {name: error text}}."""

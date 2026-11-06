@@ -20,11 +20,11 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
         }
         Label { text: sec.label; size: Theme.tCaption; weight: Theme.wSemibold; color: Theme.text2; elide: Text.ElideNone }
-    }
-    RollingNumber {
-        anchors.right: parent.right; anchors.rightMargin: Theme.s3
-        anchors.bottom: parent.bottom; anchors.bottomMargin: 6
-        value: sec.count
-        color: Theme.text3; weight: Theme.wRegular
+        RollingNumber {
+            value: sec.count
+            color: Theme.text2
+            weight: Theme.wRegular
+            anchors.verticalCenter: parent.verticalCenter
+        }
     }
 }

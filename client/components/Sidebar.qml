@@ -83,7 +83,9 @@ FocusScope {
     Item {
         id: head
         anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
-        height: 58
+        // Attached, the window's rounded corner cuts the first line. The inset is the corner, not a new margin system.
+        anchors.topMargin: root.attached ? 18 : 0
+        height: root.attached ? 72 : 58
         Column {
             anchors.left: parent.left; anchors.leftMargin: Theme.edge
             anchors.right: badge.left; anchors.rightMargin: Theme.s2
@@ -220,7 +222,7 @@ FocusScope {
             anchors.verticalCenter: parent.verticalCenter
             text: root.activeFocus ? "↑↓ move   ↵ jump   g group   m mute"
                                    : (Feed.byState ? "By state" : "By space") + "  ·  g to change"
-            size: Theme.tMicro; color: Theme.text3
+            size: Theme.tMicro; color: Theme.text2
         }
     }
 

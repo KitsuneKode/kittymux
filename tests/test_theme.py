@@ -85,6 +85,13 @@ class PaletteTests(unittest.TestCase):
         for name in ("working", "waiting", "done", "alert", "info", "accent"):
             self.assertGreaterEqual(T.contrast(getattr(p, name), p.bg), 3.0, name)
 
+    def test_stock_green_border_is_not_the_accent(self):
+        # Kanagawa-like: the theme never set a border, so kitty still reports its default #00ff00.
+        colors = {"background": 0x1F1F28, "foreground": 0xDCD7BA, "active_border_color": 0x00FF00,
+                  "color4": 0x7E9CD8, "color12": 0x7E9CD8}
+        self.assertEqual(T.from_colors(colors).accent, T.ensure_contrast(0x7E9CD8, 0x1F1F28, 3.0))
+        self.assertNotEqual(T.from_colors(colors).accent, 0x00FF00)
+
     def test_accent_env_override(self):
         os.environ["KITTYMUX_ACCENT"] = "#89b4fa"
         try:

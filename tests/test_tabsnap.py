@@ -91,6 +91,19 @@ class TabsnapTests(unittest.TestCase):
         self.assertEqual(T._hue("", COLORS), "")
         self.assertRegex(T._hue("calm-otter", COLORS), r"^#[0-9a-f]{6}$")
 
+    def test_a_bar_that_covers_the_terminal_is_not_published(self):
+        # The window is 1762x1378 and the terminal still starts at x=0: the reported bar is not a bar.
+        covered = T.geometry_of({"vw": 1762, "vh": 1378, "width": 1762, "height": 1378,
+                                  "bar": [0, 0, 308, 1378], "central": [0, 0, 1762, 1378]})
+        self.assertIsNone(covered["bar"])
+        self.assertEqual(covered["edge"], "")
+        # The terminal starts where the bar ends: this one is real.
+        reserved = T.geometry_of({"vw": 1762, "vh": 1378, "width": 1762, "height": 1378,
+                                   "bar": [0, 0, 308, 1378], "central": [308, 0, 1762, 1378]})
+        self.assertEqual(reserved["bar"], [0, 0, 308, 1378])
+        self.assertEqual(reserved["edge"], "left")
+        self.assertFalse(T.bar_reserves_space([0, 0, 0, 0], [0, 0, 1762, 1378]))
+
     def test_junk_is_dropped_never_raised(self):
         self.assertTrue(self.publish([None, {"os_window_id": "x"}, spec([{"tab_id": None}, {"tab_id": 2, "windows": []},
                                                                          {"tab_id": 4, "title": "\x1b[31mred", "windows": [win(1, True)]}])]))

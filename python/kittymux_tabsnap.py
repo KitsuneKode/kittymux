@@ -146,6 +146,28 @@ def _num(value, lo: float, hi: float):
     return value if isinstance(value, (int, float)) and not isinstance(value, bool) and lo <= value <= hi else None
 
 
+def bar_reserves_space(bar, central) -> bool:
+    """The terminal has stepped aside for this bar. A zero bar, or one that overlaps the terminal, is not on screen:
+    a client must not cover the shell. No central rectangle means we cannot check, so the bar is kept."""
+    if not (isinstance(bar, (list, tuple)) and len(bar) == 4 and all(_num(v, 0, 1 << 16) is not None for v in bar)):
+        return False
+    left, top, right, bottom = (int(v) for v in bar)
+    if right - left < 8 or bottom - top < 8:
+        return False
+    if not (isinstance(central, (list, tuple)) and len(central) == 4 and all(_num(v, 0, 1 << 16) is not None for v in central)):
+        return True
+    cl, ct, cr, cb = (int(v) for v in central)
+    if left <= 1 and cl + 1 >= right - 1:
+        return True
+    if cr <= left + 1 < right:
+        return True
+    if top <= 1 and ct + 1 >= bottom - 1:
+        return True
+    if cb <= top + 1 < bottom:
+        return True
+    return False
+
+
 def geometry_of(spec) -> dict | None:
     """The OS window's bar, for a client that draws over it: framebuffer size (`vw`, `vh`), logical size (`width`, `height`), `scale`
     (framebuffer pixels per logical pixel), the bar's `edge` (left/right/top/bottom) and `bar` [left, top, right, bottom] in framebuffer
@@ -172,6 +194,9 @@ def geometry_of(spec) -> dict | None:
                 out["edge"] = "left" if l == 0 else "right"
             else:
                 out["edge"] = "top" if t == 0 else "bottom"
+        if not bar_reserves_space(out["bar"], spec.get("central")):
+            out["bar"] = None
+            out["edge"] = ""
     return out
 
 
