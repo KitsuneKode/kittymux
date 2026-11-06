@@ -6,7 +6,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
 try:
     import kittymux_deckpx as dp
-except ImportError:
+except (ImportError, ValueError):   # gi raises ValueError when a typelib (Pango) is missing
     dp = None
 import kittymux_theme as th
 

@@ -11,7 +11,7 @@ import kittymux_switches as switches
 
 try:
     import kittymux_deckpx as dp
-except ImportError:
+except (ImportError, ValueError):   # gi raises ValueError when a typelib (Pango) is missing
     dp = None
 
 
