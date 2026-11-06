@@ -157,7 +157,8 @@ if [ "${KMX_EXPECT_CELLS:-}" != 1 ] && grep -q "deckpx:" "$STATE/sidebar-kit-err
 # the pixel panel lists every tab, so the bar it repeats is hidden while it runs (kittymux_layout.cover)
 cols() { kitty @ --to "$SOCK" ls 2>/dev/null | python3 -c 'import sys,json;print(max(w["columns"] for o in json.load(sys.stdin) for t in o["tabs"] if t["is_active"] for w in t["windows"]))'; }
 if [ "${KMX_EXPECT_CELLS:-}" != 1 ]; then
-  [ "$(cat "$STATE/bar-covered-$KPID" 2>/dev/null)" -gt 0 ] 2>/dev/null || fail "the pixel panel did not cover the bar (no bar-covered-$KPID)"
+  OWNER=""; read -r OWNER _ < "$STATE/bar-covered-$KPID" 2>/dev/null    # "panel-pid panel-start kitty-start"
+  [ "${OWNER:-0}" -gt 0 ] 2>/dev/null || fail "the pixel panel did not cover the bar (no bar-covered-$KPID)"
   COVERED_COLS=$(cols)
 fi
 # CPU at rest: no input at all; first with one agent working, then after it finishes too
@@ -182,7 +183,8 @@ if [ "${KMX_EXPECT_CELLS:-}" != 1 ]; then
   kill "$PPID_K" 2>/dev/null; wait "$PPID_K" 2>/dev/null; PPID_K=
   for _ in $(seq 60); do [ -e "$STATE/bar-covered-$KPID" ] || break; sleep 0.5; done
   [ -e "$STATE/bar-covered-$KPID" ] && fail "a killed panel's cover was never swept"
-  sleep 1.5; BACK_COLS=$(cols)
+  BACK_COLS=$COVERED_COLS
+  for _ in $(seq 40); do BACK_COLS=$(cols); [ "$BACK_COLS" -lt $((COVERED_COLS - 10)) ] && break; sleep 0.25; done   # the reload, then the relayout
   [ "$BACK_COLS" -lt $((COVERED_COLS - 10)) ] || fail "the bar did not come back after the panel died (pane $COVERED_COLS -> $BACK_COLS columns)"
   echo "  ok   the bar hides under the pixel panel and comes back when it dies (pane $COVERED_COLS -> $BACK_COLS columns)"
 fi

@@ -334,6 +334,9 @@ class Painter:
         lo, hi = self.spin_clip
         if lo is not None and not (lo <= cy <= hi):
             return
+        if lo is not None and not (lo <= cy - r - 1 and cy + r + 1 <= hi):
+            self.arc(cx, cy, r, color, phase)        # cut by the header or the key hints: a still arc in the (clipped) base, never an
+            return                                   # animated one placed over them
         if self.spinners is not None:
             self.spinners.append((cx, cy, r, color))
             return

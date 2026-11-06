@@ -1025,7 +1025,14 @@ class Sidebar(Handler):
             self.preview = []
             return
         if self._deckpx_on() and self.screen_size.cols < 64:
-            return                                   # the narrow pixel list shows no preview (the pane already shows its prompt): fetch none
+            # the narrow pixel list shows no preview (the pane already shows its prompt): fetch none, and drop one already on its way
+            if self._preview_timer is not None:
+                self._preview_timer.cancel()
+                self._preview_timer = None
+            self._preview_worker.invalidate()
+            self._preview_inflight = False
+            self.preview = []
+            return
         r = self.snap.rows[self.sel]
         row, pane = self._hover_pane
         wid = r.pane_rows[pane].win_id if row == self.sel and 0 <= pane < len(r.pane_rows) else r.win_id
@@ -1198,7 +1205,15 @@ class Sidebar(Handler):
             return 0
 
     def _want_cover(self) -> bool:
-        return (self._cover_target() > 0 and bool(getattr(self, "_px_switch", False)) and getattr(self, "_gfx", None) == "ok"
+        """Cover while this panel can draw the pixel list: the switch on (read live, so turning it off in Settings gives the bar back at
+        once), the graphics probe answered, and the last Agents draw fitted in pixels (a panel too small falls back to cells)."""
+        if self._cover_target() <= 0:
+            return False
+        try:
+            on = self._deckpx_enabled()
+        except Exception:
+            on = False
+        return (on and getattr(self, "_gfx", None) == "ok" and bool(getattr(self, "_px_fits", False))
                 and kittymux_layout.cover_switch_on(str(_STATE_DIR)))
 
     def _sync_cover(self) -> None:
@@ -1227,6 +1242,7 @@ class Sidebar(Handler):
                 changed = kittymux_layout.uncover(str(_STATE_DIR), pid, os.getpid())
         except Exception:
             _log_error()
+            self._cover_want = None                  # unknown: the next draw tries again
             return
         if changed:
             self._reload_target()
@@ -1434,7 +1450,8 @@ class Sidebar(Handler):
         px_w = min(getattr(ss, "width", 0) or bar_w * cw, bar_w * cw)
         px_h = max(0, (rows_n - 1) * ch)
         self._px_w, self._px_h = px_w, px_h
-        if px_w < 40 or px_h < deckpx.HEADER_END + 40:
+        self._px_fits = not (px_w < 40 or px_h < deckpx.HEADER_END + 40)
+        if not self._px_fits:
             return False
         snap = self.snap
         model = adapt.to_model(snap, self.sel, self._hover_pane, self._px_host(), snap.current_session or self._px_host(),

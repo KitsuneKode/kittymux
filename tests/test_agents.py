@@ -441,5 +441,23 @@ class RunningLabelTests(unittest.TestCase):
         self.assertEqual(A.running_label({}), "")
         self.assertEqual(A.running_label(self.win([])), "")
 
+    def test_a_wrappers_own_options_are_not_the_program(self):
+        self.assertEqual(A.running_label(self.win(["sudo", "-u", "root", "htop"])), "htop")
+        self.assertEqual(A.running_label(self.win(["env", "FOO=1", "-u", "BAR", "pnpm", "dev"])), "pnpm dev")
+        self.assertEqual(A.running_label(self.win(["nohup", "make", "build"])), "make build")
+
+    def test_a_programs_own_double_dash_stays_its_own(self):
+        self.assertEqual(A.running_label(self.win(["git", "log", "--", "README.md"])), "git log")
+        self.assertEqual(A.running_label(self.win(["sudo", "--", "htop"])), "htop")
+
+    def test_no_operand_that_could_be_a_secret_or_code_is_shown(self):
+        """A pane label is drawn in the panel: an inline script, an assignment or a credential-shaped word never is."""
+        token = "sbp_" + "x" * 24
+        self.assertEqual(A.running_label(self.win(["python3", "-c", "token='" + "y" * 8 + "'; print(1)"])), "python3")
+        self.assertEqual(A.running_label(self.win(["curl", token])), "curl")
+        self.assertEqual(A.running_label(self.win(["mytool", "KEY=" + "z" * 12])), "mytool")
+        self.assertEqual(A.running_label(self.win(["deploy", "a1b2c3d4e5f6a7b8c9d0"])), "deploy")
+        self.assertEqual(A.running_label(self.win(["npm", "run", "dev"])), "npm run")
+
     def test_a_long_argument_is_shortened_to_its_name(self):
         self.assertEqual(A.running_label(self.win(["python3", "/home/x/very/deep/tools/serve.py", "--port", "8000"])), "python3 serve.py")

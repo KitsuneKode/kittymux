@@ -433,21 +433,60 @@ def tool_in(cmdlines: Iterable[Iterable[str]]) -> str | None:
 
 
 _SHELLS = frozenset({"zsh", "bash", "sh", "fish", "dash", "nu", "ksh", "tcsh", "xonsh", "elvish"})
+# options of a wrapper that take the next word as their value: `sudo -u root htop` runs htop, not "root"
+_WRAPPER_VALUE_OPTS = {"sudo": {"-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U", "-T"}, "doas": {"-u", "-C"},
+                       "env": {"-u", "-C", "-S", "--unset", "--chdir"}, "time": {"-f", "-o", "--format", "--output"}}
+_LAUNCHERS = _WRAPPERS | {"trmw"}               # programs whose own `--` separates them from the program they start
+# a word fit to be drawn in a pane label: short and plain; never code, an assignment, a path with spaces or a credential-shaped token
+_SAFE_WORD = re.compile(r"[A-Za-z][A-Za-z0-9._+:-]{0,23}")
+_KEYLIKE = re.compile(r"(?=[A-Za-z0-9]*\d)(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{12,}")
 
 
 def _program_words(cmdline) -> list[str]:
-    """argv without the relay (`mux-pty --`), a `--` wrapper separator, and env/sudo-style wrappers."""
+    """argv of the program a pane runs: without the relay (`mux-pty --`), a launcher's `--`, and env/sudo-style wrappers with their options."""
     argv, _shift = command_argv(cmdline or [])
-    if "--" in argv[1:]:
-        argv = argv[argv.index("--") + 1:]
-    while argv and os.path.basename(argv[0]).lower() in _WRAPPERS:
-        argv = argv[1:]
+    while argv:
+        head = os.path.basename(argv[0]).lower()
+        if head not in _LAUNCHERS:
+            break
+        rest = argv[1:]
+        if "--" in rest and head not in _WRAPPERS:
+            argv = rest[rest.index("--") + 1:]
+            continue
+        takes = _WRAPPER_VALUE_OPTS.get(head, set())
+        i = 0
+        while i < len(rest):
+            tok = rest[i]
+            if tok == "--":
+                i += 1
+                break
+            if tok.startswith("-"):
+                i += 2 if tok in takes else 1
+            elif head == "env" and "=" in tok:
+                i += 1
+            else:
+                break
+        argv = rest[i:]
     return argv
+
+
+def _safe_word(word: str) -> str:
+    """`word` when it is fit to show in a label, else '' (kittymux_journal's redaction has the last word on credential shapes)."""
+    if not word or not _SAFE_WORD.fullmatch(word) or _KEYLIKE.search(word):
+        return ""
+    try:
+        import kittymux_journal
+        if kittymux_journal.redact_argv([word])[0] != word:
+            return ""
+    except Exception:
+        return ""
+    return word
 
 
 def running_label(window: dict) -> str:
     """What runs in a pane, in a word or two: an agent's product name ("Codex"), else the foreground program and its first
-    non-flag argument ("pnpm dev", "nvim README.md"), else the shell ("zsh"). '' when kitty reports no process."""
+    non-flag argument when that word is plain ("pnpm dev", "nvim README.md"), else the shell ("zsh"). '' when kitty reports no
+    process. Never an inline script, an assignment or anything credential-shaped: the label is drawn in the panel."""
     procs = (window or {}).get("foreground_processes") or []
     for proc in procs:
         name = agent_in(proc.get("cmdline") or [])
@@ -458,14 +497,22 @@ def running_label(window: dict) -> str:
         argv = _program_words(proc.get("cmdline"))
         if not argv:
             continue
-        prog = os.path.basename(argv[0]).lstrip("-")
+        prog = _safe_word(os.path.basename(argv[0]).lstrip("-"))
         if not prog:
             continue
         if prog.lower() in _SHELLS:
             shell = shell or prog
             continue
-        word = next((a for a in argv[1:] if a and not a.startswith("-")), "")
-        if "/" in word:
-            word = os.path.basename(word.rstrip("/"))
+        word = ""
+        for arg in argv[1:]:
+            if arg == "--":
+                break
+            if arg.startswith("-"):
+                if arg in ("-c", "-e", "--eval", "--command"):
+                    break                                    # what follows is code: show the program alone
+                continue
+            word = os.path.basename(arg.rstrip("/")) if "/" in arg else arg
+            break
+        word = _safe_word(word)
         return f"{prog} {word}".strip()
     return shell

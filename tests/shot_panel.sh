@@ -136,8 +136,8 @@ if [ "${KMX_DECKPX:-}" = 1 ]; then
   # the pixel list draws its key hints in the image (get-text cannot see them): a real click on the `?` at its bottom-right corner opens
   # the help card, the same as the key, and there is no cell keycap row left
   cell "jump" | grep -q . && fail "Agents: the pixel list still draws the cell keycap row"
-  X mousemove $((GX + GW - 22)) $((GY + GH - 14)); sleep 0.5; X click 1; sleep 0.8
-  screen | grep -q "Agents keys" || fail "Agents: clicking the pixel ? hint did not open the help card"
+  X mousemove $((GX + GW - 22)) $((GY + GH - 14)); sleep 0.5; X click 1
+  wait_text "Agents keys" || fail "Agents: clicking the pixel ? hint did not open the help card"
   key Escape; sleep 0.4
   X mousemove $((GX + GW - 4)) $((GY + 4)); sleep 0.4
 else
@@ -205,7 +205,7 @@ shot agents-help
 key Escape
 screen | grep -q "Agents keys" && fail "Agents: a key did not close the keys card"
 if [ "${KMX_DECKPX:-}" = 1 ]; then                                  # the pixel ? hint (checked above): bottom-right of the image
-  X mousemove $((GX + GW - 22)) $((GY + GH - 14)); sleep 0.5; X click 1; sleep 0.8
+  X mousemove $((GX + GW - 22)) $((GY + GH - 14)); sleep 0.5; X click 1; wait_text "Agents keys"
 else
   read -r QC QR <<<"$(cell "jump")"
   point $((COLS - 2)) "$QR"; X click 1; sleep 0.8

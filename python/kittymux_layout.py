@@ -506,7 +506,9 @@ def cleanup_stale(sdir: str) -> int:
         return 0
     for name in names:
         if name.startswith(COVER_PREFIX) and name[len(COVER_PREFIX):].isdigit():
-            if not covered(sdir, int(name[len(COVER_PREFIX):])):
+            kitty = int(name[len(COVER_PREFIX):])
+            # only a cover whose KITTY is gone: a live kitty's dead-panel cover is swept by that kitty's scanner, which then reloads
+            if not _same(kitty, _cover_record(sdir, kitty)[2]):
                 try:
                     os.unlink(os.path.join(sdir, name))
                     removed += 1
@@ -552,12 +554,39 @@ def _alive(pid: int) -> bool:
         return False
 
 
-def _cover_owner(sdir: str, pid: int) -> int:
+def _started(pid: int) -> str:
+    """The process's start time (clock ticks since boot, /proc/<pid>/stat field 22): with the pid, an identity a reused pid cannot fake.
+    '' when it cannot be read (no /proc): the pid alone then decides."""
     try:
-        with open(_cover_path(sdir, pid), encoding="utf-8") as f:
-            return int(f.read().strip() or 0)
-    except (OSError, ValueError):
-        return 0
+        with open(f"/proc/{int(pid)}/stat", encoding="ascii", errors="replace") as f:
+            return f.read(4096).rsplit(")", 1)[1].split()[19]
+    except (OSError, IndexError, ValueError):
+        return ""
+
+
+def _same(pid: int, started: str) -> bool:
+    """`pid` is alive and, when a start time was recorded, is the very process that recorded it."""
+    if not _alive(pid):
+        return False
+    return not started or not os.path.isdir("/proc") or _started(pid) == started
+
+
+def _cover_record(sdir: str, pid: int) -> tuple[int, str, str]:
+    """(owner pid, owner start, kitty start) of a cover; (0, '', '') for none or a bad file (bounded read: a cover is a few bytes)."""
+    try:
+        with open(_cover_path(sdir, pid), encoding="ascii", errors="replace") as f:
+            raw = f.read(65)
+    except OSError:
+        return 0, "", ""
+    parts = raw.split()
+    if len(raw) > 64 or not parts or not all(p.isdigit() for p in parts):
+        return 0, "", ""
+    owner = int(parts[0])
+    return owner, (parts[1] if len(parts) > 1 else ""), (parts[2] if len(parts) > 2 else "")
+
+
+def _cover_owner(sdir: str, pid: int) -> int:
+    return _cover_record(sdir, pid)[0]
 
 
 def cover(sdir: str, kitty: int, owner: int) -> bool:
@@ -568,7 +597,7 @@ def cover(sdir: str, kitty: int, owner: int) -> bool:
     fd, tmp = tempfile.mkstemp(dir=sdir, prefix=".cover-", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(str(int(owner)))
+            f.write(" ".join(x for x in (str(int(owner)), _started(owner), _started(kitty)) if x))
         os.chmod(tmp, 0o600)
         os.replace(tmp, _cover_path(sdir, kitty))
     except Exception:
@@ -591,10 +620,14 @@ def uncover(sdir: str, kitty: int, owner: int) -> bool:
         return False
 
 
+def _live_cover(sdir: str, kitty: int) -> bool:
+    owner, owner_start, kitty_start = _cover_record(sdir, kitty)
+    return _same(owner, owner_start) and _same(kitty, kitty_start)
+
+
 def sweep_cover(sdir: str, kitty: int) -> bool:
     """Drop a cover whose panel is gone (killed, crashed). True when one was dropped: that kitty must reload for its bar."""
-    owner = _cover_owner(sdir, kitty)
-    if not os.path.exists(_cover_path(sdir, kitty)) or _alive(owner):
+    if not os.path.exists(_cover_path(sdir, kitty)) or _live_cover(sdir, kitty):
         return False
     try:
         os.unlink(_cover_path(sdir, kitty))
@@ -604,7 +637,8 @@ def sweep_cover(sdir: str, kitty: int) -> bool:
 
 
 def covered(sdir: str, kitty: int) -> bool:
-    return _alive(_cover_owner(sdir, kitty))
+    """A live panel (the very process that wrote the cover) hides this very kitty's bar (not a later process with its pid)."""
+    return _live_cover(sdir, kitty)
 
 
 def cover_switch_on(sdir: str, env=None) -> bool:

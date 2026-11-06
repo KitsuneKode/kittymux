@@ -179,6 +179,17 @@ class RendererTests(unittest.TestCase):
         self.assertEqual(dp.body_bottom(400, None), 400)
         self.assertEqual(dp.body_bottom(400, [("/", "find")]), 400 - dp.FOOTER_H)
 
+    def test_a_working_ring_cut_by_the_key_hints_is_not_animated_over_them(self):
+        pal = th.from_colors({})
+        agents = [dp.Agent(f"t{i}", "claude", 0, "core", state="working") for i in range(12)]
+        model = dp.Model("s", "h", spaces=[dp.Space("core")], agents=agents)
+        slots = []
+        height = 300
+        dp.render(model, pal, 272, height, spinners=slots, keys=[("/", "find")])
+        bottom = dp.body_bottom(height, [("/", "find")])
+        self.assertTrue(slots)
+        self.assertTrue(all(dp.HEADER_END <= cy - r and cy + r <= bottom for _cx, cy, r, _c in slots), slots)
+
     def test_crossfade_interpolates_and_never_mixes_sizes(self):
         a = dp.cairo.ImageSurface(dp.cairo.FORMAT_ARGB32, 4, 4)
         b = dp.cairo.ImageSurface(dp.cairo.FORMAT_ARGB32, 4, 4)
