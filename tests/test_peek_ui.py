@@ -1,6 +1,8 @@
 import importlib.util
 import json
+import os
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -48,6 +50,19 @@ class PeekTests(unittest.TestCase):
         self.assertTrue(all(len(s) <= 40 for s in writes[1:]))
         self.assertIn("chosen pane", "".join(writes))
 
+    def test_a_long_title_shows_only_the_cut_off_tail(self):
+        m, p = self.peek()
+        p.card["title"] = "OPENMARK " + ("m" * 70) + " ENDMARK"
+        p.draw_screen()
+        writes = [a.args[0] for a in p.write.call_args_list]
+        self.assertTrue(all(len(s) <= 40 for s in writes[1:]))
+        drawn = "".join(writes)
+        self.assertEqual(drawn.count("OPENMARK"), 1)
+        self.assertEqual(drawn.count("ENDMARK"), 1)
+        header = writes[1]
+        self.assertIn("OPENMARK", header)
+        self.assertNotIn("ENDMARK", header)
+
     def test_selected_preview_uses_its_own_directory_and_branch(self):
         m, p = self.peek()
         tab = {"title": "split", "active_window_history": [7],
@@ -58,7 +73,7 @@ class PeekTests(unittest.TestCase):
              patch.object(m.kittymux_git, "info", return_value=types.SimpleNamespace(branch="second-branch")) as git:
             card = m.collect(2, 8)
         self.assertEqual(card["cwd"], "/work/second")
-        git.assert_called_once_with("/work/second")
+        git.assert_any_call("/work/second")                    # the preview's branch is this pane's; the title cleaner also asks where the tab is
         self.assertEqual(card["branch"], "second-branch")
 
     def test_zoomed_layout_does_not_renumber_hidden_panes(self):
@@ -75,6 +90,43 @@ class PeekTests(unittest.TestCase):
         rendered = p._line([(" │      │  ", 1, False)], 12, 0)
         self.assertTrue(rendered.startswith(" │      │  "))
         self.assertNotIn("\x1b", p._line([("safe\x1b[31m  line", 1, False)], 30, 0))
+
+    def test_titles_use_the_shared_cleaner_and_are_drawn_once(self):
+        state = tempfile.mkdtemp()
+        with patch.dict(os.environ, {"KITTYMUX_STATE": state}):
+            os.environ.pop("KITTYMUX_TITLES", None)
+            m, p = self.peek()
+            tab = {"title": "**Review** the plan", "active_window_history": [7],
+                   "windows": [{"id": 7, "title": "I can't open that file.", "cwd": "/work/hypr",
+                                "foreground_processes": [{"cmdline": ["claude"]}]}], "rects": []}
+            with patch.object(m, "_rc", side_effect=[json.dumps(tab), "screen"]), \
+                 patch.object(m.kittymux_agents, "load_panes", return_value={}), \
+                 patch.object(m.kittymux_git, "info", return_value=None):
+                card = m.collect(2)
+        self.assertEqual(card["title"], "Review the plan")
+        self.assertEqual(card["shown_title"], "hypr")
+        p.card["title"] = "Review the plan"
+        p.card["cwd"] = "/work/elsewhere"
+        p.card["branch"] = ""
+        p.card["shown_title"] = "hypr"
+        p.card["reason"] = ""
+        p.draw_screen()
+        drawn = "".join(c.args[0] for c in p.write.call_args_list)
+        self.assertEqual(drawn.count("Review the plan"), 1)
+
+    def test_the_titles_switch_off_keeps_the_raw_title(self):
+        state = tempfile.mkdtemp()
+        open(os.path.join(state, "titles-off"), "a").close()
+        with patch.dict(os.environ, {"KITTYMUX_STATE": state}):
+            os.environ.pop("KITTYMUX_TITLES", None)
+            m, _p = self.peek()
+            tab = {"title": "**Review** the plan", "active_window_history": [7],
+                   "windows": [{"id": 7, "title": "**Review** the plan", "cwd": "/work/hypr"}], "rects": []}
+            with patch.object(m, "_rc", side_effect=[json.dumps(tab), ""]), \
+                 patch.object(m.kittymux_agents, "load_panes", return_value={}), \
+                 patch.object(m.kittymux_git, "info", return_value=None):
+                card = m.collect(2)
+        self.assertIn("**", card["title"])
 
     def test_digit_previews_without_focus_then_enter_jumps_to_selected_pane(self):
         m, p = self.peek()

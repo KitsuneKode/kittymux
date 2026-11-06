@@ -10,6 +10,7 @@ States, most important first — a state needs positive evidence, and silence is
 |---|---|---|
 | `limited` | "usage limit reached" / quota text on screen | `⊘`, alert colour |
 | `waiting` | a permission/question prompt on screen, or a hook message that is a real request | `!`, bold, rail stripe |
+| `error` | the agent reported `error` over OSC 7501; the message is kept. A quiet screen is not a completion, and a screen that still looks busy does not hide it. A prompt or a usage limit on screen still outranks it | `✕`, alert colour |
 | `working` | an activity marker on screen (`esc to interrupt`, Claude's `Verb… (6m 52s · ↓ tokens)`), or a hook inside its grace | animated spinner |
 | `done` | it was busy and is not, or a Stop hook — *unseen*; focusing the pane clears it | dim `✓` |
 | `idle` | an agent runs and nothing above applies | nothing |
@@ -21,6 +22,7 @@ States, most important first — a state needs positive evidence, and silence is
   if no completion was reported yet this turn (`completed`).
 - Question/limit text on screen only counts when no activity hint is drawn BELOW it (stale prose above a live spinner), unless dialog chrome (`esc to cancel`, `(esc)`) is present.
 - A completion notifies only with a KNOWN duration ≥ 15 s (`worked is not None`) and after the 5 s settle.
+- An OSC 7501 `error` is never a completion and never a "done" notification. It is an inbox event of kind `error` and, when you are not looking and not muted, a notification that keeps the message. A later, different report is announced again; the same report is not, including when it returns after a prompt or a limit. A text-only error already in the inbox does not swallow that popup. A mute or `notify-off` holds the popup; the event still reaches the inbox. A failure only mentioned in other text stays inbox-only. The words shown are the OSC reason, then the hook message.
 - Claude hooks installed by `kittymux hooks --install`: `UserPromptSubmit`/`PostToolUse` → working, `Notification` → waiting, `Stop` → done, `SessionEnd` → idle.
   `kittymux doctor` reports missing events. Change `HOOK_EVENTS`, README's snippet and the tests together.
 
@@ -56,6 +58,7 @@ the bar and panel show `↻12m` / "resets in 12m" instead of how long ago it hit
 A tab shows its panes rolled up (`kittymux_agents.tab_verdict`), not just the active pane. When the user is
 elsewhere (agent not focused): tab glyph, header badges `! N  ✓ N` (all tabs), a desktop notification for needs-you
 and for runs ≥ 15 s that finish, a WM urgency bell for needs-you only, `ctrl+alt+y` to jump. Off switches
+A jump focuses the window and its tab in kitty, then exactly the OS window holding it (`kittymux_wmfocus.focus_address`, by address): never `focuswindow pid:`, which picks any of the kitty's OS windows and can switch another monitor's workspace. The same helper is what the agent picker, `focus_os_window_by_id` and `focus_moved_window` call. Hyprland 0.57 takes `hl.dsp.focus({window = 'address:…'})`; an older Hyprland still takes `focuswindow address:`. Which dispatcher this compositor runs is read from a probe that names a fake address and must say the window was not found. The probe never names a real window.
 (`notify-off`, `notify-done-off`, `bell-off` files / `KITTYMUX_NOTIFY`, `KITTYMUX_NOTIFY_DONE`, `KITTYMUX_BELL`) are in the README.
 A window seen for the first time never notifies (a scanner restart must not replay old completions).
 Markers are verified against live sessions per agent in `docs/compatibility.md` — check a real screen

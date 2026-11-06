@@ -24,7 +24,7 @@ TINT = 0.09                    # how much of the warning colour a needs-you row 
 
 
 def _state_color(p, state: str):
-    return {"waiting": p.waiting, "working": p.working, "limited": p.alert, "done": T.blend(p.done, p.bg, 0.65), "unread": p.faint}.get(state)
+    return {"waiting": p.waiting, "working": p.working, "limited": p.alert, "error": p.alert, "done": T.blend(p.done, p.bg, 0.65), "unread": p.faint}.get(state)
 
 
 def row_bg(p, r, selected: bool, hovered: bool) -> int:
@@ -93,8 +93,8 @@ def context_row(kit: U.Kit, r, selected: bool, hovered: bool, width: int, home: 
     if r.panes > 1:
         detail.append(U.S(f"{r.panes} panes", kit.ink(p.muted if lit else p.faint, bg, 3.0), bg))
     # the state's wording, longest first: the mark at the right edge already says "needs you", so the words give way before the place does
-    word = "needs you" if r.status == "waiting" else "limit hit" if r.status == "limited" else "done" if r.status == "done" and r.age else ""
-    short = "needs" if r.status == "waiting" else "limit" if r.status == "limited" else "done"
+    word = "needs you" if r.status == "waiting" else "limit hit" if r.status == "limited" else "error" if r.status == "error" else "done" if r.status == "done" and r.age else ""
+    short = "needs" if r.status == "waiting" else "limit" if r.status == "limited" else "error" if r.status == "error" else "done"
     variants = [f"{word} {r.age}".strip(), f"{short} {r.age}".strip(), r.age] if word else []
     if r.status == "limited" and r.age.startswith("\u21bb"):        # a known reset: say when it lifts, not how long ago it hit
         variants = [f"resets in {r.age[1:]}", f"\u21bb{r.age[1:]}"]

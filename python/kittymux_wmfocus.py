@@ -1,0 +1,210 @@
+"""Bring ONE kitty OS window to the front in the compositor, the one that holds a given kitty window.
+
+One kitty process usually owns several OS windows, often on different workspaces and monitors. Asking Hyprland to
+`focuswindow pid:<kitty>` focuses whichever of them it lists first: a notification for an agent on workspace 3 could
+switch the other monitor to workspace 1. So we name the exact OS window instead: kitty first focuses the window (which
+also selects its tab and makes it its OS window's active window, so that OS window takes its title), then we find the
+Hyprland client of that pid with that title. When two OS windows show the same title, the window is tagged with a
+unique title for a moment so its client can be told apart, and the title is handed back to the program afterwards.
+
+Without Hyprland only kitty's own focus happens (the compositor decides the rest). Never raises.
+
+The compositor call is `focus_address`, for this module and for the shell (`lib/mux.sh`
+`focus_hyprland_by_title`, which the agent picker, `focus_os_window_by_id` and
+`focus_moved_window` all use). Hyprland 0.57 dispatches Lua; an older Hyprland dispatches
+`focuswindow`. Which one answers is read from a probe that names `PROBE_ADDRESS` and must
+say the window was not found.
+"""
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+
+TAG_WAIT = 0.6          # seconds to wait for the compositor to see a tagged title
+# Not a window. Probes dispatch only this, so a check never focuses a real client.
+PROBE_ADDRESS = "0xdeadbeefdeadbeef"
+
+
+def _os_window(ls: list, window_id: int):
+    for osw in ls or []:
+        if any(w.get("id") == window_id for t in osw.get("tabs", []) for w in t.get("windows", [])):
+            return osw
+    return None
+
+
+def _active_win(osw) -> dict:
+    tab = next((t for t in (osw or {}).get("tabs", []) if t.get("is_active")), None)
+    return next((w for w in (tab or {}).get("windows", []) if w.get("is_active")), {}) or {}
+
+
+def os_window_title(ls: list, window_id: int) -> str | None:
+    """The title the OS window holding `window_id` shows when kitty is tracking the active window's title."""
+    osw = _os_window(ls, window_id)
+    if osw is None:
+        return None
+    return _active_win(osw).get("title")
+
+
+def os_window_session(ls: list, window_id: int) -> str:
+    """Session name of that OS window's active window. `goto_session` writes it with set-os-window-title,
+    and that is the title Hyprland shows while the override lasts. `wm_name` in `kitty @ ls` is only the
+    name from OS-window creation (kitty 0.49.2 `TabManager.wm_name`); it is not this override."""
+    return str(_active_win(_os_window(ls, window_id)).get("session_name") or "")
+
+
+def window_title(ls: list, window_id: int) -> tuple[str, bool]:
+    """(title, title_overridden) of this kitty window, for putting a tagged title back."""
+    for osw in ls or []:
+        for tab in osw.get("tabs", []):
+            for w in tab.get("windows", []):
+                if w.get("id") == window_id:
+                    return str(w.get("title") or ""), bool(w.get("title_overridden"))
+    return "", False
+
+
+def pick_address(clients: list, pid: int, title: str | None) -> str | None:
+    """The one client of this pid (with this title, when the pid has several); None when it can't be told."""
+    mine = [c for c in clients or [] if c.get("pid") == pid]
+    if len(mine) == 1:
+        return mine[0].get("address")
+    same = [c for c in mine if title is not None and c.get("title") == title]
+    return same[0].get("address") if len(same) == 1 else None
+
+
+def _hyprland(env) -> bool:
+    return bool(env.get("HYPRLAND_INSTANCE_SIGNATURE")) and shutil.which("hyprctl") is not None
+
+
+def _json(run, argv: list[str]):
+    try:
+        out = run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=4)
+        return json.loads(out.stdout) if out.returncode == 0 else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def _captured(run, argv: list[str]) -> str:
+    try:
+        out = run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=4)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return f"{getattr(out, 'stdout', '') or ''}\n{getattr(out, 'stderr', '') or ''}"
+
+
+def _missing_window(text: str) -> bool:
+    return "window not found" in (text or "").lower()
+
+
+def focus_argv(address: str, lua: bool) -> list[str]:
+    """hyprctl argv that focuses this address. `lua` is Hyprland 0.57's expression; otherwise the classic dispatcher."""
+    if lua:
+        return ["hyprctl", "dispatch", f"hl.dsp.focus({{window = 'address:{address}'}})"]
+    return ["hyprctl", "dispatch", "focuswindow", f"address:{address}"]
+
+
+def dispatcher_lua(run=subprocess.run) -> bool | None:
+    """True when the Lua focus expression runs, False when only `focuswindow` does, None when neither
+    answered `window not found`. A probe uses `PROBE_ADDRESS` only."""
+    if _missing_window(_captured(run, focus_argv(PROBE_ADDRESS, True))):
+        return True
+    if _missing_window(_captured(run, focus_argv(PROBE_ADDRESS, False))):
+        return False
+    return None
+
+
+def focus_address(address: str, run=subprocess.run) -> bool:
+    """Focus this Hyprland client. False when the address is empty, is the probe, or no dispatcher answered."""
+    if not address or address == PROBE_ADDRESS:
+        return False
+    lua = dispatcher_lua(run)
+    if lua is None:
+        return False
+    quiet = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+    try:
+        run(focus_argv(address, lua), **quiet)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return True
+
+
+def focus(socket: str, window_id: int | str, pid: int | str, run=subprocess.run, env=None, sleep=time.sleep) -> bool:
+    """Focus kitty window `window_id` (and its tab) in the kitty at `socket`, then its OS window in the compositor.
+    True when kitty took the focus and, if Hyprland is running, that OS window was raised."""
+    env = os.environ if env is None else env
+    try:
+        wid, kpid = int(window_id), int(pid)
+    except (TypeError, ValueError):
+        return False
+    q = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+    try:
+        if run(["kitty", "@", "--to", socket, "focus-window", "--match", f"id:{wid}"], **q).returncode != 0:
+            return False
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if not _hyprland(env):
+        return True
+    data = _json(run, ["kitty", "@", "--to", socket, "ls"]) or []
+    title = os_window_title(data, wid)
+    clients = _json(run, ["hyprctl", "clients", "-j"])
+    if clients is None:
+        return False                                          # Hyprland is up and we could not read it: do not claim the window was raised
+    if not any(c.get("pid") == kpid for c in clients):
+        return True                                           # this kitty is not a client of this Hyprland (an X11 window, another session)
+    address = pick_address(clients, kpid, title)
+    session = os_window_session(data, wid)
+    if address is None and session and session != (title or ""):
+        address = pick_address(clients, kpid, session)
+    if address is None and sum(1 for c in clients if c.get("pid") == kpid) > 1:
+        address = _tagged(socket, wid, kpid, run, sleep, window_title(data, wid))
+    if not address:
+        return False
+    return focus_address(address, run=run)
+
+
+def _tagged(socket: str, wid: int, kpid: int, run, sleep, restore: tuple[str, bool] = ("", False)) -> str | None:
+    """Two OS windows look alike: title ours uniquely for a moment, find it, hand the title back.
+
+    The wait is wall time. A slow `hyprctl` must not multiply TAG_WAIT by the query's own timeout.
+    A title set with `set-window-title` (an override) is put back as that string; clearing it would
+    show the program's title instead (`kitty/window.py` `set_title`). `--temporary` writes the tag
+    into the child title (`rc/set_window_title.py`), so the tag is a normal override and then restored.
+    """
+    q = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+    tag = f"kittymux-focus-{os.getpid()}-{time.monotonic_ns() % 1_000_000}"
+    prev, overridden = restore
+    try:
+        run(["kitty", "@", "--to", socket, "set-window-title", "--match", f"id:{wid}", tag], **q)
+        deadline = time.monotonic() + TAG_WAIT
+        while True:
+            clients = _json(run, ["hyprctl", "clients", "-j"]) or []
+            hit = pick_address(clients, kpid, tag)
+            if hit:
+                return hit
+            if time.monotonic() >= deadline:
+                return None
+            sleep(0.05)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    finally:
+        try:
+            argv = ["kitty", "@", "--to", socket, "set-window-title", "--match", f"id:{wid}"]
+            if overridden and prev:
+                argv.append(prev)
+            run(argv, **q)
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) != 2 or args[0] != "focus" or not args[1]:
+        return 2
+    return 0 if focus_address(args[1]) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

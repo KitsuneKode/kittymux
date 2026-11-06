@@ -74,7 +74,7 @@ C
 fi
 printf 'font_family JetBrainsMono Nerd Font Mono\nfont_size 11\nwindow_padding_width 10\nconfirm_os_window_close 0\nallow_remote_control socket-only\ninclude %s/theme.conf\ninclude %s/kittymux.conf\nwatcher %s/python/pane-state.py\ntab_bar_edge left\ntab_bar_min_tabs 1\ngeninclude %s/python/kittymux_layout.py\n' \
   "$CFG" "$HOME_DIR" "$HOME_DIR" "$HOME_DIR" > "$CFG/kitty.conf"
-# synthetic repos (no user data): two repos with an `app` folder each, a repo with a linked worktree, a plain folder
+# synthetic repos (no user data); one tab reports OSC 9;4 progress (64 %): two repos with an `app` folder each, a repo with a linked worktree, a plain folder
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 W=$T/work
 mkdir -p "$W/kittymux/python" "$W/web/app" "$W/api/app" "$W/docs" "$T/plain/notes"
@@ -109,6 +109,9 @@ new_tab
 cd $W/api
 launch bash -c 'printf " Bash command\n   rm -rf node_modules\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n"; exec -a claude sleep 86400'
 new_tab
+cd $W/web
+launch sh -c 'printf "\\033]9;4;1;64\\033\\\\"; exec sh'
+new_tab
 cd $T/plain/notes
 launch sh
 focus_tab 1
@@ -125,5 +128,5 @@ kitty @ --to "$SOCK" load-config >/dev/null 2>&1; sleep 1; kitty @ --to "$SOCK" 
 sleep 6                                                              # the scanner reads the fake agents' screens
 X mousemove 900 500; sleep 0.5
 DISPLAY=$DISP import -window root "$T/full.png"
-convert "$T/full.png" -crop 380x700+0+0 +repage "$OUT"
+convert "$T/full.png" -crop 380x800+0+0 +repage "$OUT"
 echo "wrote $OUT"

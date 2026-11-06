@@ -95,6 +95,7 @@ CATALOG: tuple[Switch, ...] = (
     Switch("resume-auto", "Opt-in", "Resume agents without asking", "A restored agent resumes its conversation straight away.", False, risk=RESUME,
            consequence="Restoring a session will start every saved agent again with its saved flags, without asking first.",
            **_legacy_on("KITTYMUX_RESUME", ("auto",), "resume-auto")),
+    Switch("relay", "Opt-in", "Agent status relay", "Spawned agents run behind a small relay that hears the status they report (OSC 7501).", False),
     Switch("usage-live", "Opt-in", "Live usage requests", "Ask each provider for your quota, with your own login.", False, risk=NETWORK,
            consequence="kittymux will contact each provider's API with your own login to read your quotas, about every 5 minutes.",
            **_legacy_on("KITTYMUX_USAGE_LIVE", ("1", "on", "true", "yes"), "usage-live-on")),

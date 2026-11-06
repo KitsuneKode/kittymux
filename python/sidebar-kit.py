@@ -42,6 +42,7 @@ import kittymux_agents  # noqa: E402
 import kittymux_agentsview  # noqa: E402
 import kittymux_features  # noqa: E402
 import kittymux_panelfocus  # noqa: E402
+import kittymux_panelhit as panelhit  # noqa: E402
 import kittymux_helpview  # noqa: E402
 import kittymux_deck as deck  # noqa: E402
 import kittymux_git  # noqa: E402
@@ -326,10 +327,10 @@ class Sidebar(Handler):
         self.kit = kittymux_ui.Kit(self.pal, cells=_cells)
         self._usage_sel, self._usage_history, self._usage_regions = 0, {}, []
         self._inbox, self._inbox_mtime, self._inbox_sel, self._inbox_filter, self._inbox_scroll = [], -1.0, 0, "all", 0
-        self._inbox_regions = ([], [], [])        # (filter chips, cards, buttons) in SCREEN coordinates, rebuilt on every draw
+        self._inbox_regions = ([], [], [])        # (filter chips, cards, buttons) in BODY line coordinates, rebuilt on every draw
         self._inbox_undo = None                   # (ids, expires on the monotonic clock) of the last dismissal, while `z` can still take it back
         self._settings_sel, self._settings_scroll, self._settings_asking, self._settings_notice = 0, 0, None, None
-        self._settings_regions = ([], [], [], [])   # (rows, state pills, presets, confirm buttons) in SCREEN coordinates, rebuilt on every draw
+        self._settings_regions = ([], [], [], [])   # (rows, state pills, presets, confirm buttons) in BODY line coordinates, rebuilt on every draw
         self._settings_apply_handle = None          # the coalesced reload of the running kitties after a change
         self._tab_regions = []
         self._preview_timer = None
@@ -657,7 +658,7 @@ class Sidebar(Handler):
         self._usage_sel = v.sel
         self._usage_scroll = self._draw_body(cols, height, v.header, v.lines, getattr(self, "_usage_scroll", 0),
                                              [("r", "refresh", "R"), ("d", "details" if not self._usage_details else "hide", "D", "info" if not self._usage_details else "hide"), ("←→", "pick"), ("a", "agents", "A")])
-        self._usage_regions = [(x0, x1, y0 - self._usage_scroll + 2, y1 - self._usage_scroll + 2, idx) for x0, x1, y0, y1, idx in v.tiles]
+        self._usage_regions = list(v.tiles)
 
     def _draw_inbox(self, cols, height):
         v = kittymux_inboxview.view(self._inbox, self._inbox_filter, self._inbox_sel, self._body_width(cols), self.kit)
@@ -670,9 +671,7 @@ class Sidebar(Handler):
         if self._undo_live():                                             # the way back is offered where the hand just was, replacing what it does not need
             footer = [("z", "undo " + (f"{len(self._inbox_undo[0])} dismissed" if len(self._inbox_undo[0]) > 1 else "dismiss"), "Z")] + footer[:2]
         self._inbox_scroll = self._draw_body(cols, height, v.header, v.lines, top, footer)
-        off = 2 - self._inbox_scroll
-        self._inbox_regions = ([(x0, x1, off, filt) for x0, x1, filt in v.chips], [(y0 + off, y1 + off, i) for y0, y1, i in v.cards],
-                               [(x0, x1, y + off, i, act) for x0, x1, y, i, act in v.buttons])
+        self._inbox_regions = (list(v.chips), list(v.cards), list(v.buttons))
 
     # ---- the Settings view: the switch catalog (kittymux_switches), edited as flag files in the state directory ----
     def _settings_rows(self) -> list:
@@ -825,8 +824,9 @@ class Sidebar(Handler):
 
     def _settings_click(self, x: int, y: int) -> None:
         rows_, pills, presets, buttons = self._settings_regions
+        scroll = self._settings_scroll
         for x0, x1, by, act in buttons:
-            if y == by and x0 <= x < x1:
+            if panelhit.hit_body_row(x, y, scroll, x0, x1, by):
                 if act == "confirm":
                     self._settings_confirm()
                 else:
@@ -834,18 +834,18 @@ class Sidebar(Handler):
                     self.draw_screen()
                 return
         for x0, x1, py, name in presets:
-            if y == py and x0 <= x < x1:
+            if panelhit.hit_body_row(x, y, scroll, x0, x1, py):
                 self._settings_preset(name)
                 return
         ids = self._settings_ids()
         for x0, x1, py, sw_id in pills:
-            if y == py and x0 <= x < x1:
+            if panelhit.hit_body_row(x, y, scroll, x0, x1, py):
                 self._settings_sel = ids.index(sw_id)
                 self._settings_notice = None
                 self._settings_toggle(sw_id)
                 return
         for y0, y1, sw_id in rows_:
-            if y0 <= y < y1:
+            if panelhit.hit_body_lines(y, scroll, y0, y1):
                 if self._settings_sel != ids.index(sw_id):
                     self._settings_asking = None
                 self._settings_sel = ids.index(sw_id)
@@ -864,10 +864,7 @@ class Sidebar(Handler):
             top = 0 if v.sel == 0 else y0 - 1 if y0 < top + 1 else y1 - page if y1 > top + page else top
         footer = [("␣", "toggle", "SPACE"), ("p", "preset", "P"), ("r", "reset", "R"), ("j k", "move"), ("esc", "back", "ESCAPE")]       # buttons first: a narrow panel drops from the right
         self._settings_scroll = self._draw_body(cols, height, v.header, v.lines, top, footer)
-        off = 2 - self._settings_scroll
-        self._settings_regions = ([(y0 + off, y1 + off, i) for y0, y1, i in v.rows],
-                                  [(x0, x1, y + off, i) for x0, x1, y, i in v.toggles], [(x0, x1, y + off, n) for x0, x1, y, n in v.presets],
-                                  [(x0, x1, y + off, a) for x0, x1, y, a in v.buttons])
+        self._settings_regions = (list(v.rows), list(v.toggles), list(v.presets), list(v.buttons))
 
     def _apply(self, snap) -> None:
         self._collecting = False
@@ -1466,8 +1463,9 @@ class Sidebar(Handler):
                     return
             return
         if view == "usage":
+            scroll = self._usage_scroll
             for x0, x1, y0, y1, idx in self._usage_regions:
-                if x0 <= x < x1 and y0 <= y < y1:
+                if panelhit.hit_in_body(x, y, scroll, x0, x1, y0, y1):
                     self._usage_sel, self._usage_scroll = idx, 0
                     self.draw_screen()
                     return
@@ -1477,18 +1475,19 @@ class Sidebar(Handler):
             return
         if view == "inbox":
             chips, cards, buttons = self._inbox_regions
+            scroll = self._inbox_scroll
             for x0, x1, by, idx, act in buttons:
-                if y == by and x0 <= x < x1:
+                if panelhit.hit_body_row(x, y, scroll, x0, x1, by):
                     self._inbox_sel = idx
                     self._inbox_act(act, idx)
                     return
-            for x0, x1, cy, filt in chips:
-                if y == cy and x0 <= x < x1:
+            for x0, x1, filt in chips:
+                if panelhit.hit_body_row(x, y, scroll, x0, x1, 0):
                     self._inbox_filter, self._inbox_sel = filt, 0
                     self.draw_screen()
                     return
             for y0, y1, idx in cards:
-                if y0 <= y < y1:
+                if panelhit.hit_body_lines(y, scroll, y0, y1):
                     self._inbox_sel = idx
                     self.draw_screen()
                     return
@@ -1501,8 +1500,14 @@ class Sidebar(Handler):
             return
         row, pane = self._pane_at(mouse_event.cell_y)
         if row >= 0:
+            self.sel = row
+            self._hover_pane = (row, pane) if pane >= 0 else (-1, -1)
             self._jump(row, pane)
-        elif self._row_at(mouse_event.cell_y) == self.sel:
+            return
+        idx = self._row_at(mouse_event.cell_y)
+        if idx >= 0:
+            self.sel = idx
+            self._hover_pane = (-1, -1)
             self._jump()
 
     def on_resize(self, new_size) -> None:

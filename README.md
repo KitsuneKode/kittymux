@@ -148,8 +148,9 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+shift+o` then `c` `x` `d` `u` `o` `a` `g` | **spawn** claude · codex · devin · cursor · opencode · agy · grok in a new tab (`shift` + letter: split right) in the current directory |
 | `ctrl+alt+shift+u` | reopen the agent conversation you closed last (it asks before resuming) |
 | `ctrl+alt+enter` · `ctrl+shift+enter` | split below · split to the right |
+| `ctrl+alt+space` | cycle layout — splits ↔ stack |
 | `ctrl+alt+d` / `+shift` | pane → new tab / chooser · `ctrl+alt+shift+c` shows/hides pane title bars (the drag handles) |
-| `ctrl+alt+z` / `alt+shift+=` | zoom pane / equalize (every split the same size again) |
+| `ctrl+alt+z` / `alt+shift+=` | zoom pane (fills the whole tab on both axes; press again to restore; on stack it already does) / equalize |
 | `ctrl+alt+i` (×2) | cwd pill → detail card (copy path/branch) |
 | `ctrl+alt+u` | agent usage HUD |
 | `ctrl+alt+g` | agent picker — every agent pane, live preview + status + message |
@@ -198,6 +199,7 @@ panel and the `ctrl+alt+y` jump queue all show the *same* one:
 | ⠋⠙⠹… (animated) | **working** | the agent is busy — the spinner runs at 10 fps, on any window |
 | **!** | **waiting** | it is asking you something (a permission prompt, a question) — the question is shown as the reason |
 | **⊘** | **limited** | usage limit / quota exhausted — nothing will happen until you act |
+| **✕** | **error** | the agent reported an error; the message stays, and it is not a finished run |
 | ✓ | **done** | it finished while you were looking elsewhere; clears the moment you focus it |
 | *(nothing)* | idle | an agent is running but not doing anything |
 | • | unread | output arrived in a tab that has no agent |
@@ -211,7 +213,7 @@ Works for Claude, Codex, Devin, Gemini, Cursor, OpenCode, Amp, Antigravity (`agy
 with no setup; the others with a logo (grok, qwen, kimi, goose, kilo, vibe, junie, auggie) and aider/crush
 use hooks or title activity. Logos are the real brand marks, compiled into the bundled icon font.
 The design follows how t3code's sidebar resolves thread status: one ordered
-resolver (limited › waiting › working › done › idle), "done" only while unseen.
+resolver (limited › waiting › error › working › done › idle), "done" only while unseen. An error the agent reports is not a completion.
 
 **Splits.** A split tab shows a to-scale **mini-map** of its panes under its title (a row of quadrant blocks: left/right and top/bottom splits at their real proportions, each pane tinted by its state — amber waiting, blue working, red limited — the focused one brighter), and lists each agent pane on its own: in the deck/panel as indented child lines
 (`├ ◆ claude !`, `└ ⠋ codex`) you can hover (live preview of *that* pane) and click (focus it); in the bar as
@@ -382,7 +384,7 @@ tab bar shows a LEADER badge while it is armed.
 | after leader | |
 |---|---|
 | `h j k l` `o` | focus pane · last pane |
-| `\` `-` `z` `=` `x` `d` | split right/down · zoom · equalize · close pane · pane → tab |
+| `\` `-` `z` `=` `x` `d` `space` | split right/down · zoom (fills the tab; already full on stack) · equalize · close pane · pane → tab · cycle layout |
 | `c` `n` `p` `1…9` `r` `X` | new / next / prev / Nth tab · rename · close tab |
 | `s` `P` | Kitty Home · project picker |
 | `a` `w` `g` `;` | agent picker · **next waiting agent** · new worktree agent · send prompt |

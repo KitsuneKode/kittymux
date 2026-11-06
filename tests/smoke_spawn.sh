@@ -3,6 +3,8 @@
 # tab, in the current directory) or a split; the spawn-mode KEYS do the same with real key events; `kittymux pick` lists them and a fake rofi's answer is executed (spawn, jump, ack);
 # `kittymux reopen` brings a closed conversation back through the resume prompt; mute/snooze write what the scanner reads. Needs Xvfb, xdotool, kitty, python3.
 set -u
+# An Xvfb kitty is not a client of the developer's Hyprland. A jump must not ask that compositor.
+unset HYPRLAND_INSTANCE_SIGNATURE
 HOME_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 for dep in Xvfb xdotool kitty python3; do command -v "$dep" >/dev/null 2>&1 || { echo "SKIP: $dep not installed"; exit 0; }; done
 T=$(mktemp -d "${TMPDIR:-/tmp}/kmx-spawn.XXXXXX"); CFG=$T/cfg STATE=$T/state RUN=$T/run
@@ -58,7 +60,7 @@ launch --title scratch sh
 focus_tab 0
 S
 export PATH="$T/bin:$PATH"
-env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_RUNTIME_DIR=$RUN KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
+env -u WAYLAND_DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_RUNTIME_DIR=$RUN KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
   KITTYMUX_SOCKET_DIRS=$RUN \
   kitty -o linux_display_server=x11 --class kmx-spawn --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
 for _ in $(seq 80); do ls "$RUN"/mykitty-* >/dev/null 2>&1 && break; sleep 0.25; done; sleep 3

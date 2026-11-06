@@ -4,6 +4,8 @@
 # Enter focuses a tab, Enter on a needs-you event jumps to its window, a click does it, a fixed action runs (quiet popups, then bring them back), and `kittymux act` refuses
 # anything that is not one of the palette's own actions. Ends with a tripwire on every OTHER kitty on the machine. Needs Xvfb, xdotool, kitty >= 0.49, python3; else SKIP.
 set -u
+# An Xvfb kitty is not a client of the developer's Hyprland. A jump must not ask that compositor.
+unset HYPRLAND_INSTANCE_SIGNATURE
 HOME_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 for dep in Xvfb xdotool kitty python3; do command -v "$dep" >/dev/null 2>&1 || { echo "SKIP: $dep not installed"; exit 0; }; done
 T=$(mktemp -d "${TMPDIR:-/tmp}/kmx-palette.XXXXXX"); CFG=$T/cfg STATE=$T/state RUN=$T/run
@@ -32,7 +34,7 @@ focus_tab 0
 S
 others() { for s in /tmp/mykitty-* "${XDG_RUNTIME_DIR:-/nonexistent}"/mykitty-*; do [ -S "$s" ] && case "$s" in "$RUN"/*) ;; *) kitty @ --to "unix:$s" ls 2>/dev/null | python3 -c 'import sys,json;print(sum(len(t["windows"]) for o in json.load(sys.stdin) for t in o["tabs"]))';; esac; done | tr '\n' ' '; }
 OTHERS_BEFORE=$(others)
-env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_RUNTIME_DIR=$RUN KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
+env -u WAYLAND_DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_RUNTIME_DIR=$RUN KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
   KITTYMUX_SOCKET_DIRS=$RUN \
   kitty -o linux_display_server=x11 --class kmx-palette --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
 for _ in $(seq 80); do ls "$RUN"/mykitty-* >/dev/null 2>&1 && break; sleep 0.25; done; sleep 3

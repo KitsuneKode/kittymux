@@ -20,7 +20,7 @@ class PaneData:
     glyph: str = ""
     agent: str = ""
     tool: bool = False
-    state: str = ""         # working | waiting | limited | done | idle | "" (not an agent)
+    state: str = ""         # working | waiting | limited | error | done | idle | "" (not an agent)
     title: str = ""
     active: bool = False    # the tab's focused pane
     cwd: str = ""
@@ -387,6 +387,21 @@ def hint(width: int) -> str:
                  "q quit"):
         if len(cand) <= width:
             return cand
+    return ""
+
+
+def clipped_suffix(text: str, width: int, cells: Callable[[str], int] = len) -> str:
+    """The tail `fit` does not draw. Empty when `text` fits in `width`."""
+    if cells(text) <= width:
+        return ""
+    if width <= 1:
+        return text
+    used = 0
+    for i, ch in enumerate(text):
+        w = cells(ch)
+        if used + w > width - 1:
+            return text[i:]
+        used += w
     return ""
 
 

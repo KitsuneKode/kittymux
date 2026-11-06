@@ -29,7 +29,7 @@ See [Tabs and panes](/docs/users/tabs-and-panes).
 
 ## Keep agents in view
 
-- Five states, decided from the screen and hooks and shown the same way everywhere. See [Agent status](/docs/users/agent-status).
+- Six states, decided from the screen, hooks and the agent's own report, and shown the same way everywhere. See [Agent status](/docs/users/agent-status).
 - One desktop notification per event, an inbox for everything, and a key that jumps to the agent that has waited longest. See [Notifications and inbox](/docs/users/notifications-and-inbox).
 - Spawn agents, pick any of them from one list, reopen one you closed, fan one prompt out to several in separate worktrees and see what each changed. See [Launch and find agents](/docs/users/launch-and-find-agents).
 
@@ -94,7 +94,7 @@ Works today and is covered by a test.
 | Still spinner (motion off) | kittymux features off motion holds the working spinner on one frame in the bar and the panel and stops the redraw timers that turn it. |
 | Join a tab into another | Move all panes of a tab (or one pane) into another tab as splits, keeping their shape. |
 | Panes by number, swap and move | Number every pane, focus or swap by digit, turn a pane into a tab, drag title bars. |
-| Agent status | One ordered state per agent (limited, waiting, working, done, idle) read from the screen and hooks, shown identically everywhere. |
+| Agent status | One ordered state per agent (limited, waiting, error, working, done, idle) read from the screen, hooks and the agent's own report, shown identically everywhere. |
 | Agent hooks | Claude Code hooks installed and removed with kittymux hooks; other agents call mux-status. |
 | Explain a state | kittymux explain says why each pane is in its state and why each notification was sent or held back. |
 | Desktop notifications | One notification per event with the agent's own mark and a Jump to it action; never moves your focus. |

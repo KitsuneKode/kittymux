@@ -44,6 +44,7 @@ import kittymux_launcher  # noqa: E402
 import kittymux_layout  # noqa: E402
 import kittymux_panetitle  # noqa: E402
 import kittymux_place  # noqa: E402
+import kittymux_progress  # noqa: E402
 import kittymux_reload  # noqa: E402
 import kittymux_scan  # noqa: E402
 import kittymux_state  # noqa: E402
@@ -87,6 +88,7 @@ _APP_LABELS = {
 
 _ICON_BRANCH = ""   # nerd-font git-branch
 _ICON_FOLDER = ""   # nerd-font folder
+_ICON_SHELL = "\uf489"  # nerd-font terminal (oct-terminal): every plain shell tab gets an icon too, as in Rex
 _RAIL = "▌"
 _COLLAPSE, _EXPAND = "«", "»"   # sidebar collapse / expand button glyphs (kittymux_layout.toggle_collapsed)
 COMPACT_MAX_COLS = kittymux_layout.COMPACT_MAX_COLS   # a vertical bar at most this wide draws compact one-line rows
@@ -347,6 +349,21 @@ def _compact_session_name(session_name: str) -> str:
     return _truncate(session_name, _SESSION_SOFT_MAX)
 
 
+def _group_label(index: int, tab, prev_tab) -> str | None:
+    """Session-folder heading for this tab, or None when it continues the group above.
+
+    The header names the focused session (`active_session_name`), not tab 1's. Tab 1 still needs
+    a heading when it belongs to a different session."""
+    this = getattr(tab, "session_name", "") or ""
+    if index <= 1:
+        if this == (getattr(tab, "active_session_name", "") or ""):
+            return None
+    elif prev_tab is None or this == (getattr(prev_tab, "session_name", "") or ""):
+        return None
+    label = _compact_session_name(this)
+    return "Other tabs" if label == "—" else label
+
+
 def _title_from_cmdline(cmdline: list[str]) -> str:
     if not cmdline:
         return ""
@@ -553,7 +570,7 @@ class _MiniMap(tuple):
     """Cells (char, fg_rgb, bg_rgb) of a tab's layout picture — a subtitle piece drawn as it is, colours and all."""
 
 
-_STATE_TINT = {"working": "working", "waiting": "waiting", "limited": "alert"}
+_STATE_TINT = {"working": "working", "waiting": "waiting", "limited": "alert", "error": "alert"}
 
 
 @_per_pass
@@ -948,6 +965,22 @@ def _paint_rows(screen: Screen, y0: int, n: int, bg: int) -> None:
     screen.cursor.y = y0
 
 
+def _paint_edges(screen: Screen, y0: int, n: int, bar: int, right: int) -> None:
+    """Turn a full-width row fill into an inset card: the bar's colour back in column 0 and in the column just left
+    of the divider (`right` - 1) through the bar's last column (kitty's own divider leaves that one to us), so the
+    active tab reads as a block floating in the bar."""
+    screen.cursor.bg = bar
+    for r in range(n):
+        y = y0 + r
+        if y >= screen.lines:
+            break
+        screen.cursor.y = y
+        for x in (0, *range(right - 1, screen.columns)):     # left margin; right margin through the bar's edge
+            screen.cursor.x = x
+            screen.draw(" ")
+    screen.cursor.y = y0
+
+
 SEP_COLS = 2        # the divider takes the bar's last two columns: content stays left of them
 SEP_EIGHTS = 2      # each hairline is this many eighths of a cell wide (2 → ~4 px at a 15 px cell; ~8 px for the pair)
 _LEFT_BLOCK = {1: "▏", 2: "▎", 3: "▍"}          # the left n/8 of a cell
@@ -977,12 +1010,36 @@ def _sep_column(screen: Screen, y0: int, n: int, bg: int, pal, native: bool = Fa
         screen.draw(_LEFT_BLOCK[SEP_EIGHTS])
 
 
+# While a tab with OSC 9;4 progress is drawn: ((first_row, end_row), x_from, x_to, fill_bg). Text drawn into those
+# cells keeps the fill behind it instead of the row's colour (kittymux_progress). Reset by every _draw_vertical.
+_fill: tuple | None = None
+
+
 def _put(screen: Screen, x: int, text: str, fg: int, bold: bool = False) -> int:
     screen.cursor.x = x
     screen.cursor.fg = fg
     screen.cursor.bold = bold
-    screen.draw(text)
+    f = _fill
+    if f and text and f[0][0] <= screen.cursor.y < f[0][1] and f[1] <= x < f[2]:
+        split, cx = 0, x
+        while split < len(text) and cx < f[2]:
+            cx += max(0, wcswidth(text[split]))
+            split += 1
+        bg = screen.cursor.bg
+        screen.cursor.bg = f[3]
+        screen.draw(text[:split])
+        screen.cursor.bg = bg
+        screen.draw(text[split:])
+    else:
+        screen.draw(text)
     return screen.cursor.x
+
+
+def _tab_progress(tab) -> tuple[str, int] | None:
+    try:
+        return kittymux_progress.of_tab(tab, get_boss().window_id_map)
+    except Exception:
+        return None
 
 
 def _tab_state(tab: TabBarData) -> str:
@@ -1001,6 +1058,7 @@ def _state_color(state: str, pal) -> int | None:
         "working": pal.working,
         "waiting": pal.waiting,
         "limited": pal.alert,
+        "error": pal.alert,
         "done": kittymux_theme.blend(pal.done, pal.bg, 0.65),
         "unread": pal.faint,
     }.get(state)
@@ -1020,7 +1078,7 @@ def _session_stats(tab: TabBarData) -> tuple[int, dict[str, int]]:
         counts: dict[str, int] = {}
         for t in tm.tabs:
             st = _agent_status(t.id)
-            if st in ("waiting", "limited", "done"):
+            if st in ("waiting", "limited", "error", "done"):
                 counts[st] = counts.get(st, 0) + 1
         return total, counts
     except Exception:
@@ -1029,9 +1087,9 @@ def _session_stats(tab: TabBarData) -> tuple[int, dict[str, int]]:
 
 def _attention_parts(counts: dict[str, int], pal) -> list[tuple[str, int, bool]]:
     """Right-aligned header badges, each with the SAME glyph and colour its tabs carry:
-    `! 2` waiting, `⊘ 1` limited, `✓ 3` finished unseen — (text, rgb, bold)."""
+    `! 2` waiting, `⊘ 1` limited, `✕ 1` error, `✓ 3` finished unseen — (text, rgb, bold)."""
     parts = []
-    for state in ("waiting", "limited", "done"):
+    for state in ("waiting", "limited", "error", "done"):
         if counts.get(state):
             parts.append((f"{_glyph(state)} {counts[state]}  ", _state_color(state, pal),
                           state in kittymux_agents.NEEDS_YOU))
@@ -1072,7 +1130,7 @@ def _mascot_ready() -> bool:
 
 
 def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: int, compact: bool) -> None:
-    """The first tab's header. Full bar: `TABS` over `N tabs  ! 1`, and the collapse button at the right
+    """The first tab's header. Full bar: the session's name over `host · N tabs  ! 1`, and the collapse button at the right
     (a bare glyph; its hit area, kittymux_layout.in_toggle_zone, is a good deal larger).
     Rail: the expand button across the top, the attention badges under it."""
     total, counts = _session_stats(tab)
@@ -1080,29 +1138,32 @@ def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: in
     if compact:
         # `»` on top, the attention badges underneath (the whole two-row header is the button)
         _button(screen, y, 1, 1, cols - 4, _EXPAND, pal)
-        badge = " ".join(f"{_glyph(st)}{counts[st]}" for st in ("waiting", "limited", "done") if counts.get(st))
+        badge = " ".join(f"{_glyph(st)}{counts[st]}" for st in ("waiting", "limited", "error", "done") if counts.get(st))
         if badge and rows > 1:
             screen.cursor.y = y + 1
             screen.cursor.bg = bar
             _put(screen, 1, _fit(badge, cols - 3), _rgb(pal.waiting), True)
         return
-    name = _compact_session_name(getattr(tab, "session_name", "") or "")
-    name = "TABS" if name == "—" else name.upper()
+    # Rex-style: the focused session's name, in full weight, over this machine and how many tabs (it said `TABS` / `N tabs`).
+    name = _compact_session_name(getattr(tab, "active_session_name", "") or getattr(tab, "session_name", "") or "")
+    name = "Tabs" if name == "—" else name
     btn_x = cols - kittymux_layout.TOGGLE_CELLS
     mascot = _mascot_ready()
     room = btn_x - 3 - (2 if mascot else 0)
     screen.cursor.y = y
     if mascot:
         _put(screen, 1, kittymux_agents.MASCOT_GLYPH, _rgb(pal.accent), True)
-    _put(screen, 3 if mascot else 1, _fit(name, max(4, room)), _rgb(pal.faint), True)
+    _put(screen, 3 if mascot else 1, _fit(name, max(4, room)), _rgb(pal.text), True)
     info_y = y + (1 if rows > 1 else 0)
     parts = _attention_parts(counts, pal)
-    count_txt = f"{total} tabs" if total else ""
+    badge_cells = sum(_cells(t) for t, _c, _b in parts)
+    count_txt = (f"{_host()} · {total} tabs" if rows > 1 else f"{total} tabs") if total else ""
     x = 1
     screen.cursor.y = info_y
     screen.cursor.bg = bar
     if rows > 1 and count_txt:
-        x = _put(screen, 1, count_txt, _rgb(pal.faint)) + 2
+        host_room = max(1, btn_x - 4 - badge_cells)   # the host, then the two-cell gap `_put` returns before the badges
+        x = _put(screen, 1, _fit(count_txt, host_room), _rgb(pal.faint)) + 2
     elif rows == 1 and count_txt and room - _cells(name) - 2 >= _cells(count_txt):
         x = _put(screen, 1 + _cells(name) + 2, count_txt, _rgb(pal.faint)) + 2
     for text, color, bold in parts:
@@ -1112,12 +1173,26 @@ def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: in
     _button(screen, y, rows, btn_x, 3, _COLLAPSE, pal)
 
 
+_HOST = ""
+
+
+def _host() -> str:
+    """This machine's short name, for the header's second line (Rex shows the host under the session)."""
+    global _HOST
+    if not _HOST:
+        import socket
+        _HOST = (socket.gethostname() or "this machine").split(".")[0]
+    return _HOST
+
+
 @_per_pass
 def _native_edge(os_window_id: int) -> bool:
     return kittymux_barsize.native_edge_active(os_window_id)
 
 
 def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
+    global _fill
+    _fill = None
     cols = screen.columns
     y0 = screen.cursor.y
     native = _native_edge(draw_data.os_window_id)
@@ -1131,7 +1206,24 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     hdr_rows = kittymux_layout.header_rows(screen.lines, draw_data.max_tab_title_lines, compact) if want_header else 0
     lines_avail = (hdr_rows + 1) if compact else min(max(1, draw_data.max_tab_title_lines),
                                                        screen.lines - y0)
+    # Session folders (Rex's sidebar groups): where a tab's kitty session differs from the tab above it, a heading row
+    # with that session's name goes first (`Other tabs` for tabs in no session). Tab 1 gets one too when its
+    # session is not the focused session the header names. Drawn in the layout pass too, so kitty counts the row.
+    label = None if compact or lines_avail < 3 else _group_label(index, tab, getattr(extra_data, "prev_tab", None))
+    if label:
+        _paint_rows(screen, y0, 1, _rgb(pal.bar))
+        screen.cursor.y = y0
+        _put(screen, 1, "\u2304 " + _fit(label, max(4, cols - 4 - sep_cols)), _rgb(pal.faint), True)
+        screen.cursor.bold = False
+        _sep_column(screen, y0, 1, _rgb(pal.bar), pal, native)
+        y0 += 1
+        screen.cursor.y = y0
+        lines_avail -= 1
     active = tab.is_active
+    # Full bar: the active tab is an inset card (one bar-coloured column each side, Rex-style), so content sits one
+    # column further in: the waiting stripe at 0, the logo at 2, the title at 4. The rail keeps its tight layout.
+    ins = 0 if compact else 1
+    gx, tx = 1 + ins, 3 + ins
 
     cwd, foreground, _last_cmd = _active_window_info(tab.tab_id)
     info = _agent_from_fg(foreground)
@@ -1193,6 +1285,22 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         _paint_rows(screen, y0 + hdr_rows, n_rows - hdr_rows, row_bg)
     else:
         _paint_rows(screen, y0, n_rows, row_bg)
+    if active and not compact:                       # the card: the bar's colour back at both edges
+        _paint_edges(screen, y0 + hdr_rows, n_rows - hdr_rows, bar, cols - sep_cols)
+    # OSC 9;4 progress: the card fills from the left (Rex's tab progress), the percent in the number's place.
+    progress = None if compact else _tab_progress(tab)
+    if progress:
+        p_state, p_pct = progress
+        x_from, x_to = 1, cols - sep_cols - ins
+        k = kittymux_progress.fill_cells(x_to - x_from, p_state, p_pct)
+        tint = {"error": pal.alert, "paused": pal.waiting}.get(p_state, pal.accent)
+        fill_bg = _rgb(kittymux_theme.blend(tint, pal.surface_hi if active else pal.bar, kittymux_progress.TINT[p_state]))
+        if k:
+            screen.cursor.bg = fill_bg
+            for r in range(y0 + hdr_rows, min(y0 + n_rows, screen.lines)):
+                screen.cursor.x, screen.cursor.y = x_from, r
+                screen.draw(" " * k)
+            _fill = ((y0 + hdr_rows, y0 + n_rows), x_from, x_from + k, fill_bg)
     if index == 1 and not extra_data.for_layout:
         # one full-height separator line, drawn once; each tab re-asserts its rows
         _sep_column(screen, 0, screen.lines, bar, pal, native)
@@ -1214,14 +1322,22 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     screen.cursor.y = y
     # rail: accent on the active tab; a waiting tab keeps a stripe in the waiting colour
     stripe = state in kittymux_agents.NEEDS_YOU and not active
-    _put(screen, 0, _RAIL if (active or stripe) else " ",
-             _rgb((pal.alert if state == "limited" else pal.waiting) if stripe else pal.accent))
+    rail = stripe or (active and compact)
+    if rail or not (active and not compact):             # the card's left edge (column 0) stays the bar's colour
+        _put(screen, 0, _RAIL if rail else " ",
+                 _rgb((pal.alert if state == "limited" else pal.waiting) if stripe else pal.accent))
     if info:
         glyph, brand, _n = info
-        _put(screen, 1, glyph, _rgb(brand if active else _mute(brand, pal)))
+        _put(screen, gx, glyph, _rgb(brand if active else _mute(brand, pal)))
     elif _tool_glyph(foreground):
-        _put(screen, 1, _tool_glyph(foreground), _rgb(pal.muted if active else pal.faint))
-    title_room = cols - 3 - 1 - sep_cols
+        _put(screen, gx, _tool_glyph(foreground), _rgb(pal.muted if active else pal.faint))
+    elif not compact:
+        _put(screen, gx, _ICON_SHELL, _rgb(pal.muted if active else pal.faint))
+    title_room = cols - tx - 1 - sep_cols - ins
+    prog_label = ""
+    if progress and not want_sub and not compact:
+        prog_label = kittymux_progress.label(*progress)
+        title_room -= _cells(prog_label) + 1      # the percent sits left of the age and the state glyph
     if age and state_fg is not None and cols >= 6:
         title_room -= _cells(age) + 1             # the age sits just left of the state glyph
     if compact:
@@ -1236,37 +1352,45 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     elif title_room >= 3:
         title = _shown_title(tab, max(4, title_room), info, cwd)
         title = title if _features().get("titles", True) else _fit(title, title_room)
-        _put(screen, 3, title,
+        _put(screen, tx, title,
              _rgb(pal.text) if active else _rgb(pal.muted), bold=active)
         if _BAR_DUMP and not extra_data.for_layout:
             _dump_row(tab.tab_id, title=title)                    # test hook: the title row as drawn
     if age and state_fg is not None and cols >= 6:
-        _put(screen, cols - 1 - sep_cols - 1 - _cells(age), age, _rgb(state_fg if state in kittymux_agents.NEEDS_YOU else pal.faint),
+        _put(screen, cols - 1 - sep_cols - ins - 1 - _cells(age), age, _rgb(state_fg if state in kittymux_agents.NEEDS_YOU else pal.faint),
              bold=state in kittymux_agents.NEEDS_YOU)
     if state_fg is not None and cols >= 6:
         # full bar: state mark at the right edge; rail: tucked right after the number so the row reads as one cluster
-        _put(screen, 5 if compact else cols - 1 - sep_cols, _glyph(state), _rgb(state_fg),
+        _put(screen, 5 if compact else cols - 1 - sep_cols - ins, _glyph(state), _rgb(state_fg),
              bold=state in kittymux_agents.NEEDS_YOU)
+    if prog_label:
+        idx_fg = {"error": pal.alert, "paused": pal.waiting}.get(progress[0], pal.text if active else pal.muted)
+        glyph_x = cols - 1 - sep_cols - ins
+        age_cells = (_cells(age) + 1) if age and state_fg is not None and cols >= 6 else 0
+        _put(screen, glyph_x - age_cells - _cells(prog_label), prog_label, _rgb(idx_fg))
     title_y = y
 
     if want_sub and n_rows > (2 if header else 1):
         y += 1
         screen.cursor.bg = row_bg
         screen.cursor.y = y
-        if active or stripe:
-            _put(screen, 0, _RAIL, _rgb(pal.waiting if stripe else pal.accent))
-        idx = str(index)
-        _put(screen, cols - sep_cols - len(idx), idx, _rgb(pal.faint))
-        room = cols - 3 - 1 - len(idx) - sep_cols
+        if stripe:
+            _put(screen, 0, _RAIL, _rgb(pal.waiting))
+        idx, idx_fg = str(index), pal.faint
+        if progress:
+            idx = kittymux_progress.label(*progress)
+            idx_fg = {"error": pal.alert, "paused": pal.waiting}.get(progress[0], pal.text if active else pal.muted)
+        _put(screen, cols - sep_cols - ins - _cells(idx), idx, _rgb(idx_fg))
+        room = cols - tx - 1 - _cells(idx) - sep_cols - ins
         # The state word (waiting/working) outranks the branch/path: reserve
         # its room first and give the rest to the leading pieces.
         tail = [p for p in subtitle if isinstance(p[0], str) and p[0] in ("working", "waiting")]
         lead = [p for p in subtitle if p not in tail]
         reserve = sum(_cells(t) + 2 for t, _c in tail)
-        x = 3
+        x = tx
         for i, (text, color) in enumerate(lead):
             sep = "  " if i else ""
-            avail = room - (x - 3) - reserve - _cells(sep)
+            avail = room - (x - tx) - reserve - _cells(sep)
             if avail <= 1:
                 break
             if isinstance(text, _MiniMap):                   # the layout picture: cells with their own fg AND bg
@@ -1302,29 +1426,26 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
                 continue
             x = _put(screen, x, sep + _fit(text, avail), _rgb(color))
         for text, color in tail:
-            sep = "  " if x > 3 else ""
-            avail = room - (x - 3) - _cells(sep)
+            sep = "  " if x > tx else ""
+            avail = room - (x - tx) - _cells(sep)
             if avail >= _cells(text):
                 x = _put(screen, x, sep + text, _rgb(color))
 
     _sep_column(screen, y0, hdr_rows, bar, pal, native)                     # the header rows never take the tab's fill
-    _sep_column(screen, y0 + hdr_rows, n_rows - hdr_rows, row_bg, pal, native)
+    _sep_column(screen, y0 + hdr_rows, n_rows - hdr_rows, bar if (active and not compact) else row_bg, pal, native)
 
     last_row = y if want_sub else title_y
     if want_alert:
         last_row += 1
         screen.cursor.y, screen.cursor.bg = last_row, row_bg
-        if active or stripe:
-            _put(screen, 0, _RAIL, _rgb(pal.waiting if stripe else pal.accent))
-        _put(screen, 3, _fit(kittymux_place.clean(msg), max(1, cols - 4 - sep_cols)), _rgb(state_fg), True)
+        if stripe:
+            _put(screen, 0, _RAIL, _rgb(pal.waiting))
+        _put(screen, tx, _fit(kittymux_place.clean(msg), max(1, cols - tx - 1 - sep_cols - ins)), _rgb(state_fg), True)
         screen.cursor.bold = False
         if not extra_data.for_layout:
             _dump_row(tab.tab_id, alert=kittymux_place.clean(msg))
-    # a hairline in the blank row between this tab and the next (not after the last, not while kitty only measures)
+    # Tabs are separated by their blank row alone (no hairline): spacing, not rules, as in Rex's sidebar.
     if extra_data.next_tab is not None and not extra_data.for_layout and last_row + 1 < screen.lines:
-        screen.cursor.bg = bar
-        screen.cursor.y = last_row + 1
-        _put(screen, 1, "─" * max(0, cols - 3), _rgb(kittymux_theme.blend(pal.line, pal.bar, 0.5)))
         _sep_column(screen, last_row + 1, 1, bar, pal, native)
 
     # Leave the cursor on the last used row (kitty measures height from it),
@@ -1333,6 +1454,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     screen.cursor.bg = bar
     screen.cursor.fg = 0
     screen.cursor.bold = False
+    _fill = None
     return screen.cursor.x
 
 

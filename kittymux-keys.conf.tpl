@@ -18,7 +18,9 @@ map --when-focus-on cmdline:tmux ctrl+alt+z
 # ============================================
 # TABS — contextual placement, session-scoped nav
 # ============================================
+# split DOWN (stacked — kitty names it hsplit)
 map ctrl+alt+enter       launch --location=hsplit --cwd=current
+# split to the RIGHT (side by side — kitty names it vsplit)
 map ctrl+shift+enter     launch --location=vsplit --cwd=current
 map ctrl+alt+t           launch --type=background @KITTYMUX_HOME@/bin/mux-newtab.sh --next
 map ctrl+alt+shift+t     launch --type=background @KITTYMUX_HOME@/bin/mux-newtab.sh
@@ -199,8 +201,10 @@ map alt+shift+equal       layout_action equalize
 # ============================================
 # LAYOUTS
 # ============================================
+# ctrl+alt+space — cycle layout: splits, then stack
 map ctrl+alt+space       next_layout
-map ctrl+alt+z           layout_action maximize
+# ctrl+alt+z — zoom the focused pane so it fills the tab; press again to restore. On stack the pane already fills the tab, so this does nothing
+map ctrl+alt+z           launch --type=background @KITTYMUX_HOME@/bin/mux-zoom.sh
 
 # ============================================
 # SESSIONS — Kitty Home is the one shortcut to remember

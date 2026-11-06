@@ -52,7 +52,7 @@ def compact_age(seconds) -> str:
     return f"{int(s // 60)}m" if s < 3600 else f"{int(s // 3600)}h" if s < 172800 else f"{int(s // 86400)}d"
 
 
-_AGED_STATES = ("waiting", "limited", "done", "working")
+_AGED_STATES = ("waiting", "limited", "error", "done", "working")
 
 
 def state_age(state: str, ts_state, now: float, minimum: float = 60.0, reset_at=None, wall=None) -> str:
@@ -111,10 +111,20 @@ _STRICT = frozenset({"droid", "qwen", "kimi", "goose", "kilo", "vibe", "junie", 
 _RUNTIMES = frozenset({"node", "nodejs", "bun", "deno", "python", "python3", "uv", "uvx", "npx", "bunx", "sh", "bash", "zsh"})
 
 
+def command_argv(argv: Iterable[str]) -> tuple[list[str], int]:
+    """(the program's own argv, how many leading tokens were the relay). `mux-pty -- agent …` is the
+    transport: the agent is what follows `--`. The shift is an index into the original argv."""
+    args = [str(a) for a in argv]
+    if args and os.path.basename(args[0]).lower() == "mux-pty" and "--" in args:
+        shift = args.index("--") + 1
+        return args[shift:], shift
+    return args, 0
+
+
 def agent_in(cmdline_args: Iterable[str]) -> str | None:
     """The known agent CLI this command line runs, else None. Ordinary agent names match any
     argument's basename (lowercased); the short common ones in _STRICT only where a command goes."""
-    args = [str(a) for a in cmdline_args]
+    args, _shift = command_argv(cmdline_args)
     for i, arg in enumerate(args):
         name = os.path.basename(arg).lower()
         if name not in AGENTS:
@@ -125,14 +135,20 @@ def agent_in(cmdline_args: Iterable[str]) -> str | None:
     return None
 
 
-STATES = ("working", "waiting", "limited", "done", "idle")
+STATES = ("working", "waiting", "limited", "error", "done", "idle")
 NEEDS_YOU = ("waiting", "limited")      # states that ask for the user (jump queue, notifications, counts)
+PICKER_STATES = ("waiting", "limited", "error", "working", "done")
+
+
+def picker_state(state: str) -> str:
+    """The join picker's row mark. `error` is kept (it has a glyph); idle and unknown are blank."""
+    return state if state in PICKER_STATES else ""
 SCAN_FRESH = 8.0                        # seconds: how old the watcher's own verdict may be and still be trusted
 
 
 def resolve_status(entry: dict | None, has_agent: bool, now: float,
                    stale_after: float = 15.0) -> str:
-    """Status of a pane's agent: working | waiting | limited | done | idle | "" (no agent).
+    """Status of a pane's agent: working | waiting | limited | error | done | idle | "" (no agent).
 
     The watcher (pane-state.py + kittymux_state.py) resolves each agent pane from what is
     on its screen plus agent hooks, and stores the verdict as `state` with a `ts_scan`
@@ -191,7 +207,7 @@ def pane_chips(panes: dict, window_ids: Iterable, now: float, limit: int = 4) ->
 def tab_verdict(panes: dict, window_ids: Iterable, active_id, active_has_agent: bool, now: float,
                 stale_after: float = 15.0) -> tuple[str, str]:
     """(state, window id) for a whole tab: its panes rolled up, most important state first
-    (limited > waiting > working > done > idle). A split asking a question must light the tab
+    (limited > waiting > error > working > done > idle). A split asking a question must light the tab
     even when another pane has focus. The active pane keeps its full fallback chain
     (hooks, title); the others count only on a fresh scanner verdict. Ties go to the active pane."""
     active_id = str(active_id)
@@ -244,6 +260,7 @@ def load_panes(panes_path: str) -> dict:
 #   working  an animated braille spinner
 #   waiting  a bold "!"   (the only one that asks for you)
 #   limited  a bold "⊘"   (usage limit / quota exhausted — nothing will happen until you act)
+#   error    a "✕"        (the agent reported a failure; the message stays; not a completion)
 #   done     a dim "✓"    (finished while you were away; clears when you look)
 #   unread   a faint "•"  (output arrived in a tab that has no agent)
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -282,7 +299,7 @@ def is_default_title(title: str, agent: str | None) -> bool:
     return False
 
 
-STATE_GLYPH = {"working": SPINNER[0], "waiting": "!", "limited": "⊘", "done": "✓", "unread": "•"}
+STATE_GLYPH = {"working": SPINNER[0], "waiting": "!", "limited": "⊘", "error": "✕", "done": "✓", "unread": "•"}
 SPINNER_FPS = 10.0
 
 
@@ -307,9 +324,13 @@ def sanitize_text(text, limit: int = 120) -> str:
 def resolve_msg(entry: dict | None, status: str) -> str:
     """The one-line reason an agent needs you / finished: the hook's message, else the line the
     watcher spotted on screen (the prompt's question, the limit notice). '' otherwise."""
-    if status not in ("waiting", "done", "limited"):
+    if status not in ("waiting", "done", "limited", "error"):
         return ""
     entry = entry or {}
+    if status == "error":
+        # The scanner's reason is the OSC 7501 failure. A hook `msg` from an earlier waiting turn stays
+        # until a later hook clears it, and must not hide the failure.
+        return sanitize_text(entry.get("reason") or entry.get("msg") or "")
     return sanitize_text(entry.get("msg") or (entry.get("reason") if status != "done" else "") or "")
 
 
@@ -353,7 +374,7 @@ def tool_in(cmdlines: Iterable[Iterable[str]]) -> str | None:
     `git commit -m vim` is git, not vim."""
     best: str | None = None
     for cmdline in cmdlines:
-        argv = [str(a) for a in cmdline]
+        argv, _shift = command_argv(cmdline)
         if "--" in argv:                         # `trmw --profile x -- nvim file`
             argv = argv[argv.index("--") + 1:]
         while argv and os.path.basename(argv[0]).lower() in _WRAPPERS:

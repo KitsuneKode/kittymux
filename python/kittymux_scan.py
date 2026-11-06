@@ -312,9 +312,16 @@ def scan_window(window, now: float) -> bool:
     book = _RT.book.setdefault(wid, {})
     view = {**entry, **book}
     focused = bool(getattr(window, "is_focused", False))
-    adt = view.get("agent_done_ts")
-    if adt and adt > float(view.get("ts_status") or 0):
-        view["status"], view["ts_status"] = "done", adt        # the agent's own "finished" notification counts like its Stop hook
+    # What the agent itself reported (OSC 7501, through bin/mux-pty): the strongest evidence, folded in like a hook.
+    try:
+        import kittymux_psp
+        marker, line = kittymux_psp.apply_to_view(kittymux_psp.read_var(getattr(window, "user_vars", None) or {}), view, marker, line)
+    except Exception:
+        pass
+    if view.get("status") != "error":                          # an error is not a completion; a stale done time must not turn it into one
+        adt = view.get("agent_done_ts")
+        if adt and adt > float(view.get("ts_status") or 0):
+            view["status"], view["ts_status"] = "done", adt    # the agent's own "finished" notification counts like its Stop hook
     new = st.resolve(view, agent, marker, now, focused)
     wall = _wall()
     reset_at = book.get("limit_reset")
@@ -337,7 +344,7 @@ def scan_window(window, now: float) -> bool:
             book[k] = view[k]
         else:
             book.pop(k, None)
-    reason = _clean(line) if marker in ("waiting", "limited") else ""
+    reason = _clean(line) if marker in ("waiting", "limited", "error") else ""
     old_state = prev.get("state", "")
     changed = new != old_state or reason != prev.get("reason", "") or agent != prev.get("agent", agent)
     why = view.get("why", "")
@@ -347,9 +354,9 @@ def scan_window(window, now: float) -> bool:
         _RT.verdicts[wid]["reset_at"] = int(reset_at)
     if new != old_state:
         _record("state", wid, agent, frm=old_state, to=new, why=why)
-        if new == "working" and old_state in ("idle", "done"):
+        if new == "working" and old_state in ("idle", "done", "error"):
             _checkpoint(window, "start", now)
-        elif old_state == "working" and new in ("waiting", "limited", "done", "idle"):
+        elif old_state == "working" and new in ("waiting", "limited", "error", "done", "idle"):
             _checkpoint(window, "finish", now)
     if new == "working" and old_state != "working":
         book["work_ts"] = now                      # when this run of work began (completion threshold)
@@ -372,6 +379,17 @@ def scan_window(window, now: float) -> bool:
         _record("attention", wid, agent, outcome=_alert(window))
     elif changed and not old_state and new in agents.NEEDS_YOU:
         _record("notify", wid, agent, state=new, outcome="suppressed: first sight of this window (a scanner restart must not replay old events)")
+    if new == "error":
+        # One announcement per report. A second, different message is a new report. Blinking away
+        # (waiting, limited) and back to the same message is not.
+        announced = book.get("error_report")
+        if not old_state:
+            book["error_report"] = reason
+            _record("notify", wid, agent, state="error", outcome="suppressed: first sight of this window (a scanner restart must not replay old events)")
+        elif reason != announced:
+            outcome = _announce(window, "error", agent, "agent", reason, confidence="high", tag="psp")
+            book["error_report"] = reason
+            _record("notify", wid, agent, state="error", source="agent", outcome=outcome)
     if new == "done":
         if old_state and old_state != "done":
             # first sight of a window (no previous verdict) never notifies: after a scanner restart every
@@ -743,7 +761,7 @@ def _maybe_autosave(now: float, window_ids) -> str:
 
 
 # ── what did it change? (kittymux_changes) ───────────────────────────────────
-# A run starting (idle/done → working) takes a baseline snapshot of the repository around the window's directory; a run ending (working → waiting/limited/done/idle) takes the
+# A run starting (idle/done/error → working) takes a baseline snapshot of the repository around the window's directory; a run ending (working → waiting/limited/error/done/idle) takes the
 # summary. Both are done by a detached, low-priority `kittymux checkpoint` — git is never run on kitty's main thread. First sight of a window never starts one (we did not see the
 # run begin; the summary then compares with HEAD), at most CHANGES_MAX helpers run at once, and the same (window, kind) is not repeated within CHANGES_GAP seconds.
 CHANGES_MAX, CHANGES_GAP = 2, 3.0
@@ -924,7 +942,7 @@ def _inbox():
     return kittymux_inbox
 
 
-def _announce(window, kind: str, agent: str, source: str, detail: str, *, confidence: str = "high", worked=None, reset_at=None) -> str:
+def _announce(window, kind: str, agent: str, source: str, detail: str, *, confidence: str = "high", worked=None, reset_at=None, tag: str = "") -> str:
     """Record the event and, if it is new and the policy allows, show the popup. Returns the outcome for the decision log. Never raises."""
     try:
         agents = _mods()[0]
@@ -932,16 +950,26 @@ def _announce(window, kind: str, agent: str, source: str, detail: str, *, confid
         wid = str(window.id)
         tab = agents.strip_agent_prefix(agents.strip_title_prefix(window.title or ""), agent) or agent
         ev = inbox.make_event(kind, agent, wid, source, time.time(), pid=os.getpid(), tab=tab, title=f"{agent or 'agent'} {_TEXT_BY_KIND.get(kind, kind)}",
-                              body=detail, confidence=confidence, reset_at=reset_at, private=_private())
+                              body=detail, confidence=confidence, reset_at=reset_at, private=_private(), tag=tag)
+        # A text-only error is inbox-only. If the agent's own OSC 7501 error then merges into it, the
+        # popup was never sent. A different message is a different report even inside the merge window.
+        prior = inbox.matching_unread(state_dir(), ev) if kind == "error" and tag == "psp" else None
         is_new, _ = inbox.add(state_dir(), ev)
         if is_new:
             vars(_RT).setdefault("unread", set()).add(wid)
         if not is_new:
+            same = prior is not None and prior.get("tag") == "psp" and (prior.get("body") or "") == (ev.get("body") or "")
+            if kind == "error" and tag == "psp" and not same:
+                return _notify(window, "error", detail, agent)
             return "merged into an earlier report of the same thing: no second popup"
         if kind in ("permission", "question"):
             return _notify(window, "waiting", detail, agent)
         if kind == "limit":
             return _notify(window, "limited", detail, agent)
+        if kind == "error":
+            if tag == "psp":                               # the agent's own status report; a failure only mentioned in other text stays inbox-only
+                return _notify(window, "error", detail, agent)
+            return "inbox only"
         if kind == "done":
             if confidence == "high":
                 if worked is not None and worked < NOTIFY_DONE_MIN:
@@ -1045,6 +1073,7 @@ _TEXT = {   # state -> (title suffix, default body, urgency, category)
     "waiting": ("needs you", "Waiting for your input", "normal", "kittymux.attention"),
     "limited": ("hit a limit", "Usage limit reached", "normal", "kittymux.attention"),
     "done": ("finished", "Ready for your next prompt", "low", "kittymux.done"),
+    "error": ("reported an error", "Reported an error", "normal", "kittymux.error"),
 }
 
 
@@ -1134,7 +1163,8 @@ def _notify(window, state: str, detail: str, agent: str = "") -> str:
             return "suppressed: notify-send is not installed"
         now = time.monotonic()
         wid = str(window.id)
-        if now - _RT.notified.get(wid, -1e9) < NOTIFY_EVERY:
+        # A new error report is a different occurrence. The 10 s cooldown is for a repeated needs-you, not a second failure.
+        if state != "error" and now - _RT.notified.get(wid, -1e9) < NOTIFY_EVERY:
             return f"suppressed: this window was notified less than {int(NOTIFY_EVERY)} s ago"
         if not _within_budget(now):
             return "suppressed: global notification rate limit"

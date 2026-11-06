@@ -84,7 +84,7 @@ def collect() -> tuple[list[dict], dict | None]:
             state, _why = kittymux_agents.tab_verdict(panes, [w["id"] for w in wins], aw["id"], name is not None, now, _STALE_AFTER)
             title = kittymux_place.clean(kittymux_agents.strip_title_prefix(tab.get("title") or aw.get("title") or ""))
             row = {"os": os_window["id"], "id": tab["id"], "title": title or "—", "cwd": aw.get("cwd", ""), "panes": len(wins),
-                   "state": state if state in kittymux_agents.NEEDS_YOU or state in ("working", "done") else ""}
+                   "state": kittymux_agents.picker_state(state)}
             tabs.append(row)
             if is_source:
                 source = row
@@ -168,7 +168,7 @@ class Join(Handler):
 
     def _row_parts(self, r: dict, selected: bool, width: int) -> list:
         p = self.pal
-        state_fg = {"waiting": p.waiting, "limited": p.alert, "working": p.working,
+        state_fg = {"waiting": p.waiting, "limited": p.alert, "error": p.alert, "working": p.working,
                     "done": kittymux_theme.blend(p.done, p.bg, 0.65)}.get(r["state"])
         count = f"{r['panes']} pane{'s' if r['panes'] != 1 else ''}" + (" · other window" if r["other_window"] else "")
         mark = kittymux_agents.state_glyph(r["state"]) if state_fg is not None else " "

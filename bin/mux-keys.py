@@ -85,6 +85,7 @@ _LABELS = {
     "mux-scratch": "scratch tab",
     "mux-projects": "project picker",
     "mux-sessionizer": "Kitty Home",
+    "mux-zoom": "zoom pane",
 }
 
 _ACTION_LABELS = {

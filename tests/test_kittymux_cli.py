@@ -436,11 +436,12 @@ class SessionsCliTests(unittest.TestCase):
         self.assertTrue(self.m._find_session("old").endswith("old.kitty-session"))
         self.assertIsNone(self.m._find_session("../../etc/passwd"))
         calls = []
-        with mock.patch.object(self.m, "_target_socket", lambda: "unix:/tmp/mykitty-1"), mock.patch.object(self.m, "_run", lambda cmd, t=3.0: (calls.append(cmd) or (0, ""))):
+        # sessions_restore asks _focused_socket (not _target_socket): patching the one it calls keeps the test from
+        # depending on whether it runs inside a kitty, where discovery would otherwise record a `kitty @ ls` first
+        with mock.patch.object(self.m, "_focused_socket", lambda: "unix:/tmp/mykitty-1"), mock.patch.object(self.m, "_run", lambda cmd, t=3.0: (calls.append(cmd) or (0, ""))):
             rc, out, _ = self.run_cli(self.m.sessions_restore, ["old"])
         self.assertEqual(rc, 0)
-        self.assertEqual(calls[0][3:6], ["action", "goto_session", self.m._find_session("old")][0:0] or calls[0][3:6])
-        self.assertIn("goto_session", calls[0])
+        self.assertEqual(calls, [["kitty", "@", "--to", "unix:/tmp/mykitty-1", "action", "goto_session", self.m._find_session("old")]])
 
     def test_usage_errors(self):
         self.assertEqual(self.run_cli(self.m.sessions, ["bogus"])[0], 2)
@@ -600,6 +601,19 @@ class FanoutCliTests(unittest.TestCase):
             self.assertTrue(os.path.isdir(path) and path.endswith(f".worktrees/fix-{title.split(' ')[0]}"), path)
         self.assertEqual(sorted(self.m.kittymux_fanout.load(self.state)["fix"]["agents"][i]["agent"] for i in range(3)), ["claude", "devin", "opencode"])
         self.assertIn("fanout compare fix", out)
+        for a in self.launched:
+            self.assertNotIn("mux-pty", " ".join(a))                       # the relay stays off until its switch is on
+
+    def test_fanout_starts_the_status_relay_when_the_switch_is_on(self):
+        os.environ.pop("KITTYMUX_RELAY", None)
+        open(os.path.join(self.state, "relay-on"), "a").close()
+        rc, _out, err = self.run_cli("fix it", "claude", "--name", "rel", "--cwd", self.repo)
+        self.assertEqual(rc, 0, err)
+        a = self.launched[0]
+        i = a.index("--")
+        relay = os.path.join(self.m.HOME_DIR, "bin", "mux-pty")
+        self.assertEqual(a[i + 1:i + 3], [relay, "--"])
+        self.assertTrue(a[i + 3].endswith("/claude"), a)
 
     def test_a_hostile_prompt_reaches_the_agent_as_one_argument(self):
         evil = 'x"; touch /tmp/pwned; `id` $(id)'
@@ -1795,3 +1809,22 @@ class SettingsCmdTests(unittest.TestCase):
         code, _, err = self.run_cmd("off", "hue")
         self.assertEqual(code, 1)
         self.assertIn("cannot save", err)
+
+
+class LsMemoTests(unittest.TestCase):
+    def test_a_fresh_read_skips_the_two_second_memo(self):
+        m = load()
+        m._LS_MEMO.clear()
+        answers = iter([(0, '[{"id": 1}]'), (0, '[{"id": 2}]')])
+        with mock.patch.object(m, "_run", side_effect=lambda *a, **k: next(answers)) as run:
+            self.assertEqual(m._ls("unix:/s"), [{"id": 1}])
+            self.assertEqual(m._ls("unix:/s"), [{"id": 1}])
+            self.assertEqual(run.call_count, 1)
+            self.assertEqual(m._ls("unix:/s", fresh=True), [{"id": 2}])
+            self.assertEqual(run.call_count, 2)
+
+    def test_focus_wm_asks_for_a_fresh_listing(self):
+        m = load()
+        with mock.patch.object(m, "_ls", return_value=[]) as ls:
+            m._focus_wm(42, "unix:/s")
+        ls.assert_called_once_with("unix:/s", fresh=True)

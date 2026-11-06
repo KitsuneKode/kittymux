@@ -15,6 +15,8 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
   (`ctrl+alt+shift+b`): always-visible clickable sidebar, survives a hidden bar. Keyboard focus is `summoned` (`exclusive`, what `toggle` starts with) or `docked` (`on-demand`, click to type), remembered in `$KITTYMUX_STATE/panel-mode`; changed at runtime with
   `kitten @ resize-os-window --action=os-panel --incremental focus-policy=…`. The panel gives the grab back on Esc/Q/jump and after `IDLE_DOCK_S` without a key — an exclusive grab must never be able to trap typing (`python/kittymux_panelfocus.py`, pure, `tests/test_panelfocus.py`; layer-shell cannot run under Xvfb, so the grab itself is checked by hand on Hyprland)
 - `bin/` — shell scripts (mux-*); shared helpers in `lib/mux.sh`, `lib/socket.sh`
+- `bin/mux-zoom.sh` + `python/kittymux_zoom.py` (pure) — `ctrl+alt+z` and leader `z`. Zoom is both axes (`layout_action maximize horizontal`, then `vertical`); kitty's plain `maximize` is horizontal only, and it toggles, so an axis that is already maximized is left alone (both axes already maximized restores). The action is pinned to the window the layout was read from (`--match id:`), and a failure is a notification: the key runs in the background, so its stderr is invisible. On the stack layout the focused pane already fills the tab, and `layout_action` there returns nothing, which rings the bell, so zoom sends no action (`tests/test_zoom.py`).
+- `python/kittymux_wmfocus.py` — the one Hyprland focus, `focus_address`. A probe with a fake address (`window not found` means that dispatcher exists) chooses `hl.dsp.focus({window = 'address:…'})` or the older `focuswindow address:`. `lib/mux.sh` `focus_hyprland_by_title` (the agent picker, `focus_os_window_by_id`, `focus_moved_window`) shells out to it. Never `focuswindow pid:`.
 - `python/kittymux_layout.py` — layout engine; loaded via `geninclude` so its
   output must come LAST in kitty.conf (it wins over earlier tab_bar_* lines)
 - `python/tab_bar.py` — custom tab bar (two-line vertical rows, brand icons,
@@ -24,7 +26,7 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
 - `python/kittymux_state.py` (pure) + `kittymux_scan.py` (in kitty) — THE status resolver: twice a second reads
   the bottom of each agent pane's screen, combines it with hook state, publishes `scan-<kittypid>.json`.
   Every consumer reads that merged view via `kittymux_agents.load_panes/merge_scan` → `resolve_status`.
-  Order: limited > waiting > working > done > idle; a state needs positive evidence (silence ≠ waiting).
+  Order: limited > waiting > error > working > done > idle; a state needs positive evidence (silence ≠ waiting). An OSC 7501 `error` is its own state (alert colour, message kept), not a completion.
 - `python/kittymux_theme.py` / `kittymux_agents.py` / `kittymux_deck.py` — pure helper modules
   (no kitty imports; unit-tested in `tests/`). Theme tokens derive from live kitty colours; symlinked
   into the config dir by `install.sh`. Never hardcode a palette in `tab_bar.py`/`sidebar-kit.py`.
