@@ -57,9 +57,16 @@ class ProtocolTests(unittest.TestCase):
         data = out.getvalue()
         self.assertIn("a=f", data)
         self.assertIn("a=a", data)
-        self.assertIn("s=3,v=1", data)
+        self.assertIn("a=a,i=10,s=1", data)              # uploaded stopped: kitty runs no frame loop for it
+        self.assertNotIn("s=3", data.split("a=a,i=10", 1)[1])
         self.assertIn("a=p", data)
         self.assertIn("z=-1", data)
+        before = len(out.getvalue())
+        show.step(3)
+        self.assertIn("a=a,i=10,c=3", out.getvalue()[before:])   # a step sets one frame, nothing more
+        idle = io.StringIO()
+        dt.Graphics(idle, transport="direct").step(2)
+        self.assertEqual(idle.getvalue(), "")                     # no rings placed: a step sends nothing
 
     def test_a_placed_frame_names_its_cell_and_its_z(self):
         out = io.StringIO()

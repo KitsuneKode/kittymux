@@ -186,6 +186,39 @@ class LayoutTests(unittest.TestCase):
         self.assertTrue(out.endswith("◐"), out)
         self.assertLess(out.index("main"), out.index("62%"))
 
+    def test_a_state_pill_names_the_state_and_yields_to_the_mark_when_tight(self):
+        f = P.facts("/work/kittymux/a/very/long/path/segment", REPO, HOME)
+        words = {"working": "Working", "waiting": "Needs you", "done": "Finished", "error": "Error", "limited": "Limited"}
+        for state, word in words.items():
+            mark = MARKS[state]
+            st = style(True, state, project=f.project, accent=ACCENT)
+            fill, ink = PT.pill_colours(st["state"][0], 0x2A2B3C)
+            self.assertGreaterEqual(T.contrast(ink, fill), 4.5)
+            wide = PT.render(f, 100, st, active=True, icon="G", name="short", state=state, state_mark=mark,
+                             progress=("set", 62), state_word=word, pill=(fill, ink))
+            self.assertTrue(plain(wide).endswith("\ue0b6" + word + "\ue0b4"), plain(wide))
+            self.assertIn(PT._sgr_bg(fill), wide)
+            self.assertIn("62%", plain(wide))
+            shrank = False
+            for columns in range(14, 101):
+                out = PT.render(f, columns, st, active=True, icon="G", name="short", state=state, state_mark=mark,
+                                progress=("set", 62), state_word=word, pill=(fill, ink))
+                text = plain(out)
+                self.assertLessEqual(len(text), columns, (columns, text))
+                self.assertTrue(text.endswith(mark) or text.endswith(word + "\ue0b4"), (columns, text))
+                if text.endswith(mark):
+                    shrank = True
+                    self.assertNotIn("62%", text)           # the percent goes before the pill does
+                    self.assertNotIn("\x1b[48;", out)
+            self.assertTrue(shrank, state)
+
+    def test_idle_has_no_pill(self):
+        f = P.facts("/work/kittymux", REPO, HOME)
+        st = style(True, "idle", project=f.project, accent=ACCENT)
+        out = PT.render(f, 80, st, active=True, icon="G", name="short", state="idle", state_mark="",
+                        state_word="Idle", pill=(0x333333, 0xFFFFFF))
+        self.assertNotIn("\ue0b6", out)
+
     def test_the_percent_yields_before_the_name_and_the_mark_stays(self):
         f = P.facts("/work/kittymux/a/very/long/path/segment", REPO, HOME)
         wide = plain(render(f, 80, name="short", state="working", progress=("set", 62)))

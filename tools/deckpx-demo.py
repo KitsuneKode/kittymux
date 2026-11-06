@@ -20,21 +20,32 @@ LIGHT = {"background": 0xF7F7F8, "foreground": 0x2A2B30, "color9": 0xD23A3A, "co
          "color11": 0xC98A00, "color12": 0x2F6FEB, "active_border_color": 0x2F6FEB, "inactive_border_color": 0xD5D6DA}
 
 
+# The rigs' dark theme (tests/shot_panel.sh), so the sheet shows the state colours a real theme gives.
+DARK = {"background": 0x1A1B26, "foreground": 0xC0CAF5, "color9": 0xF7768E, "color10": 0x9ECE6A, "color11": 0xE0AF68,
+        "color12": 0x7AA2F7, "active_border_color": 0xF08FB8, "inactive_border_color": 0x414868}
+
+
 def demo_model() -> dp.Model:
     b = lambda k: AGENTS[k].brand if k in AGENTS else 0x888888  # noqa: E731
-    return dp.Model(
-        session="calm-otter", host="this machine",
-        spaces=[dp.Space("website", "main", "waiting", active=True), dp.Space("core", "master", "working"),
-                dp.Space("plugins", "main", "done"), dp.Space("service-api", "release/2.4", "")],
-        agents=[
-            dp.Agent("pricing page", "claude", b("claude"), "website", "<1m", "done", active=True),
-            dp.Agent("pricing page review", "codex", b("codex"), "website", "<1m", "working", progress=0.62),
-            dp.Agent("og tags", "claude", b("claude"), "website", "4m", "working"),
-            dp.Agent("docs nav", "claude", b("claude"), "website", "<1m", "waiting"),
-            dp.Agent("doc comments", "gemini", b("gemini"), "core", "6m", "working"),
-            dp.Agent("readme", "opencode", b("opencode"), "plugins", "12m", "idle"),
-            dp.Agent("~/code/service-api", "shell", 0x888888, "service-api", "", "idle"),
-        ])
+    review = dp.Agent("pricing page review", "codex", b("codex"), "website", "2m", "working", progress=0.62, meta="#214",
+                      can_open=True, opened=True, panes=2)
+    review.children = [dp.Agent("tests", "claude", b("claude"), "website", state="waiting", row=1, pane=0),
+                       dp.Agent("server", "shell", 0, "website", state="idle", row=1, pane=1)]
+    spaces = [dp.Space("website", "main", current=True), dp.Space("core", "master"), dp.Space("plugins", "main"),
+              dp.Space("service-api", "release/2.4")]
+    agents = [
+        dp.Agent("pricing page", "claude", b("claude"), "website", "4m", "done", current=True, meta=":3000"),
+        review,
+        dp.Agent("og tags", "claude", b("claude"), "website", "1m", "working", active=True),
+        dp.Agent("docs nav", "claude", b("claude"), "website", "6m", "waiting"),
+        dp.Agent("doc comments", "gemini", b("gemini"), "core", "8m", "working"),
+        dp.Agent("migrations", "codex", b("codex"), "core", "1h", "error"),
+        dp.Agent("readme", "opencode", b("opencode"), "plugins", "12m", "idle"),
+        dp.Agent("service-api", "shell", 0, "service-api", "", "idle", meta=":8080"),
+    ]
+    for sp in spaces:
+        sp.counts = dp.state_counts(a.state for a in agents if a.space == sp.name)
+    return dp.Model(session="calm-otter", host="this machine", spaces=spaces, agents=agents)
 
 
 def backdrop(path, w, h, dark):
@@ -64,13 +75,13 @@ def main():
     ap.add_argument("--scale", type=float, default=4 / 3)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
-    dark_colors = th.parse_kitty_colors(open(a.theme).read()) if a.theme else {"background": 0x16171D, "foreground": 0xD8DAE0}
+    dark_colors = th.parse_kitty_colors(open(a.theme).read()) if a.theme else DARK
     from PIL import Image
     sheets = []
     for name, colors in (("dark", dark_colors), ("light", LIGHT)):
         pal = th.from_colors(colors)
         for width in (272, 196):
-            surf = dp.render(demo_model(), pal, width, 600, a.scale, dp.Frame(hover=4, phase=0.15))
+            surf = dp.render(demo_model(), pal, width, 600, a.scale, dp.Frame(hover=4, phase=0.0))
             fg = to_pil(surf)
             bg = backdrop(a.backdrop, fg.width, fg.height, name == "dark")
             # what sits behind the sidebar on screen: the blurred wallpaper under kitty's own translucent background

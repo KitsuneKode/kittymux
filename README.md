@@ -196,7 +196,7 @@ panel and the `ctrl+alt+y` jump queue all show the *same* one:
 
 | Glyph | State | Meaning |
 |---|---|---|
-| ⠋⠙⠹… (animated) | **working** | the agent is busy — the spinner runs at 10 fps, on any window |
+| ⠋⠙⠹… (steps) | **working** | the agent is busy — the mark steps once every 3 s, on any window (calm: it never spins) |
 | **!** | **waiting** | it is asking you something (a permission prompt, a question) — the question is shown as the reason |
 | **⊘** | **limited** | usage limit / quota exhausted — nothing will happen until you act |
 | **✕** | **error** | the agent reported an error; the message stays, and it is not a finished run |

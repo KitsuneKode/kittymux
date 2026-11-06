@@ -4,6 +4,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 
 ## [Unreleased]
 
+### Changed
+- **The pixel Agents panel, redesigned (wave 3).** A two-line header (the session, then the machine and tab count) with an orange "N need you" chip that jumps to the first question. One list, Machine → Space → Agents: each space heads its own tabs with its loudest state as a count in a ring; with no named session, the repo and branch a run of tabs sits in is the space. Each tab is a vertical pill: the agent's mark (monochrome) inside a state ring, the title, then a state word (Working, Needs you, Finished, Error, Limited) with its age, progress, pull request and ports. Colour is only for state; the accent is only the hairline around the tab you are in, and selection and hover are lighter surfaces. No gradients and no shadows.
+- **Calm motion: the working mark steps, it never spins.** The bar's working glyph steps once every 3 s instead of spinning at 10 fps, and the panel's working ring steps a quarter turn every 3 s instead of looping at 80 ms. A state change in the panel cross-fades in about 150 ms. Under a software-rendered kitty with one working agent, `tests/shot_premium.sh` measured the main kitty at about 72% CPU before and a few percent after. Switching `motion` off now puts the still frame up at once.
+- **Pane title bars show the state as a pill.** The state's word in a rounded pill of its colour (kitty's title bar honours background colours), shrinking to the mark when the pane is narrow. The pane header no longer animates.
+
 ### Added
 - **`kittymux cards`: the bar's cards in pixels.** kitty 0.49's custom shaders post-process the rendered frame, and kittymux now ships one (`assets/shaders/kittymux-cards`) that touches only the tab bar: the active card's square cell corners become anti-aliased rounded ones, its top edge catches a faint sheen, a soft shadow falls under it, and on a tab change it glows and settles (kitty's `tab-change` animation, 420 ms ease-out). The shader derives the bar and card colours from kitty's own background and foreground exactly as `kittymux_theme` does (sRGB blend, rounded per channel), so every theme works without a generated file. Opt-in, gated on kitty ≥ 0.49.0 and `slangc`, and shares the one `custom_shaders` line with `kittymux dim`.
 

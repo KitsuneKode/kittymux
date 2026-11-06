@@ -103,7 +103,7 @@ import json,sys
 try:
     scan,titles=[json.load(open(p)) for p in sys.argv[1:]]
     assert scan['2']['state']=='limited'
-    assert '⊘' in titles['2']
+    assert '⊘' in titles['2'] or 'Limited' in titles['2']      # the state pill's word (wave 3), or the bare mark when the pill does not fit
 except (OSError,KeyError,ValueError,AssertionError):
     sys.exit(1)
 PYCODE
@@ -117,7 +117,7 @@ try:
     scan = json.load(open(sys.argv[2])).get('2')
 except (OSError, ValueError):
     scan = 'unreadable'
-assert '⊘' in d['2'], 'native caption did not refresh its limit state; the scan says window 2 is: ' + repr(scan)[:300] + '; its caption: ' + repr(d['2'])[:200]
+assert '⊘' in d['2'] or 'Limited' in d['2'], 'native caption did not refresh its limit state; the scan says window 2 is: ' + repr(scan)[:300] + '; its caption: ' + repr(d['2'])[:200]
 PYCODE
 [ "$(others)" = "$BEFORE" ] || { echo 'FAIL: another kitty was touched'; exit 1; }
 [ ! -s "$STATE/tab_bar-error.log" ] || { cat "$STATE/tab_bar-error.log"; exit 1; }
