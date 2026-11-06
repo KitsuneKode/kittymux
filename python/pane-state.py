@@ -218,6 +218,13 @@ def on_focus_change(boss, window, data) -> None:
     _poke(window)              # focusing clears an unseen completion immediately
 
 
+def on_resize(boss, window, data) -> None:
+    """A window changed size (the OS window was resized, or the layout moved): a client drawn over the bar must follow now."""
+    ks = _scan()
+    if ks is not None:
+        ks.layout_changed(boss)
+
+
 def on_close(boss, window, data) -> None:
     _state.pop(window.id, None)
     _flush(time.monotonic(), force=True)

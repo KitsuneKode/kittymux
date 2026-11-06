@@ -11,14 +11,23 @@ FocusScope {
     id: root
 
     property int selected: -1           // a row index into `model` (keyboard), -1 when none
+    property int activeIndex: -1        // the row of the tab you are in
     readonly property bool keyboard: activeFocus && selected >= 0
+    // Attach mode: this sidebar is one kitty window's own bar (its tabs only, no surface of its own: kitty's background shows through).
+    property string windowKey: ""
+    property bool attached: false
+    // Attached, "where you are" is this window's active tab, focused or not: it is what kitty's own bar marked.
+    readonly property var tabs: windowKey ? Feed.tabs.filter(t => t.windowKey === windowKey).map(t => Object.assign({}, t, { active: t.activeInWindow }))
+                                          : Feed.tabs
+    readonly property var sections: Logic.sections(tabs, Feed.byState)
+    readonly property var header: Logic.header(tabs)
 
     ListModel { id: model }
 
     // Flatten sections into one list of items with stable keys, then sync the model to it: move, insert, update, remove.
     function rebuild() {
         const want = [];
-        for (const s of Feed.sections) {
+        for (const s of root.sections) {
             want.push({ key: "s:" + s.label, kind: "section", json: JSON.stringify({ label: s.label, hue: s.hue, count: s.rows.length }) });
             for (const t of s.rows) want.push({ key: "t:" + t.key, kind: "tab", json: JSON.stringify(t) });
         }
@@ -32,13 +41,15 @@ FocusScope {
             }
         }
         while (model.count > want.length) model.remove(model.count - 1);
+        activeIndex = want.findIndex(w => w.kind === "tab" && JSON.parse(w.json).active);
+        Qt.callLater(here.pick);
         if (selected >= model.count) selected = model.count - 1;
         if (want.length) settledIn.start();
     }
     // The first fill is not a change: the list appears whole, and only later arrivals and departures animate.
     property bool ready: false
     Timer { id: settledIn; interval: 1; onTriggered: root.ready = true }
-    Connections { target: Feed; function onSectionsChanged() { root.rebuild(); } }
+    onSectionsChanged: rebuild()
     Component.onCompleted: rebuild()
 
     function rowIndices() { const out = []; for (let i = 0; i < model.count; i++) if (model.get(i).kind === "tab") out.push(i); return out; }
@@ -66,7 +77,7 @@ FocusScope {
         e.accepted = true;
     }
 
-    Glass { anchors.fill: parent }
+    Glass { anchors.fill: parent; visible: !root.attached }
 
     // ── Header: identity first, then state ───────────────────────────────
     Item {
@@ -74,26 +85,26 @@ FocusScope {
         anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
         height: 58
         Column {
-            anchors.left: parent.left; anchors.leftMargin: Theme.s4
+            anchors.left: parent.left; anchors.leftMargin: Theme.edge
             anchors.right: badge.left; anchors.rightMargin: Theme.s2
             anchors.verticalCenter: parent.verticalCenter
             spacing: 2
-            Label { width: parent.width; text: Feed.header.title; size: Theme.tTitle; weight: Theme.wSemibold }
-            Label { width: parent.width; text: Feed.header.subtitle; size: Theme.tCaption; color: Theme.text3 }
+            Label { width: parent.width; text: root.header.title; size: Theme.tTitle; weight: Theme.wSemibold }
+            Label { width: parent.width; text: root.header.subtitle; size: Theme.tCaption; color: Theme.text3 }
         }
         // What needs you: an orange count, present only when something asks.
         Row {
             id: badge
-            anchors.right: parent.right; anchors.rightMargin: Theme.s4
+            anchors.right: parent.right; anchors.rightMargin: Theme.edge
             anchors.verticalCenter: parent.verticalCenter
             spacing: 5
-            opacity: Feed.header.needsYou > 0 ? 1 : 0
+            opacity: root.header.needsYou > 0 ? 1 : 0
             visible: opacity > 0.001
             Behavior on opacity { NumberAnimation { duration: Theme.enterMs; easing.type: Easing.OutCubic } }
             Rectangle { width: 7; height: 7; radius: 3.5; color: Theme.waiting; anchors.verticalCenter: parent.verticalCenter }
-            RollingNumber { value: Feed.header.needsYou; color: Theme.waiting; weight: Theme.wSemibold; anchors.verticalCenter: parent.verticalCenter }
+            RollingNumber { value: root.header.needsYou; color: Theme.waiting; weight: Theme.wSemibold; anchors.verticalCenter: parent.verticalCenter }
         }
-        Rectangle { anchors.bottom: parent.bottom; x: Theme.s4; width: parent.width - Theme.s4 * 2; height: 1; color: Theme.hairline }
+        Rectangle { anchors.bottom: parent.bottom; x: Theme.edge; width: parent.width - Theme.edge * 2; height: 1; color: Theme.hairline }
     }
 
     // ── The list ─────────────────────────────────────────────────────────
@@ -101,12 +112,38 @@ FocusScope {
         id: list
         anchors.top: head.bottom; anchors.bottom: foot.top
         anchors.left: parent.left; anchors.right: parent.right
-        anchors.leftMargin: Theme.s1 + 2; anchors.rightMargin: Theme.s1 + 2
+        anchors.leftMargin: Theme.listInset; anchors.rightMargin: Theme.listInset
         clip: true
         model: model
         boundsBehavior: Flickable.StopAtBounds
         reuseItems: false
         cacheBuffer: 400
+        onContentHeightChanged: here.pick()
+
+        // Where you are: ONE accent mark (at 45%: state colours lead) that glides to the tab you switch to on the moderate spring, so
+        // the eye follows the move instead of one row's mark fading out while another fades in.
+        Rectangle {
+            id: here
+            parent: list.contentItem
+            property Item row: null
+            property bool placed: false
+            // itemAtIndex is not a binding that updates when delegates are created: look again whenever the list changes shape.
+            function pick() { row = root.activeIndex >= 0 ? list.itemAtIndex(root.activeIndex) : null; follow(); }
+            x: 1; width: 3; height: 18; radius: 1.5
+            y: hereY.value
+            z: 60
+            color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, Theme.accentHairline)
+            opacity: row ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: Theme.enterMs; easing.type: Easing.OutCubic } }
+            Spring { id: hereY; tier: Theme.springModerate; epsilon: 0.25 }
+            function follow() {
+                if (!row) return;
+                const t = row.y + (row.height - height) / 2;
+                if (!placed || !root.ready) { hereY.snap(t); placed = true; } else hereY.target = t;
+            }
+            onRowChanged: follow()
+            Connections { target: here.row; function onYChanged() { here.follow(); } }
+        }
 
         Highlight {
             id: glide
@@ -176,10 +213,10 @@ FocusScope {
         id: foot
         anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
         height: 34
-        Rectangle { anchors.top: parent.top; x: Theme.s4; width: parent.width - Theme.s4 * 2; height: 1; color: Theme.hairline }
+        Rectangle { anchors.top: parent.top; x: Theme.edge; width: parent.width - Theme.edge * 2; height: 1; color: Theme.hairline }
         Label {
-            anchors.left: parent.left; anchors.leftMargin: Theme.s4
-            anchors.right: parent.right; anchors.rightMargin: Theme.s4
+            anchors.left: parent.left; anchors.leftMargin: Theme.edge
+            anchors.right: parent.right; anchors.rightMargin: Theme.edge
             anchors.verticalCenter: parent.verticalCenter
             text: root.activeFocus ? "↑↓ move   ↵ jump   g group   m mute"
                                    : (Feed.byState ? "By state" : "By space") + "  ·  g to change"

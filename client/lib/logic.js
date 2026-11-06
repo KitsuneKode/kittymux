@@ -37,7 +37,7 @@ function tabsOf(doc, alive) {
             var t = w.tabs[j];
             if (!t || typeof t.tab_id !== "number") continue;
             out.push({
-                key: w.kitty_pid + "." + t.tab_id,
+                key: w.kitty_pid + "." + t.tab_id, windowKey: String(w.key || ""),
                 kittyPid: w.kitty_pid, osWindow: w.os_window_id, focusedWindow: !!w.focused,
                 tabId: t.tab_id, index: t.index || j + 1, active: !!t.active && !!w.focused,
                 activeInWindow: !!t.active,
@@ -166,4 +166,80 @@ function jumpArgs(bin, t) {
 function muteArgs(bin, t) {
     if (!t || typeof t.agentWindow !== "number") return [];
     return [bin, t.muted ? "unmute" : "mute", "--pid", String(t.kittyPid), "--window", String(t.agentWindow)];
+}
+
+// ── Attach mode: the client drawn over kitty's own vertical bar (Hyprland) ─────────────────────────────────────────────────────────
+// kitty knows where its bar is (tabs.json `geometry`, framebuffer pixels); Hyprland knows where the window is (`hyprctl -j clients`,
+// logical pixels) and on which monitor (`hyprctl -j monitors`). The overlay is a transparent layer surface laid exactly over the bar,
+// minus kitty's divider columns, so kitty's own background, blur and divider stay kitty's and only the content is ours.
+
+var DIVIDER_CELLS = 2;          // tab_bar.SEP_COLS: the divider takes the bar's last two columns (its first two on the right edge)
+
+// The Hyprland window that is this kitty OS window: same pid, mapped; with several, the one whose title and size match.
+function matchClient(win, clients) {
+    var g = win && win.geometry;
+    var own = (clients || []).filter(function (c) { return c && c.pid === win.kitty_pid && c.mapped !== false && !c.hidden; });
+    if (own.length <= 1) return own[0] || null;
+    var score = function (c) {
+        var s = 0;
+        if (win.title && c.title === win.title) s += 2;
+        if (g && c.size && Math.abs(c.size[0] - g.width) <= 2 && Math.abs(c.size[1] - g.height) <= 2) s += 1;
+        return s;
+    };
+    own.sort(function (a, b) { return score(b) - score(a); });
+    return own[0];
+}
+
+function overlaps(a, b) {
+    return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+// Where the overlay goes, or why it does not show. {visible, monitor, x, y, w, h (logical, relative to the monitor), address} or
+// {visible: false, reason}. It hides whenever kitty's bar is not what you see: another workspace, a fullscreen window over it,
+// a floating window across the bar, a horizontal bar, no bar.
+function placement(win, clients, monitors) {
+    var g = win && win.geometry;
+    if (!g || !g.bar || (g.edge !== "left" && g.edge !== "right")) return { visible: false, reason: "no vertical bar" };
+    var c = matchClient(win, clients);
+    if (!c || !c.at || !c.size) return { visible: false, reason: "window not found" };
+    var mon = (monitors || []).filter(function (m) { return m.id === c.monitor; })[0];
+    if (!mon) return { visible: false, reason: "monitor not found" };
+    var ws = c.workspace || {};
+    var shown = (mon.activeWorkspace && mon.activeWorkspace.id === ws.id) || (mon.specialWorkspace && mon.specialWorkspace.id === ws.id && ws.id !== undefined);
+    if (!shown) return { visible: false, reason: "another workspace" };
+    var scale = g.scale > 0 ? g.scale : 1;
+    var cell = g.cell ? g.cell[0] : 0;
+    var div = DIVIDER_CELLS * cell;
+    var bl = g.bar[0], bt = g.bar[1], br = g.bar[2], bb = g.bar[3];
+    if (g.edge === "left") br = Math.max(bl + cell, br - div); else bl = Math.min(br - cell, bl + div);
+    var rect = {
+        x: c.at[0] + bl / scale, y: c.at[1] + bt / scale,
+        w: (br - bl) / scale, h: Math.min((bb - bt) / scale, c.size[1] - bt / scale)
+    };
+    for (var i = 0; i < (clients || []).length; i++) {
+        var o = clients[i];
+        if (!o || o === c || o.address === c.address || !o.workspace || o.workspace.id !== ws.id || o.hidden || o.mapped === false) continue;
+        if (o.fullscreen && !c.fullscreen) return { visible: false, reason: "fullscreen window" };
+        // a floating window above kitty and across the bar; kitty floating and focused is the one on top
+        var kittyOnTop = c.floating && c.focusHistoryID === 0;
+        if (o.floating && !kittyOnTop && o.at && o.size && overlaps(rect, { x: o.at[0], y: o.at[1], w: o.size[0], h: o.size[1] }))
+            return { visible: false, reason: "a floating window covers the bar" };
+    }
+    // Hyprland's monitor x/y are logical; its width/height are the mode in physical pixels.
+    var mscale = mon.scale > 0 ? mon.scale : 1;
+    return {
+        visible: true, monitor: mon.name, address: c.address,
+        x: Math.round(rect.x - mon.x), y: Math.round(rect.y - mon.y), w: Math.round(rect.w), h: Math.round(rect.h),
+        monitorW: Math.round(mon.width / mscale), monitorH: Math.round(mon.height / mscale)
+    };
+}
+
+// Hyprland events after which windows move (and animate): the overlay fades out at once and comes back where the window settles.
+var MOVING_EVENTS = ["workspace", "workspacev2", "focusedmon", "focusedmonv2", "movewindow", "movewindowv2", "openwindow", "closewindow",
+                     "changefloatingmode", "fullscreen", "moveworkspace", "moveworkspacev2", "activespecial", "activespecialv2",
+                     "minimized", "togglegroup", "moveintogroup", "moveoutofgroup", "monitoradded", "monitorremoved", "configreloaded"];
+
+function eventMoves(line) {
+    var name = String(line || "").split(">>")[0];
+    return MOVING_EVENTS.indexOf(name) >= 0;
 }

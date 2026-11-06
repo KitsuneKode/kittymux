@@ -116,7 +116,9 @@ alive, mode `0600`, atomic, and only when the document apart from `t` changed. S
 | Field | Meaning |
 |---|---|
 | `windows[]` | One kitty OS window each, ordered by `key` (`o<kitty_pid>.<os_window_id>`). `focused`: the OS window kitty last focused. |
-| `palette` | The kitty theme's tokens (`kittymux_theme.from_colors`) as `#rrggbb`: draw with these, never with typed colours. |
+| `title` | The OS window's title (what the window manager shows), to tell one kitty's windows apart. |
+| `geometry` | Where the bar is, for a client that draws over it: `vw`, `vh` (framebuffer pixels), `width`, `height` (logical), `scale`, `edge` (`left`, `right`, `top`, `bottom`), `bar` [left, top, right, bottom] in framebuffer pixels (`null` when the bar is hidden), `cell` [width, height], `opacity`. `null` when kitty could not say. Republished when a window is resized. |
+| `palette` | The kitty theme's tokens (`kittymux_theme.from_colors`, `bar` is the bar's own background) as `#rrggbb`: draw with these, never with typed colours. |
 | `tabs[]` | In the bar's order; `index` counts from 1. `active`: the active tab of that OS window. |
 | `project`, `branch`, `hue` | The git project (or folder) and branch of the tab's active pane, and the project's colour as the bar gives its space. |
 | `panes` | How many panes the tab has. |
@@ -124,6 +126,8 @@ alive, mode `0600`, atomic, and only when the document apart from `t` changed. S
 | `agent_window` | That pane's window id: what `kittymux mute --pid <kitty_pid> --window <agent_window>` mutes. `null` without an agent. |
 | `needs_you` | The tab asks for you (`waiting` or `limited`, not muted). The top-level `needs_you` counts these tabs. |
 | `action` | `kittymux act` jumps to the tab's active pane. |
+
+A client that draws over a kitty's vertical bar tells that kitty with `kittymux client attach KITTY_PID OWNER_PID` (`bar-attached-<pid>`, the same record as the panel's cover): while the owner lives, the bar keeps its place and background and draws no tabs.
 
 A kitty that exits last leaves its entries behind (no other kitty is left to prune them): a client checks that `kitty_pid` still runs before it draws them.
 

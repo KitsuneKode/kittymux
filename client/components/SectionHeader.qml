@@ -21,10 +21,10 @@ Item {
         }
         Label { text: sec.label; size: Theme.tCaption; weight: Theme.wSemibold; color: Theme.text2; elide: Text.ElideNone }
     }
-    Label {
+    RollingNumber {
         anchors.right: parent.right; anchors.rightMargin: Theme.s3
         anchors.bottom: parent.bottom; anchors.bottomMargin: 6
-        text: String(sec.count)
-        size: Theme.tCaption; color: Theme.text3; tabular: true; elide: Text.ElideNone
+        value: sec.count
+        color: Theme.text3; weight: Theme.wRegular
     }
 }

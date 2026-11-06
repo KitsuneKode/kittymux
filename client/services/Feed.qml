@@ -25,6 +25,8 @@ Singleton {
     readonly property var sections: Logic.sections(tabs, byState)
     readonly property var header: Logic.header(tabs)
     readonly property bool loaded: doc !== null
+    // The OS windows of running kitties (attach mode draws one overlay per window with a vertical bar).
+    readonly property var windows: ((doc && doc.windows) || []).filter(w => w && alive[w.kitty_pid] !== false)
     // Muted on click, before the scanner's next pass confirms it: the bell-slash answers at once.
     property var pendingMute: ({})
 
@@ -73,6 +75,24 @@ Singleton {
     function toggleGroup() {
         byState = !byState;
         groupFile.setText(byState ? "state\n" : "");
+    }
+
+    // Attach mode: tell each kitty that this client draws its bar (kittymux_layout.attach), so its own bar draws no tabs. The record
+    // names this process; if the client dies, the record is dead with it and the bar draws itself again.
+    property int ownPid: 0
+    Process {
+        id: whoami
+        command: ["sh", "-c", "echo $PPID"]
+        running: true
+        stdout: StdioCollector { onStreamFinished: root.ownPid = Number(text.trim()) || 0 }
+    }
+    property var attachedTo: ({})
+    function setAttached(kittyPid, on) {
+        if (!ownPid || !kittyPid || !!attachedTo[kittyPid] === on) return;
+        const a = Object.assign({}, attachedTo);
+        a[kittyPid] = on;
+        attachedTo = a;
+        Quickshell.execDetached([bin, "client", on ? "attach" : "detach", String(kittyPid), String(ownPid)]);
     }
 
     function jump(t) {

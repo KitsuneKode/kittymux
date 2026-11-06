@@ -26,7 +26,7 @@ NAME = "tabs.json"
 LEAD = ("waiting", "limited", "error", "working", "done", "idle")
 _AGENT = re.compile(r"[a-z][a-z0-9-]{0,30}")
 _CLASS = re.compile(r"[A-Za-z0-9._-]{1,64}")
-_PALETTE = ("bg", "fg", "muted", "faint", "accent", "working", "waiting", "done", "alert")
+_PALETTE = ("bg", "fg", "bar", "muted", "faint", "accent", "working", "waiting", "done", "alert")
 _TAB_FIELDS = ("tab_id", "index", "active", "title", "cwd", "project", "branch", "hue", "panes", "agent", "agent_window", "brand", "state", "since",
                "progress", "question", "limit_reset", "muted", "needs_you", "action")
 
@@ -138,7 +138,41 @@ def _window(kitty_pid: int, spec: dict, home: str, previous: dict, now: float) -
                 tabs.append(row)
     return {"key": f"o{kitty_pid}.{osw}", "kitty_pid": kitty_pid, "os_window_id": osw,
             "wm_class": wm_class if _CLASS.fullmatch(wm_class) else "kitty", "focused": bool(spec.get("focused")),
-            "session": snap._text(spec.get("session") or "", 80), "palette": palette_of(colors), "tabs": tabs}
+            "session": snap._text(spec.get("session") or "", 80), "title": snap._text(spec.get("title") or "", 200),
+            "geometry": geometry_of(spec.get("geometry")), "palette": palette_of(colors), "tabs": tabs}
+
+
+def _num(value, lo: float, hi: float):
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) and lo <= value <= hi else None
+
+
+def geometry_of(spec) -> dict | None:
+    """The OS window's bar, for a client that draws over it: framebuffer size (`vw`, `vh`), logical size (`width`, `height`), `scale`
+    (framebuffer pixels per logical pixel), the bar's `edge` (left/right/top/bottom) and `bar` [left, top, right, bottom] in framebuffer
+    pixels, the `cell` size and the background `opacity`. None when kitty gave nothing usable; `bar` None when the bar is hidden."""
+    if not isinstance(spec, dict):
+        return None
+    vw, vh = _num(spec.get("vw"), 1, 1 << 16), _num(spec.get("vh"), 1, 1 << 16)
+    w, h = _num(spec.get("width"), 1, 1 << 16), _num(spec.get("height"), 1, 1 << 16)
+    if not (vw and vh and w and h):
+        return None
+    out = {"vw": int(vw), "vh": int(vh), "width": int(w), "height": int(h), "scale": round(vw / w, 4), "edge": "", "bar": None,
+           "cell": None, "opacity": None}
+    cell = spec.get("cell")
+    if isinstance(cell, (list, tuple)) and len(cell) == 2 and all(_num(c, 1, 4096) for c in cell):
+        out["cell"] = [int(c) for c in cell]
+    op = _num(spec.get("opacity"), 0, 1)
+    out["opacity"] = round(float(op), 3) if op is not None else None
+    bar = spec.get("bar")
+    if isinstance(bar, (list, tuple)) and len(bar) == 4 and all(_num(v, 0, 1 << 16) is not None for v in bar):
+        l, t, r, b = (int(v) for v in bar)
+        if r > l and b > t:
+            out["bar"] = [l, t, r, b]
+            if b - t >= vh - 1 and r - l < vw:
+                out["edge"] = "left" if l == 0 else "right"
+            else:
+                out["edge"] = "top" if t == 0 else "bottom"
+    return out
 
 
 def _read(path: str) -> list:

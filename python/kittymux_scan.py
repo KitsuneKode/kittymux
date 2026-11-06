@@ -504,6 +504,30 @@ def _publish_agents(boss) -> None:
         _debug()
 
 
+def _os_window_geometry(osw, tm) -> dict:
+    """Where this OS window's bar is, for a client that draws over it (kittymux_tabsnap.geometry_of): kitty's own viewport (framebuffer
+    pixels), its logical size and scale, and the background opacity. {} when kitty cannot say."""
+    try:
+        from kitty.fast_data_types import get_options, get_os_window_size, viewport_for_window
+        _central, bar, vw, vh, cell_w, cell_h = viewport_for_window(osw)
+        size = get_os_window_size(osw) or {}
+        visible = bool(getattr(tm, "tab_bar_should_be_visible", False)) and not getattr(tm, "tab_bar_hidden", False)
+        return {"vw": vw, "vh": vh, "width": size.get("width"), "height": size.get("height"),
+                "bar": [bar.left, bar.top, bar.right, bar.bottom] if visible else None, "cell": [cell_w, cell_h],
+                "opacity": float(getattr(get_options(), "background_opacity", 1.0))}
+    except Exception:
+        return {}
+
+
+def layout_changed(boss) -> None:
+    """A window was resized (pane-state's on_resize): publish tabs.json now, so a client drawn over the bar follows without waiting
+    for the next scan. Cheap when nothing a client draws changed (the publish skips)."""
+    try:
+        _publish_agents(boss)
+    except Exception:
+        _debug()
+
+
 def _publish_tabs(boss, muted) -> None:
     """This kitty's OS windows and tabs into the shared tabs.json (kittymux_tabsnap), for a client drawn outside kitty."""
     try:
@@ -536,7 +560,8 @@ def _publish_tabs(boss, muted) -> None:
                 tabs.append({"tab_id": tab.id, "title": getattr(tab, "name", "") or getattr(tab, "title", "") or "",
                              "active": tab is active_tab, "windows": wins})
             specs.append({"os_window_id": osw, "wm_class": getattr(tm, "wm_class", "") or "kitty", "focused": tm is focused,
-                          "session": "", "colors": colors, "tabs": tabs})
+                          "session": "", "colors": colors, "tabs": tabs, "geometry": _os_window_geometry(osw, tm),
+                          "title": getattr(getattr(tm, "active_window", None), "title", "") or ""})
         # Most scans change nothing a client draws: skip the file (its read, git lookups, compare) when this kitty's tabs are what
         # was published last, except once per AGE_REFRESH so a kitty that exited is still pruned from the shared file.
         key = repr(specs)
@@ -597,6 +622,7 @@ def scan_all(timer_id=None) -> None:
             _RT.verdicts.pop(wid, None)
             _RT.book.pop(wid, None)
             dirty = True
+        _sync_attached(boss, age_due)
         if age_due:
             vars(_RT)["age_refresh"] = now
             _sweep_cover(boss)
@@ -625,6 +651,33 @@ def _prune_mutes(live) -> None:
         _ensure_path()
         import kittymux_quiet
         kittymux_quiet.prune_mutes(state_dir(), os.getpid(), live)
+    except Exception:
+        _debug()
+
+
+def _sync_attached(boss, sweep: bool) -> None:
+    """The kittymux client attached over this kitty's bar, or left it (kittymux_layout.attached): redraw the bar so it draws its tabs
+    or stops drawing them. A client that died leaves a record the sweep drops (every AGE_REFRESH). One stat a tick."""
+    try:
+        import kittymux_layout
+        sdir, pid = state_dir(), os.getpid()
+        if sweep:
+            kittymux_layout.sweep_attached(sdir, pid)
+        on = kittymux_layout.attached(sdir, pid)
+        rt = vars(_RT)
+        if rt.get("attached") == on:
+            return
+        rt["attached"] = on
+        try:
+            import tab_bar
+            tab_bar._ATTACH_CACHE["at"] = -1.0          # the bar reads the record again at once, not up to a second later
+        except Exception:
+            pass
+        for tm in list((getattr(boss, "os_window_map", None) or {}).values()):
+            try:
+                refresh_bar(tm)
+            except Exception:
+                pass
     except Exception:
         _debug()
 

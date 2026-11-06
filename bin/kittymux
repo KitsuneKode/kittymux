@@ -2551,10 +2551,46 @@ def _client_running(path: str) -> list[int]:
     return [int(r["pid"]) for r in rows if isinstance(r, dict) and str(r.get("pid", "")).isdigit()]
 
 
+def _client_attach(args: list[str], on: bool) -> int:
+    """`kittymux client attach|detach KITTY_PID OWNER_PID` — what the client runs (attach mode): it draws over that kitty's vertical bar
+    while OWNER_PID (the client) lives, so the bar draws no tabs (kittymux_layout.attach). Not meant to be typed."""
+    if len(args) != 2 or not all(a.isdigit() for a in args):
+        print("usage: kittymux client attach|detach KITTY_PID OWNER_PID   (run by the client)", file=sys.stderr)
+        return 2
+    kitty, owner = int(args[0]), int(args[1])
+    try:
+        with open(f"/proc/{kitty}/comm", encoding="utf-8") as f:
+            is_kitty = f.read().strip().startswith("kitty")
+    except OSError:
+        is_kitty = False
+    if on and (not is_kitty or not os.path.exists(f"/proc/{owner}")):
+        print(f"kittymux client attach: pid {kitty} is not a running kitty, or {owner} is not running", file=sys.stderr)
+        return 1
+    sdir = kittymux_layout.state_dir()
+    (kittymux_layout.attach if on else kittymux_layout.detach)(sdir, kitty, owner)
+    return 0
+
+
+def _client_release(owners: list[int]) -> None:
+    """The client was stopped: drop the bars it was drawing over, so each kitty draws its own again at its next scan."""
+    sdir = kittymux_layout.state_dir()
+    try:
+        names = os.listdir(sdir)
+    except OSError:
+        return
+    for name in names:
+        rest = name[len(kittymux_layout.ATTACH_PREFIX):] if name.startswith(kittymux_layout.ATTACH_PREFIX) else ""
+        if rest.isdigit():
+            for owner in owners:
+                kittymux_layout.detach(sdir, int(rest), owner)
+
+
 def client_cmd(argv: list[str]) -> int:
     """`kittymux client [start|stop|toggle|status]` — the client in client/: a Quickshell sidebar drawn on the GPU beside kitty, from tabs.json.
     It only reads kittymux's files and runs `kittymux act` / `kittymux mute --pid --window` on a click; it never starts or restarts a kitty."""
     action = argv[0] if argv else "toggle"
+    if action in ("attach", "detach"):
+        return _client_attach(argv[1:], action == "attach")
     if action not in ("start", "stop", "toggle", "status") or len(argv) > 1:
         print("usage: kittymux client [start|stop|toggle|status]", file=sys.stderr)
         return 2
@@ -2569,6 +2605,7 @@ def client_cmd(argv: list[str]) -> int:
     if running and action in ("stop", "toggle"):
         for pid in running:
             subprocess.run(["qs", "kill", "--pid", str(pid)], capture_output=True, timeout=4)
+        _client_release(running)
         print(f"{OK} client stopped")
         return 0
     if action == "stop" or running:

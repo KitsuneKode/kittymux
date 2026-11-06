@@ -1,11 +1,15 @@
 ---
 title: The client
-description: "A sidebar beside kitty drawn on the GPU: every tab of every kitty, grouped by space or by state, with calm state rings, a gliding hover and an inline menu."
+description: "kitty's sidebar drawn as a real interface: in the window's own bar on Hyprland, with calm state rings, a gliding hover and an inline menu."
 ---
 
-kitty draws its tab bar and the panel in terminal cells. The kittymux client draws them as a real interface beside kitty instead. It is a small [Quickshell](https://quickshell.org) program docked to the edge of your screen. kitty stays your terminal and does not change; the client only reads what kittymux publishes and acts when you click.
+kitty draws its tab bar in terminal cells. The kittymux client draws that sidebar as a real interface instead, with proportional type, rings and smooth motion. It is a small [Quickshell](https://quickshell.org) program. kitty stays your terminal and does not change; the client only reads what kittymux publishes and acts when you click.
 
-![The client beside kitty: the header says calm-otter with one tab that needs you, then the tabs of two projects, each with its agent's mark in a ring: working, needs you, finished, muted and error](/assets/client-dark.png)
+On Hyprland the client sits **in each kitty window's own vertical bar**. kitty keeps the bar's place, background, blur and divider and stops drawing tabs there; the client draws the content on top, so the sidebar belongs to the window. Elsewhere it docks to the edge of the screen.
+
+![kitty's own vertical bar drawn in cells, beside it the same window with the client in that bar: the header, two projects, each tab with its agent's mark in a ring](/assets/client-attached-before-dark.png)
+
+![The client in kitty's bar: calm-otter with one tab that needs you, the active tab marked on its edge, kitty's divider and panes beside it](/assets/client-attached-dark.png)
 
 ## Start it
 
@@ -13,12 +17,25 @@ kitty draws its tab bar and the panel in terminal cells. The kittymux client dra
 kittymux client            # toggles it; also: start, stop, status
 ```
 
-It needs Quickshell and a Wayland compositor with layer-shell (Hyprland, Sway, niri, KDE). It docks on the left; set `KITTYMUX_CLIENT_EDGE=right` or `KITTYMUX_CLIENT_WIDTH=340` before starting it to change that. Bind `kittymux client` in your window manager to reach it from any app.
+It needs Quickshell and a Wayland compositor with layer-shell. Your kitty needs its bar on the left or right (`kittymux layout edge left`) for the client to sit in it.
+
+| Mode | Where | When |
+| --- | --- | --- |
+| attach | in each kitty window's own vertical bar | Hyprland, the default |
+| dock | a column on the screen's edge, beside your windows | other compositors, or `KITTYMUX_CLIENT_MODE=dock` |
+
+In dock mode, `KITTYMUX_CLIENT_EDGE=right` and `KITTYMUX_CLIENT_WIDTH=340` change where and how wide. Bind `kittymux client` in your window manager to toggle it from any app.
+
+### How attach follows the window
+
+kitty knows where its bar is; Hyprland knows where the window is. The client asks Hyprland again whenever it says something changed and whenever kitty reports a resize. While Hyprland moves windows (a workspace switch, a new window, fullscreen) the client fades out and comes back where the window lands, so it never trails behind the animation. It stays hidden while the bar is not what you see: another workspace, a fullscreen window, or a floating window across the bar. When the client stops, kitty draws its own tabs again within a second or two.
+
+![The docked mode: a column beside your windows with the tabs of every kitty](/assets/client-dark.png)
 
 ## What it shows
 
 - **The header** names where you are first: the project of the tab you are in, its branch and how many tabs are open. An orange count on the right says how many tabs need you, and is gone when none do.
-- **Each tab** is two lines: its title (heavier for the tab you are in, with a soft accent mark on its edge), then its state in words and what it is about: the question it asks, where it runs, how long it has waited.
+- **Each tab** is two lines: its title (heavier for the tab you are in), then its state in words and what it is about: the question it asks, where it runs, how long it has waited. One soft accent mark on the edge says where you are, and glides to the tab you switch to.
 - **The ring** around an agent's mark carries the state at a glance. Working is a quarter arc that steps a quarter turn every 3 seconds, or fills to the percent when the program reports one. Needs you is orange and pulses once when it starts asking. Finished is green and error is red. Idle tabs have no ring.
 - **A muted agent** is drawn faint, says Muted and shows a bell-slash. It never counts in the orange number.
 
@@ -50,7 +67,7 @@ layerrule = ignorezero, kittymux-client
 
 On a light kitty theme the client turns light too.
 
-![The client on a light kitty theme](/assets/client-light.png)
+![The client in a light kitty's bar](/assets/client-attached-light.png)
 
 Motion follows kittymux's rules. Switch `motion` off (`kittymux features`) and the working ring holds still; set `KITTYMUX_REDUCE_MOTION=1` and the glides and pulses go as well, leaving only fades.
 
@@ -60,6 +77,7 @@ At rest it uses no CPU. With an agent working it uses about half a percent, meas
 
 ## Limits
 
-- It is a separate surface docked to the screen's edge, not part of a kitty window. A floating kitty window does not carry it along.
+- Attach mode needs Hyprland, and a bar on the left or right. A window you drag by hand is followed when you let go, not during the drag.
+- The client is a separate surface laid over the bar, so a screenshot tool that captures one window sees kitty's blank bar.
 - It needs Wayland with layer-shell. On X11, keep using the tab bar and the panel.
 - Pane title bars inside kitty are still drawn by kitty.

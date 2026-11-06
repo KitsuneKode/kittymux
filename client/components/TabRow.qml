@@ -1,6 +1,6 @@
 // One tab, two lines. Identity first (the title, in the text colour, heavier where you are), then state in words, with only the state
-// word coloured. The ring around the agent's mark carries the same state at a glance. Where you are: the accent mark at 45% on the
-// row's edge (accent means where you are, nothing else). Press: 0.985, 140 ms; hover is the list's one gliding highlight.
+// word coloured. The ring around the agent's mark carries the same state at a glance. Where you are is the list's one gliding accent
+// mark (Sidebar). Press: 0.985, 140 ms; hover is the list's one gliding highlight.
 import QtQuick
 import qs.config
 import qs.services
@@ -23,16 +23,6 @@ Item {
     property alias hovered: mouse.containsMouse
 
     implicitHeight: Theme.rowH
-
-    // Where you are.
-    Rectangle {
-        width: 3; height: 18; radius: 1.5
-        anchors.left: parent.left; anchors.leftMargin: 1
-        anchors.verticalCenter: parent.verticalCenter
-        color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, Theme.accentHairline)
-        opacity: row.tab.active ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: Theme.enterMs; easing.type: Easing.OutCubic } }
-    }
 
     Item {
         id: body

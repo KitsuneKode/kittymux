@@ -14,6 +14,7 @@ Singleton {
     property var palette: ({})
     function pick(name, fallback) { return /^#[0-9a-fA-F]{6}$/.test(palette[name] || "") ? palette[name] : fallback; }
     readonly property color bg: pick("bg", "#111114")
+    readonly property color bar: pick("bar", "#18181b")              // kitty's own bar background (attach mode sits on it)
     readonly property color fg: pick("fg", "#e8e8ea")
     readonly property color muted: pick("muted", "#9a9aa0")
     readonly property color faint: pick("faint", "#66666c")
@@ -77,6 +78,8 @@ Singleton {
     readonly property int s2: 8
     readonly property int s3: 12
     readonly property int s4: 16
+    readonly property int listInset: 6           // the list's own margin: the highlight's breathing room from the edge
+    readonly property int edge: listInset + s3   // THE content edge: header, section labels, row marks and footer all start here
     readonly property int rowH: 46
     readonly property int sectionH: 28
     readonly property int mark: 26
