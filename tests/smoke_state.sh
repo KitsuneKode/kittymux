@@ -50,6 +50,9 @@ include $HOME_DIR/kittymux.conf
 watcher $HOME_DIR/python/pane-state.py
 tab_bar_edge left
 tab_bar_min_tabs 1
+# the frame sampler below crops a region that reaches past the bar into the focused shell: a blinking cursor there
+# would read as motion (CI saw 6 frames in 7 s and failed the motion-off check)
+cursor_blink_interval 0
 CONF
 cat > "$T/session.kitty" <<SESS
 new_tab devin
