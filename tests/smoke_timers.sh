@@ -110,7 +110,7 @@ printf 'new_tab agent\nlaunch bash %s/agent.sh\nnew_tab other\nlaunch sh\nfocus_
 start "$T/agent.session"; sleep 3
 working=$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(sum(1 for v in d.values() if v.get("state")=="working"))' "$STATE/scan-$KPID.json" 2>/dev/null || echo 0)
 [ "${working:-0}" -ge 1 ] || { echo "FAIL: the fake agent is not seen as working (no spin timer): $working"; exit 1; }
-echo "  ok   a working agent is seen: the spinner timer (10 fps) and the scan timer both run"
+echo "  ok   a working agent is seen: the step timer (every 3 s) and the scan timer both run"
 kitty @ --to "$SOCK" kitten "$CFG/probe.py" storm 40 >/dev/null 2>&1
 for _ in $(seq 80); do alive || break; sleep 0.5; done
 alive || { echo "FAIL: kitty DIED during 40 reloads fired from timers ($HOME_DIR)"; tail -5 "$T/k.log"; exit 1; }

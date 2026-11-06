@@ -33,6 +33,47 @@ def row(i, title, **kw):
 
 @unittest.skipIf(dp is None, "cairo/Pango/rsvg not installed")
 class AdaptTests(unittest.TestCase):
+    def test_without_a_session_each_repo_heads_its_run_of_tabs_in_tab_order(self):
+        rows = [
+            row(1, "og tags", status="working", session="", cwd="/w/website/src", branch="main"),
+            row(2, "docs", status="waiting", session="", cwd="/w/website", branch="main"),
+            row(3, "migrate", status="done", session="", cwd="/w/core", branch="release/2.4", current=True),
+            row(4, "notes", session="", cwd="/home/u"),
+            row(5, "again", status="working", session="", cwd="/w/website", branch="main"),
+        ]
+        names = {"/w/website/src": "website", "/w/website": "website", "/w/core": "core", "/home/u": "~"}
+        model = adapt.to_model(snap(rows, ""), 0, (-1, -1), "demo", "demo", project_of=names.get)
+        self.assertEqual([(sp.name, sp.branch) for sp in model.spaces],
+                         [("website", "main"), ("core", "release/2.4"), ("Home", ""), ("website", "main")])
+        self.assertEqual([a.title for a in model.agents], ["og tags", "docs", "migrate", "notes", "again"])   # never re-sorted
+        self.assertTrue(model.spaces[1].current)
+        self.assertFalse(model.spaces[0].current)
+        self.assertEqual(model.spaces[0].counts, {"working": 1, "waiting": 1})
+        # named sessions win: the repo grouping is only for an unnamed list
+        named = adapt.to_model(snap([row(1, "a", cwd="/w/core")], "work"), 0, (-1, -1), "demo", "work", project_of=names.get)
+        self.assertEqual([sp.name for sp in named.spaces], ["work"])
+
+    def test_a_space_counts_its_tabs_and_the_chip_finds_the_first_question(self):
+        rows = [
+            row(1, "api", status="working", pr="#12", ports=(3000, 5173, 9229)),
+            row(2, "docs", status="waiting"),
+            row(3, "lint", status="working"),
+            row(4, "tests", status="done", session="other"),
+        ]
+        model = adapt.to_model(snap(rows, "work"), 0, (-1, -1), "demo", "work")
+        work = next(sp for sp in model.spaces if sp.name == "work")
+        self.assertEqual(work.counts, {"working": 2, "waiting": 1})
+        self.assertEqual(dp.rollup(work.counts), ("waiting", 1))
+        other = next(sp for sp in model.spaces if sp.name == "other")
+        self.assertEqual(dp.rollup(other.counts), ("done", 1))
+        api = next(a for a in model.agents if a.title == "api")
+        self.assertEqual(api.meta, "#12 \u00b7 :3000 :5173")
+        docs = next(a for a in model.agents if a.title == "docs")
+        self.assertEqual(adapt.first_waiting(model), (docs.row, -1))
+        self.assertEqual(dp.needs_you(model), 1)
+        calm = adapt.to_model(snap([row(1, "api", status="working")], "work"), 0, (-1, -1), "demo", "work")
+        self.assertEqual(adapt.first_waiting(calm), (-1, -1))
+
     def test_states_progress_and_empty_wording(self):
         rows = [
             row(1, "api", status="working", progress=("set", 42), current=True, branch="feat"),

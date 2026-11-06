@@ -149,32 +149,31 @@ kitty @ --to "$SOCK" focus-tab --match "title:codex" >/dev/null 2>&1
 if [ -n "${SMOKE_SHOT:-}" ] && command -v import >/dev/null 2>&1; then
   DISPLAY=$DISP import -window root "$SMOKE_SHOT" 2>/dev/null && echo "  screenshot: $SMOKE_SHOT"
 fi
-# the spinner must keep animating on its own (devin has no hooks, so this is the screen-detected
-# path that used to stutter): sample the bar region and require several distinct frames
+# the working glyph must STEP on its own (devin has no hooks, so this is the screen-detected path that once stuttered) and
+# must never spin: calm motion is one step every 3 s (kittymux_agents.SPINNER_FPS), so it holds still between steps
 if command -v import >/dev/null 2>&1 && command -v md5sum >/dev/null 2>&1 && command -v bc >/dev/null 2>&1; then
-  # Count distinct frames of a screen region over 3 s, sampling every ~50 ms (a short, odd pause
-  # cannot alias with the spinner's 1 s period).
-  distinct() {   # distinct <WxH+X+Y>
+  distinct() {   # distinct <WxH+X+Y> <seconds>: distinct frames of a screen region, sampled every ~50 ms
     local t0; t0=$(date +%s.%N)
-    while [ "$(echo "$(date +%s.%N) - $t0 < 3" | bc)" = 1 ]; do
+    while [ "$(echo "$(date +%s.%N) - $t0 < $2" | bc)" = 1 ]; do
       DISPLAY=$DISP import -window root -crop "$1" png:- 2>/dev/null | md5sum; sleep 0.03
     done | sort -u | wc -l
   }
-  # The regression this guards: marking the tab bar dirty alone does not make kitty RENDER, so on an
-  # otherwise idle window the spinner advanced ~1 frame/s (it only moved when the cursor blinked).
-  # A 10 fps spinner must show ~10 distinct frames in 3 s with nothing else going on.
-  spinner=$(distinct 420x60+0+20)
-  [ "$spinner" -ge 7 ] || fail "spinner is not animating continuously: $spinner distinct frames in 3 s on an idle window (expect ~10)"
-  echo "  ok   spinner animates continuously on an idle window ($spinner distinct frames in 3 s)"
-  # the `motion` switch: off holds one still frame (the flag is read live, no reload) and the timer stops; on turns it again
-  touch "$STATE/motion-off"; sleep 2.5
-  still=$(distinct 420x60+0+20)
-  [ "$still" -le 2 ] || fail "motion is off but the spinner still moved: $still distinct frames in 3 s (expect 1)"
-  echo "  ok   motion off: the spinner holds still ($still distinct frame(s) in 3 s)"
-  rm -f "$STATE/motion-off"; sleep 2.5
-  again=$(distinct 420x60+0+20)
-  [ "$again" -ge 7 ] || fail "motion is back on but the spinner did not resume: $again distinct frames in 3 s"
-  echo "  ok   motion on again: the spinner resumes ($again distinct frames in 3 s)"
+  # The regression this guards: marking the tab bar dirty alone does not make kitty RENDER, so on an otherwise idle window a
+  # step could be missed until the cursor blinked. Over 7 s (two beats) the glyph must have moved; over 1.2 s it must not spin.
+  calm=$(distinct 420x60+0+20 1.2)
+  [ "$calm" -le 2 ] || fail "the working glyph spins: $calm distinct frames in 1.2 s (calm motion steps every 3 s)"
+  stepped=$(distinct 420x60+0+20 7)
+  [ "$stepped" -ge 2 ] || fail "the working glyph never stepped: $stepped distinct frame(s) in 7 s on an idle window"
+  echo "  ok   the working glyph steps on an idle window and never spins ($calm frame(s) in 1.2 s, $stepped in 7 s)"
+  # the `motion` switch: off holds one still frame (the flag is read live, no reload) and the timer stops; on steps again
+  touch "$STATE/motion-off"; sleep 3.5
+  still=$(distinct 420x60+0+20 7)
+  [ "$still" -le 1 ] || fail "motion is off but the working glyph still moved: $still distinct frames in 7 s (expect 1)"
+  echo "  ok   motion off: the working glyph holds still ($still distinct frame(s) in 7 s)"
+  rm -f "$STATE/motion-off"; sleep 1
+  again=$(distinct 420x60+0+20 7)
+  [ "$again" -ge 2 ] || fail "motion is back on but the working glyph did not resume: $again distinct frames in 7 s"
+  echo "  ok   motion on again: the working glyph steps ($again distinct frames in 7 s)"
 fi
 sleep 1
 A=$(ls -l --time-style=+%s%N "$STATE"/scan-*.json | awk '{print $6}')

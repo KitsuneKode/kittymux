@@ -40,7 +40,7 @@ _RT = sys.modules.setdefault("_kittymux_scan_rt", types.SimpleNamespace(
 ))
 
 SCAN_FAST, SCAN_IDLE = 0.5, 2.0
-SPIN_INTERVAL = 0.1
+SPIN_INTERVAL = 3.0          # one step of the working glyph (kittymux_agents.SPINNER_FPS); never a continuous spin
 HEARTBEAT = 3.0
 AGE_REFRESH = 20.0            # tabs that show "waiting 5m" / "done 2m" are redrawn this often, so the minutes tick (a working tab already redraws with its spinner)
 NOTIFY_EVERY = 10.0
@@ -651,7 +651,14 @@ def _spin_tick(timer_id) -> None:
     if timer_id is not None and timer_id != _RT.spin_timer:
         return                                               # a tick of a timer that was removed in the same batch (see kittymux_timers): not ours any more
     try:
-        tms = _working_tms() if _motion_on() else []         # switched off while a spinner ran: the timer ends with its next beat
+        if not _motion_on():
+            # switched off while a step ran: one last redraw puts the still frame up now (a step is 3 s apart, so waiting
+            # for some other redraw would leave the old frame showing), then the timer ends
+            for tm in _working_tms():
+                refresh_bar(tm)
+            _stop_spinner()
+            return
+        tms = _working_tms()
         _trace(f"spin_tick tms={len(tms)}")
         if not tms:
             _stop_spinner()
@@ -700,6 +707,10 @@ def _sync_spinner() -> None:
         if working and _RT.spin_timer is None:
             _RT.spin_timer = _timers().add(__name__, "_spin_tick", SPIN_INTERVAL, True)
         elif not working:
+            if _RT.spin_timer is not None:
+                # motion went off (or the work ended) between steps: put the still frame up now, not at the next unrelated redraw
+                for tm in _working_tms():
+                    refresh_bar(tm)
             _stop_spinner()
     except Exception:
         _debug()

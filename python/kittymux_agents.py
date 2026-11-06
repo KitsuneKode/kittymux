@@ -286,7 +286,7 @@ def load_panes(panes_path: str) -> dict:
 
 
 # Shape + colour: state must be readable without colour vision, and calm — no orbs.
-#   working  an animated braille spinner
+#   working  a braille mark that steps every 3 s (calm: never a continuous spin)
 #   waiting  a bold "!"   (the only one that asks for you)
 #   limited  a bold "⊘"   (usage limit / quota exhausted — nothing will happen until you act)
 #   error    a "✕"        (the agent reported a failure; the message stays; not a completion)
@@ -334,8 +334,13 @@ def product_label(agent: str) -> str:
     return " ".join(part[:1].upper() + part[1:] for part in raw.split())
 
 
+# The short word each state is called wherever there is room for a word (the pixel panel, a pane header's pill).
+STATE_WORDS = {"working": "Working", "waiting": "Needs you", "done": "Finished", "error": "Error", "limited": "Limited",
+               "idle": "Idle"}
 STATE_GLYPH = {"working": SPINNER[0], "waiting": "!", "limited": "⊘", "error": "✕", "done": "✓", "unread": "•"}
-SPINNER_FPS = 10.0
+# Calm: the working glyph STEPS once every 3 s (the same beat as the panel's ring), it never spins. A 10 fps spinner redrew the
+# whole bar ten times a second while any agent worked (about 70% of a core under software GL, measured by tests/shot_premium.sh).
+SPINNER_FPS = 1 / 3.0
 
 
 def state_glyph(state: str, now: float | None = None, animate: bool = True) -> str:

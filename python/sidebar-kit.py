@@ -976,7 +976,7 @@ class Sidebar(Handler):
         self.draw_screen()
         self._schedule_spin()
 
-    # ---- spinner: redraw at frame rate only while something is working ----
+    # ---- working glyph: one redraw per step, only while something is working ----
     def _schedule_spin(self) -> None:
         if self._deckpx_on():                    # the spinner is a kitty animation; a timer here would spend idle CPU
             return
@@ -984,7 +984,9 @@ class Sidebar(Handler):
             return
         if self._motion() and any(r.status == "working" for r in self.snap.rows):
             self._spin_pending = True
-            self.asyncio_loop.call_later(0.1, self._spin)
+            # one redraw per step of the working glyph (kittymux_agents.SPINNER_FPS, every 3 s): a 10 Hz redraw here repainted
+            # an unchanged screen and kept this kitty at about a quarter of a core while any agent worked
+            self.asyncio_loop.call_later(1.0 / kittymux_agents.SPINNER_FPS, self._spin)
 
     def _motion(self) -> bool:
         """The `motion` switch, read at most once a second (a stat per frame would cost more than the frame)."""
@@ -1220,6 +1222,9 @@ class Sidebar(Handler):
         self._px_active = False
         self._px_sig = None
         self._px_hits = []
+        self._px_last = None
+        self._px_cancel_fade()
+        self._px_step_stop()
         if gfx is None:
             return
         self._px = None
@@ -1276,13 +1281,10 @@ class Sidebar(Handler):
         return host
 
     def _px_frames(self, deckpx, transport, pal):
-        if getattr(self, "_px_spin_key", None) != pal.working:
-            size, frames = 14, []
-            for i in range(12):
-                surf = deckpx.cairo.ImageSurface(deckpx.cairo.FORMAT_ARGB32, size, size)
-                deckpx.Painter(deckpx.cairo.Context(surf), 1, pal).spinner(size / 2, size / 2, 4.6, pal.working, i / 12)
-                frames.append(transport.rgba_of(surf))
-            self._px_spin_key, self._px_spin_frames = pal.working, (size, frames)
+        """The working ring's STEP_FRAMES arcs, made once per colour: kitty steps them every STEP_MS, so at rest nothing runs."""
+        if getattr(self, "_px_spin_key", None) != (pal.working, pal.bar):
+            size, surfs = deckpx.ring_frames(pal, 1)
+            self._px_spin_key, self._px_spin_frames = (pal.working, pal.bar), (size, [transport.rgba_of(f) for f in surfs])
         return self._px_spin_frames
 
     def _px_inside(self, mouse_event) -> bool:
@@ -1370,7 +1372,8 @@ class Sidebar(Handler):
         if px_w < 40 or px_h < deckpx.HEADER_END + 40:
             return False
         snap = self.snap
-        model = adapt.to_model(snap, self.sel, self._hover_pane, self._px_host(), snap.current_session or "kitty")
+        model = adapt.to_model(snap, self.sel, self._hover_pane, self._px_host(), snap.current_session or self._px_host(),
+                               project_of=self._collector._project)
         self._px_model = model
         items = deckpx.body_items(model)
         view_h = px_h - deckpx.HEADER_END
@@ -1399,18 +1402,88 @@ class Sidebar(Handler):
                                  spinners=slots if motion and working else None)
             if getattr(self, "_px", None) is None:
                 self._px = transport.Graphics(_PxOut(self), "auto")
-            self._px.show(transport.rgba_of(surf), surf.get_width(), surf.get_height(), col=1, row=2, z=1)
-            if slots:
-                size, frames = self._px_frames(deckpx, transport, self.pal)
-                positions = [(round(cx - size / 2), round(cy + ch - size / 2)) for cx, cy, _r, _c in slots]
-                self._px.spinner(frames, size, positions, (cw, ch), 80, z=2)
+            states = _px_states(model)
+            old = getattr(self, "_px_last", None)
+            fade = (motion and old is not None and old[1] != states and old[0].get_width() == surf.get_width()
+                    and old[0].get_height() == surf.get_height())
+            self._px_last = (surf, states)
+            if fade:
+                # a state changed: cross-fade over ~FADE_MS in FADE_STEPS frames, then the real one. Hover and scroll never fade.
+                self._px_fade(deckpx, transport, old[0], surf, slots)
             else:
-                self._px.clear_spinner()
+                self._px_cancel_fade()
+                self._px.show(transport.rgba_of(surf), surf.get_width(), surf.get_height(), col=1, row=2, z=1)
+                self._px_place_rings(deckpx, transport, slots, cw, ch)
             self._px_hits = hits
             self._px_sig = sig
         self._px_active = True
         self.flush()
         return True
+
+    def _px_place_rings(self, deckpx, transport, slots, cw, ch) -> None:
+        if slots:
+            size, frames = self._px_frames(deckpx, transport, self.pal)
+            positions = [(round(cx - size / 2), round(cy + ch - size / 2)) for cx, cy, _r, _c in slots]
+            self._px.spinner(frames, size, positions, (cw, ch), deckpx.STEP_MS, z=2)
+            self._px_step_arm(deckpx)
+        else:
+            self._px.clear_spinner()
+            self._px_step_stop()
+
+    def _px_step_arm(self, deckpx) -> None:
+        """One timer while a ring is placed: every STEP_MS it moves the rings a quarter turn. None at rest."""
+        if getattr(self, "_px_step_handle", None) is None:
+            self._px_step_handle = self.asyncio_loop.call_later(deckpx.STEP_MS / 1000.0, self._px_step_tick)
+
+    def _px_step_stop(self) -> None:
+        handle = getattr(self, "_px_step_handle", None)
+        if handle is not None:
+            handle.cancel()
+        self._px_step_handle = None
+
+    def _px_step_tick(self) -> None:
+        self._px_step_handle = None
+        mods = self._pxmods()
+        gfx = getattr(self, "_px", None)
+        if not self._alive or gfx is None or not mods or not gfx.spinner_ready:
+            return
+        deckpx = mods[0]
+        self._px_step_n = (getattr(self, "_px_step_n", 0) + 1) % deckpx.STEP_FRAMES
+        gfx.step(self._px_step_n + 1)
+        self._px_step_arm(deckpx)
+
+    def _px_cancel_fade(self) -> None:
+        handle = getattr(self, "_px_fade_handle", None)
+        if handle is not None:
+            handle.cancel()
+        self._px_fade_handle = None
+
+    def _px_fade(self, deckpx, transport, old, new, slots) -> None:
+        """Show old→new blends FADE_STEPS times, FADE_MS apart in all, then `new` with its rings. One short burst per
+        state change: no timer outlives it."""
+        self._px_cancel_fade()
+        steps = max(1, deckpx.FADE_STEPS)
+        gap = deckpx.FADE_MS / 1000.0 / (steps + 1)
+        ss = self.screen_size
+        cw, ch = ss.cell_width or 1, ss.cell_height or 1
+
+        def step(k: int) -> None:
+            self._px_fade_handle = None
+            if not self._alive or getattr(self, "_px", None) is None or getattr(self, "_px_last", (None,))[0] is not new:
+                return
+            if k <= steps:
+                blend = deckpx.crossfade(old, new, k / (steps + 1))
+                self._px.show(transport.rgba_of(blend), blend.get_width(), blend.get_height(), col=1, row=2, z=1)
+                if k == 1:
+                    self._px.clear_spinner()
+                self.flush()
+                self._px_fade_handle = self.asyncio_loop.call_later(gap, step, k + 1)
+                return
+            self._px.show(transport.rgba_of(new), new.get_width(), new.get_height(), col=1, row=2, z=1)
+            self._px_place_rings(deckpx, transport, slots, cw, ch)
+            self.flush()
+
+        step(1)
 
     def _px_click(self, mouse_event) -> None:
         hit = self._px_hit(mouse_event)
@@ -1425,6 +1498,15 @@ class Sidebar(Handler):
             self.draw_screen()
             return
         if kind == "space":
+            return
+        if kind == "needs":
+            row, pane = adapt.first_waiting(model)
+            if row < 0:
+                return
+            self.sel = row
+            self._clear_pointer_hover()
+            self.draw_screen()
+            self._jump(row, pane)
             return
         row, pane = adapt.hit_target(model, kind, index)
         if row < 0:
@@ -1989,6 +2071,11 @@ class Sidebar(Handler):
         if win:
             steps.append(("focus-window", "--match", f"id:{win}"))
         self._act(*steps)
+
+
+def _px_states(model) -> tuple:
+    """What a cross-fade watches: each tab's and pane's state. Hover, scroll and selection are not in it."""
+    return tuple((a.row, a.state, tuple(c.state for c in a.children)) for a in model.agents)
 
 
 def _append_log(text: str) -> None:

@@ -21,7 +21,7 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
   palette of four near-identical greens that sat next to the "done" colour. A tint stays quieter than the state colours; the name is the one bright thing on a row.
 - **Redraw = three calls**: `tm.update_tab_bar_data()`, `tm.mark_tab_bar_dirty()`, then `mark_os_window_dirty(id)` +
   `wakeup_main_loop()`. The first two only update cells; without the last two kitty does not render until the
-  cursor blinks (a 10 fps spinner ran at ~1 fps on an idle window). Use `kittymux_scan.refresh_bar`.
+  cursor blinks (a 10 fps spinner once ran at ~1 fps on an idle window; the working mark now steps every 3 s, and a missed step shows just as badly). Use `kittymux_scan.refresh_bar`.
 - `sys.path`: a module's OWN directory must win over the config dir (insert config first, own last),
   or tests/rigs silently import the installed copy instead of the code under test.
 - `kittymux_barsize` keeps its drag/button state in `sys.modules["_kittymux_barsize_rt"]`: changing the width makes kitty
