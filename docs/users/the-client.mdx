@@ -54,9 +54,22 @@ Colour is only for state: the accent marks where you are, orange means it needs 
 
 The client takes the keyboard only when you click it, and gives it back when you click elsewhere. `g` is the same choice as `g` in the [docked panel](/docs/users/peek-deck-and-panel): change it in one and the other follows.
 
-## Blur behind it
+## The glass
 
-The client's background is translucent so your compositor can blur what is behind it. On Hyprland, add a layer rule for its namespace to your own config:
+In attach mode the client has no background of its own: the glass is your kitty window's. Give kitty a translucent background and let the compositor blur it, and the sidebar is frosted along with the panes.
+
+```ini
+# kitty.conf
+background_opacity 0.85
+```
+
+Tell Hyprland not to animate the client's layer: the client fades itself in and out as windows move, and a second animation on top looks like lag. In `hyprland.conf`:
+
+```ini
+layerrule = noanim, kittymux-client
+```
+
+The docked mode draws its own glass, so there give its layer the blur as well:
 
 ```ini
 layerrule = blur, kittymux-client
