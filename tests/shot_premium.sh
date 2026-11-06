@@ -154,6 +154,13 @@ echo "wrote $OUT/premium-$THEME.png"
 if grep -q "Traceback" "$STATE/sidebar-kit-err.log" 2>/dev/null; then fail "the panel raised (the shot shows the cell fallback)"; fi
 if [ "${KMX_EXPECT_CELLS:-}" != 1 ] && grep -q "deckpx:" "$STATE/sidebar-kit-err.log" 2>/dev/null; then fail "the pixel list fell back: $(grep "deckpx:" "$STATE/sidebar-kit-err.log" | tail -1)"; fi
 
+# the pixel panel lists every tab, so the bar it repeats is hidden while it runs (kittymux_layout.cover)
+cols() { kitty @ --to "$SOCK" ls 2>/dev/null | python3 -c 'import sys,json;print(max(w["columns"] for o in json.load(sys.stdin) for t in o["tabs"] if t["is_active"] for w in t["windows"]))'; }
+if [ "${KMX_EXPECT_CELLS:-}" != 1 ]; then
+  OWNER=""; read -r OWNER _ < "$STATE/bar-covered-$KPID" 2>/dev/null    # "panel-pid panel-start kitty-start"
+  [ "${OWNER:-0}" -gt 0 ] 2>/dev/null || fail "the pixel panel did not cover the bar (no bar-covered-$KPID)"
+  COVERED_COLS=$(cols)
+fi
 # CPU at rest: no input at all; first with one agent working, then after it finishes too
 HZ=$(getconf CLK_TCK)
 ticks() { local s=0 p; for p in "$@"; do [ -r "/proc/$p/stat" ] && s=$((s + $(awk '{print $14+$15}' "/proc/$p/stat"))); done; echo $s; }
@@ -170,5 +177,16 @@ cpu() {   # cpu LABEL
 cpu working
 touch "$T/never"; sleep 4
 cpu rest
+if [ "${KMX_EXPECT_CELLS:-}" != 1 ]; then
+  # a killed panel cannot give the bar back itself: the scanner in the watched kitty sweeps its cover (every AGE_REFRESH = 20 s)
+  for k in $(kids "$PPID_K"); do kill -9 "$k" 2>/dev/null; done          # SIGKILL: the kitten runs no cleanup, as after a crash
+  kill "$PPID_K" 2>/dev/null; wait "$PPID_K" 2>/dev/null; PPID_K=
+  for _ in $(seq 60); do [ -e "$STATE/bar-covered-$KPID" ] || break; sleep 0.5; done
+  [ -e "$STATE/bar-covered-$KPID" ] && fail "a killed panel's cover was never swept"
+  BACK_COLS=$COVERED_COLS
+  for _ in $(seq 40); do BACK_COLS=$(cols); [ "$BACK_COLS" -lt $((COVERED_COLS - 10)) ] && break; sleep 0.25; done   # the reload, then the relayout
+  [ "$BACK_COLS" -lt $((COVERED_COLS - 10)) ] || fail "the bar did not come back after the panel died (pane $COVERED_COLS -> $BACK_COLS columns)"
+  echo "  ok   the bar hides under the pixel panel and comes back when it dies (pane $COVERED_COLS -> $BACK_COLS columns)"
+fi
 diff=$(touched) || fail "this rig changed the windows of ANOTHER kitty ($diff)"
 echo "PASS: premium scene captured; no other kitty touched"

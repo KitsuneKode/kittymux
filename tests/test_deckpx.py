@@ -138,9 +138,57 @@ class RendererTests(unittest.TestCase):
                         agents=[dp.Agent("x", "claude", brand, "core", state="idle", current=True)])
         a = dp.render(quiet, pal, 300, 200, frame=dp.Frame(hover=0))
         b = dp.render(here, pal, 300, 200)
-        self.assertFalse(has(a, accent), "the selection or a hover used the accent")
-        self.assertTrue(has(b, accent), "the current tab has no accent hairline")
+        self.assertFalse(has(a, accent, 60), "the selection or a hover used the accent")
+        # where you are: the accent hairline, dimmed (ACCENT_HAIRLINE) so the state colours lead; never the accent at full strength
+        dim = th.blend(accent, pal.bar, dp.ACCENT_HAIRLINE)
+        self.assertTrue(has(b, dim, 30), "the current tab has no (dimmed) accent hairline")
+        self.assertFalse(has(b, accent), "the current tab's hairline is the accent at full strength")
         self.assertFalse(has(a, brand) or has(b, brand), "a mark was drawn in its brand colour")
+
+    def test_key_hints_are_drawn_in_the_image_as_buttons(self):
+        """The key hints under the list are the panel's own pixels (wave 3.1), each one a hit with its index; `?` sits at the right."""
+        pal = th.from_colors({})
+        agents = [dp.Agent(f"t{i}", "claude", 0, "core") for i in range(30)]
+        model = dp.Model("s", "h", spaces=[dp.Space("core")], agents=agents)
+        keys = [("\u23ce", "jump"), ("/", "find"), ("a", "join"), ("t", "detach")]
+        hits = []
+        dp.render(model, pal, 272, 500, frame=dp.Frame(), hits=hits, keys=keys)
+        found = [h for h in hits if h[0] == "key"]
+        self.assertEqual([h[1] for h in found], [0, 1, 2, 3, 4])            # four hints, then `?`
+        top = 500 - dp.FOOTER_H
+        self.assertTrue(all(h[3] >= top for h in found))
+        help_ = found[-1]
+        self.assertGreater(help_[2], 272 - 40)
+        # the list never runs under the hints: no row hit reaches the band
+        self.assertTrue(all(h[3] + h[5] <= top + 0.01 for h in hits if h[0] in ("agent", "space", "pane")))
+        self.assertEqual(dp.hit_at(hits, found[1][2] + 2, found[1][3] + 2), ("key", 1))
+
+    def test_a_narrow_panel_drops_hints_from_the_right_but_keeps_help(self):
+        pal = th.from_colors({})
+        model = dp.Model("s", "h", agents=[dp.Agent("t", "claude", 0, "")])
+        keys = [("\u23ce", "jump"), ("/", "find"), ("a", "join"), ("t", "detach")]
+        hits = []
+        dp.render(model, pal, 150, 300, hits=hits, keys=keys)
+        idx = [h[1] for h in hits if h[0] == "key"]
+        self.assertIn(0, idx)
+        self.assertNotIn(3, idx)
+        self.assertEqual(idx[-1], len(keys))
+
+    def test_without_keys_the_body_reaches_the_bottom(self):
+        pal = th.from_colors({})
+        self.assertEqual(dp.body_bottom(400, None), 400)
+        self.assertEqual(dp.body_bottom(400, [("/", "find")]), 400 - dp.FOOTER_H)
+
+    def test_a_working_ring_cut_by_the_key_hints_is_not_animated_over_them(self):
+        pal = th.from_colors({})
+        agents = [dp.Agent(f"t{i}", "claude", 0, "core", state="working") for i in range(12)]
+        model = dp.Model("s", "h", spaces=[dp.Space("core")], agents=agents)
+        slots = []
+        height = 300
+        dp.render(model, pal, 272, height, spinners=slots, keys=[("/", "find")])
+        bottom = dp.body_bottom(height, [("/", "find")])
+        self.assertTrue(slots)
+        self.assertTrue(all(dp.HEADER_END <= cy - r and cy + r <= bottom for _cx, cy, r, _c in slots), slots)
 
     def test_crossfade_interpolates_and_never_mixes_sizes(self):
         a = dp.cairo.ImageSurface(dp.cairo.FORMAT_ARGB32, 4, 4)

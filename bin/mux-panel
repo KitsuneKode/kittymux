@@ -91,13 +91,31 @@ except Exception:
     echo "panel started → watching $target"
 }
 
+give_back_bars() {   # a killed panel cannot uncover the bar it hid (python/kittymux_layout.py cover): drop its cover, reload that kitty
+    local f pid owner _rest sock
+    for f in "$STATE"/bar-covered-*; do
+        [[ -f "$f" ]] || continue
+        pid="${f##*bar-covered-}"; owner=""; read -r owner _rest < "$f" 2>/dev/null   # "owner [owner-start kitty-start]"
+        [[ "$pid" =~ ^[0-9]+$ ]] || continue
+        [[ "$owner" =~ ^[0-9]+$ ]] && kill -0 "$owner" 2>/dev/null && continue
+        # only when we can reload that kitty: otherwise its scanner sweeps the cover and reloads it itself
+        sock="$(mux_socket_for_pid "$pid")" || continue
+        rm -f "$f"
+        kitty @ --to "$sock" load-config >/dev/null 2>&1
+    done
+}
+
 stop() {
     if alive; then
-        kill -- "-$(cat "$PIDFILE")" 2>/dev/null || kill "$(cat "$PIDFILE")" 2>/dev/null
+        local panel; panel="$(cat "$PIDFILE")"
+        kill -- "-$panel" 2>/dev/null || kill "$panel" 2>/dev/null
+        for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$panel" 2>/dev/null || break; sleep 0.1; done
+        give_back_bars
         rm -f "$PIDFILE" "$SOCK" "$MODEFILE"
         echo "panel stopped"
     else
         rm -f "$PIDFILE"
+        give_back_bars                       # a panel that died on its own may still be hiding a bar
         echo "panel not running"
     fi
 }

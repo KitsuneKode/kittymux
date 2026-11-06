@@ -42,6 +42,7 @@ STEP_FRAMES = 4
 STEP_MS = 3000
 # A state change cross-fades in about this long (sidebar-kit draws FADE_STEPS intermediate frames).
 FADE_MS = 150
+ACCENT_HAIRLINE = 0.45     # the current tab's accent hairline, dimmed so the state colours lead (orange, green, red)
 FADE_STEPS = 2
 
 # The fixed type scale (px at scale 1).
@@ -99,10 +100,18 @@ class Frame:
     reveal: float = 1.0           # kept for callers; the flat surfaces do not use it
     scroll: float = 0.0           # logical px into the body under the header
     hover_pane: int | None = None # flat index of the hovered child pane
+    hot_key: int | None = None    # index of the key hint under the pointer (len(keys) is `?`)
 
 
 # The header occupies this many logical px. Everything under it scrolls.
 HEADER_END = 60.0
+# The key hints along the bottom (when `render` gets `keys`): the panel's own type, never cell keycaps.
+FOOTER_H = 30.0
+
+
+def body_bottom(height: float, keys) -> float:
+    """Where the scrolling list ends: the bottom edge, or the top of the key hints."""
+    return height - FOOTER_H if keys else height
 
 # Body geometry (logical px).
 SPACE_H, AGENT_H, PANE_H, GAP = 30.0, 44.0, 30.0, 4.0
@@ -325,6 +334,9 @@ class Painter:
         lo, hi = self.spin_clip
         if lo is not None and not (lo <= cy <= hi):
             return
+        if lo is not None and not (lo <= cy - r - 1 and cy + r + 1 <= hi):
+            self.arc(cx, cy, r, color, phase)        # cut by the header or the key hints: a still arc in the (clipped) base, never an
+            return                                   # animated one placed over them
         if self.spinners is not None:
             self.spinners.append((cx, cy, r, color))
             return
@@ -534,12 +546,13 @@ def _search_glyph(pt: Painter, sx, sy, color):
 
 def render(model: Model, pal: th.Palette, width: float, height: float, scale: float = 1.0, frame: Frame | None = None,
            glass: float = 0.84, hits: list | None = None, resources: Resources | None = None,
-           spinners: list | None = None, metrics: dict | None = None) -> cairo.ImageSurface:
+           spinners: list | None = None, metrics: dict | None = None, keys: list | None = None) -> cairo.ImageSurface:
     """Draw the deck. width/height are logical px; the surface is width*scale × height*scale device px.
     `glass` < 1 leaves the bar translucent so the compositor's blur shows through (kitty background_opacity).
     `hits`, when given, collects (kind, index, x, y, w, h) in logical px for the window's own mouse hit-testing.
     `spinners`, when given, collects (cx, cy, r, colour) for each working ring kitty should step; the base then leaves
-    the moving arc out. The header stays put; spaces and agents scroll by `frame.scroll`."""
+    the moving arc out. The header stays put; spaces and agents scroll by `frame.scroll`. `keys`, [(key, label)], draws the
+    key hints along the bottom (hits ("key", i), and `?` as ("key", len(keys))); the list then ends above them."""
     frame = frame or Frame()
     if not all(math.isfinite(v) and v > 0 for v in (width, height, scale)):
         raise ValueError("deck dimensions and scale must be finite and positive")
@@ -554,7 +567,8 @@ def render(model: Model, pal: th.Palette, width: float, height: float, scale: fl
     fo.set_hint_metrics(cairo.HINT_METRICS_OFF)
     cr.set_font_options(fo)
     pt = Painter(cr, scale, pal, resources, spinners)
-    pt.spin_clip = (HEADER_END, height)
+    bottom = body_bottom(height, keys)
+    pt.spin_clip = (HEADER_END, bottom)
     p = pal
     bar = p.bar
     hi, mid, lo = tone(p, TONE_HI), tone(p, TONE_MID), tone(p, TONE_LO)
@@ -601,7 +615,7 @@ def render(model: Model, pal: th.Palette, width: float, height: float, scale: fl
 
     items = body_items(model)
     content = content_height(model)
-    view_h = max(0.0, height - HEADER_END)
+    view_h = max(0.0, bottom - HEADER_END)
     scroll = clamp_scroll(frame.scroll, content, view_h)
     if metrics is not None:
         metrics["content"] = content
@@ -611,16 +625,16 @@ def render(model: Model, pal: th.Palette, width: float, height: float, scale: fl
     def hit(kind, index, hx, hy, hw, hh):
         if hits is None or hw <= 0 or hh <= 0:
             return
-        y0, y1 = max(hy, HEADER_END), min(hy + hh, height)
+        y0, y1 = max(hy, HEADER_END), min(hy + hh, bottom)
         if y1 - y0 >= 1:
             hits.append((kind, index, hx, y0, hw, y1 - y0))
 
     cr.save()
-    cr.rectangle(0, HEADER_END * scale, W, max(1.0, (height - HEADER_END) * scale))
+    cr.rectangle(0, HEADER_END * scale, W, max(1.0, (bottom - HEADER_END) * scale))
     cr.clip()
     for kind, index, y0, h, payload in items:
         y = HEADER_END + y0 - scroll
-        if y + h < HEADER_END or y > height:
+        if y + h < HEADER_END or y > bottom:
             continue
         if kind == "empty":
             pt.text(pad + 8, y + 16, model.empty or "No tabs yet", T_BODY, hi, weight=Pango.Weight.SEMIBOLD, width=inner - 16)
@@ -633,8 +647,47 @@ def render(model: Model, pal: th.Palette, width: float, height: float, scale: fl
         elif kind == "pane":
             _paint_pane(pt, p, bar, frame, pad, inner, y, h, payload, index, hit, (hi, mid, lo))
     cr.restore()
+    if keys:
+        _paint_keys(pt, p, keys, frame.hot_key, pad, width, bottom, hits, (hi, mid, lo))
     surf.flush()
     return surf
+
+
+def _paint_keys(pt, p, keys, hot, pad, width, top, hits, tones):
+    """The key hints: a hairline, then `key label` pairs in the panel's type (the key a step brighter), most important
+    first, dropped from the right when the panel is narrow; `?` keeps the right edge. The hint under the pointer gets a
+    lighter surface, the same as a hovered row: it is a button before it is pressed."""
+    hi, mid, lo = tones
+    cr, s = pt.cr, pt.s
+    cr.rectangle(0, top * s, int(round(width * s)), max(1.0, s * 0.75))
+    cr.set_source_rgba(*rgb(*pt.veil(0.07)))
+    cr.fill()
+    cy = top + FOOTER_H / 2
+    h = 20.0
+    help_w = 22.0
+    right = width - pad - help_w - 4
+
+    def button(i, x, w):
+        if hot == i:
+            pt.surface(x, cy - h / 2, w, h, h / 2, 0.06)
+        if hits is not None:
+            hits.append(("key", i, x, top + 1, w, FOOTER_H - 1))
+
+    x = pad - 2
+    for i, (key, label) in enumerate(keys):
+        kw = pt.text_w(key, T_META, weight=Pango.Weight.SEMIBOLD, family=MONO_FONT)
+        lw = pt.text_w(label, T_META)
+        w = 8 + kw + 5 + lw + 8
+        if x + w > right:
+            break
+        button(i, x, w)
+        pt.text(x + 8, cy, key, T_META, hi if hot == i else mid, weight=Pango.Weight.SEMIBOLD, family=MONO_FONT)
+        pt.text(x + 8 + kw + 5, cy, label, T_META, mid if hot == i else lo)
+        x += w + 2
+    hx = width - pad - help_w
+    button(len(keys), hx, help_w)
+    qw = pt.text_w("?", T_META, weight=Pango.Weight.SEMIBOLD)
+    pt.text(hx + (help_w - qw) / 2, cy, "?", T_META, hi if hot == len(keys) else lo, weight=Pango.Weight.SEMIBOLD)
 
 
 def _paint_space(pt, p, bar, frame, pad, inner, y, h, sp, index, hit, tones):
@@ -678,7 +731,7 @@ def _row_surface(pt, p, x, y, w, h, *, current, selected, hovered):
     elif hovered:
         pt.surface(x, y, w, h, r, 0.04)
     if current:
-        pt.stroke_rrect(x + .5, y + .5, w - 1, h - 1, r - .5, p.accent, 0.9, width=1)
+        pt.stroke_rrect(x + .5, y + .5, w - 1, h - 1, r - .5, p.accent, ACCENT_HAIRLINE, width=1)
     elif selected:
         pt.stroke_rrect(x + .5, y + .5, w - 1, h - 1, r - .5, *pt.veil(0.10), width=1)
 

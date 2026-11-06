@@ -100,6 +100,8 @@ CATALOG: tuple[Switch, ...] = (
            consequence="kittymux will contact each provider's API with your own login to read your quotas, about every 5 minutes.",
            **_legacy_on("KITTYMUX_USAGE_LIVE", ("1", "on", "true", "yes"), "usage-live-on")),
     Switch("deckpx", "Opt-in", "Pixel Agents list", "Draw the panel's Agents list in pixels. Off keeps the cell list.", False),
+    Switch("pxcover", "Opt-in", "Pixel panel hides the bar", "While the pixel Agents list shows, hide the cell tab bar it repeats.", True,
+           flag_off="pxcover-off"),
 )
 
 BY_ID = {s.id: s for s in CATALOG}

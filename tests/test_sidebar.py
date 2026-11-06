@@ -178,6 +178,23 @@ class SidebarTests(unittest.TestCase):
             self.assertEqual(s._open, {1})
         s.finalize()
 
+    def test_the_bar_is_covered_only_while_the_pixel_list_can_show(self):
+        s = self.sidebar()
+        with patch.object(self.m, "_PANEL", True), patch.object(self.m, "_TARGET", "unix:/tmp/kmx-none"), \
+                patch.dict(os.environ, KITTYMUX_TARGET_PID="4242"), patch.object(s, "_deckpx_enabled", return_value=True):
+            s._gfx, s._px_fits = "ok", True
+            self.assertTrue(s._want_cover())
+            s._px_fits = False                                                      # too small for pixels: the cell list, and the bar
+            self.assertFalse(s._want_cover())
+            s._px_fits = True
+            with patch.object(s, "_deckpx_enabled", return_value=False):             # switched off in Settings: the bar comes back at once
+                self.assertFalse(s._want_cover())
+            (self.m._STATE_DIR / "pxcover-off").touch()
+            self.assertFalse(s._want_cover())
+        with patch.object(self.m, "_PANEL", False):
+            self.assertFalse(s._want_cover())                                       # an overlay deck covers nothing
+        s.finalize()
+
     def test_a_click_on_an_agents_row_jumps_without_a_prior_hover(self):
         s = self.applied()
         y_of = {}
@@ -253,6 +270,23 @@ class SidebarTests(unittest.TestCase):
         self.assertEqual(self.collect("**Fix** the login redirect.").title, "Fix the login redirect")
         self.assertEqual(self.collect("Claude Code").title, "myproj")
         self.assertEqual(self.collect("Port Hyprland configs to Lua").title, "Port Hyprland configs to Lua")
+
+    def test_a_mixed_split_labels_each_pane_by_its_own_program(self):
+        data = json.loads(self.ls_json("website", extra_win=True))
+        data[0]["tabs"][0]["windows"][1]["foreground_processes"] = [{"cmdline": ["-zsh"]}, {"cmdline": ["pnpm", "dev"]}]
+        c = self.m.Collector()
+        with patch.object(self.m, "_rc", return_value=json.dumps(data)), patch.object(self.m, "_panes_state", return_value={}), \
+             patch.object(self.m, "_proc_ppids", return_value={}), patch.object(self.m, "_listeners", return_value=[]), \
+             patch.object(self.m.kittymux_features, "enabled", return_value=True):
+            r = c.collect().rows[0]
+        self.assertEqual([p.title for p in r.pane_rows], ["Claude Code", "pnpm dev"])
+
+    def test_a_split_pane_row_says_what_runs_there_not_the_repo(self):
+        """Two panes in one repo used to read "myproj" twice; each pane row names its agent or command."""
+        r = self.collect("website", extra_win=True)
+        self.assertEqual([p.title for p in r.pane_rows], ["Claude Code", "Claude Code"])
+        plain = self.collect("website", agent=False, extra_win=True)
+        self.assertEqual([p.title for p in plain.pane_rows], ["zsh", "zsh"])
 
     def test_with_the_switch_off_the_title_is_the_old_one(self):
         r = self.collect("I can't do that. I don't have access", tidy=False)
