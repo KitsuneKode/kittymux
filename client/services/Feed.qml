@@ -61,14 +61,18 @@ Singleton {
         onLoadFailed: root.byState = false
     }
 
-    // kittymux's `motion` switch (kittymux features): its off file stops the working ring's steps, as it stops the bar's.
-    property bool motion: true
+    // kittymux's `motion` switch, resolved as kittymux_switches does: KITTYMUX_MOTION (0/off/false/no, 1/on/true/yes) wins, then the
+    // `motion-off` flag file, then on. Off stops the working ring's steps, as it stops the bar's.
+    readonly property string motionEnv: (Quickshell.env("KITTYMUX_MOTION") || "").trim().toLowerCase()
+    property bool motionFile: true
+    readonly property bool motion: ["0", "off", "false", "no"].indexOf(motionEnv) >= 0 ? false
+                                 : ["1", "on", "true", "yes"].indexOf(motionEnv) >= 0 ? true : motionFile
     FileView {
         id: motionOff
         path: root.stateDir + "/motion-off"
         printErrors: false
-        onLoaded: root.motion = false
-        onLoadFailed: root.motion = true
+        onLoaded: root.motionFile = false
+        onLoadFailed: root.motionFile = true
     }
     onTabsChanged: motionOff.reload()
 
@@ -101,10 +105,11 @@ Singleton {
     }
 
     function toggleMute(t) {
-        const args = Logic.muteArgs(bin, t);
+        const now = mutedOf(t);                        // the pending state, so two quick clicks mute and then unmute
+        const args = Logic.muteArgs(bin, t, now);
         if (!args.length) return;
         const p = Object.assign({}, pendingMute);
-        p[t.key] = !t.muted;
+        p[t.key] = !now;
         pendingMute = p;
         Quickshell.execDetached(args);
     }
@@ -116,7 +121,8 @@ Singleton {
     function checkAlive() {
         const pids = [...new Set(((doc && doc.windows) || []).map(w => w.kitty_pid).filter(p => typeof p === "number"))];
         if (!pids.length || probe.running) return;
-        probe.command = ["sh", "-c", 'for p; do [ -d "/proc/$p" ] && echo "$p"; done; echo .', "sh", ...pids.map(String)];
+        // a pid counts only while it names a kitty: after a kitty exits, its pid can be given to an unrelated process
+        probe.command = ["sh", "-c", 'for p; do case "$(cat "/proc/$p/comm" 2>/dev/null)" in kitty*) echo "$p";; esac; done; echo .', "sh", ...pids.map(String)];
         probe.asked = pids;
         probe.running = true;
     }

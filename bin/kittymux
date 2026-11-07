@@ -35,13 +35,14 @@
   kittymux settings    every on/off setting in one list (bar, notifications, safety, opt-in), what each does and why it is on or off:
                          settings [list] | on NAME [--yes] | off NAME | reset NAME|GROUP|all | apply | open     (the panel's Settings view is the same list: press s)
   kittymux panel       persistent agent-and-usage panel: panel [toggle|start|stop|status|summon|dock|wider|narrower|width N]
-  kittymux client      the GPU sidebar beside kitty (Quickshell, Wayland): client [start|stop|toggle|status]
+  kittymux client      the Quickshell sidebar beside kitty (Wayland): client [start|stop|toggle|status]
   kittymux usage       provider quotas, resets and local usage: usage [--window] (Mod+N → Usage opens a separate window from any app)
   kittymux peek        the peek card (a right-click on a tab) from the keyboard: peek [TAB_ID | --waiting]  (--waiting: the agent that needs you longest)
   kittymux palette     one searchable list of what needs you, every tab, agents to reopen or start, and a few actions (ctrl+alt+shift+space): palette
   kittymux join        move this tab's panes into another tab as splits: join [--to TAB_ID] [--side right|below|left|above|auto] [--pane]
   kittymux keys        chords your own kitty config and kittymux both define (kittymux's wins: it loads later): keys [conflicts]
   kittymux dim         dim the panes that are not focused (kitty ≥ 0.49.2): dim [on|off|toggle|show]
+  kittymux cards       rounded, shadowed bar cards drawn by a shader (kitty ≥ 0.49.0, shader-slang): cards [on|off|toggle|show]
   kittymux screenshot  PNG of this kitty window (kitty's own renderer): screenshot [--tab|--window] [FILE]
   kittymux upgrade     after a git pull: refresh links, reload every running kitty twice, run doctor
   kittymux uninstall   show what install.sh added (dry run); --yes removes it, --purge also deletes the state dir
@@ -2586,7 +2587,7 @@ def _client_release(owners: list[int]) -> None:
 
 
 def client_cmd(argv: list[str]) -> int:
-    """`kittymux client [start|stop|toggle|status]` — the client in client/: a Quickshell sidebar drawn on the GPU beside kitty, from tabs.json.
+    """`kittymux client [start|stop|toggle|status]` — the client in client/: a Quickshell sidebar beside kitty (software rendering unless KITTYMUX_CLIENT_GPU=1), from tabs.json.
     It only reads kittymux's files and runs `kittymux act` / `kittymux mute --pid --window` on a click; it never starts or restarts a kitty."""
     action = argv[0] if argv else "toggle"
     if action in ("attach", "detach"):
@@ -2603,9 +2604,19 @@ def client_cmd(argv: list[str]) -> int:
         print(f"running (pid {', '.join(map(str, running))})" if running else "not running")
         return 0 if running else 1
     if running and action in ("stop", "toggle"):
+        failed = []
         for pid in running:
-            subprocess.run(["qs", "kill", "--pid", str(pid)], capture_output=True, timeout=4)
-        _client_release(running)
+            try:
+                if subprocess.run(["qs", "kill", "--pid", str(pid)], capture_output=True, timeout=4).returncode != 0:
+                    failed.append(pid)
+            except (OSError, subprocess.SubprocessError):
+                failed.append(pid)
+        stopped = [p for p in running if p not in failed]
+        if stopped:
+            _client_release(stopped)
+        if failed:
+            print(f"kittymux client: could not stop pid {', '.join(map(str, failed))} (qs kill failed)", file=sys.stderr)
+            return 1
         print(f"{OK} client stopped")
         return 0
     if action == "stop" or running:
@@ -2728,10 +2739,13 @@ def _mute_direct(argv: list[str], on: bool, verb: str) -> int | None:
     for flag in ("--pid", "--window"):
         i = argv.index(flag) if flag in argv else -1
         v = argv[i + 1] if 0 <= i < len(argv) - 1 else ""
-        if not v.isdigit():
+        if not v.isdigit() or argv.count(flag) != 1:
             print(f"usage: kittymux {verb} --pid KITTY_PID --window WINDOW_ID", file=sys.stderr)
             return 2
         vals[flag] = int(v)
+    if len(argv) != 4:      # exactly the two options: `--list`, a tab or a repeated flag beside them is a mistake, not a guess
+        print(f"usage: kittymux {verb} --pid KITTY_PID --window WINDOW_ID   (nothing else on the line)", file=sys.stderr)
+        return 2
     pid = vals["--pid"]
     try:
         with open(f"/proc/{pid}/comm", encoding="utf-8") as f:

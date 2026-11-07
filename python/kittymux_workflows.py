@@ -122,21 +122,25 @@ SNAPSHOT_COOLDOWN = 3.5
 SNAPSHOT_UNAVAILABLE = 'kitty snapshot unavailable'
 
 
-def _unavailable_path(state_dir):
-    return os.path.join(state_dir, 'find-session-unavailable')
+def _unavailable_path(state_dir, key=''):
+    """One cooldown marker per kitty socket: a kitty that cannot answer must not make a healthy one look sessionless."""
+    if not key:
+        return os.path.join(state_dir, 'find-session-unavailable')
+    import hashlib
+    return os.path.join(state_dir, 'find-session-unavailable-' + hashlib.sha1(str(key).encode()).hexdigest()[:12])
 
 
-def _snapshot_cooled(state_dir, now):
+def _snapshot_cooled(state_dir, now, key=''):
     try:
-        with open(_unavailable_path(state_dir), encoding='ascii') as handle:
+        with open(_unavailable_path(state_dir, key), encoding='ascii') as handle:
             stamp = float(handle.read().strip())
     except (OSError, ValueError):
         return False
     return 0 <= now - stamp < SNAPSHOT_COOLDOWN
 
 
-def _mark_snapshot_unavailable(state_dir, now):
-    path = _unavailable_path(state_dir)
+def _mark_snapshot_unavailable(state_dir, now, key=''):
+    path = _unavailable_path(state_dir, key)
     tmp = f'{path}.{os.getpid()}.tmp'
     try:
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -150,18 +154,29 @@ def _mark_snapshot_unavailable(state_dir, now):
             pass
 
 
-def fetch_snapshot(fetch, state_dir, *, sleep, clock=None):
+def fetch_snapshot(fetch, state_dir, *, sleep, clock=None, key=''):
     """Call `fetch` until it returns a kitty snapshot. Wait 0.5 s, 1 s and 2 s when the failure is exactly
-    'kitty snapshot unavailable', then log that once and return None. A later call within 3.5 s returns None
-    at once and does not log again. Any other error propagates, with no retry."""
+    'kitty snapshot unavailable', then log that once and return None. A later call for the same `key` (the kitty
+    socket) within 3.5 s returns None at once and does not log again. Any other error propagates, with no retry.
+    When the lock cannot be set up (a read-only or missing state dir), the lookup still runs, once, unlocked."""
     if clock is None:
         clock = time.time
     import fcntl
-    os.makedirs(state_dir, mode=0o700, exist_ok=True)
-    lock = os.open(os.path.join(state_dir, 'find-session.lock'), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        os.makedirs(state_dir, mode=0o700, exist_ok=True)
+        lock = os.open(os.path.join(state_dir, 'find-session.lock'), os.O_RDWR | os.O_CREAT, 0o600)
+    except OSError as exc:
+        import kittymux_diag
+        kittymux_diag.log_failure(state_dir, 'workflow find-session', f'lock: {exc}')
+        try:
+            return fetch()
+        except ValueError as exc2:
+            if str(exc2) != SNAPSHOT_UNAVAILABLE:
+                raise
+            return None
     try:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if _snapshot_cooled(state_dir, clock()):
+        if _snapshot_cooled(state_dir, clock(), key):
             return None
         last = None
         for attempt in range(len(SNAPSHOT_BACKOFF) + 1):
@@ -173,7 +188,7 @@ def fetch_snapshot(fetch, state_dir, *, sleep, clock=None):
                 if str(exc) != SNAPSHOT_UNAVAILABLE:
                     raise
                 last = exc
-        _mark_snapshot_unavailable(state_dir, clock())
+        _mark_snapshot_unavailable(state_dir, clock(), key)
         import kittymux_diag
         kittymux_diag.log_failure(state_dir, 'workflow find-session', f'ValueError: {last}')
         print('kittymux workflow find-session: kitty snapshot unavailable', file=sys.stderr)
@@ -281,7 +296,7 @@ def run(argv, sock, call, snapshot, state_dir):
         pattern = 'session:^'+re.escape(args[0])+'$'
         def fetch():
             return ls('--match-tab', pattern)
-        data = fetch_snapshot(fetch, state_dir, sleep=time.sleep)
+        data = fetch_snapshot(fetch, state_dir, sleep=time.sleep, key=sock)
         if not data:
             return 1
         host = next((h for h in data if h['tabs']), None)

@@ -32,7 +32,9 @@ Row {
             height: Math.ceil(zero.height)
             clip: true
             LayoutMirroring.enabled: false
-            Spring { id: roll; tier: ({ stiffness: 933, damping: 60 }); epsilon: 0.002; target: col.digit; Component.onCompleted: settle() }
+            // The target is the nearest value that shows the new digit (9 → 0 rolls one step to 10, not nine back to 0); the labels wrap by 10.
+            Spring { id: roll; tier: ({ stiffness: 933, damping: 60 }); epsilon: 0.002; Component.onCompleted: { target = col.digit; settle(); } }
+            onDigitChanged: roll.target += (((col.digit - roll.target) % 10) + 15) % 10 - 5
             Repeater {
                 model: 10
                 Label {

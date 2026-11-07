@@ -53,6 +53,15 @@ class AdaptTests(unittest.TestCase):
         named = adapt.to_model(snap([row(1, "a", cwd="/w/core")], "work"), 0, (-1, -1), "demo", "work", project_of=names.get)
         self.assertEqual([sp.name for sp in named.spaces], ["work"])
 
+    def test_a_tab_with_no_project_is_not_counted_in_the_space_above_it(self):
+        rows = [row(1, "api", status="working", session="", cwd="/w/core", branch="main"),
+                row(2, "scratch", status="waiting", session="", cwd="/mnt/gone")]
+        names = {"/w/core": "core"}
+        model = adapt.to_model(snap(rows, ""), 0, (-1, -1), "demo", "demo", project_of=lambda c: names.get(c, ""))
+        self.assertEqual([sp.name for sp in model.spaces], ["core"])
+        self.assertEqual(model.spaces[0].counts, {"working": 1})          # the question in /mnt/gone is not core's
+        self.assertEqual([a.title for a in model.agents], ["api", "scratch"])
+
     def test_a_space_counts_its_tabs_and_the_chip_finds_the_first_question(self):
         rows = [
             row(1, "api", status="working", pr="#12", ports=(3000, 5173, 9229)),

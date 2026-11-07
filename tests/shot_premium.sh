@@ -5,11 +5,11 @@
 #   bash tests/shot_premium.sh dark|light OUT_DIR [PANEL_COLS]      writes OUT_DIR/premium-<theme>.png and prints cpu lines
 #   KMX_GROUP=state (the panel grouped by state), KMX_MUTE="docs nav" (that tab's agent muted) for the Rex-adoption shots
 # CPU is sampled twice for CPU_S seconds (default 20) with no input: while one agent works, and after it finishes (nothing moves).
-# Needs Xvfb, xdotool, kitty >= 0.49.2, git, ImageMagick (`import`), python3 with cairo/pango/rsvg; else SKIP. Never touches another kitty.
+# Needs Xvfb, xdotool, kitty >= 0.49.2, git, ImageMagick (`import`), bc, python3 with cairo/pango/rsvg; else SKIP. Never touches another kitty.
 set -u
 HOME_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 THEME=${1:-dark}; OUT=${2:-premium-shots}; PCOLS=${3:-38}; CPU_S=${CPU_S:-20}
-for dep in Xvfb xdotool kitty git import python3; do command -v "$dep" >/dev/null 2>&1 || { echo "SKIP: $dep not installed"; exit 0; }; done
+for dep in Xvfb xdotool kitty git import python3 bc; do command -v "$dep" >/dev/null 2>&1 || { echo "SKIP: $dep not installed"; exit 0; }; done
 python3 -c 'import gi; gi.require_version("PangoCairo", "1.0"); gi.require_version("Rsvg", "2.0"); from gi.repository import PangoCairo, Rsvg; import cairo' 2>/dev/null \
   || { echo "SKIP: cairo/pango/rsvg not installed"; exit 0; }
 mkdir -p "$OUT"

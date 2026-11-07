@@ -1662,5 +1662,5 @@ class AgentsFileTests(ScanBase):
             w.screen = "[sudo] password for zork: "
             KS.scan_all()
         path = os.path.join(self.state, "agents.json")
-        if os.path.exists(path):
-            self.assertEqual(json.load(open(path))["agents"], [])
+        self.assertTrue(os.path.exists(path), "the scanner published no agents.json")
+        self.assertEqual(json.load(open(path))["agents"], [])

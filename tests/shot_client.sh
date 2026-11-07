@@ -17,9 +17,10 @@ XPID="" QPID="" SPID=""
 cleanup() { for p in $QPID $XPID $SPID; do kill "$p" 2>/dev/null; done; wait 2>/dev/null; [ -n "${KEEP:-}" ] && cp -r "$T" "$KEEP"; rm -rf "$T"; }
 trap cleanup EXIT
 fail() { echo "FAIL: $*"; tail -20 "$T/qs.log" 2>/dev/null; exit 1; }
+within() { local t=$1; shift; local end=$(( $(date +%s) + t )); until "$@"; do [ "$(date +%s)" -ge "$end" ] && return 1; sleep 0.1; done; }   # a condition with a deadline
 # a recorder in place of bin/kittymux: every call the client makes lands in calls.log, one argument per line, then a blank line
 printf '#!/bin/sh\nfor a; do printf "%%s\\n" "$a"; done >> %s/calls.log\necho >> %s/calls.log\n' "$T" "$T" > "$T/kittymux"; chmod +x "$T/kittymux"
-sleep 600 & SPID=$!                        # stands in for the kitty: the client hides rows whose kitty_pid has exited
+cp "$(command -v sleep)" "$T/kitty"; "$T/kitty" 600 & SPID=$!   # stands in for the kitty (its comm says kitty): the client hides rows whose kitty_pid is no kitty
 python3 "$HOME_DIR/tests/client_fixture.py" "$STATE" "$THEME" "$SPID" || fail "the fixture did not build"
 for n in $(seq 210 260); do [ -e "/tmp/.X$n-lock" ] || [ -e "/tmp/.X11-unix/X$n" ] || { D=:$n; break; }; done
 Xvfb "$D" -screen 0 $((W + 60))x${H}x24 >/dev/null 2>&1 & XPID=$!
@@ -42,29 +43,33 @@ shot "client-$THEME-by-space"
 
 # 2. g toggles by state; the panel's group file follows
 X mousemove 60 300 click 1; sleep 0.6; : > "$T/calls.log"      # a click gives it the keyboard (and jumps: cleared above)
-X key g; sleep 1.2
-[ "$(cat "$STATE/panel-group" 2>/dev/null)" = "state" ] || fail "g did not write the panel's group file (got: $(cat "$STATE/panel-group" 2>/dev/null))"
+X key g
+within 6 sh -c '[ "$(cat "$1" 2>/dev/null)" = state ]' _ "$STATE/panel-group" || fail "g did not write the panel's group file (got: $(cat "$STATE/panel-group" 2>/dev/null))"
 X mousemove $((W + 58)) $((H - 2)); sleep 1.5
 shot "client-$THEME-by-state"
 echo "  ok   g groups by state, and the panel's group file says so"
-X key g; sleep 1
-[ ! -s "$STATE/panel-group" ] || fail "g again did not go back to by space"
+X key g
+within 6 sh -c '[ ! -s "$1" ]' _ "$STATE/panel-group" || fail "g again did not go back to by space"
+sleep 0.8                                                        # the file is written first; the rows then glide back to their spaces
 
 # 3. a click jumps with the row's own action; right-click -> Mute runs the direct mute
 : > "$T/calls.log"
-X mousemove 80 $((8 + 58 + 28 + 23)) click 1; sleep 0.8         # the first row: margin 8, header 58, section 28, half a row
-calls | tr '\n' ' ' | grep -q 'act {"op":"jump","pid":'"$SPID"',"w":"11"}' || fail "a click did not jump to the row's window (calls: $(calls | tr '\n' ' '))"
+X mousemove 80 $((8 + 58 + 28 + 23)) click 1                     # the first row: margin 8, header 58, section 28, half a row
+within 6 sh -c 'tr "\n" " " < "$1" | grep -q "$2"' _ "$T/calls.log" 'act {"op":"jump","pid":'"$SPID"',"w":"11"}' || fail "a click did not jump to the row's window (calls: $(calls | tr '\n' ' '))"
 echo "  ok   a click runs kittymux act with the row's jump action"
 : > "$T/calls.log"
 X mousemove 80 $((8 + 58 + 28 + 23)) click 3; sleep 0.8
 shot "client-$THEME-menu"
-X mousemove 80 $((8 + 58 + 28 + 46 + 4 + 32 + 16)) click 1; sleep 0.8    # the menu's second item (it opens under the row)
-calls | tr '\n' ' ' | grep -q "mute --pid $SPID --window 11" || fail "Mute did not run the direct mute (calls: $(calls | tr '\n' ' '))"
+X mousemove 80 $((8 + 58 + 28 + 46 + 4 + 32 + 16)) click 1    # the menu's second item (it opens under the row)
+within 6 sh -c 'tr "\n" " " < "$1" | grep -q "$2"' _ "$T/calls.log" "mute --pid $SPID --window 11" || fail "Mute did not run the direct mute (calls: $(calls | tr '\n' ' '))"
 echo "  ok   right-click -> Mute runs kittymux mute --pid P --window W"
 
-# 4. a live change reaches the screen
+# 4. a live change reaches the screen: the picture must change (a client that never reloads tabs.json fails here)
+X mousemove $((W + 58)) $((H - 2)); sleep 1.5
+before=$(DISPLAY=$D import -window root png:- 2>/dev/null | md5sum)
 python3 "$HOME_DIR/tests/client_fixture.py" "$STATE" changed "$SPID"
-X mousemove $((W + 58)) $((H - 2)); sleep 2
+within 8 sh -c '[ "$(DISPLAY=$1 import -window root png:- 2>/dev/null | md5sum)" != "$2" ]' _ "$D" "$before" || fail "the client did not redraw after tabs.json changed"
+sleep 0.6                                                        # let the change's own motion settle before the picture
 shot "client-$THEME-changed"
 kill -0 "$QPID" 2>/dev/null || fail "the client exited"
 errs=$(grep -E "ERROR|WARN" "$T/qs.log" | grep -v "Saving logs\|X11 connection\|xcb-cursor" || true)

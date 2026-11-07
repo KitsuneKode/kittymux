@@ -26,6 +26,7 @@ import cairo  # noqa: E402
 from gi.repository import Pango, PangoCairo, Rsvg  # noqa: E402
 
 import kittymux_agents  # noqa: E402
+import kittymux_place  # noqa: E402   (program text is cleaned before it is drawn)
 import kittymux_theme as th  # noqa: E402
 
 ICONS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "icons")
@@ -119,8 +120,6 @@ SPACE_H, AGENT_H, PANE_H, GAP = 30.0, 44.0, 30.0, 4.0
 RING_R, MARK = 13.0, 15.0              # the ring around a tab's mark, and the mark inside it
 PANE_RING_R, PANE_MARK = 9.0, 11.0
 
-ICON_FILE = {"claude": "claude", "codex": "openai", "gemini": "googlegemini", "opencode": "opencode", "cursor": "cursor",
-             "amp": "amp", "devin": "devin", "shell": None}
 
 
 def rgb(c: int, a: float = 1.0) -> tuple[float, float, float, float]:
@@ -163,8 +162,10 @@ def state_counts(states) -> dict:
 
 
 def rollup(counts: dict) -> tuple[str, int]:
-    """(state, n) a space's ring shows: what asks for you first, then failures, then work, then finished."""
-    for s in ("waiting", "limited", "error", "working", "done"):
+    """(state, n) a space's ring shows, in the one shared order (kittymux_state.PRIORITY: a limit, then a question, then
+    failures, work, finished) — the same order that picks the space's colour, so the count and the colour never disagree."""
+    import kittymux_state
+    for s in sorted(("waiting", "limited", "error", "working", "done"), key=lambda k: -kittymux_state.PRIORITY.get(k, 0)):
         if counts.get(s):
             return s, int(counts[s])
     return "", 0
@@ -339,10 +340,10 @@ class Painter:
         if lo is not None and not (lo <= cy - r - 1 and cy + r + 1 <= hi):
             self.arc(cx, cy, r, color, phase)        # cut by the header or the key hints: a still arc in the (clipped) base, never an
             return                                   # animated one placed over them
-        if self.spinners is not None:
+        if self.spinners is not None and abs(r - RING_R) < 0.01:
             self.spinners.append((cx, cy, r, color))
             return
-        self.arc(cx, cy, r, color, phase)
+        self.arc(cx, cy, r, color, phase)            # kitty steps one frame set, made at the tab's radius: a pane's smaller ring stays still
 
     def arc(self, cx, cy, r, color, phase, width=2.0):
         a0 = step_phase(phase) * 2 * math.pi - math.pi / 2
@@ -739,7 +740,7 @@ def _row_surface(pt, p, x, y, w, h, *, current, selected, hovered):
 
 
 def _mark(pt, p, ag, cx, cy, size, color):
-    icon = ICON_FILE.get(ag.agent, ag.agent)
+    icon = kittymux_agents.brand_of(ag.agent) or None      # the one agent → mark table (cursor-agent, agy, droid, vibe too)
     if icon and pt.icon(icon, cx - size / 2, cy - size / 2, size, color):
         return
     pt.text(cx - pt.text_w(">_", size * 0.62, family=MONO_FONT, weight=Pango.Weight.BOLD) / 2, cy, ">_", size * 0.62,
@@ -802,7 +803,7 @@ def _paint_tab(pt, p, bar, frame, pad, inner, y, h, ag, index, hit, tones):
         aw = pt.text_w(ag.age, T_META, tnum=True)
         pt.text(meta_right - aw, cy - 8, ag.age, T_META, lo, tnum=True)
         aw += 8
-    pt.text(tx, cy - 8, ag.title, T_BODY, hi if lit else mid,
+    pt.text(tx, cy - 8, kittymux_place.clean(ag.title), T_BODY, hi if lit else mid,
             weight=Pango.Weight.SEMIBOLD if selected or ag.current else Pango.Weight.MEDIUM,
             width=max(1, meta_right - aw - tx))
     # line two: state word · progress · facts
@@ -878,5 +879,5 @@ def _paint_pane(pt, p, bar, frame, pad, inner, y, h, ch, index, hit, tones):
         pt.text(right - ww, cy, word, T_META, col, weight=Pango.Weight.SEMIBOLD)
         ww += 8
     tx = x0 + h + 2
-    pt.text(tx, cy, ch.title, T_LABEL, hi if selected else mid, weight=Pango.Weight.MEDIUM if selected else Pango.Weight.NORMAL,
+    pt.text(tx, cy, kittymux_place.clean(ch.title), T_LABEL, hi if selected else mid, weight=Pango.Weight.MEDIUM if selected else Pango.Weight.NORMAL,
             width=max(1, right - ww - tx))

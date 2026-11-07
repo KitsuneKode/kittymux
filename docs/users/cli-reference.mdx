@@ -212,7 +212,7 @@ kittymux panel width 40
 
 ## `kittymux client`
 
-The [kittymux client](/docs/users/the-client): a sidebar drawn by Quickshell on the GPU beside kitty, with the tabs of every running kitty grouped by space or by state. It needs Quickshell and a Wayland compositor with layer-shell. It reads `tabs.json` and acts only when you click.
+The [kittymux client](/docs/users/the-client): a sidebar drawn by Quickshell beside kitty (Qt's software renderer by default; `KITTYMUX_CLIENT_GPU=1` for OpenGL), with the tabs of every running kitty grouped by space or by state. It needs Quickshell and a Wayland compositor with layer-shell. It reads `tabs.json` and acts only when you click.
 
 ```sh
 kittymux client [start|stop|toggle|status]

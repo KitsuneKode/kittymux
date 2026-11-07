@@ -169,9 +169,9 @@ def _publish_progress() -> None:
         sig = ()
     if sig == _PROG["sig"]:
         return
-    _PROG["sig"] = sig
     try:
         kittymux_progress.save_reports(_PANES_JSON.with_name(f"progress-{os.getpid()}.json"), snap)
+        _PROG["sig"] = sig                    # only once it is on disk: a failed write is tried again next pass
     except Exception:
         pass
 
@@ -1360,12 +1360,13 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
             subtitle.append((f"{_ICON_FOLDER} {_short_cwd(cwd, 24)}", pal.muted if active else pal.faint))
         if subtitle and not extra_data.for_layout:
             _dump_row(tab.tab_id, legacy=True, pieces=[[subtitle[0][0], "legacy"]])
-    home_only = _clean_visible_title(tab.title or "").strip() == "~"   # the folder line would only repeat it, so it hides
+    # the folder line would only repeat a `~` title, so it hides — but only while the tab really is at home (a stale `~` title must not hide where it went)
+    home_only = _clean_visible_title(tab.title or "").strip() == "~" and bool(cwd) and os.path.realpath(cwd) == os.path.realpath(os.path.expanduser("~"))
     if not compact and not info and (not subtitle or (home_only and all(isinstance(t, _Place) for t, _c in subtitle))):
         subtitle = []
         # the app it runs, else the shell itself (the label skips shells: they are what every tab runs)
-        program = _best_process_label(foreground, _last_cmd) or next(
-            (_basename(c[0]).lstrip("-") for c in foreground or () if c), "")
+        program = kittymux_place.clean(_best_process_label(foreground, _last_cmd) or next(
+            (_basename(c[0]).lstrip("-") for c in foreground or () if c), ""))
         if program:
             subtitle.append((program, pal.muted if active else pal.faint))
     pane_count = _pane_count(tab.tab_id, tab.num_windows)
@@ -1468,7 +1469,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     elif title_room >= 3:
         title = _shown_title(tab, max(4, title_room), info, cwd)
         title = title if _features().get("titles", True) else _fit(title, title_room)
-        if title.strip() == "~":
+        if title.strip() == "~" and title_room >= 4:     # three cells keep the tilde: `Home` would lose its last letter under the mark
             title = "Home"                                # the home folder by name, not a bare tilde
         _put(screen, tx, title,
              _rgb(pal.text) if active else _rgb(pal.muted), bold=active)

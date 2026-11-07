@@ -17,7 +17,8 @@ trap cleanup EXIT
 fail() { echo "FAIL: $*"; [ -s "$STATE/tabs.json" ] && head -c 1500 "$STATE/tabs.json"; exit 1; }
 for n in $(seq 241 280); do [ -e "/tmp/.X$n-lock" ] || [ -e "/tmp/.X11-unix/X$n" ] || { DISP=:$n; break; }; done
 Xvfb "$DISP" -screen 0 1200x800x24 >/dev/null 2>&1 & XPID=$!
-sleep 1; kill -0 "$XPID" 2>/dev/null || { echo "SKIP: Xvfb would not start"; XPID=""; exit 0; }
+for _ in $(seq 50); do [ -S "/tmp/.X11-unix/X${DISP#:}" ] && break; kill -0 "$XPID" 2>/dev/null || break; sleep 0.1; done   # ready: its socket is up
+[ -S "/tmp/.X11-unix/X${DISP#:}" ] || { echo "SKIP: Xvfb would not start"; kill "$XPID" 2>/dev/null; XPID=""; exit 0; }
 printf '#!/bin/sh\nprintf "\\n  * Thinking (esc to interrupt)\\n"\nwhile :; do sleep 1; done\n' > "$T/bin/claude"; chmod +x "$T/bin/claude"
 for f in "$HOME_DIR"/python/tab_bar.py "$HOME_DIR"/python/kittymux_*.py; do ln -s "$f" "$CFG/$(basename "$f")"; done
 printf 'allow_remote_control socket-only\nlisten_on unix:${XDG_RUNTIME_DIR}/mykitty\ninclude %s/kittymux.conf\nwatcher %s/python/pane-state.py\ngeninclude %s/python/kittymux_layout.py\ntab_bar_edge left\ntab_bar_min_tabs 1\n' \

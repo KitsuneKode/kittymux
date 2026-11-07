@@ -85,6 +85,9 @@ test("commands are argument lists for the row's own kitty, never a shell string"
     assert.deepEqual(L.jumpArgs("km", t), ["km", "act", '{"op":"jump","pid":7,"w":"3"}']);
     assert.deepEqual(L.muteArgs("km", t), ["km", "unmute", "--pid", "7", "--window", "31"]);
     assert.deepEqual(L.muteArgs("km", L.tabsOf(doc([tab(4)]))[0]), []);       // no agent in the tab: nothing to mute
+    assert.deepEqual(L.muteArgs("km", t, false), ["km", "mute", "--pid", "7", "--window", "31"]);   // the pending state decides: a second click undoes
+    const odd = L.sections(L.tabsOf(doc([tab(5, { project: "constructor" }), tab(6, { project: "toString" })])), false);
+    assert.deepEqual(odd.map(s => s.label), ["constructor", "toString"]);    // no inherited properties in the project table
 });
 
 // Real-shaped Hyprland data (numbers made up): a laptop panel at scale 4/3 below-left of an external monitor.

@@ -17,13 +17,15 @@ LIGHT = {"background": 0xF6F6F4, "foreground": 0x2A2A2E, "active_border_color": 
                                                           0x888888, 0xD32F2F, 0x2E7D32, 0xB26A00, 0x1565C0, 0x7B1FA2, 0x00838F, 0x111111))}}
 
 
+BASE = ""                 # set by main(): the rig's private folder for the synthetic projects
+
 def win(wid, active=False, agent="", state="", **kw):
     return {"window_id": wid, "active": active, "cwd": kw.pop("cwd", ""), "agent": agent, "state": state, **kw}
 
 
 def tabs(variant):
-    a = "/tmp/kmx-fixture/calm-otter"
-    b = "/tmp/kmx-fixture/quiet-heron"
+    a = os.path.join(BASE, "calm-otter")
+    b = os.path.join(BASE, "quiet-heron")
     rows = [
         {"tab_id": 1, "title": "Port the config loader", "active": True, "windows": [win(11, True, "claude", "working", cwd=a, progress=0.64)]},
         {"tab_id": 2, "title": "Review the parser", "windows": [win(12, True, "codex", "waiting", cwd=a, reason="Allow edit to parser.rs?")]},
@@ -41,12 +43,15 @@ def tabs(variant):
 
 
 def main(argv):
+    global BASE
     sdir, variant, pid = argv[1], argv[2], int(argv[3])
     os.makedirs(sdir, exist_ok=True)
-    for d in ("/tmp/kmx-fixture/calm-otter", "/tmp/kmx-fixture/quiet-heron"):
+    # synthetic folders inside the rig's own private tree (next to its state dir): never a shared /tmp path, never a real repository
+    BASE = os.path.join(os.path.dirname(os.path.abspath(sdir)), "fixture-home")
+    for d in (os.path.join(BASE, "calm-otter"), os.path.join(BASE, "quiet-heron")):
         os.makedirs(d, exist_ok=True)
     spec = {"os_window_id": 1, "wm_class": "kitty", "focused": True, "colors": LIGHT if variant == "light" else COLORS, "tabs": tabs(variant)}
-    T.publish(sdir, pid, [spec], time.time() - 240, alive=lambda p: True, home="/tmp/kmx-fixture")
+    T.publish(sdir, pid, [spec], time.time() - 240, alive=lambda p: True, home=BASE)
     doc = json.load(open(T.path_for(sdir)))
     for w in doc["windows"]:          # the age a finished tab shows: four minutes
         for t in w["tabs"]:

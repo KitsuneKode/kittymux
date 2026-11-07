@@ -52,9 +52,14 @@ sleep 3     # every window is "seen" once before it can announce (a restart must
 # 1. a sudo-style prompt in the tab you are NOT looking at (tab two): bash leads the pty, so only sudo's own wording identifies it
 run "$W2" "bash $T/sudo-ish.sh"
 wait_for 'e["kind"]=="permission" and e["agent"]=="sudo" and e.get("source")=="tool" and e["status"]=="unread" and e["severity"]=="needs-you"' || fail "the sudo prompt never became a needs-you event"
-python3 -c 'import json,sys; d=json.load(open(sys.argv[1]));
+snap_ok=""
+for _ in $(seq 40); do      # the snapshot is rewritten after the append the CLI already saw: wait for it, with a deadline
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1]));
 rows=[e for e in d["events"] if e.get("agent")=="sudo"]
-assert rows and rows[0].get("source")=="tool"' "$STATE/inbox-snapshot.json" || fail "the sudo prompt was not source tool in the snapshot"
+assert rows and rows[0].get("source")=="tool"' "$STATE/inbox-snapshot.json" 2>/dev/null && { snap_ok=1; break; }
+  sleep 0.25
+done
+[ -n "$snap_ok" ] || fail "the sudo prompt was not source tool in the snapshot"
 echo "  ok   a sudo prompt in another tab → one permission event (agent sudo, source tool)"
 raw=$(cat "$STATE/inbox.jsonl")
 case "$raw" in *zork-private*) fail "the user name on the prompt reached the inbox" ;; esac
