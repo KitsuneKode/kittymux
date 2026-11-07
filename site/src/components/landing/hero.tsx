@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { DocLink } from '../doc-link';
-import { Shot, TerminalWindow } from '../terminal-window';
+import KittymuxHero from '@/stageshow/kittymux-hero';
 import { WeaveBand } from '../weave-band';
 import { GitHubStars } from '../github-stars';
 import { SponsorButton } from '../sponsor-button';
@@ -49,17 +49,15 @@ export function Hero() {
                 <GitHubStars repo={REPO} stargazersCount={stars} tone="brand" className="min-h-12 sm:min-h-12" />
               </div>
             </div>
-            <div data-rise="" className="relative mx-auto mt-20 w-full max-w-[460px] [animation-delay:240ms] lg:col-span-6 lg:mt-24">
-              {/* the kitten sits on the window's top edge: its cropped bottom is hidden behind the frame */}
-              <Mascot priority width={160} className="absolute -inset-bs-[100px] inset-e-6 z-0 lg:inset-e-10" />
-              <TerminalWindow className="relative z-10" captionClassName="text-onbrand-soft" caption="The docked panel on made-up tabs: one needs you, one has a usage limit that resets in 42 minutes.">
-                <Shot
-                  name="panel-agents"
-                  alt="The kittymux panel listing seven made-up tabs: one needs you and says so, one is done, and one hit a usage limit and shows when it resets."
-                  priority
-                />
-              </TerminalWindow>
-            </div>
+            <figure data-rise="" className="kh-host relative m-0 mt-16 w-full [animation-delay:240ms] lg:col-span-6 lg:mt-20">
+              {/* the kitten peeks over the window's top edge; the window is drawn above it */}
+              <Mascot priority width={132} className="pointer-events-none absolute -top-[62px] right-10 z-0" />
+              {/* kitty with kittymux's bar, drawn as an illustration (stageshow): an agent comes to need you, you jump, you answer.
+                  The stage's ground is transparent so the brand band is the ground; under reduced motion it holds the frame
+                  where the agent is asking. */}
+              <div className="relative z-10"><KittymuxHero /></div>
+              <figcaption className="mt-3 text-sm text-onbrand-soft">Made-up tabs in kitty&apos;s own bar: one agent stops to ask, you jump there and answer.</figcaption>
+            </figure>
           </section>
         </div>
         <WeaveBand id="hero-end" />

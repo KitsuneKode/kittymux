@@ -13,6 +13,8 @@ TanStack Start + Fumadocs + Tailwind v4 + shadcn (Base UI), prerendered to stati
 
 `content/`, `src/generated/` and `public/assets/*` (except `shots/`) are generated and git-ignored. **Edit `../docs/`, never `content/`.**
 
+- **The hero demo** is a stageshow illustration, not a screenshot: `src/stageshow/kittymux-hero/` (the scene: kitty with kittymux's bar, an agent that comes to need you) on the stageshow React kit in `src/stageshow/kit/` (MIT, its `LICENSE` beside it; imported module by module so the page only loads the stage, the window and `Collapse`). The agent marks are `assets/icons` SVGs, served as files. Under reduced motion it holds the frame where the agent asks. It costs 16.5 KB of JS (gzip): the landing budget in `scripts/budget.mjs` says so.
+
 ## Commands (in `site/`, with bun)
 
 ```bash
