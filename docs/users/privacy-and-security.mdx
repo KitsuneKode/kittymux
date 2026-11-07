@@ -15,7 +15,8 @@ Anything it shows or stores that came from a terminal is treated as untrusted te
 | --------------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------- |
 | Agent state and one short reason line   | `scan-<pid>.json`                       | Only the matched marker and one line of context, at most 100 characters, with control characters removed. |
 | Notification text                       | The desktop notification                | Contains a line of your screen unless private mode is on.                               |
-| Inbox events                            | `inbox.jsonl`, `inbox-snapshot.json`    | Bounded. The body is empty in private mode. Screen text beyond the bounded body is never stored. |
+| Inbox events                            | `inbox.jsonl`, `inbox-snapshot.json`    | Bounded. The body is empty in private mode. Screen text beyond the bounded body is never stored. `source` is `agent` or `tool`. |
+| Who is working                          | `agents.json`                           | One file for every running kitty. State, titles, directory and a jump action. Mode `0600`, rewritten only when a visible field changed. |
 | Decision log                            | `decisions-<pid>.jsonl`                 | Reason codes and window ids, never screen text.                                         |
 | Agent journal                           | `agent-sessions.json`                   | Directory, tab title, command with its flags, session id, counts. Bounded to 300 records and 90 days. |
 | Saved sessions                          | `sessions/*.kitty-session`              | Directories, commands, titles and session ids. No conversation content.                 |

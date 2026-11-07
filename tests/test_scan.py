@@ -532,6 +532,9 @@ class PromptTests(ScanBase):
         self.assertEqual(counts, [0, 0, 1, 1])
         ev = self.events()
         self.assertEqual([(e["kind"], e["agent"], e["severity"]) for e in ev], [("permission", "sudo", "needs-you")])
+        self.assertEqual(ev[0]["source"], "tool")
+        self.assertEqual(ev[0]["sources"], ["screen"])
+        self.assertEqual(json.load(open(os.path.join(self.state, "inbox-snapshot.json")))["events"][0]["source"], "tool")
 
     def test_the_text_is_fixed_and_the_user_name_never_stored(self):
         w = FakeWindow(1, None, "")
@@ -1576,3 +1579,65 @@ class ClosedEventsTests(unittest.TestCase):
         self.assertEqual(KS.closed_events(seen, {"2", "6", "9"}, 101.0), [])
         KS.closed_events(seen, set(), 101.0)
         self.assertEqual(KS.closed_events(seen, set(), 102.0), [])
+
+
+class AgentsFileTests(ScanBase):
+    """The scanner publishes the same states the resolver decided, and does not rewrite the file when they hold."""
+
+    def test_working_waiting_done_and_error_each_rewrite_the_file(self):
+        w = FakeWindow(19, "claude", WORKING, title="Port the configs")
+        w.user_vars = {}
+        w.progress = types.SimpleNamespace(percent=42, state=types.SimpleNamespace(name="set"))
+        self.add(w)
+        path = os.path.join(self.state, "agents.json")
+
+        def scan(t, screen=None, variables=None):
+            if screen is not None:
+                w.screen = screen
+            if variables is not None:
+                w.user_vars = variables
+            with mock.patch.object(KS.time, "monotonic", return_value=t):
+                KS.scan_all()
+            with open(path, encoding="utf-8") as handle:
+                return json.load(handle)
+
+        doc = scan(100.0)
+        row = doc["agents"][0]
+        self.assertEqual(row["state"], "working")
+        self.assertEqual(row["progress"], 0.42)
+        self.assertEqual(row["source"], "agent")
+        self.assertEqual(row["brand"], "claude")
+        self.assertEqual(row["title"], "Port the configs")
+        self.assertEqual(row["action"], {"op": "jump", "pid": os.getpid(), "w": "19"})
+        self.assertIsNone(row["question"])
+        self.assertIsNone(row["error"])
+        self.assertIsNone(row["limit_reset"])
+        self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
+        with mock.patch("kittymux_agentsnap.os.replace") as replace:
+            scan(100.2)
+        replace.assert_not_called()
+
+        self.assertEqual(scan(101.0, PERMISSION)["agents"][0]["state"], "waiting")
+        self.assertIn("proceed", scan(101.0, PERMISSION)["agents"][0]["question"].lower())
+        self.assertEqual(scan(102.0, WORKING)["agents"][0]["state"], "working")
+        self.assertEqual(scan(150.0, IDLE)["agents"][0]["state"], "done")
+        report = {"kittymux_psp": json.dumps({"state": "error", "msg": "build failed", "t": 1})}
+        doc = scan(151.0, IDLE, report)
+        self.assertEqual(doc["agents"][0]["state"], "error")
+        self.assertEqual(doc["agents"][0]["error"], "build failed")
+        self.assertIsNone(doc["agents"][0]["question"])
+        for name in ("working", "waiting", "done", "idle", "limited", "error"):
+            self.assertIn(name, doc["counts"])
+        self.assertEqual(doc["counts"]["error"], 1)
+        self.assertFalse([n for n in os.listdir(self.state) if n.endswith(".tmp")])
+
+    def test_a_tool_prompt_does_not_become_an_agent_row(self):
+        w = FakeWindow(4, None, "[sudo] password for zork: ")
+        self.add(w)
+        with mock.patch.object(KS, "fg_job", return_value=(["sudo", "-v"], True)):
+            KS.scan_prompt(w, 0.0)
+            w.screen = "[sudo] password for zork: "
+            KS.scan_all()
+        path = os.path.join(self.state, "agents.json")
+        if os.path.exists(path):
+            self.assertEqual(json.load(open(path))["agents"], [])

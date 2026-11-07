@@ -127,10 +127,31 @@ It measures how fast you got to each agent, not how long an answer took. One wai
 {"version": 1, "updated": 1790000000.0, "unread": 2, "needs_you": 1,
  "events": [ {"id": "18f3a-4321-7", "t": 1790000000.0, "pid": 4321, "w": "77", "kind": "permission", "severity": "needs-you",
               "agent": "claude", "tab": "api", "title": "claude needs permission", "body": "Claude needs your permission to use Bash",
-              "sources": ["agent", "screen"], "confidence": "high", "status": "unread", "count": 2} ] }
+              "sources": ["agent", "screen"], "source": "agent", "confidence": "high", "status": "unread", "count": 2} ] }
 ```
 
 `events` is newest first, at most 60. `pid` and `w` identify the kitty process and the window. New fields may be added, so consumers must ignore fields they do not know. The version changes only for breaking changes.
+
+`sources` is who reported the event (`agent`, `hook` or `screen`). `source` is what it is about: `agent`, or `tool` for a password or yes/no prompt such as sudo, ssh, git, pacman or paru. A sudo prompt is not an agent. An older event with no `source` was written before the field; treat it as an agent.
+
+## The running agents
+
+`~/.local/state/kittymux/agents.json` is the live list of every agent in every running kitty. Watch this file instead of splitting `kittymux pick` menu text. It is mode `0600`, rewritten only when something other than the timestamp changed, and its schema version is 1. A new field keeps the version. A rename or a change of meaning bumps it.
+
+```json
+{"version": 1, "t": 1793780793.0, "agents": [
+  {"key": "w4035.19", "kitty_pid": 4035, "window_id": 19, "agent": "claude", "brand": "claude", "source": "agent",
+   "state": "working", "since": 1793780700.0, "title": "Port the configs", "tab_title": "calm-otter",
+   "cwd": "~/work/calm-otter", "project": "calm-otter", "session": "calm-otter", "question": null,
+   "progress": 0.42, "limit_reset": null, "error": null, "action": {"op": "jump", "pid": 4035, "w": "19"}}
+], "counts": {"working": 1, "waiting": 0, "done": 0, "idle": 0, "limited": 0, "error": 0}}
+```
+
+`state` is `working`, `waiting`, `limited`, `error`, `done` or `idle`. The usage limit is `limited`. `brand` is the icon file in `assets/icons` (`codex` is `openai`, `gemini` is `googlegemini`, `droid` is `factorydroid`). `action` is what `kittymux act` accepts. `question` is set only while the agent is waiting, `error` only in the error state, and `limit_reset` only while it is limited and the reset time is known. `progress` is a fraction from 0 to 1, or `null`. `counts` always has all six states.
+
+## Hints on a notification
+
+A notification carries `x-kittymux-pid`, `x-kittymux-window`, `x-kittymux-event` (the inbox id), `x-kittymux-agent`, `x-kittymux-brand`, `x-kittymux-state` and `x-kittymux-source` (`agent` or `tool`). The brand hint is left off when there is no icon. Jump focuses that window and, when the event id is present, acknowledges it. That is the same end state as `kittymux inbox jump`.
 
 A panel needs only to watch that file, render `events`, and run `kittymux inbox jump ID` or `ack ID` on click. For a status bar, `kittymux inbox --waybar` prints a ready module:
 

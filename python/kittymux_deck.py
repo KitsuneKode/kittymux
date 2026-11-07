@@ -39,7 +39,7 @@ class RowData:
     branch: str = ""
     cwd: str = ""
     panes: int = 1
-    status: str = ""        # working | waiting | done | ""
+    status: str = ""        # working | waiting | done | idle | limited | error | ""
     msg: str = ""           # what the agent is waiting for (from hooks)
     age: str = ""           # how long it has been in this state ("4m", "1h"): only from a minute on, only for states where it matters
     pr: str = ""            # "#123" for the branch's open pull request
@@ -49,6 +49,7 @@ class RowData:
     index: int = 0          # 1-based position within its session (matches the tab bar)
     pane_rows: tuple = ()   # PaneData for every pane, when the tab is split (2+ panes)
     win_ids: tuple = ()     # every window of the tab (what "absorb" moves)
+    progress: tuple | None = None   # OSC 9;4 (state, percent), or None when the tab reports none
 
 
 @dataclass

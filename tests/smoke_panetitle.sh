@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# The folder line in kitty's per-pane title bars, in a real kitty (kitty >= 0.49.2): window_title_template + the window_title_bar.py trampoline →
+# The pane header row in kitty's per-pane title bars, in a real kitty (kitty >= 0.49.2): window_title_template + the window_title_bar.py trampoline →
 # kittymux_panetitle. Pane title bars are forced on; KITTYMUX_PANETITLE_DUMP=1 records what was drawn per window (escape sequences and all).
 #   SHOT=out.png bash tests/smoke_panetitle.sh      also saves a screenshot of the window, for looking at.
 # Needs Xvfb, xdotool, kitty >= 0.49.2, git; else SKIP.
 set -u
 HOME_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+THEME=${THEME:-dark}
 for dep in Xvfb xdotool kitty git python3; do command -v "$dep" >/dev/null 2>&1 || { echo "SKIP: $dep not installed"; exit 0; }; done
 kitty --version | python3 -c 'import re,sys;v=tuple(int(x) for x in re.search(r"(\d+)\.(\d+)\.(\d+)",sys.stdin.read()).groups());sys.exit(0 if v>=(0,49,2) else 1)' || { echo "SKIP: kitty older than 0.49.2"; exit 0; }
 T=$(mktemp -d "${TMPDIR:-/tmp}/kmx-ptitle.XXXXXX"); CFG=$T/cfg STATE=$T/state SOCK=unix:$T/sock
@@ -18,7 +19,35 @@ Xvfb "$DISP" -screen 0 1400x900x24 >/dev/null 2>&1 & XPID=$!
 sleep 1; kill -0 "$XPID" 2>/dev/null || { echo "SKIP: Xvfb would not start"; XPID=""; exit 0; }
 for _ in $(seq 40); do [ -S "/tmp/.X11-unix/X${DISP#:}" ] && break; sleep 0.25; done
 for f in tab_bar.py window_title_bar.py kittymux_*.py; do ln -s "$HOME_DIR/python/$f" "$CFG/$f"; done
-# a themed kitty (Gruvbox-like, the tab colours a real theme sets): kitty's un-themed title bars are white blocks, which is not what anyone sees
+# a themed kitty (Gruvbox-like dark or Catppuccin-like light): kitty's un-themed title bars are white blocks, which is not what anyone sees
+if [ "$THEME" = light ]; then
+cat > "$CFG/theme.conf" <<'C'
+foreground #4c4f69
+background #eff1f5
+active_border_color #1e66f5
+inactive_border_color #bcc0cc
+active_tab_foreground #4c4f69
+active_tab_background #dce0e8
+inactive_tab_foreground #6c6f85
+inactive_tab_background #ccd0da
+color0 #5c5f77
+color1 #d20f39
+color2 #40a02b
+color3 #df8e1d
+color4 #1e66f5
+color5 #8839ef
+color6 #179299
+color7 #6c6f85
+color8 #8c8fa1
+color9 #d20f39
+color10 #40a02b
+color11 #df8e1d
+color12 #1e66f5
+color13 #8839ef
+color14 #179299
+color15 #4c4f69
+C
+else
 cat > "$CFG/theme.conf" <<'C'
 foreground #ebdbb2
 background #272727
@@ -45,6 +74,7 @@ color13 #d3869b
 color14 #8ec07c
 color15 #ebdbb2
 C
+fi
 printf 'font_family JetBrainsMono Nerd Font Mono\nfont_size 11\nwindow_padding_width 10\nconfirm_os_window_close 0\nallow_remote_control socket-only\ninclude %s/theme.conf\ninclude %s/kittymux.conf\nwatcher %s/python/pane-state.py\ntab_bar_edge left\ntab_bar_min_tabs 1\nwindow_title_bar_min_windows 1\nwindow_title_bar_align left\ngeninclude %s/python/kittymux_layout.py\n' \
   "$CFG" "$HOME_DIR" "$HOME_DIR" "$HOME_DIR" > "$CFG/kitty.conf"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
@@ -102,16 +132,30 @@ sleep 1
 A=$(wid_of "/work/alpha/src/ui"); B=$(wid_of "/work/bravo"); N=$(wid_of "/plain/notes"); WT=$(wid_of "/work/alpha-wt")
 [ -n "$A" ] && [ -n "$B" ] && [ -n "$N" ] && [ -n "$WT" ] || fail "could not map the windows (A=$A B=$B N=$N WT=$WT)"
 
-# 1. every pane says where it is, in the tab bar's grammar
-for want in "$A|alpha/src/ui|main" "$B|bravo|main" "$N|notes|" "$WT|alpha:alpha-wt|feat-wt"; do
-  id=${want%%|*}; rest=${want#*|}; proj=${rest%%|*}; extra=${rest#*|}
-  out=$(drawn "$id")
-  case "$out" in *"$proj"*) ;; *) fail "window $id should show '$proj', drew: $out" ;; esac
-  [ -z "$extra" ] || case "$out" in *"$extra"*) ;; *) fail "window $id should show '$extra', drew: $out" ;; esac
-done
-echo "  ok   each pane's title bar shows its project / path / branch / worktree"
+# 1. the place uses the bar's grammar: project-relative (no leading slash), the branch kept, the name not repeated
+python3 - "$STATE/panetitle-dump.json" "$A" "$B" "$N" "$WT" <<'PY' || fail "place grammar"
+import json, re, sys
+rows = json.load(open(sys.argv[1]))
+def plain(wid):
+    return re.sub(r"\x1b\[[0-9;:]*m", "", rows.get(str(wid), ""))
+def mentions(text, word):
+    return len(re.findall(r"(?<![\w-])" + re.escape(word) + r"(?![\w-])", text))
+A, B, N, WT = (plain(w) for w in sys.argv[2:])
+def need(ok, msg, out):
+    if not ok:
+        sys.stderr.write(msg + "\n drew: " + out + "\n")
+        sys.exit(1)
+need("/alpha" not in A and "src/ui" in A and "main" in A and mentions(A, "alpha") == 1,
+     "alpha/src/ui should be the project name, then src/ui and the branch, once", A)
+need(mentions(B, "bravo") == 1 and "main" in B and "bravo  bravo" not in B,
+     "a shell at the repo root must not repeat its name", B)
+need(mentions(N, "notes") == 1, "the notes pane should name its folder once", N)
+need("alpha-wt" in WT and "feat-wt" in WT and mentions(WT, "alpha") == 1 and "alpha:alpha-wt" not in WT,
+     "a worktree shell keeps the worktree and the branch without repeating the project", WT)
+PY
+echo "  ok   each pane header keeps the branch, drops a leading slash, and does not repeat its name"
 
-# 2. the active pane's project is bold; an inactive pane's is not
+# 2. the active pane's name is bold; an inactive pane's is not
 ACTIVE=$(kitty @ --to "$SOCK" ls | python3 -c 'import sys,json
 for o in json.load(sys.stdin):
     for t in o["tabs"]:
@@ -125,20 +169,21 @@ for o in json.load(sys.stdin):
             for w in t["windows"]:
                 if not w["is_focused"]: print(w["id"])')
 [ -n "$ACTIVE" ] && [ -n "$OTHER" ] || fail "no split tab found"
-case "$(drawn "$ACTIVE" raw)" in *$'\x1b[1m'*) ;; *) fail "the focused pane's project should be bold: $(drawn "$ACTIVE" raw)" ;; esac
-case "$(drawn "$OTHER" raw)" in *$'\x1b[1m'*) fail "an unfocused pane's project should not be bold" ;; esac
-echo "  ok   the focused pane's project is bold, the other pane's is not"
+case "$(drawn "$ACTIVE" raw)" in *$'\x1b[1m'*) ;; *) fail "the focused pane's name should be bold: $(drawn "$ACTIVE" raw)" ;; esac
+case "$(drawn "$OTHER" raw)" in *$'\x1b[1m'*) fail "an unfocused pane's name should not be bold" ;; esac
+echo "  ok   the focused pane's name is bold, the other pane's is not"
 
-# 3. the pane's own title follows when it adds something, and is left out when it does not
+# 3. the pane's own title becomes the bold name when it adds something, and a repeated product name is left out
 kitty @ --to "$SOCK" set-window-title --match "id:$B" "nvim README.md" >/dev/null 2>&1; sleep 1.5
-case "$(drawn "$B")" in *"bravo"*"nvim README.md") ;; *) fail "the pane's own title should follow the folder line: $(drawn "$B")" ;; esac
+case "$(drawn "$B")" in *"nvim README.md"*) ;; *) fail "the pane's task should be the bold name: $(drawn "$B")" ;; esac
 kitty @ --to "$SOCK" set-window-title --match "id:$B" "bravo" >/dev/null 2>&1; sleep 1.5
-case "$(drawn "$B")" in *"·"*) fail "a title that only repeats the project must be left out: $(drawn "$B")" ;; esac
+plain_b=$(drawn "$B")
+case "$plain_b" in *"nvim README"*) fail "a title that only repeats the folder must be left out: $plain_b" ;; esac
 kitty @ --to "$SOCK" set-window-title --match "id:$B" "" >/dev/null 2>&1; sleep 1.5
-case "$(drawn "$B")" in *bravo*) ;; *) fail "an EMPTY window title (a session that was just resumed) must still show the folder line: $(drawn "$B")" ;; esac
-echo "  ok   the pane's own title is appended only when it says something new (empty and repeated titles included)"
+case "$(drawn "$B")" in *bravo*) ;; *) fail "an EMPTY window title must still show the folder caption: $(drawn "$B")" ;; esac
+echo "  ok   the bold name is the task when it says something new (empty and repeated titles included)"
 
-# 4. renaming the TAB does not touch the pane's folder line (the tab name and the pane title are different things)
+# 4. renaming the TAB does not touch the pane header (the tab name and the pane title are different things)
 before=$(drawn "$A")
 TAB=$(kitty @ --to "$SOCK" ls | python3 -c 'import sys,json
 for o in json.load(sys.stdin):
@@ -146,7 +191,7 @@ for o in json.load(sys.stdin):
         if any(w["id"] == int(sys.argv[1]) for w in t["windows"]): print(t["id"])' "$A")
 kitty @ --to "$SOCK" set-tab-title --match "id:$TAB" "my renamed tab" >/dev/null 2>&1; sleep 1.5
 [ "$(drawn "$A")" = "$before" ] || fail "renaming the tab changed the pane's line: '$before' → '$(drawn "$A")'"
-echo "  ok   renaming a tab leaves the panes' folder lines alone"
+echo "  ok   renaming a tab leaves the pane headers alone"
 
 # 5. the switch: off → nothing is drawn through the hook (kitty shows its own title)
 FEAT off panetitle; kitty @ --to "$SOCK" load-config >/dev/null 2>&1; sleep 1
@@ -159,8 +204,11 @@ echo "  ok   features off panetitle hands the bar back to kitty's own title; on 
 
 if [ -n "${SHOT:-}" ]; then
   kitty @ --to "$SOCK" focus-tab --match title:alpha >/dev/null 2>&1; kitty @ --to "$SOCK" set-window-title --match "id:$A" "nvim src/main.rs" >/dev/null 2>&1; sleep 2
-  DISPLAY=$DISP import -window root "$SHOT" && echo "  shot $SHOT"
+  DISPLAY=$DISP import -window root "$SHOT" && echo "  shot $SHOT ($THEME)"
+  X windowsize "$WID" 520 890; sleep 1.5
+  DISPLAY=$DISP import -window root "${SHOT%.png}-narrow.png" && echo "  shot ${SHOT%.png}-narrow.png ($THEME)"
+  X windowsize "$WID" 1400 900; sleep 0.5
 fi
 [ "$(others)" = "$OTHERS_BEFORE" ] || fail "this rig changed the windows of ANOTHER kitty (before: $OTHERS_BEFORE after: $(others))"
 echo "  ok   no other kitty on this machine was touched"
-echo "PASS: pane title bars carry the folder line, fall back to kitty's own title when off, and survive renames"
+echo "PASS: pane title bars show the pane header row, fall back to kitty's own title when off, and survive renames"

@@ -25,7 +25,7 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
   `bash tests/smoke_prompts.sh` (a script printing sudo's prompt, a copy of bash named pacman/ssh: one fixed-text event each, cleared by answering, acknowledged when looked at, the switch silences it),
   `bash tests/smoke_legacy_socket.sh` (the socket in a private runtime dir, a key bound to a script that looks ONLY at <legacy dir>/mykitty-$PPID opens its tab; control: with `socketlink` off it does not; dead links are pruned),
   `bash tests/smoke_place.sh` (the folder line: twins, hidden duplicates, worktrees, a split's room, every switch on its own, all-off = the old line),
-  `bash tests/smoke_panetitle.sh` (the folder line in pane title bars: bold on the focused pane, own title appended only when new, an empty title, tab renames, the switch),
+  `bash tests/smoke_panetitle.sh` (pane headers: branch kept, no leading slash, the project name not repeated, bold only on the focused pane, a task title, an empty title, tab renames, the switch; `THEME=light` for the light theme),
   `bash tests/smoke_titles.sh` (what a tab is CALLED: fresh shell, named/renamed/cleared tab, program titles, agents with and without a conversation title, a stale title, the resume prompt, hostile/long/blank/path titles),
   `bash tests/smoke_join.sh` (a three-pane tab joins a two-pane tab: all panes present, the big-pane + stack shape kept, no pane narrower than 18 columns, same-tab/missing-tab/bad input change nothing, a tall-layout target works) and
   `bash tests/smoke_join_ui.sh` (the picker with real key and mouse events: chord, one Esc, no stacking, filter, side, tab/pane, hover, Enter, left click joins, right click does not),

@@ -93,6 +93,24 @@ class GatedConfTests(unittest.TestCase):
             self.assertNotIn("custom_shaders", L.gated_conf((0, 49, 1), d, True))      # that kitty would dim the tab bar too
             self.assertNotIn("custom_shaders", L.gated_conf((0, 49, 2), d, False))     # no slangc: the shader cannot build
 
+    def test_bar_cards_are_opt_in_gated_and_share_one_shader_line_with_dim(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertNotIn("kittymux-cards", L.gated_conf((0, 49, 2), d, True))
+            open(os.path.join(d, L.CARDS_FLAG), "w").close()
+            out = L.gated_conf((0, 49, 2), d, True)
+            line = [x for x in out.splitlines() if x.startswith("custom_shaders ")]
+            self.assertEqual(len(line), 1)
+            path = line[0].split(" ", 1)[1]
+            self.assertTrue(os.path.isabs(path) and path.endswith("assets/shaders/kittymux-cards.pipeline"), path)
+            self.assertTrue(os.path.exists(path))                                     # the shipped pipeline, not a guess
+            self.assertNotIn("custom_shaders", L.gated_conf((0, 48, 9), d, True))      # custom_shaders is 0.49.0+
+            self.assertNotIn("custom_shaders", L.gated_conf((0, 49, 2), d, False))     # no slangc
+            open(os.path.join(d, L.DIM_FLAG), "w").close()
+            both = [x for x in L.gated_conf((0, 49, 2), d, True).splitlines() if x.startswith("custom_shaders ")]
+            self.assertEqual(len(both), 1)                                            # a second line would replace the first
+            self.assertIn("dim-inactive-windows", both[0])
+            self.assertIn("kittymux-cards.pipeline", both[0])
+
     def test_slangc_detection(self):
         self.assertFalse(L.have_slangc({"SLANGC": "/nonexistent/slangc"}))
         self.assertFalse(L.have_slangc({"SLANGC": "'unterminated"}))

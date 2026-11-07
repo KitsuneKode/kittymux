@@ -34,7 +34,7 @@ Under each tab the bar says where it is: `project[:worktree]/inner  branch`. Wit
 - In a narrow bar the branch goes first, then the path. A long name is cut in the middle (`kit…ux:hue`), never dropped.
 - The slim rail has no room for a line, so it tints the tab number with the project's colour.
 
-The same line appears in each pane's title bar when you press `ctrl+alt+shift+c`. See [Tabs and panes](/docs/users/tabs-and-panes#pane-title-bars-and-drag-and-drop).
+The same place appears in each pane's title bar, after that pane's own name, when you press `ctrl+alt+shift+c`. A shell whose name is already the project shows the rest of the path and the branch, not the name again. See [Tabs and panes](/docs/users/tabs-and-panes#pane-title-bars-and-drag-and-drop).
 
 ## Choose which pieces you want
 
@@ -45,7 +45,7 @@ Every optional piece has its own switch. Use all of it, some of it or none.
 | `folder`     | The project and branch line under each tab. Off shows just the branch, as before. | On      |
 | `hue`        | A stable colour per project, derived from your theme's accent.                    | On      |
 | `collide`    | Emphasises the project of tabs that show the same title.                          | On      |
-| `panetitle`  | The same line, then the pane's own title, in each pane's title bar.               | On      |
+| `panetitle`  | The pane header: icon, bold name, then this folder line (project colour and branch), plus state and progress. | On      |
 | `motion`     | The working spinner turns. Off shows one still frame and stops the redraw timer.  | On      |
 | `titles`     | A tab is called by its task, or by its project when the title is only a product name or an agent's reply; long titles are cut at a word. | On      |
 | `sudo`       | A notification when sudo, doas, su or pkexec waits for your password in a pane you are not looking at. | On      |

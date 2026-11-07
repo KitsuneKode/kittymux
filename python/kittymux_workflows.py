@@ -8,6 +8,7 @@ import re
 import secrets
 import shlex
 import stat
+import sys
 import tempfile
 import time
 from kittymux_files import positive_id
@@ -116,6 +117,72 @@ def read_record(path):
         return None
 
 
+SNAPSHOT_BACKOFF = (0.5, 1.0, 2.0)
+SNAPSHOT_COOLDOWN = 3.5
+SNAPSHOT_UNAVAILABLE = 'kitty snapshot unavailable'
+
+
+def _unavailable_path(state_dir):
+    return os.path.join(state_dir, 'find-session-unavailable')
+
+
+def _snapshot_cooled(state_dir, now):
+    try:
+        with open(_unavailable_path(state_dir), encoding='ascii') as handle:
+            stamp = float(handle.read().strip())
+    except (OSError, ValueError):
+        return False
+    return 0 <= now - stamp < SNAPSHOT_COOLDOWN
+
+
+def _mark_snapshot_unavailable(state_dir, now):
+    path = _unavailable_path(state_dir)
+    tmp = f'{path}.{os.getpid()}.tmp'
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w', encoding='ascii') as handle:
+            handle.write(f'{now}\n')
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
+def fetch_snapshot(fetch, state_dir, *, sleep, clock=None):
+    """Call `fetch` until it returns a kitty snapshot. Wait 0.5 s, 1 s and 2 s when the failure is exactly
+    'kitty snapshot unavailable', then log that once and return None. A later call within 3.5 s returns None
+    at once and does not log again. Any other error propagates, with no retry."""
+    if clock is None:
+        clock = time.time
+    import fcntl
+    os.makedirs(state_dir, mode=0o700, exist_ok=True)
+    lock = os.open(os.path.join(state_dir, 'find-session.lock'), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if _snapshot_cooled(state_dir, clock()):
+            return None
+        last = None
+        for attempt in range(len(SNAPSHOT_BACKOFF) + 1):
+            if attempt:
+                sleep(SNAPSHOT_BACKOFF[attempt - 1])
+            try:
+                return fetch()
+            except ValueError as exc:
+                if str(exc) != SNAPSHOT_UNAVAILABLE:
+                    raise
+                last = exc
+        _mark_snapshot_unavailable(state_dir, clock())
+        import kittymux_diag
+        kittymux_diag.log_failure(state_dir, 'workflow find-session', f'ValueError: {last}')
+        print('kittymux workflow find-session: kitty snapshot unavailable', file=sys.stderr)
+        return None
+    finally:
+        fcntl.flock(lock, fcntl.LOCK_UN)
+        os.close(lock)
+
+
 def run(argv, sock, call, snapshot, state_dir):
     """call takes RC argv, returns (status, text); all paths remain argv elements."""
     if not argv:
@@ -211,7 +278,12 @@ def run(argv, sock, call, snapshot, state_dir):
             if fresh: return rc('close-tab', '--match', f"id:{fresh['id']}")[0]
         return 0
     if op == 'find-session' and len(args) == 1:
-        data = ls('--match-tab', 'session:^'+re.escape(args[0])+'$')
+        pattern = 'session:^'+re.escape(args[0])+'$'
+        def fetch():
+            return ls('--match-tab', pattern)
+        data = fetch_snapshot(fetch, state_dir, sleep=time.sleep)
+        if not data:
+            return 1
         host = next((h for h in data if h['tabs']), None)
         if not host: return 1
         print(host['id']); return 0

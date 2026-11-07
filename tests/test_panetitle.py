@@ -16,84 +16,221 @@ HOME = "/home/someone"
 REPO = G.GitInfo(top="/work/kittymux", branch="main", project="kittymux", worktree="")
 WT = G.GitInfo(top="/work/kittymux/.worktrees/ui", branch="feat/ui", project="kittymux", worktree="ui")
 SGR = re.compile(r"\x1b\[[0-9;:]*m")
+STATES = ("idle", "working", "waiting", "done", "limited", "error")
 
 
 def plain(s: str) -> str:
     return SGR.sub("", s)
 
 
-def style(active=True):
-    pal = types.SimpleNamespace(text=0xDDDDDD, muted=0x999999, faint=0x777777)
-    return P.style(pal, active, 0x88CCAA, False)
+ACCENT = 0xBB9AF7
+STATUS = (0xE6C384, 0xFF4444, 0x7FB4CA, 0x98BB6C)
+MARKS = {"working": "◐", "waiting": "!", "limited": "⊘", "error": "✕", "done": "✓"}
 
 
-def render(f, title, columns, active=True, **kw):
-    return PT.render(f, title, columns, style(active), 0x999999, 0x555555, active=active, icon="F", branch_icon="B", **kw)
+def palette(accent=None):
+    return types.SimpleNamespace(text=0xDDDDDD, muted=0x999999, faint=0x777777, alert=0xFF4444,
+                                 waiting=0xE6C384, working=0x7FB4CA, done=0x98BB6C, bg=0x2A2B3C, accent=accent)
 
 
-class RenderTests(unittest.TestCase):
-    def test_agent_state_is_reserved_before_the_folder_at_narrow_widths(self):
-        f = P.facts("/work/kittymux/long/path", REPO, HOME)
-        for columns in (4, 8, 16, 40):
-            out = plain(render(f, "long title", columns, state_mark="!", state_rgb=0x999999))
-            self.assertTrue(out.startswith("! "), out)
-            self.assertLessEqual(len(out), columns)
+def style(active=True, state="idle", brand=0xD97757, project="", accent=None):
+    pal = palette(accent)
+    hue = None
+    if accent is not None and project:
+        hue = T.project_hue(project, accent, pal.bg, avoid=STATUS)
+    return PT.derive_colours_full(0xC0CAF5, pal.bg, pal, brand, active, state, project=project, hue=hue)
 
-    def test_the_folder_line_then_the_panes_own_title(self):
+
+def render(f, columns, *, active=True, name="kittymux", icon="G", state="", progress=None, brand=0xD97757, accent=ACCENT):
+    mark = "" if not state or state == "idle" else MARKS.get(state, "")
+    st = style(active, state, brand, project=f.project, accent=accent)
+    return PT.render(f, columns, st, active=active, icon=icon, name=name, state=state, state_mark=mark, progress=progress)
+
+
+def mentions(text: str, word: str) -> int:
+    """How many times `word` stands alone (a following / or : still counts: `kittymux/src`, `kittymux:ui`)."""
+    return len(re.findall(r"(?<![\w-])" + re.escape(word) + r"(?![\w-])", text))
+
+
+class LayoutTests(unittest.TestCase):
+    def test_task_then_place_with_branch_and_no_leading_slash(self):
         f = P.facts("/work/kittymux/src/ui", REPO, HOME)
-        self.assertEqual(plain(render(f, "nvim README.md", 80)), "F kittymux/src/ui  B main  ·  nvim README.md")
+        out = plain(render(f, 80, name="nvim src/main.rs", state="waiting"))
+        self.assertTrue(out.startswith("G nvim src/main.rs  kittymux/src/ui"), out)
+        self.assertNotIn("/kittymux", out)
+        self.assertIn("main", out)
+        self.assertIn(PT._ICON_BRANCH, out)
+        self.assertTrue(out.endswith("!"), out)
+        self.assertLess(out.index("nvim"), out.index("kittymux"))
+        self.assertEqual(mentions(out, "kittymux"), 1, out)
 
-    def test_the_project_is_bold_only_on_the_active_pane(self):
-        f = P.facts("/work/kittymux", REPO, HOME)
-        self.assertIn("\x1b[1m", render(f, "", 80, active=True))
-        self.assertNotIn("\x1b[1m", render(f, "", 80, active=False))
+    def test_a_shell_named_by_the_project_does_not_repeat_it(self):
+        root = P.facts("/work/kittymux", REPO, HOME)
+        out = plain(render(root, 80, name="kittymux"))
+        self.assertEqual(mentions(out, "kittymux"), 1, out)
+        self.assertIn("main", out)
+        self.assertNotIn("kittymux kittymux", out)
+        self.assertNotIn("kittymux  kittymux", out)
+        inner = P.facts("/work/kittymux/src/ui", REPO, HOME)
+        shown = plain(render(inner, 80, name="kittymux"))
+        self.assertEqual(mentions(shown, "kittymux"), 1, shown)
+        self.assertIn("src/ui", shown)
+        self.assertNotIn("/src", shown)
+        self.assertIn("main", shown)
 
-    def test_colours_are_24_bit_sgr_and_the_string_ends_reset(self):
-        f = P.facts("/work/kittymux", REPO, HOME)
-        out = render(f, "", 80)
-        self.assertIn("\x1b[38;2;136;204;170m", out)             # the project hue 0x88CCAA
-        self.assertTrue(out.endswith("\x1b[0m"))
-
-    def test_a_title_that_says_nothing_new_is_left_out(self):
-        f = P.facts("/work/kittymux", REPO, HOME)
-        for title in ("", "zsh", "bash", "kitty", "KITTYMUX", "kittymux", "~/work/kittymux", "/work/kittymux", "sh"):
-            self.assertEqual(plain(render(f, title, 80)), "F kittymux  B main", title)
-
-    def test_it_never_exceeds_the_pane_width(self):
-        for f in (P.facts("/work/kittymux/a/b/c/d", REPO, HOME), P.facts("/work/kittymux/.worktrees/ui/src", WT, HOME),
-                  P.facts(HOME + "/Documents/notes", None, HOME), P.Facts("日本語のプロジェクト", "", "", "", "")):
-            for title in ("", "nvim", "a very long title that goes on and on and on for ages " * 2):
-                for columns in range(0, 130):
-                    out = render(f, title, columns)
-                    self.assertLessEqual(len(plain(out)), max(columns, 0) if columns >= 4 else 4, (columns, title[:10], plain(out)))
-
-    def test_a_hostile_title_cannot_inject_terminal_sequences(self):
-        """kitty's own sanitiser misses ESC; the line is parsed for SGR, so a title could recolour or break the bar."""
-        f = P.facts("/work/kittymux", REPO, HOME)
-        out = render(f, "\x1b[41mRED\x1b[0m\x07\x1b]0;pwned\x07 title", 80)
-        body = plain(out)
-        self.assertFalse(any(ord(c) < 32 or 127 <= ord(c) < 160 for c in body), repr(body))
-        self.assertNotIn("\x1b[41m", out)
-
-    def test_the_folder_line_wins_the_room_and_the_title_gets_what_is_left(self):
-        f = P.facts("/work/kittymux/src", REPO, HOME)
-        out = plain(render(f, "a long title here", 40))
-        self.assertTrue(out.startswith("F kittymux/src  B main"), out)
-        self.assertLessEqual(len(out), 40)
-        narrow = plain(render(f, "a long title here", 22))
-        self.assertNotIn("·", narrow)                               # no room for both: only the folder line
-
-    def test_a_worktree_is_shown(self):
+    def test_a_worktree_shell_keeps_the_worktree_and_the_branch(self):
         f = P.facts("/work/kittymux/.worktrees/ui", WT, HOME)
-        self.assertEqual(plain(render(f, "", 80)), "F kittymux:ui  B feat/ui")
+        out = plain(render(f, 80, name="kittymux"))
+        self.assertRegex(out, r"(?<![\w/:-])ui(?![\w/:-])")
+        self.assertIn("feat/ui", out)
+        self.assertNotIn("kittymux:ui", out)          # the project is the name; the worktree stands on its own
+        self.assertEqual(mentions(out, "kittymux"), 1, out)
+        task = plain(render(f, 80, name="nvim src/main.rs"))
+        self.assertIn("kittymux:ui", task, task)
+        self.assertIn("feat/ui", task)
 
-    def test_outside_a_repo_it_says_where_the_folder_lives(self):
+    def test_home_folder_is_not_rewritten_as_an_absolute_project_path(self):
         f = P.facts(HOME + "/Documents/notes", None, HOME)
-        self.assertEqual(plain(render(f, "", 80)), "F notes  ~/Documents")
+        out = plain(render(f, 80, name="notes"))
+        self.assertEqual(mentions(out, "notes"), 1, out)
+        self.assertIn("~/Documents", out)
+        self.assertFalse(out.strip().startswith("/"), out)
+
+    def test_the_active_project_uses_its_hue_and_an_unfocused_pane_recedes(self):
+        f = P.facts("/work/kittymux/src/ui", REPO, HOME)
+        hue = T.project_hue("kittymux", ACCENT, 0x2A2B3C, avoid=STATUS)
+        active = render(f, 80, name="nvim src/main.rs", active=True)
+        idle = render(f, 80, name="nvim src/main.rs", active=False)
+        quiet = style(False, project="kittymux", accent=ACCENT)["project"][0]
+        self.assertIn(_sgr(hue), active)
+        self.assertNotIn(_sgr(hue), idle)
+        self.assertIn(_sgr(quiet), idle)                       # the same hue, pulled back, so an unfocused pane still matches its tab
+        self.assertNotEqual(quiet, hue)
+        self.assertGreaterEqual(T.contrast(quiet, 0x2A2B3C), 3.0)
+        self.assertIn("\x1b[1m", active)
+        self.assertNotIn("\x1b[1m", idle)
+        self.assertIn(_sgr(hue) + "\x1b[1mkittymux", active)   # the project word, not the task name, carries the hue
+        self.assertIn(_sgr(style(True, project="kittymux", accent=ACCENT)["name"][0]) + "\x1b[1mnvim", active)
+        shell = render(P.facts("/work/kittymux", REPO, HOME), 80, name="kittymux", active=True)
+        self.assertIn(_sgr(hue) + "\x1b[1mkittymux", shell)
+        shell_idle = render(P.facts("/work/kittymux", REPO, HOME), 80, name="kittymux", active=False)
+        self.assertIn(_sgr(quiet) + "kittymux", shell_idle)
+        self.assertNotIn("\x1b[1m", shell_idle)
+
+    def test_hue_off_leaves_the_project_in_the_text_colour(self):
+        f = P.facts("/work/kittymux/src/ui", REPO, HOME)
+        hue = T.project_hue("kittymux", ACCENT, 0x2A2B3C, avoid=STATUS)
+        st = style(True, "idle", project="kittymux", accent=None)
+        out = PT.render(f, 80, st, active=True, icon="G", name="nvim src/main.rs")
+        self.assertNotIn(_sgr(hue), out)
+        self.assertIn("kittymux/src/ui", plain(out))
+
+    def test_state_mark_survives_every_state_from_20_to_120(self):
+        f = P.facts("/work/kittymux/src/ui", REPO, HOME)
+        for columns in range(20, 121):
+            for state in STATES:
+                out = plain(render(f, columns, name="nvim src/main.rs", state=state))
+                self.assertLessEqual(len(out), columns, (columns, state, out))
+                if state == "idle":
+                    self.assertFalse(any(out.rstrip().endswith(m) for m in MARKS.values()), (columns, state, out))
+                else:
+                    self.assertTrue(out.rstrip().endswith(MARKS[state]), (columns, state, out))
+
+    def test_truncation_gives_up_the_path_then_the_branch_then_the_name(self):
+        f = P.facts("/work/kittymux/a/very/long/path/segment", REPO, HOME)
+        path_cut = branch_dropped = name_cut = False
+        for columns in range(20, 121):
+            out = plain(render(f, columns, name="short", state="working"))
+            self.assertTrue(out.endswith("◐"), (columns, out))
+            self.assertLessEqual(len(out), columns, (columns, out))
+            branch_here = "main" in out
+            if branch_here and "…" in out and "short" in out and "segment" in out and out.find("a/") < out.find("…"):
+                path_cut = True                            # both ends of the path stay; the name and the branch are still whole
+            if "short" in out and not branch_here:
+                branch_dropped = True
+            if "short" not in out:
+                self.assertNotIn("main", out, out)        # the name is cut only after the branch is gone
+                self.assertIn("…", out, out)
+                name_cut = True
+        self.assertTrue(path_cut)
+        self.assertTrue(branch_dropped)
+        long_name = "a very long agent task title here"
+        for columns in range(20, 40):
+            out = plain(render(f, columns, name=long_name, state="working"))
+            self.assertTrue(out.endswith("◐"), (columns, out))
+            if long_name not in out:
+                self.assertNotIn("main", out, out)
+                self.assertIn("…", out, out)
+                self.assertTrue(out.startswith("G "), out)
+                name_cut = True
+        self.assertTrue(name_cut)
+
+    def test_a_long_name_is_cut_in_the_middle_after_the_place_yields(self):
+        f = P.facts("/work/kittymux", REPO, HOME)
+        out = plain(render(f, 24, name="a very long agent task title here", state="done"))
+        self.assertTrue(out.endswith("✓"), out)
+        self.assertIn("…", out)
+        self.assertNotIn("main", out)
+        self.assertIn("kittymux", out)
+
+    def test_a_name_with_esc_is_cleaned(self):
+        f = P.facts("/work/kittymux", REPO, HOME)
+        out = render(f, 80, name="\x1b[41mRED\x07pwned")
+        self.assertNotIn("\x1b[41m", out)
+        self.assertNotIn("\x07", plain(out))
+
+    def test_progress_and_state_on_the_right(self):
+        f = P.facts("/work/kittymux", REPO, HOME)
+        out = plain(render(f, 50, state="working", progress=("set", 62)))
+        self.assertIn("62%", out)
+        self.assertTrue(out.endswith("◐"), out)
+        self.assertLess(out.index("main"), out.index("62%"))
+
+    def test_the_percent_yields_before_the_name_and_the_mark_stays(self):
+        f = P.facts("/work/kittymux/a/very/long/path/segment", REPO, HOME)
+        wide = plain(render(f, 80, name="short", state="working", progress=("set", 62)))
+        self.assertIn("62%", wide)
+        tight = None
+        for columns in range(20, 40):
+            out = plain(render(f, columns, name="short", state="working", progress=("set", 62)))
+            self.assertTrue(out.endswith("◐"), (columns, out))
+            if "62%" not in out and "short" in out:
+                tight = out
+                break
+        self.assertIsNotNone(tight, "the percent should be dropped before the name is")
+
+    def test_error_uses_alert_on_the_name(self):
+        f = P.facts("/work/kittymux", REPO, HOME)
+        st = style(True, "error", 0xD97757, project="kittymux", accent=ACCENT)
+        out = PT.render(f, 40, st, active=True, icon="G", name="failed task", state="error", state_mark="✕")
+        self.assertIn(_sgr(st["name"][0]), out)
+        self.assertIn(_sgr(st["state"][0]), out)
+        self.assertNotIn(_sgr(st["project"][0]) + "failed", out)
+
+    def test_plain_shell_uses_terminal_glyph(self):
+        glyph, brand = PT.pane_icon(None, "/bin/zsh")
+        self.assertEqual(glyph, PT._ICON_SHELL)
+        self.assertIsNone(brand)
+
+    def test_names(self):
+        f = P.facts("/work/kittymux/src/ui", REPO, HOME)
+        self.assertEqual(PT.pane_name("nvim src/main.rs", None, "", f), "nvim src/main.rs")
+        self.assertEqual(PT.pane_name("sh", None, "", f), "kittymux")
+        self.assertEqual(PT.pane_name("kittymux", None, "", f), "kittymux")
+        self.assertEqual(PT.pane_name("ui", None, "", f), "kittymux")
+        self.assertEqual(PT.pane_name("Claude Code", "claude", "", f), "Claude Code")
+        self.assertEqual(PT.pane_name("Fix the header", "claude", "", f), "Fix the header")
+        wt = P.facts("/work/kittymux/.worktrees/ui", WT, HOME)
+        self.assertEqual(PT.pane_name("ui", None, "", wt), "kittymux")
+        self.assertEqual(PT.pane_name("kittymux:ui", None, "", wt), "kittymux")
+
+
+def _sgr(rgb: int) -> str:
+    return f"\x1b[38;2;{(rgb >> 16) & 255};{(rgb >> 8) & 255};{rgb & 255}m"
 
 
 class DeriveColoursTests(unittest.TestCase):
-    BARS = {                                       # (title bar foreground, background): a dark bar, a light bar, a solid accent block
+    BARS = {
         "dark": (0xC0CAF5, 0x2A2B3C),
         "light": (0x4C4F69, 0xD9DCE5),
         "accent-block": (0x1A1B26, 0x7AA2F7),
@@ -111,17 +248,15 @@ class DeriveColoursTests(unittest.TestCase):
                 self.assertGreaterEqual(T.contrast(dot, bg), 1.5, (name, active, "dot"))
 
     def test_the_project_keeps_its_colour_from_the_bar(self):
-        """The same project gets the same hue in the tab bar and in its pane title bars (when the backgrounds read alike)."""
         fg, bg = self.BARS["dark"]
         style, _t, _d = PT.derive_colours(fg, bg, 0xBB9AF7, self.STATUS, "kittymux", True)
         self.assertEqual(style["icon"][0], T.project_hue("kittymux", 0xBB9AF7, bg, avoid=self.STATUS))
 
 
 class DrawTests(unittest.TestCase):
-    """The kitty-facing part, with the kitty modules faked."""
-
     def fake_kitty(self, cwd="/work/kittymux", columns=80, enabled=True):
-        window = types.SimpleNamespace(child=types.SimpleNamespace(current_cwd=cwd, cwd=cwd), screen=types.SimpleNamespace(columns=columns))
+        window = types.SimpleNamespace(child=types.SimpleNamespace(current_cwd=cwd, cwd=cwd),
+                                      screen=types.SimpleNamespace(columns=columns), progress=types.SimpleNamespace(state=types.SimpleNamespace(name="unset")))
         boss = types.SimpleNamespace(window_id_map={7: window})
         opts = types.SimpleNamespace(
             foreground=0xC0CAF5, background=0x1A1B26, active_border_color=0xBB9AF7, inactive_border_color=0x414868,
@@ -129,7 +264,7 @@ class DrawTests(unittest.TestCase):
             window_title_bar_inactive_foreground=None, window_title_bar_inactive_background=None,
             active_tab_foreground=0xC0CAF5, active_tab_background=0x2A2B3C, inactive_tab_foreground=0x888888, inactive_tab_background=0x1A1B26,
             color_table=[0x808080] * 16)
-        return types.SimpleNamespace(boss=boss, opts=opts, enabled=enabled)
+        return types.SimpleNamespace(boss=boss, opts=opts, enabled=enabled, window=window)
 
     def run_draw(self, fk, data):
         with mock.patch.object(PT, "_kitty", return_value=(lambda: fk.boss, lambda: fk.opts, lambda c: int(c), len)), \
@@ -142,11 +277,11 @@ class DrawTests(unittest.TestCase):
         base.update(kw)
         return types.SimpleNamespace(**base)
 
-    def test_draws_the_folder_line_for_a_pane(self):
+    def test_draws_name_and_folder_for_a_pane(self):
         out = self.run_draw(self.fake_kitty(), self.data())
-        self.assertIn("kittymux", plain(out))
-        self.assertIn("main", plain(out))
-        self.assertTrue(plain(out).endswith("nvim"))
+        body = plain(out)
+        self.assertIn("kittymux", body)
+        self.assertIn("nvim", body)
 
     def test_off_switch_returns_nothing_so_kitty_shows_its_own_title(self):
         self.assertEqual(self.run_draw(self.fake_kitty(enabled=False), self.data()), "")

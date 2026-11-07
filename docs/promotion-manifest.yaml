@@ -18,10 +18,10 @@ promotions:
     lastReviewed: "2026-10-03"
   - agentPath: docs/inbox.md
     publishedPath: docs/users/notifications-and-inbox.mdx
-    lastReviewed: "2026-10-03"
+    lastReviewed: "2026-11-05"
   - agentPath: docs/notifications.md
     publishedPath: docs/users/notifications-and-inbox.mdx
-    lastReviewed: "2026-10-03"
+    lastReviewed: "2026-11-05"
   - agentPath: SECURITY.md
     publishedPath: docs/users/privacy-and-security.mdx
     lastReviewed: "2026-10-03"

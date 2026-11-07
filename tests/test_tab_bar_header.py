@@ -17,9 +17,11 @@ class RecordingScreen:
         self.lines = 40
         self.cursor = types.SimpleNamespace(x=0, y=0, bg=0, fg=0, bold=False)
         self.drawn: list[tuple[int, int, str]] = []
+        self.fgs: list[tuple[str, int]] = []
 
     def draw(self, text: str) -> None:
         self.drawn.append((self.cursor.y, self.cursor.x, text))
+        self.fgs.append((text, self.cursor.fg))
         self.cursor.x += len(text)
 
 
@@ -92,6 +94,32 @@ class HeaderSessionTests(unittest.TestCase):
         self.assertIn("✓", joined)
         self.assertIn("…", joined)
 
+    def _draw(self, tab, mascot=False):
+        with patch.object(self.tb, "_session_stats", return_value=(2, {})), \
+             patch.object(self.tb, "_host", return_value="calm-otter"), \
+             patch.object(self.tb, "_mascot_ready", return_value=mascot):
+            screen = RecordingScreen(28)
+            pal = types.SimpleNamespace(
+                bar=1, text=2, faint=3, waiting=4, alert=5, done=6, working=4, limited=5,
+                bg=7, accent=8, surface_hi=9, muted=10,
+            )
+            self.tb._draw_header(screen, 0, 2, 28, tab, pal, 1, False)
+        return screen
+
+    def test_without_a_session_the_machine_names_the_bar_and_the_count_sits_under_it(self):
+        screen = self._draw(types.SimpleNamespace(tab_id=1, session_name="", active_session_name=""))
+        line0 = "".join(t for y, _x, t in screen.drawn if y == 0)
+        line1 = "".join(t for y, _x, t in screen.drawn if y == 1)
+        self.assertIn("calm-otter", line0)
+        self.assertNotIn("Tabs", line0)
+        self.assertIn("2 tabs", line1)
+        self.assertNotIn("calm-otter", line1)            # said once, not twice
+
+    def test_the_mascot_is_drawn_in_the_text_colour_not_the_accent(self):
+        screen = self._draw(types.SimpleNamespace(tab_id=1, session_name="work", active_session_name="work"), mascot=True)
+        mascot = self.tb.kittymux_agents.MASCOT_GLYPH
+        colours = [fg for t, fg in screen.fgs if t == mascot]
+        self.assertEqual(colours, [self.tb._rgb(2)])        # pal.text; the accent (8) is for selection and focus
     def test_tab_one_is_labelled_when_it_is_not_the_focused_session(self):
         tab = types.SimpleNamespace(session_name="alpha", active_session_name="beta")
         other = types.SimpleNamespace(session_name="beta", active_session_name="beta")

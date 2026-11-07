@@ -109,7 +109,37 @@ _MISS = object()
 
 
 def _new_pass() -> None:
+    _publish_progress()                      # the previous pass's OSC 9;4, then this pass refills `_PROG["cur"]`
     _MEMO.clear()
+
+
+# OSC 9;4 for the panel. Not a timer: published once per bar pass, and only when the tuples changed.
+_PROG: dict = {"cur": {}, "sig": None}
+
+
+def _remember_progress(tab) -> None:
+    try:
+        rep = _tab_progress(tab)
+        if rep:
+            _PROG["cur"][int(tab.tab_id)] = rep
+    except Exception:
+        pass
+
+
+def _publish_progress() -> None:
+    snap = _PROG["cur"]
+    _PROG["cur"] = {}
+    try:
+        sig = tuple(sorted((int(k), v[0], int(v[1])) for k, v in snap.items()))
+    except Exception:
+        sig = ()
+    if sig == _PROG["sig"]:
+        return
+    _PROG["sig"] = sig
+    try:
+        kittymux_progress.save_reports(_PANES_JSON.with_name(f"progress-{os.getpid()}.json"), snap)
+    except Exception:
+        pass
 
 
 def _per_pass(fn):
@@ -1146,18 +1176,19 @@ def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: in
         return
     # Rex-style: the focused session's name, in full weight, over this machine and how many tabs (it said `TABS` / `N tabs`).
     name = _compact_session_name(getattr(tab, "active_session_name", "") or getattr(tab, "session_name", "") or "")
-    name = "Tabs" if name == "—" else name
+    unnamed = name == "—"                              # no session: the machine names the bar, the count sits underneath
+    name = (_host() or "Tabs") if unnamed else name
     btn_x = cols - kittymux_layout.TOGGLE_CELLS
     mascot = _mascot_ready()
     room = btn_x - 3 - (2 if mascot else 0)
     screen.cursor.y = y
     if mascot:
-        _put(screen, 1, kittymux_agents.MASCOT_GLYPH, _rgb(pal.accent), True)
+        _put(screen, 1, kittymux_agents.MASCOT_GLYPH, _rgb(pal.text), True)
     _put(screen, 3 if mascot else 1, _fit(name, max(4, room)), _rgb(pal.text), True)
     info_y = y + (1 if rows > 1 else 0)
     parts = _attention_parts(counts, pal)
     badge_cells = sum(_cells(t) for t, _c, _b in parts)
-    count_txt = (f"{_host()} · {total} tabs" if rows > 1 else f"{total} tabs") if total else ""
+    count_txt = (f"{_host()} · {total} tabs" if rows > 1 and not unnamed else f"{total} tabs") if total else ""
     x = 1
     screen.cursor.y = info_y
     screen.cursor.bg = bar
@@ -1249,6 +1280,14 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
             subtitle.append((f"{_ICON_FOLDER} {_short_cwd(cwd, 24)}", pal.muted if active else pal.faint))
         if subtitle and not extra_data.for_layout:
             _dump_row(tab.tab_id, legacy=True, pieces=[[subtitle[0][0], "legacy"]])
+    home_only = _clean_visible_title(tab.title or "").strip() == "~"   # the folder line would only repeat it, so it hides
+    if not compact and not info and (not subtitle or (home_only and all(isinstance(t, _Place) for t, _c in subtitle))):
+        subtitle = []
+        # the app it runs, else the shell itself (the label skips shells: they are what every tab runs)
+        program = _best_process_label(foreground, _last_cmd) or next(
+            (_basename(c[0]).lstrip("-") for c in foreground or () if c), "")
+        if program:
+            subtitle.append((program, pal.muted if active else pal.faint))
     pane_count = _pane_count(tab.tab_id, tab.num_windows)
     if pane_count > 1:
         pane_map = _pane_map(tab.tab_id, pal, cols)
@@ -1352,6 +1391,8 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     elif title_room >= 3:
         title = _shown_title(tab, max(4, title_room), info, cwd)
         title = title if _features().get("titles", True) else _fit(title, title_room)
+        if title.strip() == "~":
+            title = "Home"                                # the home folder by name, not a bare tilde
         _put(screen, tx, title,
              _rgb(pal.text) if active else _rgb(pal.muted), bold=active)
         if _BAR_DUMP and not extra_data.for_layout:
@@ -1519,6 +1560,7 @@ def _draw_tab(
         kittymux_scan.ensure_started()          # idempotent: a no-op once the timer runs
         if index == 1:
             _new_pass()                          # a new redraw pass starts at tab 1: nothing memoised before it is reused
+        _remember_progress(tab)                  # every tab, including the rail: the panel reads this file, the bar does not have to draw the fill
         pal = _palette(draw_data)
         if draw_data.tab_bar_edge in ("left", "right"):
             end = _draw_vertical(draw_data, screen, tab, index, extra_data, pal)

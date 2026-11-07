@@ -4,7 +4,9 @@
 # every window whose foreground process is a known agent CLI, reads the bottom of its visible
 # screen, combines that with hook status from panes-<pid>.json, and stores the verdict from
 # kittymux_state.resolve() in scan-<pid>.json. The tab bar, deck, panel and jump queue all read
-# that verdict (kittymux_agents.merge_scan), so they can never disagree.
+# that verdict (kittymux_agents.merge_scan), so they can never disagree. The same pass publishes
+# agents.json (kittymux_agentsnap): one file for every running kitty, rewritten only when a visible
+# field changed.
 #
 # Lifecycle — the part that is easy to get wrong in a long-lived process:
 #   * All runtime state lives in `_RT`, parked in sys.modules, so re-executing / reloading this
@@ -252,7 +254,7 @@ def scan_prompt(window, now: float) -> None:
                 _record("prompt", wid, cur["who"], rule=rule.id, outcome="suppressed: first sight of this window (a scanner restart must not replay old prompts)")
         if not cur["announced"] and now - cur["since"] >= PROMPT_SETTLE:
             cur["announced"] = True
-            outcome = _announce(window, rule.kind, cur["who"], "screen", f"{cur['who']} {rule.say}")
+            outcome = _announce(window, rule.kind, cur["who"], "screen", f"{cur['who']} {rule.say}", origin="tool")
             _record("prompt", wid, cur["who"], rule=rule.id, outcome=outcome)
         unread = rt.get("unread")
         if getattr(window, "is_focused", False) and unread and wid in unread:
@@ -438,6 +440,66 @@ def refresh_bar(tm) -> None:
         pass
 
 
+def _fraction(window):
+    """OSC 9;4 as 0–1 when the program reported an amount, else None (unset or indeterminate)."""
+    progress = getattr(window, "progress", None)
+    if progress is None:
+        return None
+    if isinstance(progress, (int, float)) and not isinstance(progress, bool):
+        number = float(progress)
+        return round(number, 4) if 0 <= number <= 1 else None
+    name = getattr(getattr(progress, "state", None), "name", "")
+    if name not in ("set", "paused", "error"):
+        return None
+    try:
+        pct = int(getattr(progress, "percent", 0) or 0)
+    except (TypeError, ValueError):
+        return None
+    if pct < 0 or pct > 100:
+        return None
+    return round(pct / 100, 4)
+
+
+def _agent_spec(window) -> dict | None:
+    wid = getattr(window, "id", None)
+    verdict = _RT.verdicts.get(str(wid)) or {}
+    state = verdict.get("state") or ""
+    agent = verdict.get("agent") or ""
+    if not agent or state not in ("working", "waiting", "limited", "error", "done", "idle"):
+        return None
+    child = getattr(window, "child", None)
+    cwd = ""
+    if child is not None:
+        cwd = getattr(child, "current_cwd", None) or getattr(child, "cwd", None) or ""
+    tab = None
+    try:
+        tab = window.tabref()
+    except Exception:
+        tab = None
+    tab_title = getattr(tab, "title", "") or "" if tab is not None else ""
+    session = (getattr(tab, "session_name", "") or "") if tab is not None else ""
+    if not session:
+        session = getattr(window, "session_name", "") or ""
+    return {"window_id": wid, "agent": agent, "state": state, "title": getattr(window, "title", "") or "",
+            "tab_title": tab_title, "cwd": cwd, "session": session, "reason": verdict.get("reason") or "",
+            "progress": _fraction(window), "limit_reset": verdict.get("reset_at")}
+
+
+def _publish_agents(boss) -> None:
+    """Replace this kitty's rows in the shared agents.json. Never raises, and the publisher skips a write that would change nothing but the timestamp."""
+    try:
+        _ensure_path()
+        import kittymux_agentsnap
+        specs = []
+        for window in list(getattr(boss, "all_windows", None) or []):
+            spec = _agent_spec(window)
+            if spec is not None:
+                specs.append(spec)
+        kittymux_agentsnap.publish(state_dir(), os.getpid(), specs, time.time())
+    except Exception:
+        _debug()
+
+
 def scan_all(timer_id=None) -> None:
     if timer_id is not None and timer_id != _RT.scan_timer:
         return                                               # a tick of a timer that was removed in the same batch (see kittymux_timers): not ours any more
@@ -498,6 +560,7 @@ def scan_all(timer_id=None) -> None:
             except Exception:
                 pass
         _flush(now, force=bool(bars), dirty=dirty)
+        _publish_agents(boss)
         _sync_spinner()
         _retime(SCAN_FAST if n_agents else SCAN_IDLE)
     except Exception:
@@ -515,6 +578,10 @@ def poke(window) -> None:
                 refresh_bar(tm)
             _flush(now, force=True)
             _sync_spinner()
+        from kitty.fast_data_types import get_boss
+        boss = get_boss()
+        if boss is not None:
+            _publish_agents(boss)
     except Exception:
         pass
 
@@ -942,15 +1009,17 @@ def _inbox():
     return kittymux_inbox
 
 
-def _announce(window, kind: str, agent: str, source: str, detail: str, *, confidence: str = "high", worked=None, reset_at=None, tag: str = "") -> str:
-    """Record the event and, if it is new and the policy allows, show the popup. Returns the outcome for the decision log. Never raises."""
+def _announce(window, kind: str, agent: str, source: str, detail: str, *, confidence: str = "high", worked=None, reset_at=None, tag: str = "",
+              origin: str = "agent") -> str:
+    """Record the event and, if it is new and the policy allows, show the popup. Returns the outcome for the decision log. Never raises.
+    `source` is who reported it. `origin` is what it is about (`agent`, or `tool` for a sudo/ssh/git/pacman prompt)."""
     try:
         agents = _mods()[0]
         inbox = _inbox()
         wid = str(window.id)
         tab = agents.strip_agent_prefix(agents.strip_title_prefix(window.title or ""), agent) or agent
         ev = inbox.make_event(kind, agent, wid, source, time.time(), pid=os.getpid(), tab=tab, title=f"{agent or 'agent'} {_TEXT_BY_KIND.get(kind, kind)}",
-                              body=detail, confidence=confidence, reset_at=reset_at, private=_private(), tag=tag)
+                              body=detail, confidence=confidence, reset_at=reset_at, private=_private(), tag=tag, origin=origin)
         # A text-only error is inbox-only. If the agent's own OSC 7501 error then merges into it, the
         # popup was never sent. A different message is a different report even inside the merge window.
         prior = inbox.matching_unread(state_dir(), ev) if kind == "error" and tag == "psp" else None
@@ -960,23 +1029,24 @@ def _announce(window, kind: str, agent: str, source: str, detail: str, *, confid
         if not is_new:
             same = prior is not None and prior.get("tag") == "psp" and (prior.get("body") or "") == (ev.get("body") or "")
             if kind == "error" and tag == "psp" and not same:
-                return _notify(window, "error", detail, agent)
+                return _notify(window, "error", detail, agent, ev.get("id") or "", origin)
             return "merged into an earlier report of the same thing: no second popup"
+        told = (ev.get("id") or "", origin)
         if kind in ("permission", "question"):
-            return _notify(window, "waiting", detail, agent)
+            return _notify(window, "waiting", detail, agent, *told)
         if kind == "limit":
-            return _notify(window, "limited", detail, agent)
+            return _notify(window, "limited", detail, agent, *told)
         if kind == "error":
             if tag == "psp":                               # the agent's own status report; a failure only mentioned in other text stays inbox-only
-                return _notify(window, "error", detail, agent)
+                return _notify(window, "error", detail, agent, *told)
             return "inbox only"
         if kind == "done":
             if confidence == "high":
                 if worked is not None and worked < NOTIFY_DONE_MIN:
                     return f"inbox only: the agent said it finished, but it worked only {round(worked)} s (< {int(NOTIFY_DONE_MIN)} s)"
-                return _notify(window, "done", "", agent)
+                return _notify(window, "done", "", agent, *told)
             if worked is not None and worked >= NOTIFY_DONE_LOW_MIN:
-                return _notify(window, "done", "", agent)
+                return _notify(window, "done", "", agent, *told)
             return ("inbox only: finish judged from the screen alone and the run was short (< %d s)" % int(NOTIFY_DONE_LOW_MIN)
                     if worked is not None else "inbox only: finish judged from the screen alone and the duration is unknown")
         return "inbox only"
@@ -1147,7 +1217,7 @@ def _within_budget(now: float) -> bool:
     return True
 
 
-def _notify(window, state: str, detail: str, agent: str = "") -> str:
+def _notify(window, state: str, detail: str, agent: str = "", event_id: str = "", origin: str = "agent") -> str:
     """Desktop notification when an agent you are not looking at starts needing you or finishes.
     bin/mux-notify shows it and, if you invoke its action, jumps to this window. Returns "sent" or why not (for the decision log)."""
     try:
@@ -1180,8 +1250,14 @@ def _notify(window, state: str, detail: str, agent: str = "") -> str:
             socket = getattr(get_boss(), "listening_on", "") or ""
         except Exception:
             socket = ""
+        brand = ""
+        try:
+            brand = agents.brand_of(agent)
+        except Exception:
+            brand = ""
         subprocess.Popen(
-            [_helper(), socket, wid, str(os.getpid()), urgency, category, _icon(agent), f"{title} {suffix}", body],
+            [_helper(), socket, wid, str(os.getpid()), urgency, category, _icon(agent), f"{title} {suffix}", body,
+             event_id or "", agent or "", brand, state or "", origin if origin in ("agent", "tool") else "agent"],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             start_new_session=True)
         return "sent"
@@ -1247,6 +1323,13 @@ def ensure_started() -> bool:
     _install_notification_tap()
     _socket_link()
     _retime(SCAN_FAST)
+    try:
+        from kitty.fast_data_types import get_boss
+        boss = get_boss()
+        if boss is not None:
+            _publish_agents(boss)
+    except Exception:
+        _debug()
     return _RT.scan_timer is not None
 
 

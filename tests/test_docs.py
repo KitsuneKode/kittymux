@@ -371,7 +371,9 @@ class FactTests(unittest.TestCase):
     def test_every_environment_variable_named_exists_in_the_code(self):
         sys.path.insert(0, os.path.join(ROOT, "python"))
         import kittymux_features
+        import kittymux_switches
         dynamic = {f"KITTYMUX_{n.upper()}" for n in kittymux_features.FEATURES}          # read as f"KITTYMUX_{name.upper()}", so never a literal in the code
+        dynamic |= {f"KITTYMUX_{n.upper().replace('-', '_')}" for n in kittymux_switches.IDS}
         for p, text in self.pages.items():
             for var in set(re.findall(r"\bKITTYMUX_[A-Z0-9_]+\b", text)):
                 if var.endswith("_") or var in dynamic:

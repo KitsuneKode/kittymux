@@ -74,6 +74,8 @@ C
 fi
 printf 'font_family JetBrainsMono Nerd Font Mono\nfont_size 11\nwindow_padding_width 10\nconfirm_os_window_close 0\nallow_remote_control socket-only\ninclude %s/theme.conf\ninclude %s/kittymux.conf\nwatcher %s/python/pane-state.py\ntab_bar_edge left\ntab_bar_min_tabs 1\ngeninclude %s/python/kittymux_layout.py\n' \
   "$CFG" "$HOME_DIR" "$HOME_DIR" "$HOME_DIR" > "$CFG/kitty.conf"
+[ "${KMX_SHOT_CARDS:-}" = 1 ] && : > "$STATE/bar-cards"                      # kittymux cards on, through the real geninclude path
+[ -n "${KMX_SHOT_CONF:-}" ] && printf '%s\n' "$KMX_SHOT_CONF" >> "$CFG/kitty.conf"     # extra lines, e.g. a custom shader
 # synthetic repos (no user data); one tab reports OSC 9;4 progress (64 %): two repos with an `app` folder each, a repo with a linked worktree, a plain folder
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 W=$T/work
@@ -116,6 +118,14 @@ cd $T/plain/notes
 launch sh
 focus_tab 1
 S
+# KMX_SHOT_SCENE=home: two plain shells in a (synthetic) home folder, the bar most people see first
+if [ "${KMX_SHOT_SCENE:-}" = home ]; then
+  mkdir -p "$T/home"
+  # the shells title themselves `~`, the way zsh/fish prompts do
+  L="launch sh -c 'printf \"\\\\033]2;~\\\\007\"; exec sh'"
+  printf 'new_tab\ncd %s\n%s\nnew_tab\ncd %s\n%s\nfocus_tab 1\n' "$T/home" "$L" "$T/home" "$L" > "$T/session"
+  export HOME="$T/home"
+fi
 env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_DATA_HOME=$T/data \
   KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
   kitty -o linux_display_server=x11 --class kmx-shot --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
