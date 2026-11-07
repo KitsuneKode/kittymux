@@ -147,6 +147,25 @@ for o in json.load(sys.stdin):
 [ -n "${ID_S:-}" ] && [ -n "${ID_SH:-}" ] || fail "could not find the split tab (opencode=${ID_S:-} shell=${ID_SH:-})"
 kitty @ --to "$SOCK" focus-window --match "id:$ID_SH" >/dev/null 2>&1        # the shell pane is the active one
 expect "question in a background split" "$ID_S" waiting
+# the attention ring: kitty's own needs_attention flag (its bell colour on the divider), set without a bell, on the asking pane only
+attn() {   # attn <window id> → True/False, as kitty reports it
+  kitty @ --to "$SOCK" ls | python3 -c 'import sys, json
+w = [w for o in json.load(sys.stdin) for t in o["tabs"] for w in t["windows"] if w["id"] == int(sys.argv[1])]
+print(bool(w and w[0].get("needs_attention")))' "$1"
+}
+until_attn() {   # until_attn <window id> <True|False>: within ~8 s
+  for _ in $(seq 32); do [ "$(attn "$1")" = "$2" ] && return 0; sleep 0.25; done; return 1
+}
+until_attn "$ID_S" True || fail "the asking split pane was not marked (needs_attention: $(attn "$ID_S"))"
+[ "$(attn "$ID_SH")" = False ] || fail "the pane you are in was marked"
+echo "  ok   attention ring: the asking split pane is marked (kitty's bell colour), the pane you are in is not"
+touch "$STATE/ring-off"
+until_attn "$ID_S" False || fail "ring off: the mark stayed"
+rm -f "$STATE/ring-off"
+until_attn "$ID_S" True || fail "ring back on: the pane was not marked again"
+kitty @ --to "$SOCK" focus-window --match "id:$ID_S" >/dev/null 2>&1
+until_attn "$ID_S" False || fail "focusing the asking pane did not clear its mark"
+echo "  ok   attention ring: off clears it, on brings it back, focusing the pane clears it"
 kitty @ --to "$SOCK" focus-tab --match "title:codex" >/dev/null 2>&1
 
 if [ -n "${SMOKE_SHOT:-}" ] && command -v import >/dev/null 2>&1; then

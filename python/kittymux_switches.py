@@ -77,6 +77,7 @@ CATALOG: tuple[Switch, ...] = (
            **_legacy_off("KITTYMUX_BELL", "bell-off")),
     Switch("notify-private", "Notifications", "Private notifications", "Popups and the inbox say that something happened, never what was on screen.", False,
            **_legacy_on("KITTYMUX_NOTIFY_PRIVATE", ("1",), "notify-private")),
+    Switch("ring", "Notifications", "Mark the pane that needs you", "The divider beside a split pane whose agent needs you takes the bell colour.", True),
     Switch("sudo", "Notifications", "Password prompts", "A notification when sudo, doas, su or pkexec waits in a pane you are not in.", True),
     Switch("loginprompt", "Notifications", "Login prompts", "The same for ssh and git asking for a passphrase, a password or to trust a host.", True),
     Switch("pkgprompt", "Notifications", "Package prompts", "The same for pacman, paru, yay, apt and dnf waiting for a yes or a no.", True),

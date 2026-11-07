@@ -583,6 +583,47 @@ def _publish_tabs(boss, muted) -> None:
         _debug()
 
 
+def ring_wanted(state: str, muted: bool, active: bool, on: bool = True) -> bool:
+    """A pane's divider takes kitty's bell colour while its agent needs you, the pane is not the one you are in, and it is not muted."""
+    return bool(on and state in ("waiting", "limited") and not muted and not active)
+
+
+def _sync_rings(boss, live: set) -> None:
+    """The cmux-style ring, drawn by kitty: a window with `needs_attention` gets the bell colour on its border (on the dividers beside it,
+    with kittymux's minimal borders). kitty sets that flag only on a bell and clears it when the window is focused; this sets it for a
+    pane whose agent needs you, WITHOUT a bell (no urgency hint, no focus change), and clears only the marks it set itself, so a real
+    bell's mark is never taken away. One pass per scan; a relayout only for a window that changed."""
+    try:
+        ours = vars(_RT).setdefault("rings", set())
+        on = _switch("ring")
+        import kittymux_quiet
+        muted = kittymux_quiet.load_mutes(state_dir(), os.getpid())
+        active = getattr(boss, "active_window", None)
+        for w in list(boss.all_windows):
+            wid = str(w.id)
+            state = (_RT.verdicts.get(wid) or {}).get("state") or ""
+            want = ring_wanted(state, wid in muted, w is active, on)
+            have = bool(getattr(w, "needs_attention", False))
+            if want and not have:                            # mark it
+                w.needs_attention = True
+                ours.add(wid)
+            elif not want and wid in ours:                   # our mark, no longer wanted: take it back (kitty may have already, on focus)
+                ours.discard(wid)
+                if not have:
+                    continue
+                w.needs_attention = False
+            else:
+                if not have:
+                    ours.discard(wid)                        # focused since: kitty cleared our mark itself
+                continue
+            tab = w.tabref() if hasattr(w, "tabref") else None
+            if tab is not None:
+                tab.relayout_borders()
+        ours &= live
+    except Exception:
+        _debug()
+
+
 def scan_all(timer_id=None) -> None:
     if timer_id is not None and timer_id != _RT.scan_timer:
         return                                               # a tick of a timer that was removed in the same batch (see kittymux_timers): not ours any more
@@ -631,6 +672,7 @@ def scan_all(timer_id=None) -> None:
             _RT.book.pop(wid, None)
             dirty = True
         _sync_attached(boss, age_due)
+        _sync_rings(boss, live)
         if age_due:
             vars(_RT)["age_refresh"] = now
             _sweep_cover(boss)
