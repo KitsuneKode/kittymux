@@ -47,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        kitty: ["0.49.1", "0.49.2"]
+        kitty: ["0.49.1", "0.49.2", "0.50.0"]
     steps:
       - uses: actions/checkout@v4
         with:
