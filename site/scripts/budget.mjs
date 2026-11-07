@@ -10,7 +10,8 @@ const CHROME = process.env.CHROME ?? '/usr/bin/google-chrome-stable'
 // `bun scripts/chunks.mjs <dir> /` lists every script), 363 KB for a docs page (the Fumadocs shell, Base UI, the MDX runtime). These limits are the measured numbers plus a margin:
 // they catch a regression, they do not claim the 120 KB target was met.
 // '/' was 165 KB until the error page (status-page, in the router's default error component: static, so it still renders when a lazy chunk is what failed) added 0.8 KB
-const BUDGET = { '/': { js: 167 * 1024 }, '/docs/users/getting-started': { js: 385 * 1024 } }
+// '/' 2026-11-07: the hero is a live demo (stageshow: its stage, window and motion parts, imported module by module) instead of a screenshot: +16.5 KB, measured
+const BUDGET = { '/': { js: 185 * 1024 }, '/docs/users/getting-started': { js: 385 * 1024 } }
 const host = serve(dir)
 let browser
 let bad = 0

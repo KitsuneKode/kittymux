@@ -1,0 +1,297 @@
+/* kittymux hero: kitty with kittymux's vertical bar, on the site's slate-blue brand ground.
+   The terminal is one dark surface; the bar is a step lighter, the pane the window's own color.
+   Colour is only for state: blue working, orange needs you, green finished; the accent is
+   the active tab's card and nothing else. */
+.kh .ss-stage {
+  overflow: hidden;
+  background: var(--kh-ground, #3f5b86);
+  --kh-bg: #1a1b26;
+  --kh-bar: #1f2131;
+  --kh-card: #2a2d42;
+  --kh-fg: #c0caf5;
+  --kh-muted: #a9b1d6;
+  --kh-faint: #8e95bd;          /* 4.6:1 on the active card, 5.4:1 on the bar */
+  --kh-working: #7aa2f7;
+  --kh-waiting: #e0af68;
+  --kh-done: #9ece6a;
+  --kh-mono: 'JetBrains Mono', 'JetBrainsMono Nerd Font Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+/* The window inset top and left, off the right and the bottom: the page is the ground */
+.kh-win {
+  position: absolute;
+  top: 40px;
+  left: 40px;
+  width: 760px;
+  --ss-term-bg: var(--kh-bg);
+  /* a shadow that stays inside the gutter: the stage clips, and a clipped shadow reads as a slab on the page */
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 0 0 1px rgb(0 0 0 / 0.35), 0 12px 26px -12px rgb(8 14 30 / 0.6);
+}
+
+.kh .ss-stage[data-layout='compact'] .kh-win {
+  top: 16px;
+  left: 16px;
+  width: 400px;
+}
+
+.kh-body {
+  display: grid;
+  grid-template-columns: 236px 2px minmax(0, 1fr);
+  min-height: 380px;
+  background: var(--kh-bg);
+  font-family: var(--kh-mono);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+.kh .ss-stage[data-layout='compact'] .kh-body {
+  grid-template-columns: 230px 2px minmax(0, 1fr);
+}
+
+/* ── the bar ─────────────────────────────────────────── */
+.kh-bar {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding: 12px 8px 0;
+  background: var(--kh-bar);
+}
+
+.kh-head {
+  display: grid;
+  gap: 2px;
+  padding: 0 10px 6px;
+}
+
+.kh-session {
+  color: var(--kh-fg);
+  font-weight: 700;
+}
+
+.kh-count {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--kh-faint);
+}
+
+/* the count's words open sideways: a width that eases, never a jump */
+.kh-count-ask {
+  display: inline-grid;
+  grid-template-columns: 0fr;
+  transition: grid-template-columns 320ms cubic-bezier(0.2, 0, 0, 1);
+}
+.kh-count-ask[data-open] {
+  grid-template-columns: 1fr;
+}
+.kh-count-ask > * {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.kh-ask {
+  display: inline-block;
+  color: var(--kh-waiting);
+  font-weight: 700;
+  white-space: pre;
+  opacity: 0;
+  transition: opacity 120ms;                     /* closing: gone before the edge reaches it */
+}
+.kh-count-ask[data-open] .kh-ask {
+  opacity: 1;
+  transition: opacity 200ms 140ms;               /* opening: the room first, then the words */
+}
+
+.kh-sep {
+  color: var(--kh-faint);
+  font-weight: 400;
+}
+
+.kh-tab {
+  position: relative;
+  display: grid;
+  gap: 0;
+  padding: 5px 10px 5px 12px;
+  border-radius: 8px;
+  transition: background-color 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.kh-tab[data-active] {
+  background: var(--kh-card);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+}
+
+.kh-tab[data-hover]:not([data-active]) {
+  background: rgb(192 202 245 / 0.05);
+}
+
+/* the needs-you stripe draws down the row's edge, from the top */
+.kh-stripe {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 2px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--kh-waiting);
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 300ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.kh-tab[data-asks] .kh-stripe {
+  transform: scaleY(1);
+}
+
+.kh-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 17px;
+  white-space: nowrap;
+}
+
+.kh-sub {
+  padding-left: 22px;
+  gap: 10px;
+}
+
+.kh-glyph {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.kh-mark {
+  display: block;
+  width: 14px;
+  height: 14px;
+  background: var(--brand, var(--kh-muted));
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  opacity: 0.72;
+  transition: opacity 220ms;
+}
+
+.kh-tab[data-active] .kh-mark {
+  opacity: 1;
+}
+
+.kh-shell {
+  color: var(--kh-faint);
+}
+
+.kh-title {
+  color: var(--kh-muted);
+  transition: color 220ms;
+}
+
+.kh-tab[data-active] .kh-title {
+  color: var(--kh-fg);
+  font-weight: 700;
+}
+
+.kh-words {
+  display: inline-grid;
+}
+.kh-word {
+  grid-area: 1 / 1;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+.kh-word[data-on] {
+  opacity: 1;
+  transition: opacity 220ms 80ms cubic-bezier(0.2, 0, 0, 1);
+}
+.kh-word[data-state='working'] { color: var(--kh-working); }
+.kh-word[data-state='waiting'] { color: var(--kh-waiting); font-weight: 700; }
+.kh-word[data-state='done'] { color: var(--kh-done); }
+
+.kh-branch {
+  color: var(--kh-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kh-question {
+  padding-left: 22px;
+  color: var(--kh-waiting);
+  font-weight: 700;
+}
+
+.kh-tab--filler {
+  gap: 6px;
+  padding-top: 10px;
+}
+
+.kh-divider {
+  background: #2c3047;
+}
+
+/* ── the pane ───────────────────────────────────────── */
+.kh-pane {
+  position: relative;
+  padding: 16px 18px;
+  color: var(--kh-fg);
+}
+
+.kh-panes {
+  position: relative;
+}
+
+/* both panes stay mounted, stacked, and crossfade: switching tab is a cut in kitty, softened to 160ms. The api pane is laid
+   over the og one, so one growing never moves the other. */
+.kh-pane-api {
+  position: absolute;
+  inset: 0 0 auto 0;
+}
+.kh-panes > * {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  transition: opacity 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+.kh-panes[data-tab='og'] .kh-pane-api,
+.kh-panes[data-tab='api'] .kh-pane-og {
+  opacity: 0;
+}
+
+.kh-out {
+  display: flex;
+  align-items: center;
+  min-height: 18px;
+  white-space: pre;
+}
+
+.kh-dim { margin-top: 8px; color: var(--kh-faint); }
+.kh-gap { margin-top: 10px; }
+.kh-q { margin-top: 8px; color: var(--kh-fg); font-weight: 700; }
+.kh-opt { color: var(--kh-fg); transition: color 200ms; }
+.kh-opt--no { color: var(--kh-muted); }
+.kh-opt--no[data-answered] { color: var(--kh-faint); }
+.kh-ok { margin-top: 6px; color: var(--kh-working); }
+
+.kh-head { margin-bottom: 6px; }
+
+/* the phone column shows only the pane's edge: its words would be cut, so it keeps the filler alone */
+.kh .ss-stage[data-layout='compact'] .kh-dim,
+.kh .ss-stage[data-layout='compact'] .kh-q,
+.kh .ss-stage[data-layout='compact'] .kh-opt,
+.kh .ss-stage[data-layout='compact'] .kh-ok {
+  visibility: hidden;
+}
+
+/* On the site: the brand band is the ground */
+.kh-host .kh .ss-stage { --kh-ground: transparent; }
+
+/* the title bar's words: the kit's 42% white is under 4.5:1 on this chrome */
+.kh .ss-term__title { color: rgb(255 255 255 / 0.62); }
