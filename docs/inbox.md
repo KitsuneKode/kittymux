@@ -95,6 +95,42 @@ rename) and only when the document apart from `t` changed, so a poll does not re
 
 Rows are ordered by importance (`limited`, `waiting`, `error`, `working`, `done`, `idle`), then by `key`. An empty `agents` array means no known agent is in the foreground of a kitty that is still running. `panes-<pid>.json` and `scan-<pid>.json` are not this list: each is one kitty process, and `{}` means that process currently has nothing to report.
 
+## tabs.json — every tab, for a client drawn outside kitty
+
+`$KITTYMUX_STATE/tabs.json` lists every tab of every running kitty, with or without an agent: what a client needs to draw the tab strip (the kittymux client,
+kuwai's Agents tab). The scanner writes it beside `agents.json` and the same way: each kitty replaces only its own entries and keeps those of kitties that are still
+alive, mode `0600`, atomic, and only when the document apart from `t` changed. Schema version **1**.
+
+```json
+{"version": 1, "t": 1793780793.0, "needs_you": 1, "windows": [
+  {"key": "o4035.1", "kitty_pid": 4035, "os_window_id": 1, "wm_class": "kitty", "focused": true, "session": "",
+   "palette": {"bg": "#101014", "fg": "#e6e6ea", "muted": "#959599", "faint": "#66666a", "accent": "#c792ea",
+               "working": "#82aaff", "waiting": "#ffcb6b", "done": "#c3e88d", "alert": "#f07178"},
+   "tabs": [
+     {"tab_id": 2, "index": 1, "active": true, "title": "Review the parser", "cwd": "~/work/calm-otter", "project": "calm-otter",
+      "branch": "main", "hue": "#96cfb8", "panes": 2, "agent": "codex", "agent_window": 12, "brand": "openai", "state": "waiting",
+      "since": 1793780600.0, "progress": null, "question": "Allow edit to parser.rs?", "limit_reset": null, "muted": false,
+      "needs_you": true, "action": {"op": "jump", "pid": 4035, "w": "11"}}]}]}
+```
+
+| Field | Meaning |
+|---|---|
+| `windows[]` | One kitty OS window each, ordered by `key` (`o<kitty_pid>.<os_window_id>`). `focused`: the OS window kitty last focused. |
+| `title` | The OS window's title (what the window manager shows), to tell one kitty's windows apart. |
+| `geometry` | Where the bar is, for a client that draws over it: `vw`, `vh` (framebuffer pixels), `width`, `height` (logical), `scale`, `edge` (`left`, `right`, `top`, `bottom`), `bar` [left, top, right, bottom] in framebuffer pixels (`null` when the bar is hidden), `cell` [width, height], `opacity`. `null` when kitty could not say. Republished when a window is resized. |
+| `palette` | The kitty theme's tokens (`kittymux_theme.from_colors`, `bar` is the bar's own background) as `#rrggbb`: draw with these, never with typed colours. |
+| `tabs[]` | In the bar's order; `index` counts from 1. `active`: the active tab of that OS window. |
+| `project`, `branch`, `hue` | The git project (or folder) and branch of the tab's active pane, and the project's colour as the bar gives its space. |
+| `panes` | How many panes the tab has. |
+| `agent`, `brand`, `state`, `since`, `progress`, `question`, `limit_reset`, `muted` | From the pane that speaks for the tab: the one that needs you, then one in error, then one working, then the rest; a muted agent speaks only when nothing else in the tab does. Empty `agent` and `state` when no pane runs an agent. Field meanings as in `agents.json`. |
+| `agent_window` | That pane's window id: what `kittymux mute --pid <kitty_pid> --window <agent_window>` mutes. `null` without an agent. |
+| `needs_you` | The tab asks for you (`waiting` or `limited`, not muted). The top-level `needs_you` counts these tabs. |
+| `action` | `kittymux act` jumps to the tab's active pane. |
+
+A client that draws over a kitty's vertical bar tells that kitty with `kittymux client attach KITTY_PID OWNER_PID` (`bar-attached-<pid>`, the same record as the panel's cover): while the owner lives, the bar keeps its place and background and draws no tabs.
+
+A kitty that exits last leaves its entries behind (no other kitty is left to prune them): a client checks that `kitty_pid` still runs before it draws them.
+
 ## Notification hints
 
 `bin/mux-notify` already set `x-kittymux-pid` and `x-kittymux-window`. It also sets these, when the value is a short token:

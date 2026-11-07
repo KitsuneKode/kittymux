@@ -29,10 +29,11 @@ from kitty.utils import color_as_int
 # The token/agent modules live next to this file (repo checkout) or, when the
 # installer copied/symlinked them, in the kitty config dir.
 _here = globals().get("__file__")
-for _d in (os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty"),
-           (os.path.dirname(os.path.realpath(_here)) if _here else "")):   # own dir inserted LAST → searched FIRST
-    if _d and _d not in sys.path:
-        sys.path.insert(0, _d)
+_own = os.path.dirname(os.path.realpath(_here)) if _here else ""
+if _own and _own not in sys.path:       # kittymux_reload sits next to this file: findable before prefer_own orders the path
+    sys.path.insert(0, _own)
+import kittymux_reload  # noqa: E402
+kittymux_reload.prefer_own(_here)
 import importlib  # noqa: E402
 import kittymux_agents  # noqa: E402
 import kittymux_barsize  # noqa: E402
@@ -97,6 +98,39 @@ _DOT = "●"
 
 # ── palette (derived from the live kitty theme) ──────────────────────────────
 _PAL_CACHE: dict = {"key": None, "pal": None}
+_ATTACH_CACHE: dict = {"at": -1.0, "on": False}       # kittymux_layout.attached, read at most once a second (it stats a file)
+
+
+def _attached() -> bool:
+    """The kittymux client draws over this kitty's vertical bar (kittymux_layout.attached): the bar keeps its place and its own
+    background, and draws no tabs. The scanner redraws the bar when this changes (kittymux_scan._sync_attached)."""
+    now = time.monotonic()
+    if now - _ATTACH_CACHE["at"] >= 1.0:
+        _ATTACH_CACHE["at"] = now
+        try:
+            _ATTACH_CACHE["on"] = kittymux_layout.attached(kittymux_features.state_dir(), os.getpid())
+        except Exception:
+            _ATTACH_CACHE["on"] = False
+    return _ATTACH_CACHE["on"]
+
+
+def _draw_attached(draw_data, screen, tab, index: int, extra_data, pal) -> int:
+    """A vertical tab while the client is attached: kitty's own bar background and divider, one row, no text. The client's pixels sit on
+    top, so you see one sidebar that belongs to the window, not two."""
+    y0 = screen.cursor.y
+    bar = _rgb(pal.bar)
+    native = _native_edge(draw_data.os_window_id)
+    if index == 1 and not extra_data.for_layout:
+        _sep_column(screen, 0, screen.lines, bar, pal, native)
+    _paint_rows(screen, y0, 1, bar)
+    _sep_column(screen, y0, 1, bar, pal, native)
+    if not extra_data.for_layout:
+        _dump_row(tab.tab_id, attached=True)
+    screen.cursor.y = y0
+    screen.cursor.bg = bar
+    screen.cursor.fg = 0
+    screen.cursor.bold = False
+    return screen.cursor.x
 
 
 # ── per-redraw memo ──────────────────────────────────────────────────────────
@@ -1556,7 +1590,11 @@ def _draw_tab(
             _new_pass()                          # a new redraw pass starts at tab 1: nothing memoised before it is reused
         _remember_progress(tab)                  # every tab, including the rail: the panel reads this file, the bar does not have to draw the fill
         pal = _palette(draw_data)
-        if draw_data.tab_bar_edge in ("left", "right"):
+        if draw_data.tab_bar_edge in ("left", "right") and _attached():
+            end = _draw_attached(draw_data, screen, tab, index, extra_data, pal)
+        elif draw_data.tab_bar_edge in ("left", "right"):
+            if _BAR_DUMP and not extra_data.for_layout:
+                _dump_row(tab.tab_id, attached=False)
             end = _draw_vertical(draw_data, screen, tab, index, extra_data, pal)
         else:
             end = _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal)

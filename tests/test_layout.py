@@ -517,3 +517,23 @@ class SweepCoverTests(CoverTests):
         L.cover(self.dir, self.k, os.getpid())
         self.assertFalse(L.sweep_cover(self.dir, self.k))
         self.assertTrue(L.covered(self.dir, self.k))
+
+
+class AttachTests(CoverTests):
+    """The client drawn over the bar (kittymux_layout.attach): the cover's record under its own name, never mistaken for a cover."""
+
+    def test_a_live_client_attaches_and_detaches(self):
+        self.assertTrue(L.attach(self.dir, self.k, os.getpid()))
+        self.assertTrue(L.attached(self.dir, self.k))
+        self.assertFalse(L.covered(self.dir, self.k))                         # attached is not covered: the bar keeps its place
+        self.assertFalse(L.attach(self.dir, self.k, os.getpid()))             # nothing changed
+        self.assertFalse(L.detach(self.dir, self.k, os.getpid() + 1))         # only the owner lets go
+        self.assertTrue(L.detach(self.dir, self.k, os.getpid()))
+        self.assertFalse(L.attached(self.dir, self.k))
+
+    def test_a_dead_client_does_not_count_and_is_swept(self):
+        L.attach(self.dir, self.k, self.dead_pid())
+        self.assertFalse(L.attached(self.dir, self.k))
+        self.assertTrue(L.sweep_attached(self.dir, self.k))
+        self.assertFalse(os.path.exists(os.path.join(self.dir, f"bar-attached-{self.k}")))
+        self.assertFalse(L.sweep_attached(self.dir, self.k))

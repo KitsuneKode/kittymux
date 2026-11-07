@@ -505,10 +505,11 @@ def cleanup_stale(sdir: str) -> int:
     except OSError:
         return 0
     for name in names:
-        if name.startswith(COVER_PREFIX) and name[len(COVER_PREFIX):].isdigit():
-            kitty = int(name[len(COVER_PREFIX):])
-            # only a cover whose KITTY is gone: a live kitty's dead-panel cover is swept by that kitty's scanner, which then reloads
-            if not _same(kitty, _cover_record(sdir, kitty)[2]):
+        prefix = next((p for p in (COVER_PREFIX, ATTACH_PREFIX) if name.startswith(p) and name[len(p):].isdigit()), "")
+        if prefix:
+            kitty = int(name[len(prefix):])
+            # only a record whose KITTY is gone: a live kitty's dead-owner record is swept by that kitty's scanner, which then redraws
+            if not _same(kitty, _cover_record(sdir, kitty, prefix)[2]):
                 try:
                     os.unlink(os.path.join(sdir, name))
                     removed += 1
@@ -534,10 +535,14 @@ def cleanup_stale(sdir: str) -> int:
 # bar-covered-<kitty pid> holding its own pid and reloads that kitty. A cover whose panel is gone is ignored (and swept), so a
 # crashed panel can never leave a kitty without its bar for longer than the next reload. Switch: `pxcover` (default on).
 COVER_PREFIX = "bar-covered-"
+# The kittymux client attached over this kitty's vertical bar (client/, attach mode): while its owner lives, the bar keeps its place and
+# its background but draws no tabs, so the client's pixels sit on kitty's own bar instead of beside a second copy of it. Same record as
+# a cover (owner pid, owner start, kitty start), so a dead or reused owner never counts.
+ATTACH_PREFIX = "bar-attached-"
 
 
-def _cover_path(sdir: str, pid: int) -> str:
-    return os.path.join(sdir, f"{COVER_PREFIX}{int(pid)}")
+def _cover_path(sdir: str, pid: int, prefix: str = COVER_PREFIX) -> str:
+    return os.path.join(sdir, f"{prefix}{int(pid)}")
 
 
 def _alive(pid: int) -> bool:
@@ -571,10 +576,10 @@ def _same(pid: int, started: str) -> bool:
     return not started or not os.path.isdir("/proc") or _started(pid) == started
 
 
-def _cover_record(sdir: str, pid: int) -> tuple[int, str, str]:
+def _cover_record(sdir: str, pid: int, prefix: str = COVER_PREFIX) -> tuple[int, str, str]:
     """(owner pid, owner start, kitty start) of a cover; (0, '', '') for none or a bad file (bounded read: a cover is a few bytes)."""
     try:
-        with open(_cover_path(sdir, pid), encoding="ascii", errors="replace") as f:
+        with open(_cover_path(sdir, pid, prefix), encoding="ascii", errors="replace") as f:
             raw = f.read(65)
     except OSError:
         return 0, "", ""
@@ -585,13 +590,13 @@ def _cover_record(sdir: str, pid: int) -> tuple[int, str, str]:
     return owner, (parts[1] if len(parts) > 1 else ""), (parts[2] if len(parts) > 2 else "")
 
 
-def _cover_owner(sdir: str, pid: int) -> int:
-    return _cover_record(sdir, pid)[0]
+def _cover_owner(sdir: str, pid: int, prefix: str = COVER_PREFIX) -> int:
+    return _cover_record(sdir, pid, prefix)[0]
 
 
-def cover(sdir: str, kitty: int, owner: int) -> bool:
+def cover(sdir: str, kitty: int, owner: int, prefix: str = COVER_PREFIX) -> bool:
     """Hide kitty `kitty`'s bar while process `owner` (the panel) lives. True when that changed anything."""
-    if _cover_owner(sdir, kitty) == owner:
+    if _cover_owner(sdir, kitty, prefix) == owner:
         return False
     os.makedirs(sdir, mode=0o700, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=sdir, prefix=".cover-", suffix=".tmp")
@@ -599,7 +604,7 @@ def cover(sdir: str, kitty: int, owner: int) -> bool:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(" ".join(x for x in (str(int(owner)), _started(owner), _started(kitty)) if x))
         os.chmod(tmp, 0o600)
-        os.replace(tmp, _cover_path(sdir, kitty))
+        os.replace(tmp, _cover_path(sdir, kitty, prefix))
     except Exception:
         try:
             os.unlink(tmp)
@@ -609,28 +614,28 @@ def cover(sdir: str, kitty: int, owner: int) -> bool:
     return True
 
 
-def uncover(sdir: str, kitty: int, owner: int) -> bool:
+def uncover(sdir: str, kitty: int, owner: int, prefix: str = COVER_PREFIX) -> bool:
     """Give the bar back, if `owner` is the one hiding it. True when a cover was removed (the kitty needs a reload)."""
-    if _cover_owner(sdir, kitty) != owner:
+    if _cover_owner(sdir, kitty, prefix) != owner:
         return False
     try:
-        os.unlink(_cover_path(sdir, kitty))
+        os.unlink(_cover_path(sdir, kitty, prefix))
         return True
     except OSError:
         return False
 
 
-def _live_cover(sdir: str, kitty: int) -> bool:
-    owner, owner_start, kitty_start = _cover_record(sdir, kitty)
+def _live_cover(sdir: str, kitty: int, prefix: str = COVER_PREFIX) -> bool:
+    owner, owner_start, kitty_start = _cover_record(sdir, kitty, prefix)
     return _same(owner, owner_start) and _same(kitty, kitty_start)
 
 
-def sweep_cover(sdir: str, kitty: int) -> bool:
+def sweep_cover(sdir: str, kitty: int, prefix: str = COVER_PREFIX) -> bool:
     """Drop a cover whose panel is gone (killed, crashed). True when one was dropped: that kitty must reload for its bar."""
-    if not os.path.exists(_cover_path(sdir, kitty)) or _live_cover(sdir, kitty):
+    if not os.path.exists(_cover_path(sdir, kitty, prefix)) or _live_cover(sdir, kitty, prefix):
         return False
     try:
-        os.unlink(_cover_path(sdir, kitty))
+        os.unlink(_cover_path(sdir, kitty, prefix))
         return True
     except OSError:
         return False
@@ -639,6 +644,26 @@ def sweep_cover(sdir: str, kitty: int) -> bool:
 def covered(sdir: str, kitty: int) -> bool:
     """A live panel (the very process that wrote the cover) hides this very kitty's bar (not a later process with its pid)."""
     return _live_cover(sdir, kitty)
+
+
+def attach(sdir: str, kitty: int, owner: int) -> bool:
+    """The client (process `owner`) now draws over kitty `kitty`'s vertical bar. True when that changed anything."""
+    return cover(sdir, kitty, owner, ATTACH_PREFIX)
+
+
+def detach(sdir: str, kitty: int, owner: int) -> bool:
+    """The client lets the bar draw itself again. True when a record was removed."""
+    return uncover(sdir, kitty, owner, ATTACH_PREFIX)
+
+
+def attached(sdir: str, kitty: int) -> bool:
+    """A live client (the very process that attached) draws over this very kitty's bar: the bar draws no tabs."""
+    return _live_cover(sdir, kitty, ATTACH_PREFIX)
+
+
+def sweep_attached(sdir: str, kitty: int) -> bool:
+    """Drop an attach record whose client is gone. True when one was dropped: that kitty's bar must redraw its tabs."""
+    return sweep_cover(sdir, kitty, ATTACH_PREFIX)
 
 
 def cover_switch_on(sdir: str, env=None) -> bool:

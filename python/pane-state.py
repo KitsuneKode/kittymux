@@ -103,10 +103,11 @@ def _install_bar_drag() -> None:
     try:
         import sys
         here = globals().get("__file__")
-        for d in (os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty"),
-                  (os.path.dirname(os.path.realpath(here)) if here else "")):   # own dir inserted LAST → searched FIRST
-            if d and d not in sys.path:
-                sys.path.insert(0, d)
+        own = os.path.dirname(os.path.realpath(here)) if here else ""
+        if own and own not in sys.path:      # kittymux_reload sits next to this file: findable before prefer_own orders the path
+            sys.path.insert(0, own)
+        import kittymux_reload
+        kittymux_reload.prefer_own(here)
         import kittymux_barsize
         kittymux_barsize.install()
     except Exception:
@@ -173,10 +174,11 @@ def _scan():
     try:
         import sys
         here = globals().get("__file__")
-        for d in (os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty"),
-                  (os.path.dirname(os.path.realpath(here)) if here else "")):   # own dir inserted LAST → searched FIRST
-            if d and d not in sys.path:
-                sys.path.insert(0, d)
+        own = os.path.dirname(os.path.realpath(here)) if here else ""
+        if own and own not in sys.path:      # kittymux_reload sits next to this file: findable before prefer_own orders the path
+            sys.path.insert(0, own)
+        import kittymux_reload
+        kittymux_reload.prefer_own(here)
         import kittymux_scan
         return kittymux_scan
     except Exception:
@@ -216,6 +218,14 @@ def on_focus_change(boss, window, data) -> None:
         _mark_tab_bar_dirty(window)
     _flush(time.monotonic(), force=True)
     _poke(window)              # focusing clears an unseen completion immediately
+
+
+def on_resize(boss, window, data) -> None:
+    """A window changed size (the OS window was resized, or the layout moved): a client drawn over the bar must follow now."""
+    ks = _scan()
+    fn = getattr(ks, "layout_changed", None) if ks is not None else None
+    if fn is not None:
+        fn(boss)
 
 
 def on_close(boss, window, data) -> None:
