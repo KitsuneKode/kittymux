@@ -104,6 +104,25 @@ class TabsnapTests(unittest.TestCase):
         self.assertEqual(reserved["edge"], "left")
         self.assertFalse(T.bar_reserves_space([0, 0, 0, 0], [0, 0, 1762, 1378]))
 
+    def test_a_busy_lock_is_skipped_not_waited_for(self):
+        import fcntl
+        s = [spec([{"tab_id": 1, "title": "t", "windows": [win(5, True)]}])]
+        fd = os.open(os.path.join(self.dir, "tabs.lock"), os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)                         # another kitty is mid-write
+            self.assertIsNone(self.publish(s))                     # None: not written, try again; it returned at once
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+        self.assertTrue(self.publish(s))
+
+    def test_an_oversized_file_is_not_parsed(self):
+        with open(T.path_for(self.dir), "w") as f:
+            f.write('{"windows": [' + " " * (T.MAX_BYTES + 10) + "]}")
+        self.assertEqual(T._read(T.path_for(self.dir)), [])
+        self.assertTrue(self.publish([spec([{"tab_id": 1, "title": "t", "windows": [win(5, True)]}])]))
+        self.assertEqual(len(self.doc()["windows"]), 1)
+
     def test_junk_is_dropped_never_raised(self):
         self.assertTrue(self.publish([None, {"os_window_id": "x"}, spec([{"tab_id": None}, {"tab_id": 2, "windows": []},
                                                                          {"tab_id": 4, "title": "\x1b[31mred", "windows": [win(1, True)]}])]))

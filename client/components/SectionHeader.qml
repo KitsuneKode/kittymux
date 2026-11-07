@@ -19,8 +19,13 @@ Item {
             color: sec.hue || "transparent"
             anchors.verticalCenter: parent.verticalCenter
         }
-        Label { text: sec.label; size: Theme.tCaption; weight: Theme.wSemibold; color: Theme.text2; elide: Text.ElideNone }
+        // A long project name gives way to the count: it is cut at the right, never under the number.
+        Label {
+            text: sec.label; size: Theme.tCaption; weight: Theme.wSemibold; color: Theme.text2; elide: Text.ElideRight
+            width: Math.min(implicitWidth, Math.max(24, sec.width - 2 * Theme.s3 - (sec.hue !== "" ? 13 : 0) - countBox.width - 7))
+        }
         RollingNumber {
+            id: countBox
             value: sec.count
             color: Theme.text2
             weight: Theme.wRegular

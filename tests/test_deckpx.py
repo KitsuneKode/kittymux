@@ -3,6 +3,11 @@ import os
 import sys
 import unittest
 
+try:
+    import cairo
+except ImportError:
+    cairo = None
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
 try:
     import kittymux_deckpx as dp
@@ -102,6 +107,7 @@ class RendererTests(unittest.TestCase):
         self.assertEqual(dp.rollup(counts), ("waiting", 1))
         self.assertEqual(dp.rollup({"done": 3, "working": 1}), ("working", 1))
         self.assertEqual(dp.rollup({}), ("", 0))
+        self.assertEqual(dp.rollup({"waiting": 2, "limited": 1}), ("limited", 1))   # the same order as the space's colour
         parent = dp.Agent("web", "shell", 0, "core", state="idle")
         parent.children = [dp.Agent("t", "claude", 0, "core", state="waiting")]
         model = dp.Model("s", "h", agents=[parent, dp.Agent("x", "codex", 0, "core", state="limited")])
@@ -189,6 +195,16 @@ class RendererTests(unittest.TestCase):
         bottom = dp.body_bottom(height, [("/", "find")])
         self.assertTrue(slots)
         self.assertTrue(all(dp.HEADER_END <= cy - r and cy + r <= bottom for _cx, cy, r, _c in slots), slots)
+
+    def test_only_rings_the_size_of_the_stepped_frames_are_animated(self):
+        pal = th.from_colors({})
+        slots = []
+        pt = dp.Painter(cairo.Context(cairo.ImageSurface(cairo.FORMAT_ARGB32, 64, 64)), 1.0, pal, spinners=slots)
+        pt.spin_clip = (None, None)
+        pt.spinner(30, 30, dp.PANE_RING_R, pal.working, 0)
+        self.assertEqual(slots, [])                                   # a pane's ring would not line up with tab-sized frames
+        pt.spinner(30, 30, dp.RING_R, pal.working, 0)
+        self.assertEqual(len(slots), 1)
 
     def test_a_muted_agent_never_needs_you_and_its_word_is_quiet(self):
         """Mute: listed, but out of the chip's count, and its state word is not drawn in the waiting colour."""

@@ -20,9 +20,10 @@ Singleton {
     readonly property color faint: pick("faint", "#66666c")
     readonly property color accent: pick("accent", "#9a9aa0")
     readonly property color working: pick("working", "#9a9aa0")
-    readonly property color waiting: pick("waiting", "#e5a050")
-    readonly property color done: pick("done", "#7fbf7f")
-    readonly property color alert: pick("alert", "#e06c75")
+    // No typed state colours: until a kitty's palette arrives every state is the neutral text tone (no tab is listed before then anyway).
+    readonly property color waiting: pick("waiting", fg)
+    readonly property color done: pick("done", muted)
+    readonly property color alert: pick("alert", fg)
     readonly property bool lightTheme: (0.2126 * bg.r + 0.7152 * bg.g + 0.0722 * bg.b) > 0.5
 
     // Glass: the theme's background pulled toward black, translucent so the compositor's blur reads through (Hyprland: a layer rule on

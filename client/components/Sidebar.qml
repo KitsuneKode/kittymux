@@ -26,6 +26,7 @@ FocusScope {
 
     // Flatten sections into one list of items with stable keys, then sync the model to it: move, insert, update, remove.
     function rebuild() {
+        const keep = selected >= 0 && selected < model.count ? model.get(selected).key : "";   // the selection follows its tab, not its index
         const want = [];
         for (const s of root.sections) {
             want.push({ key: "s:" + s.label, kind: "section", json: JSON.stringify({ label: s.label, hue: s.hue, count: s.rows.length }) });
@@ -43,6 +44,7 @@ FocusScope {
         while (model.count > want.length) model.remove(model.count - 1);
         activeIndex = want.findIndex(w => w.kind === "tab" && JSON.parse(w.json).active);
         Qt.callLater(here.pick);
+        if (keep) { const at = want.findIndex(w => w.key === keep); selected = at >= 0 ? at : Math.min(selected, model.count - 1); }
         if (selected >= model.count) selected = model.count - 1;
         if (want.length) settledIn.start();
     }

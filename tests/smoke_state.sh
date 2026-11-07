@@ -169,7 +169,8 @@ if command -v import >/dev/null 2>&1 && command -v md5sum >/dev/null 2>&1 && com
   [ "$stepped" -ge 2 ] || fail "the working glyph never stepped: $stepped distinct frame(s) in 7 s on an idle window"
   echo "  ok   the working glyph steps on an idle window and never spins ($calm frame(s) in 1.2 s, $stepped in 7 s)"
   # the `motion` switch: off holds one still frame (the flag is read live, no reload) and the timer stops; on steps again
-  touch "$STATE/motion-off"; sleep 3.5
+  touch "$STATE/motion-off"
+  for _ in $(seq 8); do [ "$(distinct 420x60+0+20 1.2)" -le 1 ] && break; done    # the still frame is up (a deadline of ~10 s, not a guess)
   still=$(distinct 420x60+0+20 7)
   [ "$still" -le 1 ] || fail "motion is off but the working glyph still moved: $still distinct frames in 7 s (expect 1)"
   echo "  ok   motion off: the working glyph holds still ($still distinct frame(s) in 7 s)"

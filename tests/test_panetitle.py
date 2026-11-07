@@ -330,9 +330,6 @@ class DrawTests(unittest.TestCase):
             self.assertEqual(PT.draw(self.data()), "")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class CloseQuestionTests(unittest.TestCase):
     """Closing a busy agent asks on the pane's own title bar, in the waiting colour, on one line (kittymux_closeguard)."""
@@ -358,3 +355,20 @@ class CloseQuestionTests(unittest.TestCase):
         self.assertLessEqual(len(tiny), 12)
         self.assertTrue(tiny.rstrip().endswith("…"))
         self.assertNotIn("\n", line)
+
+
+class ProgramPositionTests(unittest.TestCase):
+    def test_an_argument_never_names_the_program(self):
+        self.assertEqual(PT._title_from_cmdline(["git", "commit", "-m", "vim"]), "git")
+        self.assertEqual(PT._title_from_cmdline(["git", "diff", "--", "src/nvim"]), "git")
+
+    def test_wrappers_launchers_and_runtimes_are_seen_through(self):
+        self.assertEqual(PT._title_from_cmdline(["sudo", "nvim", "x"]), PT._title_from_cmdline(["nvim", "x"]))
+        self.assertEqual(PT._title_from_cmdline(["env", "-i", "hx"]), PT._title_from_cmdline(["hx"]))
+        self.assertEqual(PT._title_from_cmdline(["mux-pty", "--", "codex"]), "Codex")
+        self.assertEqual(PT._title_from_cmdline(["node", "/opt/x/claude"]), "Claude")
+        self.assertEqual(PT._title_from_cmdline([]), "")
+
+
+if __name__ == "__main__":
+    unittest.main()

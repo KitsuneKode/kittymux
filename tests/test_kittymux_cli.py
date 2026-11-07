@@ -1877,6 +1877,9 @@ class MuteCommandTests(unittest.TestCase):
             self.assertEqual(self.m.mute_cmd(["--pid", "999", "--window", "41"], True), 1)        # not a kitty: nothing written
             self.assertEqual(self.m.mute_cmd(["--pid", "4321"], True), 2)                         # half the form
             self.assertEqual(self.m.mute_cmd(["--pid", "x", "--window", "41"], True), 2)
+            self.assertEqual(self.m.mute_cmd(["--pid", "4321", "--window", "41", "--list"], True), 2)   # surplus: rejected, nothing muted
+            self.assertEqual(self.m.mute_cmd(["--pid", "4321", "--window", "41", "--pid", "4321"], True), 2)
+            self.assertEqual(self.m.kittymux_quiet.load_mutes(self.dir, 4321), set())
         self.assertEqual(self.m.kittymux_quiet.load_mutes(self.dir, 999), set())
 
     def test_an_unknown_tab_and_no_tab_outside_kitty_are_errors(self):

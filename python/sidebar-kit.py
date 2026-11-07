@@ -262,6 +262,7 @@ class Collector:
     def __init__(self):
         self._pr = PrCache()
         self._tidy = True                           # the `titles` switch, read once per collect
+        self._projects: dict = {}                   # cwd → project, filled HERE on the worker; the UI thread only reads it
 
     def branch(self, cwd: str) -> str:
         gi = kittymux_git.info(cwd)                 # reads .git/HEAD; no subprocess
@@ -272,9 +273,18 @@ class Collector:
         if not cwd:
             return ""
         try:
-            return kittymux_place.facts(cwd, kittymux_git.info(cwd), os.path.expanduser("~")).project
+            name = kittymux_place.facts(cwd, kittymux_git.info(cwd), os.path.expanduser("~")).project
         except Exception:
-            return ""
+            name = ""
+        if len(self._projects) > 512:
+            self._projects.clear()
+        self._projects[cwd] = name
+        return name
+
+    def project_cached(self, cwd: str) -> str:
+        """The project the worker last found for `cwd`, without touching the filesystem (the pixel list's grouping is drawn on the
+        UI thread: a slow or gone mount must not stall it). "" until the worker has seen that folder."""
+        return self._projects.get(cwd, "") if cwd else ""
 
     def _pane(self, w: dict, active_id: int, panes: dict, now: float) -> deck.PaneData:
         name, tool = kittymux_agents.identify(w)
@@ -348,7 +358,8 @@ class Collector:
                 ports = tuple(sorted({p for pid in pids
                                       for p in deck.ports_for(int(pid), children, listeners)}))
                 raw_title = kittymux_agents.strip_agent_prefix(tab.get("title") or "", name)
-                shown = kittymux_titles.tidy(tab.get("title") or "", name, self._project(cwd)).text if self._tidy else raw_title
+                project = self._project(cwd)          # also warms project_cached for the UI thread
+                shown = kittymux_titles.tidy(tab.get("title") or "", name, project).text if self._tidy else raw_title
                 try:
                     progress = reports.get(tab.get("id")) or kittymux_progress.from_ls(tab, wins)
                 except Exception:
@@ -1503,7 +1514,7 @@ class Sidebar(Handler):
             return False
         snap = self.snap
         model = adapt.to_model(snap, self.sel, self._hover_pane, self._px_host(), snap.current_session or self._px_host(),
-                               project_of=self._collector._project)
+                               project_of=self._collector.project_cached)
         self._px_model = model
         items = deckpx.body_items(model)
         keys = [(k, label) for k, label, _t in self._AGENT_KEYS]

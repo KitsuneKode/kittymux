@@ -12,7 +12,8 @@ optdepends=('rofi: the global launcher — `kittymux pick --menu rofi` bound in 
             'libnotify: desktop notification when an agent starts waiting'
             'github-cli: PR numbers in the sidebar deck'
             'iproute2: listening ports in the sidebar deck'
-            'ttf-nerd-fonts-symbols-mono: branch/folder glyphs')
+            'ttf-nerd-fonts-symbols-mono: branch/folder glyphs'
+            'quickshell: the GPU sidebar (kittymux client)')
 makedepends=('git')
 provides=('kittymux')
 conflicts=('kittymux')
@@ -33,7 +34,7 @@ check() {
 package() {
   cd "$pkgname"
   install -dm755 "$pkgdir/usr/share/kittymux"
-  cp -a bin lib python assets tools install.sh kittymux.conf kittymux-keys.conf.tpl \
+  cp -a bin lib python assets tools client install.sh kittymux.conf kittymux-keys.conf.tpl \
         kittymux-leader.conf.tpl open-actions.conf.tpl addons docs README.md SECURITY.md "$pkgdir/usr/share/kittymux/"
   find "$pkgdir/usr/share/kittymux" -name __pycache__ -type d -prune -exec rm -rf {} +
   install -dm755 "$pkgdir/usr/bin"

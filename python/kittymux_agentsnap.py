@@ -81,7 +81,13 @@ def _epoch(value):
 
 
 def _alive(pid: int) -> bool:
-    return os.path.isdir(f"/proc/{pid}")
+    """A kitty still runs as `pid`. The pid must name a kitty, not only exist: after a kitty exits, an unrelated process can be
+    given its pid, and its rows would then never be pruned."""
+    try:
+        with open(f"/proc/{pid}/comm", encoding="utf-8", errors="replace") as f:
+            return f.read().strip().startswith("kitty")
+    except OSError:
+        return False
 
 
 def _row(kitty_pid: int, spec: dict, home: str) -> dict | None:

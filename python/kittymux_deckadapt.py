@@ -126,6 +126,9 @@ def to_model(snap, sel: int, hover, host: str, session: str, project_of=None):
                     space = dp.Space(name)
                     spaces.append(space)
                     members = []
+                if not name and space is not None:     # no project: ungrouped, never counted in the space above it
+                    close_space()
+                    space, members = None, []
                 if name and row.current:
                     space.current = True
             if space is not None:

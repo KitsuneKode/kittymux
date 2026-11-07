@@ -111,22 +111,21 @@ def _basename(value: str) -> str:
 
 
 def _title_from_cmdline(cmdline: list[str]) -> str:
-    if not cmdline:
+    """The program a command line runs, by its position only (as `kittymux_agents.tool_in`): argv[0], else what follows a `--`
+    launcher or an env/sudo-style wrapper, else the script a runtime (`node …/claude`) runs. Never an argument: `git commit -m vim`
+    is git, and `git diff -- src/nvim` is git."""
+    argv, _shift = kittymux_agents.command_argv(cmdline or [])
+    if argv and _basename(argv[0]).lower() in kittymux_agents._LAUNCHERS and "--" in argv:
+        argv = argv[argv.index("--") + 1:]
+    while argv and _basename(argv[0]).lower() in kittymux_agents._WRAPPERS:
+        argv = argv[1:]
+        while argv and argv[0].startswith("-"):
+            argv = argv[1:]
+    if len(argv) > 1 and _basename(argv[0]).lower() in kittymux_agents._RUNTIMES and not argv[1].startswith("-"):
+        argv = argv[1:]
+    if not argv:
         return ""
-    argv = [_basename(arg) for arg in cmdline]
-    lowered = [arg.lower() for arg in argv]
-    if "--" in cmdline:
-        tail = cmdline[cmdline.index("--") + 1:]
-        tail_label = _title_from_cmdline(tail)
-        if tail_label:
-            return tail_label
-    for name in ("nvim", "vim", "hx", "helix", "claude", "codex"):
-        if name in lowered:
-            return _APP_LABELS[name]
-    for item in reversed(lowered):
-        if item in _APP_LABELS and item not in {"node"}:
-            return _APP_LABELS[item]
-    first = lowered[0].lstrip("-")
+    first = _basename(argv[0]).lower().lstrip("-")
     return _APP_LABELS.get(first, first)
 
 

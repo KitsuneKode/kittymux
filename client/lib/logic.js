@@ -70,7 +70,7 @@ function sections(tabs, byState) {
         if (idle.length) out.push({ label: IDLE_GROUP, hue: "", rows: idle });
         return out;
     }
-    var byName = {};
+    var byName = Object.create(null);     // no prototype: a project named `constructor` or `toString` is just a name
     for (i = 0; i < tabs.length; i++) {
         var name = tabs[i].project || "Terminal";
         s = byName[name];
@@ -163,9 +163,11 @@ function step(i, delta, n) {
 function jumpArgs(bin, t) {
     return t && t.action ? [bin, "act", JSON.stringify(t.action)] : [];
 }
-function muteArgs(bin, t) {
+// `muted`: what the row shows now (a click not yet confirmed by the scanner counts), so a second click undoes the first.
+function muteArgs(bin, t, muted) {
     if (!t || typeof t.agentWindow !== "number") return [];
-    return [bin, t.muted ? "unmute" : "mute", "--pid", String(t.kittyPid), "--window", String(t.agentWindow)];
+    var now = muted === undefined ? !!t.muted : !!muted;
+    return [bin, now ? "unmute" : "mute", "--pid", String(t.kittyPid), "--window", String(t.agentWindow)];
 }
 
 // ── Attach mode: the client drawn over kitty's own vertical bar (Hyprland) ─────────────────────────────────────────────────────────

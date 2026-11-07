@@ -205,7 +205,11 @@ echo "  ok   features off panetitle hands the bar back to kitty's own title; on 
 if [ -n "${SHOT:-}" ]; then
   kitty @ --to "$SOCK" focus-tab --match title:alpha >/dev/null 2>&1; kitty @ --to "$SOCK" set-window-title --match "id:$A" "nvim src/main.rs" >/dev/null 2>&1; sleep 2
   DISPLAY=$DISP import -window root "$SHOT" && echo "  shot $SHOT ($THEME)"
-  X windowsize "$WID" 520 890; sleep 1.5
+  X windowsize "$WID" 520 890
+  for _ in $(seq 40); do      # wait for the new geometry (a deadline, not a guess); then one frame for kitty to redraw
+    [ "$(X getwindowgeometry "$WID" 2>/dev/null | sed -n 's/.*Geometry: \([0-9]*\)x.*/\1/p')" = 520 ] && break; sleep 0.1
+  done
+  sleep 0.5
   DISPLAY=$DISP import -window root "${SHOT%.png}-narrow.png" && echo "  shot ${SHOT%.png}-narrow.png ($THEME)"
   X windowsize "$WID" 1400 900; sleep 0.5
 fi

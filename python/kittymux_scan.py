@@ -478,7 +478,8 @@ def _agent_spec(window) -> dict | None:
     if not session:
         session = getattr(window, "session_name", "") or ""
     return {"window_id": wid, "agent": agent, "state": state, "title": getattr(window, "title", "") or "",
-            "tab_title": tab_title, "cwd": cwd, "session": session, "reason": verdict.get("reason") or "",
+            "tab_title": tab_title, "cwd": cwd, "session": session,
+            "reason": "" if _private() else (verdict.get("reason") or ""),     # private mode: no screen text in agents.json/tabs.json either
             "progress": _fraction(window), "limit_reset": verdict.get("reset_at")}
 
 
@@ -532,7 +533,13 @@ def _publish_tabs(boss, muted) -> None:
     """This kitty's OS windows and tabs into the shared tabs.json (kittymux_tabsnap), for a client drawn outside kitty."""
     try:
         import kittymux_tabsnap
-        focused = getattr(boss, "active_tab_manager", None)
+        # Focus as the compositor sees it: 0 when no window of THIS kitty has it, so two kitties never both claim it (the boss's
+        # active tab manager is only this process's last one). Unknown (an older kitty) falls back to that.
+        try:
+            from kitty.fast_data_types import current_focused_os_window_id
+            focused_id = current_focused_os_window_id()
+        except Exception:
+            focused_id = None
         colors = {}
         try:
             import kittymux_theme
@@ -559,7 +566,7 @@ def _publish_tabs(boss, muted) -> None:
                                  "muted": str(w.id) in muted})
                 tabs.append({"tab_id": tab.id, "title": getattr(tab, "name", "") or getattr(tab, "title", "") or "",
                              "active": tab is active_tab, "windows": wins})
-            specs.append({"os_window_id": osw, "wm_class": getattr(tm, "wm_class", "") or "kitty", "focused": tm is focused,
+            specs.append({"os_window_id": osw, "wm_class": getattr(tm, "wm_class", "") or "kitty", "focused": (osw == focused_id) if focused_id is not None else tm is getattr(boss, "active_tab_manager", None),
                           "session": "", "colors": colors, "tabs": tabs, "geometry": _os_window_geometry(osw, tm),
                           "title": getattr(getattr(tm, "active_window", None), "title", "") or ""})
         # Most scans change nothing a client draws: skip the file (its read, git lookups, compare) when this kitty's tabs are what
@@ -569,7 +576,8 @@ def _publish_tabs(boss, muted) -> None:
         now = time.monotonic()
         if key == rt.get("tabs_key") and now - rt.get("tabs_at", 0.0) < AGE_REFRESH:
             return
-        kittymux_tabsnap.publish(state_dir(), os.getpid(), specs, time.time())
+        if kittymux_tabsnap.publish(state_dir(), os.getpid(), specs, time.time()) is None:
+            return                                      # another kitty is writing: try again next pass (nothing remembered)
         rt["tabs_key"], rt["tabs_at"] = key, now
     except Exception:
         _debug()
@@ -789,18 +797,10 @@ def _spin_tick(timer_id) -> None:
         if not tms:
             _stop_spinner()
             return
-        n = vars(_RT).get("spin_n", 0) + 1                  # (an _RT made by an older version lacks it)
-        _RT.spin_n = n
-        try:
-            from kitty.fast_data_types import current_focused_os_window_id
-            focused = current_focused_os_window_id()
-        except Exception:
-            focused = 0
+        _RT.spin_n = vars(_RT).get("spin_n", 0) + 1         # (an _RT made by an older version lacks it)
         for tm in tms:
-            # a window nobody is typing in animates at half rate: same information, half the redraws (a full bar redraw is the
-            # costliest thing this module does, and a kitty parked on another workspace used to pay it 10×/s for nothing)
-            if focused and tm.os_window_id != focused and n & 1:         # focus unknown (0) = full rate
-                continue
+            # every window steps on every tick: at one step per 3 s the cost is nothing, and skipping alternate ticks in an unfocused
+            # window made its mark jump two steps every 6 s (the half rate dates from the 10 fps spinner)
             refresh_bar(tm)
     except Exception:
         _debug()

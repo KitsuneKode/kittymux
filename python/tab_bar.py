@@ -169,9 +169,9 @@ def _publish_progress() -> None:
         sig = ()
     if sig == _PROG["sig"]:
         return
-    _PROG["sig"] = sig
     try:
         kittymux_progress.save_reports(_PANES_JSON.with_name(f"progress-{os.getpid()}.json"), snap)
+        _PROG["sig"] = sig                    # only once it is on disk: a failed write is tried again next pass
     except Exception:
         pass
 
@@ -1152,6 +1152,33 @@ def _session_stats(tab: TabBarData) -> tuple[int, dict[str, int]]:
         return 0, {}
 
 
+_ROW_WORD_COLOR = {"working": "working", "waiting": "waiting", "done": "done", "limited": "alert", "error": "alert"}
+
+
+def _state_word(state: str, pal) -> tuple[str, int] | None:
+    """The word that leads an agent row's second line, as Rex and the panel say it (kittymux_agents.STATE_WORDS), in its full state
+    colour: (`Working`, working) · (`Needs you`, waiting) · (`Finished`, done) · (`Limited`/`Error`, alert). None for no agent, idle, unread."""
+    role = _ROW_WORD_COLOR.get(state)
+    word = kittymux_agents.STATE_WORDS.get(state, "")
+    return (word, getattr(pal, role)) if role and word else None
+
+
+_HEADER_WORDS = {"waiting": ("needs you", "need you"), "limited": ("limited", "limited"), "error": ("error", "errors"),
+                 "done": ("finished", "finished")}
+
+
+def _attention_words(counts: dict[str, int], pal) -> list[tuple[str, int, bool]]:
+    """The header's counts said in words (`1 needs you`, `3 finished`), each in its state colour — what Rex's header says. The bar
+    draws these when they fit whole and falls back to the glyph badges (`_attention_parts`) when they do not."""
+    parts = []
+    for state in ("waiting", "limited", "error", "done"):
+        n = counts.get(state)
+        if n:
+            one, many = _HEADER_WORDS[state]
+            parts.append((f"{n} {one if n == 1 else many}", _state_color(state, pal), state in kittymux_agents.NEEDS_YOU))
+    return parts
+
+
 def _attention_parts(counts: dict[str, int], pal) -> list[tuple[str, int, bool]]:
     """Right-aligned header badges, each with the SAME glyph and colour its tabs carry:
     `! 2` waiting, `⊘ 1` limited, `✕ 1` error, `✓ 3` finished unseen — (text, rgb, bold)."""
@@ -1229,7 +1256,25 @@ def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: in
     x = 1
     screen.cursor.y = info_y
     screen.cursor.bg = bar
-    if rows > 1 and count_txt:
+    words = _attention_words(counts, pal)
+    end = btn_x - 1
+    later = sum(2 + _cells(t.rstrip()) for t, _c, _b in parts[1:])        # the badges that would follow the first word
+    if rows > 1 and count_txt and words and 1 + _cells(count_txt) + 3 + _cells(words[0][0]) + later <= end:
+        # Rex's header line: `10 tabs · 1 needs you · 2 finished`, each count in its state colour, the most urgent first. What
+        # does not fit in words stays a glyph badge (`✓ 2`), so no count is ever dropped.
+        x = _put(screen, 1, count_txt, _rgb(pal.faint))
+        rest = list(zip(words, parts))
+        while rest:
+            (text, color, bold), badge = rest[0]
+            tail = sum(2 + _cells(b[0].rstrip()) for _w, b in rest[1:])
+            if x + 3 + _cells(text) + tail > end:
+                break
+            x = _put(screen, x, " · ", _rgb(pal.faint))
+            x = _put(screen, x, text, _rgb(color), bold)
+            rest.pop(0)
+        parts = [badge for _w, badge in rest]
+        x += 2
+    elif rows > 1 and count_txt:
         host_room = max(1, btn_x - 4 - badge_cells)   # the host, then the two-cell gap `_put` returns before the badges
         x = _put(screen, 1, _fit(count_txt, host_room), _rgb(pal.faint)) + 2
     elif rows == 1 and count_txt and room - _cells(name) - 2 >= _cells(count_txt):
@@ -1315,12 +1360,13 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
             subtitle.append((f"{_ICON_FOLDER} {_short_cwd(cwd, 24)}", pal.muted if active else pal.faint))
         if subtitle and not extra_data.for_layout:
             _dump_row(tab.tab_id, legacy=True, pieces=[[subtitle[0][0], "legacy"]])
-    home_only = _clean_visible_title(tab.title or "").strip() == "~"   # the folder line would only repeat it, so it hides
+    # the folder line would only repeat a `~` title, so it hides — but only while the tab really is at home (a stale `~` title must not hide where it went)
+    home_only = _clean_visible_title(tab.title or "").strip() == "~" and bool(cwd) and os.path.realpath(cwd) == os.path.realpath(os.path.expanduser("~"))
     if not compact and not info and (not subtitle or (home_only and all(isinstance(t, _Place) for t, _c in subtitle))):
         subtitle = []
         # the app it runs, else the shell itself (the label skips shells: they are what every tab runs)
-        program = _best_process_label(foreground, _last_cmd) or next(
-            (_basename(c[0]).lstrip("-") for c in foreground or () if c), "")
+        program = kittymux_place.clean(_best_process_label(foreground, _last_cmd) or next(
+            (_basename(c[0]).lstrip("-") for c in foreground or () if c), ""))
         if program:
             subtitle.append((program, pal.muted if active else pal.faint))
     pane_count = _pane_count(tab.tab_id, tab.num_windows)
@@ -1343,6 +1389,11 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         done_text = _changes_summary(str((_tab_verdict(tab.tab_id)[1] or {}).get("wid", "")))
         if done_text and done_text != "no changes":
             subtitle.insert(0, (done_text, pal.done))   # a finished tab says what the agent changed
+    word = None if compact else _state_word(state, pal)
+    if word:
+        subtitle.insert(0, word)              # Rex's second line: the state in words leads, the place follows
+    if _BAR_DUMP and not extra_data.for_layout:
+        _dump_row(tab.tab_id, word=word[0] if word else "")
     if risky:
         subtitle.insert(0, ("⚠", pal.alert))  # started with its approvals off: visible without opening anything
 
@@ -1418,7 +1469,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     elif title_room >= 3:
         title = _shown_title(tab, max(4, title_room), info, cwd)
         title = title if _features().get("titles", True) else _fit(title, title_room)
-        if title.strip() == "~":
+        if title.strip() == "~" and title_room >= 4:     # three cells keep the tilde: `Home` would lose its last letter under the mark
             title = "Home"                                # the home folder by name, not a bare tilde
         _put(screen, tx, title,
              _rgb(pal.text) if active else _rgb(pal.muted), bold=active)

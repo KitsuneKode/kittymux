@@ -200,18 +200,31 @@ def geometry_of(spec) -> dict | None:
     return out
 
 
-def _read(path: str) -> list:
+MAX_BYTES = 1 << 20       # a tabs.json larger than this is not ours (hundreds of tabs fit in a fraction): never parse it on kitty's main thread
+
+
+def _load(path: str):
+    """The document at `path`, read at most MAX_BYTES; None when missing, unreadable, too large or not JSON."""
     try:
-        with open(path, encoding="utf-8") as f:
-            doc = json.load(f)
+        with open(path, "rb") as f:
+            raw = f.read(MAX_BYTES + 1)
+        if len(raw) > MAX_BYTES:
+            return None
+        return json.loads(raw.decode("utf-8"))
     except (OSError, ValueError, UnicodeError):
-        return []
+        return None
+
+
+def _read(path: str, doc=None) -> list:
+    doc = _load(path) if doc is None else doc
     rows = doc.get("windows") if isinstance(doc, dict) else None
     return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
 
 
-def publish(state_dir: str, kitty_pid: int, specs, now: float, alive=None, home: str | None = None) -> bool:
-    """Replace this kitty's OS windows in tabs.json. True only when the file was replaced. Never raises."""
+def publish(state_dir: str, kitty_pid: int, specs, now: float, alive=None, home: str | None = None) -> bool | None:
+    """Replace this kitty's OS windows in tabs.json. True when the file was replaced, False when nothing changed (or it failed),
+    None when another kitty holds the lock right now (the caller tries again next pass). Never raises, never waits for a lock:
+    it runs on kitty's main thread. The rows (and their git lookups) are built BEFORE the lock, so the lock covers only the merge."""
     try:
         pid = snap._pid(kitty_pid)
         if pid is None:
@@ -220,26 +233,24 @@ def publish(state_dir: str, kitty_pid: int, specs, now: float, alive=None, home:
         check = alive or snap._alive
         import fcntl
         os.makedirs(state_dir, mode=0o700, exist_ok=True)
+        dest = path_for(state_dir)
+        previous = {t.get("tab_id"): t for w in _read(dest) if w.get("kitty_pid") == pid for t in (w.get("tabs") or []) if isinstance(t, dict)}
+        fresh = [w for w in (_window(pid, s, home, previous, now) for s in (specs or [])) if w is not None]
         lock = os.open(os.path.join(state_dir, "tabs.lock"), os.O_RDWR | os.O_CREAT, 0o600)
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            dest = path_for(state_dir)
-            old = _read(dest)
-            previous = {t.get("tab_id"): t for w in old if w.get("kitty_pid") == pid for t in (w.get("tabs") or []) if isinstance(t, dict)}
-            fresh = [w for w in (_window(pid, s, home, previous, now) for s in (specs or [])) if w is not None]
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return None
+            current = _load(dest)                      # read once under the lock: the rows to keep AND what to compare against
+            old = _read(dest, current if current is not None else {})
             rows = [w for w in old if snap._keep(w, pid, check)] + fresh
             rows.sort(key=lambda w: (str(w.get("key") or "")))
             tabs = [t for w in rows for t in (w.get("tabs") or []) if isinstance(t, dict)]
             doc = {"version": VERSION, "t": round(float(now), 1), "windows": rows,
                    "needs_you": sum(1 for t in tabs if t.get("needs_you"))}
-            if os.path.isfile(dest):
-                try:
-                    with open(dest, encoding="utf-8") as handle:
-                        current = json.load(handle)
-                    if isinstance(current, dict) and snap._signature(current) == snap._signature(doc):
-                        return False
-                except (OSError, ValueError, UnicodeError):
-                    pass
+            if isinstance(current, dict) and snap._signature(current) == snap._signature(doc):
+                return False
             snap._write(dest, json.dumps(doc, ensure_ascii=False, separators=(",", ":")) + "\n")
             return True
         finally:

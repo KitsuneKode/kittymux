@@ -68,7 +68,7 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
 
 ## CI is a different machine
 
-`.github/workflows/ci.yml` runs the Python tests, the shell tests, shellcheck and the smoke rigs on `ubuntu-24.04` against kitty 0.49.1 and 0.49.2; `site.yml` builds and checks the site. Differences that have bitten:
+`.github/workflows/ci.yml` runs the Python tests, the shell tests, shellcheck and the smoke rigs on `ubuntu-24.04` against kitty 0.49.1, 0.49.2 and 0.50.0; `site.yml` builds and checks the site. Differences that have bitten:
 
 - The runner's **shellcheck is 0.9.0**, your machine's is newer: 0.9 reads `BG=#eff1f5;` as a comment. Quote hex colours (`BG='#eff1f5'`). To reproduce: `pip install shellcheck-py==0.9.0.6`.
 - A rig must not assume **pid 1 is dead**, that `/tmp` is empty, or that a window manager exists: on a runner pid 1 is a live init.
