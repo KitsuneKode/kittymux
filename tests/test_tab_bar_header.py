@@ -120,6 +120,47 @@ class HeaderSessionTests(unittest.TestCase):
         mascot = self.tb.kittymux_agents.MASCOT_GLYPH
         colours = [fg for t, fg in screen.fgs if t == mascot]
         self.assertEqual(colours, [self.tb._rgb(2)])        # pal.text; the accent (8) is for selection and focus
+    def test_the_header_says_its_counts_in_words_when_they_fit(self):
+        tab = types.SimpleNamespace(tab_id=1, session_name="", active_session_name="")
+        with patch.object(self.tb, "_session_stats", return_value=(10, {"waiting": 1, "done": 2})), \
+             patch.object(self.tb, "_host", return_value="calm-otter"), \
+             patch.object(self.tb, "_mascot_ready", return_value=False):
+            pal = types.SimpleNamespace(bar=1, text=2, faint=3, waiting=4, alert=5, done=6, working=4, limited=5,
+                                        bg=7, accent=8, surface_hi=9, muted=10)
+            lines = {}
+            for cols in (44, 30, 18):
+                screen = RecordingScreen(cols)
+                self.tb._draw_header(screen, 0, 2, cols, tab, pal, 1, False)
+                lines[cols] = ("".join(t for y, _x, t in screen.drawn if y == 1), screen)
+        wide, screen = lines[44]
+        self.assertIn("10 tabs · 1 needs you · 2 finished", wide)
+        self.assertNotIn("!", wide)
+        self.assertIn(("1 needs you", self.tb._rgb(4)), screen.fgs)       # the count in its state colour
+        mid = lines[30][0]                                                # the usual bar: two kinds do not fit as words, both stay badges
+        self.assertIn("! 1", mid)
+        self.assertIn("✓ 2", mid)
+        narrow = lines[18][0]                                             # no room for words: the urgent badge, as before
+        self.assertIn("! 1", narrow)
+        self.assertNotIn("need", narrow)
+        for cols, (_text, screen) in lines.items():                       # nothing reaches the collapse button
+            ends = [x + len(t.rstrip()) for y, x, t in screen.drawn if y == 1 and t.strip()]
+            self.assertLessEqual(max(ends), cols - self.tb.kittymux_layout.TOGGLE_CELLS - 1, cols)
+        with patch.object(self.tb, "_session_stats", return_value=(2, {"waiting": 1})), \
+             patch.object(self.tb, "_host", return_value="calm-otter"), \
+             patch.object(self.tb, "_mascot_ready", return_value=False):
+            screen = RecordingScreen(30)
+            self.tb._draw_header(screen, 0, 2, 30, tab, pal, 1, False)
+        self.assertEqual("".join(t for y, _x, t in screen.drawn if y == 1), "2 tabs · 1 needs you")   # one kind: the usual bar says it
+
+    def test_a_row_leads_with_its_state_in_words(self):
+        pal = types.SimpleNamespace(working=11, waiting=12, done=13, alert=14)
+        self.assertEqual(self.tb._state_word("working", pal), ("Working", 11))
+        self.assertEqual(self.tb._state_word("waiting", pal), ("Needs you", 12))
+        self.assertEqual(self.tb._state_word("done", pal), ("Finished", 13))
+        self.assertEqual(self.tb._state_word("limited", pal), ("Limited", 14))
+        for quiet in ("", "idle", "unread"):
+            self.assertIsNone(self.tb._state_word(quiet, pal))
+
     def test_tab_one_is_labelled_when_it_is_not_the_focused_session(self):
         tab = types.SimpleNamespace(session_name="alpha", active_session_name="beta")
         other = types.SimpleNamespace(session_name="beta", active_session_name="beta")
