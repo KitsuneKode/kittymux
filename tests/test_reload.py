@@ -87,5 +87,19 @@ class WiringTests(unittest.TestCase):
         self.assertNotIn("for _mod in (kittymux_theme", src)
 
 
+class BootstrapTests(unittest.TestCase):
+    def test_a_module_linked_alone_into_a_config_dir_still_finds_kittymux_reload(self):
+        # A kitty config dir that links only some modules (the smoke rigs; a partial install): the module must find
+        # kittymux_reload next to its REAL file before it can call prefer_own (CI's smoke_state: the bar failed to load).
+        import subprocess
+        import tempfile
+        src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "python", "kittymux_barsize.py")
+        with tempfile.TemporaryDirectory() as cfg:
+            os.symlink(os.path.realpath(src), os.path.join(cfg, "kittymux_barsize.py"))
+            run = subprocess.run([sys.executable, "-I", "-c", "import runpy, sys; runpy.run_path(sys.argv[1])", os.path.join(cfg, "kittymux_barsize.py")],
+                                 cwd="/", env={"KITTY_CONFIG_DIRECTORY": cfg, "PATH": os.environ.get("PATH", "")}, capture_output=True, text=True, timeout=60)
+        self.assertEqual(run.returncode, 0, run.stderr[-600:])
+
+
 if __name__ == "__main__":
     unittest.main()

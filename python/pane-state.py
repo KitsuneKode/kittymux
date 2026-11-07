@@ -103,6 +103,9 @@ def _install_bar_drag() -> None:
     try:
         import sys
         here = globals().get("__file__")
+        own = os.path.dirname(os.path.realpath(here)) if here else ""
+        if own and own not in sys.path:      # kittymux_reload sits next to this file: findable before prefer_own orders the path
+            sys.path.insert(0, own)
         import kittymux_reload
         kittymux_reload.prefer_own(here)
         import kittymux_barsize
@@ -171,6 +174,9 @@ def _scan():
     try:
         import sys
         here = globals().get("__file__")
+        own = os.path.dirname(os.path.realpath(here)) if here else ""
+        if own and own not in sys.path:      # kittymux_reload sits next to this file: findable before prefer_own orders the path
+            sys.path.insert(0, own)
         import kittymux_reload
         kittymux_reload.prefer_own(here)
         import kittymux_scan

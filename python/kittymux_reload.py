@@ -39,9 +39,9 @@ def order(deps: dict) -> list:
 def prefer_own(here, path=None, cfg=None) -> list:
     """This file's directory is searched before the installed kitty config.
 
-    runpy puts the script directory on sys.path before the script runs. A loop that skips a directory
-    already present, then inserts ~/.config/kitty, leaves the installed copy in front: a kitty started
-    from a checkout runs the installed scanner, and the checkout's bar is never published.
+    The directory may already be on sys.path (the caller put it there to import this module, or python did for a
+    script). A loop that skips a directory already present, then inserts ~/.config/kitty, leaves the installed copy in
+    front: a kitty started from a checkout runs the installed scanner, and the checkout's bar is never published.
     """
     import os
     seq = sys.path if path is None else path
