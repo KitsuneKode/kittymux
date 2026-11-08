@@ -948,6 +948,64 @@ class InboxIntegrationTests(ScanBase):
             self.assertTrue(NM().is_notification_filtered("cmd"))
         self.assertEqual(calls, ["cmd"])
 
+    def _tap(self, rule_hit=False):
+        """The installed wrapper around a NotificationManager whose own filter says `rule_hit`."""
+        class NM:
+            def is_notification_filtered(self, cmd):
+                return rule_hit
+        mod = types.ModuleType("kitty.notifications")
+        mod.NotificationManager = NM
+        with mock.patch.dict(sys.modules, {"kitty.notifications": mod}):
+            KS._install_notification_tap()
+        return NM()
+
+    def test_an_unnamed_agent_question_is_not_shown_by_kitty_too(self):
+        w = FakeWindow(1, "codex", IDLE)
+        self.add(w)
+        KS.scan_all()
+        self.k.boss.window_id_map[1] = w
+        nm = self._tap(rule_hit=False)                       # "Do you want to proceed?" matches no agent-name rule
+        with mock.patch.object(KS, "_notify", return_value="sent"):
+            filtered = nm.is_notification_filtered(types.SimpleNamespace(channel_id=1, title="Do you want to proceed?", body="", urgency=None))
+        self.assertTrue(filtered)
+        self.assertEqual(len(self.inbox()), 1)
+
+    def test_other_windows_and_kittys_own_notices_still_reach_kitty(self):
+        w = FakeWindow(1, "codex", IDLE)
+        self.add(w)
+        KS.scan_all()
+        self.k.boss.window_id_map[1] = w
+        nm = self._tap(rule_hit=False)
+        self.assertFalse(nm.is_notification_filtered(types.SimpleNamespace(channel_id=999, title="Build finished", body="", urgency=None)))
+        own = types.SimpleNamespace(channel_id=1, title="kitty", body="Command codex finished with status: 0.\nClick to focus.", urgency=None)
+        self.assertFalse(nm.is_notification_filtered(own))
+        self.assertEqual(self.inbox(), [])
+
+    def test_a_hot_reload_upgrades_an_older_wrapper_without_stacking(self):
+        calls = []
+
+        class NM:
+            def is_notification_filtered(self, cmd):
+                calls.append(cmd)
+                return False
+        kitty_own = NM.is_notification_filtered
+
+        def old_wrapper(original):
+            def is_notification_filtered(self, cmd):            # the v1 shape: observe, then always delegate
+                return original(self, cmd)
+            is_notification_filtered._kittymux_wrapped = True
+            return is_notification_filtered
+        NM.is_notification_filtered = old_wrapper(kitty_own)
+        mod = types.ModuleType("kitty.notifications")
+        mod.NotificationManager = NM
+        with mock.patch.dict(sys.modules, {"kitty.notifications": mod}):
+            KS._install_notification_tap()
+            KS._install_notification_tap()
+        self.assertIs(NM.is_notification_filtered._kittymux_original, kitty_own)
+        with mock.patch.object(KS, "_on_agent_notification", return_value=True):
+            self.assertTrue(NM().is_notification_filtered("agent"))
+        self.assertEqual(calls, [])
+
 
 class AttentionTests(ScanBase):
     """A bell asks the window manager for attention; where the compositor answers that by FOCUSING the window it is a focus steal."""

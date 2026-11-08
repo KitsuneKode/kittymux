@@ -1058,18 +1058,25 @@ _TEXT_BY_KIND = {"permission": "needs permission", "question": "asks a question"
                  "error": "reported an error", "info": "says"}
 
 
-def _on_agent_notification(cmd) -> None:
+def _kitty_own_notice(cmd) -> bool:
+    """kitty's notify_on_cmd_finish notice (title "kitty", "Command … finished with status"): kitty speaking, not the agent."""
+    return (getattr(cmd, "title", "") or "") == "kitty" and str(getattr(cmd, "body", "") or "").startswith("Command ")
+
+
+def _on_agent_notification(cmd) -> bool:
     """The agent announced something itself (an OSC 9/99/777 notification — kitty hands it to NotificationManager). This is the most authoritative
     thing we ever learn about an agent's state: classify what it SAID, record it, and (for a completion) let the resolver treat it like a Stop hook.
-    Notifications from windows that are not agent windows are left alone."""
+    Returns True when kittymux took the event over (recorded it, and notified in its own name if it notifies at all), so kitty must not show the
+    agent's raw copy as well: that copy has kitty's icon, no pane to jump to, and — for an unnamed question like "Do you want to proceed?" —
+    nothing the filter_notification rule could match. Notifications from windows that are not agent windows, and kitty's own, are left alone."""
     wid = str(getattr(cmd, "channel_id", 0))
     agent = (_RT.verdicts.get(wid) or {}).get("agent") or ""
-    if not agent:
-        return
+    if not agent or _kitty_own_notice(cmd):
+        return False
     from kitty.fast_data_types import get_boss
     window = get_boss().window_id_map.get(int(wid))
     if window is None:
-        return
+        return False
     inbox = _inbox()
     title, body = inbox.clean(cmd.title, 200), inbox.clean(cmd.body, 400)
     kind, tag = inbox.classify_text(title, body)
@@ -1079,12 +1086,24 @@ def _on_agent_notification(cmd) -> None:
         inbox.add(state_dir(), inbox.make_event("info", agent, wid, "agent", now, pid=os.getpid(), tab=window.title or "", title=title, body=detail,
                                                 private=_private(), tag=tag))
         _record("agent-notification", wid, agent, what="info", tag=tag, outcome="inbox only: its idle notice (it finished earlier)")
-        return
+        return True
     reset = inbox.parse_reset(f"{title} {body}", now, float(time.localtime().tm_gmtoff or 0)) if kind == "limit" else None
     if kind == "done":
         _RT.book.setdefault(wid, {})["agent_done_ts"] = time.monotonic()    # the resolver treats this like its Stop hook (scan_window)
     outcome = _announce(window, kind, agent, "agent", detail, confidence="high", reset_at=reset)
     _record("agent-notification", wid, agent, what=kind, outcome=outcome)
+    return True
+
+
+_TAP_VERSION = 2     # 2: the wrapper suppresses kitty's copy of an event kittymux took over (1 = True: observe only)
+
+
+def _closure_value(fn, name):
+    """A free variable of a closure (the original method an older wrapper kept), or None."""
+    try:
+        return dict(zip(fn.__code__.co_freevars, (c.cell_contents for c in fn.__closure__ or ()))).get(name)
+    except Exception:
+        return None
 
 
 def _install_notification_tap() -> None:
@@ -1093,18 +1112,26 @@ def _install_notification_tap() -> None:
     The wrapper only delegates to this module's function by name, so a reload's new code applies without re-wrapping, and it never raises."""
     try:
         from kitty.notifications import NotificationManager
-        if getattr(NotificationManager.is_notification_filtered, "_kittymux_wrapped", False):
+        current = NotificationManager.is_notification_filtered
+        wrapped = getattr(current, "_kittymux_wrapped", False)
+        if wrapped == _TAP_VERSION:
             return
-        original = NotificationManager.is_notification_filtered
+        original = current
+        if wrapped:                    # an older wrapper (installed before a hot reload): rewrap kitty's own method, never the wrapper
+            original = getattr(current, "_kittymux_original", None) or _closure_value(current, "original")
+            if original is None:
+                return
 
         def is_notification_filtered(self, cmd):
+            owned = False
             try:
-                _on_agent_notification(cmd)
+                owned = _on_agent_notification(cmd) is True
             except Exception:
-                _debug()
-            return original(self, cmd)
+                _debug()                                                 # failed: let kitty show it rather than lose it
+            return True if owned else original(self, cmd)
 
-        is_notification_filtered._kittymux_wrapped = True                      # type: ignore[attr-defined]
+        is_notification_filtered._kittymux_wrapped = _TAP_VERSION              # type: ignore[attr-defined]
+        is_notification_filtered._kittymux_original = original                 # type: ignore[attr-defined]
         NotificationManager.is_notification_filtered = is_notification_filtered  # type: ignore[method-assign]
     except Exception:
         _debug()
@@ -1312,6 +1339,7 @@ def _socket_link() -> None:
 def ensure_started() -> bool:
     """Start the scanner if it is not running. Idempotent and cheap — the tab bar calls it on
     every draw, so a freshly (re)loaded kitty config brings it up without a restart."""
+    _install_notification_tap()        # cheap when current; after a hot reload it upgrades an older wrapper
     if _RT.scan_timer is not None:
         return True
     try:
@@ -1320,7 +1348,6 @@ def ensure_started() -> bool:
             return False
     except Exception:
         return False
-    _install_notification_tap()
     _socket_link()
     _retime(SCAN_FAST)
     try:
