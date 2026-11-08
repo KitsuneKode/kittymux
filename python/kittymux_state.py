@@ -81,6 +81,35 @@ _DIALOG_CHROME_RE = re.compile(
     r"\(esc\)|esc\s+to\s+cancel|enter\s+to\s+(?:confirm|select)|tab\s+to\s+amend|don(?:'|’)t\s+ask\s+again", _I)
 
 
+# A menu's own chrome: the key-hint footer and its numbered options. They tell a dialog apart, but they're not what it asks:
+# shown as the reason they read "Enter to select · ↑/↓ to navigate · Esc to cancel" (seen as a notification body).
+_HINT_RE = re.compile(
+    r"enter\s+to\s+(?:select|confirm|submit)|esc\s+to\s+(?:cancel|go\s+back|exit)|tab\s+to\s+amend|to\s+navigate|↑\s*/?\s*↓"
+    r"|press\s+enter\s+to", _I)
+_OPTION_RE = re.compile(r"^[❯›>]?\s*\d+[.)]\s")
+_BOX = "│┃|╭╮╰╯─━┌┐└┘├┤ \t"
+
+
+def _question_above(lines: list, i: int, reach: int = 14) -> str:
+    """The question a menu asks: the nearest line above `i` that ends in "?" or reads like a request, skipping
+    the menu's chrome (hints, numbered options, box borders). '' when there is none: better no reason than chrome."""
+    for j in range(i - 1, max(-1, i - 1 - reach), -1):
+        q = lines[j].strip(_BOX)
+        if not q or _HINT_RE.search(q) or _OPTION_RE.match(q):
+            continue
+        if q.endswith("?") or WAITING_RE.search(q) or re.search(r"\b(?:allow|approve|confirm|choose|select|pick|which)\b", q, _I):
+            return q
+    return ""
+
+
+def _reason(lines: list, i: int) -> str:
+    """The line to show for a match at `i`: itself, unless it is menu chrome; then the question above it."""
+    line = lines[i].strip(_BOX)
+    if _HINT_RE.search(line) or _OPTION_RE.match(line):
+        return _question_above(lines, i)
+    return line
+
+
 def classify_screen(text: str) -> tuple[str, str]:
     """(marker, line) for the bottom of a pane's screen: marker is one of
     "limited" | "waiting" | "working" | "" (nothing recognisable); line is the matching
@@ -105,7 +134,7 @@ def classify_screen(text: str) -> tuple[str, str]:
                     break                          # stale: an idle composer is drawn below this busy marker
                 if marker != "working" and working_at > i and not any(_DIALOG_CHROME_RE.search(x) for x in lines[i:]):
                     break                          # activity below it: that text is stale output, not a prompt
-                return marker, lines[i][:160]
+                return marker, (_reason(lines, i) if marker == "waiting" else lines[i])[:160]
     return "", ""
 
 

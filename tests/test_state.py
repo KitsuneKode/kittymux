@@ -381,3 +381,20 @@ class WhyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MenuReasonTests(unittest.TestCase):
+    """The reason shown for a menu is its question, never its key-hint footer or an option."""
+
+    def test_the_question_above_the_menu_not_its_footer(self):
+        screen = "• Explored the repo\n  Which approach should I take for the cache?\n  ❯ 1. Keep the LRU\n    2. Switch to TTL\n" \
+                 "  Enter to select · ↑/↓ to navigate · Esc to cancel"
+        self.assertEqual(S.classify_screen(screen), ("waiting", "Which approach should I take for the cache?"))
+
+    def test_a_boxed_question_loses_its_border(self):
+        screen = "│ Do you want to proceed? │\n│ ❯ 1. Yes                │\n│   2. No                 │"
+        self.assertEqual(S.classify_screen(screen), ("waiting", "Do you want to proceed?"))
+
+    def test_no_question_gives_no_reason_rather_than_chrome(self):
+        screen = "some output line\n  ❯ 1. Yes\n    2. No\n  Enter to select · Esc to cancel"
+        self.assertEqual(S.classify_screen(screen), ("waiting", ""))
