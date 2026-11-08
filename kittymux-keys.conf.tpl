@@ -174,7 +174,7 @@ map --when-focus-on title:kittymux-layout ctrl+alt+shift+l close_window
 # RESIZE, SCROLLBACK & HELP
 # ctrl+alt+/         — keymap overlay: searchable, scrollable, every key / gesture / command (press again or q/esc to close)
 # ctrl+alt+shift+/   — last command's output in pager
-# ctrl+alt+q         — close current pane (confirms if a process runs)
+# ctrl+alt+q         — close current pane (confirms if a process runs; a WORKING or waiting agent asks first on its tab row in the bar: the key again closes)
 # ctrl+alt+[ / ]     — jump between shell prompts in scrollback
 # alt+shift+h/l/j/k  — resize pane narrower/wider/taller/shorter
 # alt+shift+=        — equalize: every split gets the same share again (ctrl+alt+= is Hyprland's)
@@ -183,7 +183,10 @@ map ctrl+alt+slash        launch --type=overlay --title kittymux-keys python3 @K
 # pressing it again while the overlay is open closes it (otherwise the key would stack a second overlay on top)
 map --when-focus-on title:kittymux-keys ctrl+alt+slash close_window
 map ctrl+alt+shift+slash  show_last_command_output
-map ctrl+alt+q            close_window_with_confirmation
+map ctrl+alt+q            kitten @KITTYMUX_HOME@/python/close-kit.py window ctrl+alt+q confirm
+# kitty's own close keys, guarded the same way (nothing busy: exactly kitty's close_window / close_tab). `kittymux settings off closeguard` stops asking
+map ctrl+shift+w          kitten @KITTYMUX_HOME@/python/close-kit.py window ctrl+shift+w
+map ctrl+shift+q          kitten @KITTYMUX_HOME@/python/close-kit.py tab ctrl+shift+q
 # ctrl+alt+PgUp / PgDn — scroll the scrollback a page; ctrl+alt+Home / End — oldest output / back to the live screen
 map ctrl+alt+page_up      scroll_page_up
 map ctrl+alt+page_down    scroll_page_down
@@ -236,5 +239,5 @@ map --when-focus-on title:kittymux-projects ctrl+alt+shift+p close_window
 # OTHER
 # ============================================
 map ctrl+shift+alt+r     combine : load_config_file : launch --type=background notify-send -i kitty -t 2000 "Kitty" "Config reloaded"
-map ctrl+alt+shift+w     close_tab
+map ctrl+alt+shift+w     kitten @KITTYMUX_HOME@/python/close-kit.py tab ctrl+alt+shift+w
 map shift+enter          send_text normal,application \x1b[13;2u

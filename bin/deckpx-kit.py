@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Experimental pixel deck; run as the program of a private kitty window.
 
-Kitty loops small spinner images; the client sleeps until input or resize.
+Kitty steps the working rings every few seconds; the client sleeps until input or resize.
 q / Esc quits. Clicks select demo rows; they do not focus real kitty windows.
 """
 import argparse
@@ -56,15 +56,10 @@ def graphics_available(out, fd):
     return False
 
 
-def spinner_frames(dp, pal, scale, count):
-    size = math.ceil(14 * scale)
-    frames = []
-    for i in range(count):
-        surf = dp.cairo.ImageSurface(dp.cairo.FORMAT_ARGB32, size, size)
-        pt = dp.Painter(dp.cairo.Context(surf), scale, pal)
-        pt.spinner(size / scale / 2, size / scale / 2, 4.6, pal.working, i / count)
-        frames.append(rgba_bytes(surf))
-    return size, frames
+def spinner_frames(dp, pal, scale, count=None):
+    """The working ring's stepped arcs (kittymux_deckpx.ring_frames); kitty plays them every STEP_MS."""
+    size, surfs = dp.ring_frames(pal, scale)
+    return size, [rgba_bytes(surf) for surf in surfs]
 
 
 def main():
@@ -129,7 +124,7 @@ def main():
         frame, resources, parser = dp.Frame(), dp.Resources(), dt.Input()
         motion = not a.reduced_motion and switches.enabled("motion")
         native = motion and a.animation == "native"
-        size, spin_frames = spinner_frames(dp, pal, a.scale, max(2, round(a.fps / .9))) if native else (0, [])
+        size, spin_frames = spinner_frames(dp, pal, a.scale) if native else (0, [])
         hits = []
         dirty = resized = True
         while True:
@@ -152,7 +147,7 @@ def main():
                 if native:
                     positions = [(round(cx * a.scale - size / 2), round(cy * a.scale - size / 2))
                                  for cx, cy, _radius, _color in slots]
-                    shower.spinner(spin_frames, size, positions, (W / cols, H / rows), round(1000 / a.fps))
+                    shower.spinner(spin_frames, size, positions, (W / cols, H / rows), dp.STEP_MS)
                 render_only_ms += (rt - t) * 1000
                 convert_ms += (ct - rt) * 1000
                 render_ms += (time.perf_counter() - t) * 1000

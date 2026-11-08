@@ -1,8 +1,7 @@
 """Progress a program reports with OSC 9;4 (kitty ≥ 0.42 keeps it per window), as the vertical bar draws it.
 
-The tab's card fills from the left like a progress bar (Rex's tab progress): a soft tint of the accent while it runs,
-the waiting colour when paused, the alert colour on an error, a faint full tint when the amount is unknown. The
-percent takes the tab number's place. Pure: the bar hands in the tab and a window lookup.
+The vertical bar shows the percent in the tab number's place (the waiting colour when paused, `failed` in the alert
+colour); the pixel panel draws the amount as a hairline. `TINT` names the states either draws. Pure: the bar hands in the tab and a window lookup.
 
     printf '\\e]9;4;1;42\\e\\\\'     # 42 %          (0 clears, 2 error, 3 indeterminate, 4 paused)
 """
@@ -132,7 +131,10 @@ def load_reports(path) -> dict:
         except (TypeError, ValueError):
             continue
         if isinstance(value, (list, tuple)) and len(value) == 2 and value[0] in TINT:
-            out[tid] = (value[0], int(value[1]))
+            try:
+                out[tid] = (value[0], int(value[1]))
+            except (TypeError, ValueError):
+                continue                                  # one bad entry costs only itself
     return out
 
 

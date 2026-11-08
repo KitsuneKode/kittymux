@@ -180,6 +180,21 @@ def _surfaces(fg: int, bg: int, accent: int) -> dict[str, int]:
     return {"card": card, "card_hi": card_hi, "track": track, "on_accent": on_accent}
 
 
+# kitty's compiled default for active_border_color, present even when a theme never set a border
+# and even when borders are not drawn. It is not a theme accent.
+_STOCK_BORDER = 0x00FF00
+
+
+def _accent_of(c: dict[str, int], fg: int) -> int:
+    override = _parse_hex(os.environ.get("KITTYMUX_ACCENT", ""))
+    if override is not None:
+        return override
+    border = c.get("active_border_color")
+    if isinstance(border, int) and border != _STOCK_BORDER:
+        return border
+    return c.get("color4", c.get("color12", fg))
+
+
 def from_colors(c: dict[str, int]) -> Palette:
     """Build the palette from kitty colours: keys `background`, `foreground`,
     optional `active_border_color`, `inactive_border_color`, `color1`..`color15`. Never raises."""
@@ -189,9 +204,7 @@ def from_colors(c: dict[str, int]) -> Palette:
     def ansi(n: int, fallback: int) -> int:
         return ensure_contrast(c.get(f"color{n}", fallback), bg, 3.0)
 
-    override = _parse_hex(os.environ.get("KITTYMUX_ACCENT", ""))
-    accent = override if override is not None else c.get(
-        "active_border_color", c.get("color12", fg))
+    accent = _accent_of(c, fg)
     return Palette(
         bg=bg, fg=fg, text=fg,
         muted=blend(fg, bg, 0.62),

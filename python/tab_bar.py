@@ -29,10 +29,11 @@ from kitty.utils import color_as_int
 # The token/agent modules live next to this file (repo checkout) or, when the
 # installer copied/symlinked them, in the kitty config dir.
 _here = globals().get("__file__")
-for _d in (os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty"),
-           (os.path.dirname(os.path.realpath(_here)) if _here else "")):   # own dir inserted LAST → searched FIRST
-    if _d and _d not in sys.path:
-        sys.path.insert(0, _d)
+_own = os.path.dirname(os.path.realpath(_here)) if _here else ""
+if _own and _own not in sys.path:       # kittymux_reload sits next to this file: findable before prefer_own orders the path
+    sys.path.insert(0, _own)
+import kittymux_reload  # noqa: E402
+kittymux_reload.prefer_own(_here)
 import importlib  # noqa: E402
 import kittymux_agents  # noqa: E402
 import kittymux_barsize  # noqa: E402
@@ -97,6 +98,39 @@ _DOT = "●"
 
 # ── palette (derived from the live kitty theme) ──────────────────────────────
 _PAL_CACHE: dict = {"key": None, "pal": None}
+_ATTACH_CACHE: dict = {"at": -1.0, "on": False}       # kittymux_layout.attached, read at most once a second (it stats a file)
+
+
+def _attached() -> bool:
+    """The kittymux client draws over this kitty's vertical bar (kittymux_layout.attached): the bar keeps its place and its own
+    background, and draws no tabs. The scanner redraws the bar when this changes (kittymux_scan._sync_attached)."""
+    now = time.monotonic()
+    if now - _ATTACH_CACHE["at"] >= 1.0:
+        _ATTACH_CACHE["at"] = now
+        try:
+            _ATTACH_CACHE["on"] = kittymux_layout.attached(kittymux_features.state_dir(), os.getpid())
+        except Exception:
+            _ATTACH_CACHE["on"] = False
+    return _ATTACH_CACHE["on"]
+
+
+def _draw_attached(draw_data, screen, tab, index: int, extra_data, pal) -> int:
+    """A vertical tab while the client is attached: kitty's own bar background and divider, one row, no text. The client's pixels sit on
+    top, so you see one sidebar that belongs to the window, not two."""
+    y0 = screen.cursor.y
+    bar = _rgb(pal.bar)
+    native = _native_edge(draw_data.os_window_id)
+    if index == 1 and not extra_data.for_layout:
+        _sep_column(screen, 0, screen.lines, bar, pal, native)
+    _paint_rows(screen, y0, 1, bar)
+    _sep_column(screen, y0, 1, bar, pal, native)
+    if not extra_data.for_layout:
+        _dump_row(tab.tab_id, attached=True)
+    screen.cursor.y = y0
+    screen.cursor.bg = bar
+    screen.cursor.fg = 0
+    screen.cursor.bold = False
+    return screen.cursor.x
 
 
 # ── per-redraw memo ──────────────────────────────────────────────────────────
@@ -135,9 +169,9 @@ def _publish_progress() -> None:
         sig = ()
     if sig == _PROG["sig"]:
         return
-    _PROG["sig"] = sig
     try:
         kittymux_progress.save_reports(_PANES_JSON.with_name(f"progress-{os.getpid()}.json"), snap)
+        _PROG["sig"] = sig                    # only once it is on disk: a failed write is tried again next pass
     except Exception:
         pass
 
@@ -579,6 +613,18 @@ def _panes_state() -> dict:
 
 
 @_per_pass
+def _close_ask(tab_id: int) -> str:
+    """The close guard's short question for this tab, when one of its panes is asking; '' otherwise (and always when the guard never ran)."""
+    guard = sys.modules.get("kittymux_closeguard")
+    if guard is None:
+        return ""
+    try:
+        tab = get_boss().tab_for_id(tab_id)
+        return guard.short_for([w.id for w in tab.windows]) if tab is not None else ""
+    except Exception:
+        return ""
+
+
 def _tab_verdict(tab_id: int) -> tuple[str, dict | None]:
     """(state, entry) for a tab: every pane rolled up (kittymux_agents.tab_verdict), plus the
     entry of the pane that decided it (its message says what the agent wants)."""
@@ -955,10 +1001,18 @@ def _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal) -> i
     if screen.cursor.x < x0 + 3:
         screen.cursor.x = x0 + 3
 
-    screen.cursor.fg = _rgb(pal.text) if tab.is_active else _rgb(pal.muted)
-    screen.cursor.bold = tab.is_active
-    screen.draw(f"{index}:{title}")
+    asking = _close_ask(tab.tab_id)               # closing a busy agent asks here first (kittymux_closeguard): the question takes the title's place
+    if asking:
+        screen.cursor.fg = _rgb(pal.waiting)
+        screen.cursor.bold = True
+        screen.draw(f"{index}:{asking}")
+    else:
+        screen.cursor.fg = _rgb(pal.text) if tab.is_active else _rgb(pal.muted)
+        screen.cursor.bold = tab.is_active
+        screen.draw(f"{index}:{title}")
     screen.cursor.bold = False
+    if _BAR_DUMP and not extra_data.for_layout:
+        _dump_row(tab.tab_id, alert=asking)               # test hook
     if state:
         screen.cursor.fg = _rgb(_state_color(state, pal))
         screen.cursor.bold = state in kittymux_agents.NEEDS_YOU
@@ -1040,28 +1094,11 @@ def _sep_column(screen: Screen, y0: int, n: int, bg: int, pal, native: bool = Fa
         screen.draw(_LEFT_BLOCK[SEP_EIGHTS])
 
 
-# While a tab with OSC 9;4 progress is drawn: ((first_row, end_row), x_from, x_to, fill_bg). Text drawn into those
-# cells keeps the fill behind it instead of the row's colour (kittymux_progress). Reset by every _draw_vertical.
-_fill: tuple | None = None
-
-
 def _put(screen: Screen, x: int, text: str, fg: int, bold: bool = False) -> int:
     screen.cursor.x = x
     screen.cursor.fg = fg
     screen.cursor.bold = bold
-    f = _fill
-    if f and text and f[0][0] <= screen.cursor.y < f[0][1] and f[1] <= x < f[2]:
-        split, cx = 0, x
-        while split < len(text) and cx < f[2]:
-            cx += max(0, wcswidth(text[split]))
-            split += 1
-        bg = screen.cursor.bg
-        screen.cursor.bg = f[3]
-        screen.draw(text[:split])
-        screen.cursor.bg = bg
-        screen.draw(text[split:])
-    else:
-        screen.draw(text)
+    screen.draw(text)
     return screen.cursor.x
 
 
@@ -1113,6 +1150,33 @@ def _session_stats(tab: TabBarData) -> tuple[int, dict[str, int]]:
         return total, counts
     except Exception:
         return 0, {}
+
+
+_ROW_WORD_COLOR = {"working": "working", "waiting": "waiting", "done": "done", "limited": "alert", "error": "alert"}
+
+
+def _state_word(state: str, pal) -> tuple[str, int] | None:
+    """The word that leads an agent row's second line, as Rex and the panel say it (kittymux_agents.STATE_WORDS), in its full state
+    colour: (`Working`, working) · (`Needs you`, waiting) · (`Finished`, done) · (`Limited`/`Error`, alert). None for no agent, idle, unread."""
+    role = _ROW_WORD_COLOR.get(state)
+    word = kittymux_agents.STATE_WORDS.get(state, "")
+    return (word, getattr(pal, role)) if role and word else None
+
+
+_HEADER_WORDS = {"waiting": ("needs you", "need you"), "limited": ("limited", "limited"), "error": ("error", "errors"),
+                 "done": ("finished", "finished")}
+
+
+def _attention_words(counts: dict[str, int], pal) -> list[tuple[str, int, bool]]:
+    """The header's counts said in words (`1 needs you`, `3 finished`), each in its state colour — what Rex's header says. The bar
+    draws these when they fit whole and falls back to the glyph badges (`_attention_parts`) when they do not."""
+    parts = []
+    for state in ("waiting", "limited", "error", "done"):
+        n = counts.get(state)
+        if n:
+            one, many = _HEADER_WORDS[state]
+            parts.append((f"{n} {one if n == 1 else many}", _state_color(state, pal), state in kittymux_agents.NEEDS_YOU))
+    return parts
 
 
 def _attention_parts(counts: dict[str, int], pal) -> list[tuple[str, int, bool]]:
@@ -1192,7 +1256,25 @@ def _draw_header(screen: Screen, y: int, rows: int, cols: int, tab, pal, bar: in
     x = 1
     screen.cursor.y = info_y
     screen.cursor.bg = bar
-    if rows > 1 and count_txt:
+    words = _attention_words(counts, pal)
+    end = btn_x - 1
+    later = sum(2 + _cells(t.rstrip()) for t, _c, _b in parts[1:])        # the badges that would follow the first word
+    if rows > 1 and count_txt and words and 1 + _cells(count_txt) + 3 + _cells(words[0][0]) + later <= end:
+        # Rex's header line: `10 tabs · 1 needs you · 2 finished`, each count in its state colour, the most urgent first. What
+        # does not fit in words stays a glyph badge (`✓ 2`), so no count is ever dropped.
+        x = _put(screen, 1, count_txt, _rgb(pal.faint))
+        rest = list(zip(words, parts))
+        while rest:
+            (text, color, bold), badge = rest[0]
+            tail = sum(2 + _cells(b[0].rstrip()) for _w, b in rest[1:])
+            if x + 3 + _cells(text) + tail > end:
+                break
+            x = _put(screen, x, " · ", _rgb(pal.faint))
+            x = _put(screen, x, text, _rgb(color), bold)
+            rest.pop(0)
+        parts = [badge for _w, badge in rest]
+        x += 2
+    elif rows > 1 and count_txt:
         host_room = max(1, btn_x - 4 - badge_cells)   # the host, then the two-cell gap `_put` returns before the badges
         x = _put(screen, 1, _fit(count_txt, host_room), _rgb(pal.faint)) + 2
     elif rows == 1 and count_txt and room - _cells(name) - 2 >= _cells(count_txt):
@@ -1222,8 +1304,6 @@ def _native_edge(os_window_id: int) -> bool:
 
 
 def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
-    global _fill
-    _fill = None
     cols = screen.columns
     y0 = screen.cursor.y
     native = _native_edge(draw_data.os_window_id)
@@ -1280,12 +1360,13 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
             subtitle.append((f"{_ICON_FOLDER} {_short_cwd(cwd, 24)}", pal.muted if active else pal.faint))
         if subtitle and not extra_data.for_layout:
             _dump_row(tab.tab_id, legacy=True, pieces=[[subtitle[0][0], "legacy"]])
-    home_only = _clean_visible_title(tab.title or "").strip() == "~"   # the folder line would only repeat it, so it hides
+    # the folder line would only repeat a `~` title, so it hides — but only while the tab really is at home (a stale `~` title must not hide where it went)
+    home_only = _clean_visible_title(tab.title or "").strip() == "~" and bool(cwd) and os.path.realpath(cwd) == os.path.realpath(os.path.expanduser("~"))
     if not compact and not info and (not subtitle or (home_only and all(isinstance(t, _Place) for t, _c in subtitle))):
         subtitle = []
         # the app it runs, else the shell itself (the label skips shells: they are what every tab runs)
-        program = _best_process_label(foreground, _last_cmd) or next(
-            (_basename(c[0]).lstrip("-") for c in foreground or () if c), "")
+        program = kittymux_place.clean(_best_process_label(foreground, _last_cmd) or next(
+            (_basename(c[0]).lstrip("-") for c in foreground or () if c), ""))
         if program:
             subtitle.append((program, pal.muted if active else pal.faint))
     pane_count = _pane_count(tab.tab_id, tab.num_windows)
@@ -1297,6 +1378,9 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         if pane_map or chips:
             subtitle.append((pane_map, pal.faint) if pane_map else (chips, pal.faint))
     msg = kittymux_agents.resolve_msg(_tab_verdict(tab.tab_id)[1], state)
+    asking = _close_ask(tab.tab_id)               # closing a busy agent asks on this row first (kittymux_closeguard)
+    if asking:
+        msg = asking
     # Identity stays in its own row even when an alert arrives. The title's state glyph
     # remains visible when the height cap leaves no room for the separate alert row.
     if msg and hdr_rows > 1 and not compact:
@@ -1305,6 +1389,11 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         done_text = _changes_summary(str((_tab_verdict(tab.tab_id)[1] or {}).get("wid", "")))
         if done_text and done_text != "no changes":
             subtitle.insert(0, (done_text, pal.done))   # a finished tab says what the agent changed
+    word = None if compact else _state_word(state, pal)
+    if word:
+        subtitle.insert(0, word)              # Rex's second line: the state in words leads, the place follows
+    if _BAR_DUMP and not extra_data.for_layout:
+        _dump_row(tab.tab_id, word=word[0] if word else "")
     if risky:
         subtitle.insert(0, ("⚠", pal.alert))  # started with its approvals off: visible without opening anything
 
@@ -1326,20 +1415,9 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         _paint_rows(screen, y0, n_rows, row_bg)
     if active and not compact:                       # the card: the bar's colour back at both edges
         _paint_edges(screen, y0 + hdr_rows, n_rows - hdr_rows, bar, cols - sep_cols)
-    # OSC 9;4 progress: the card fills from the left (Rex's tab progress), the percent in the number's place.
+    # OSC 9;4 progress: the percent in the tab number's place, coloured only when it needs you (paused) or failed. No fill: a
+    # tinted block across the card read as a glitch next to the state colours (wave 3.1).
     progress = None if compact else _tab_progress(tab)
-    if progress:
-        p_state, p_pct = progress
-        x_from, x_to = 1, cols - sep_cols - ins
-        k = kittymux_progress.fill_cells(x_to - x_from, p_state, p_pct)
-        tint = {"error": pal.alert, "paused": pal.waiting}.get(p_state, pal.accent)
-        fill_bg = _rgb(kittymux_theme.blend(tint, pal.surface_hi if active else pal.bar, kittymux_progress.TINT[p_state]))
-        if k:
-            screen.cursor.bg = fill_bg
-            for r in range(y0 + hdr_rows, min(y0 + n_rows, screen.lines)):
-                screen.cursor.x, screen.cursor.y = x_from, r
-                screen.draw(" " * k)
-            _fill = ((y0 + hdr_rows, y0 + n_rows), x_from, x_from + k, fill_bg)
     if index == 1 and not extra_data.for_layout:
         # one full-height separator line, drawn once; each tab re-asserts its rows
         _sep_column(screen, 0, screen.lines, bar, pal, native)
@@ -1391,7 +1469,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     elif title_room >= 3:
         title = _shown_title(tab, max(4, title_room), info, cwd)
         title = title if _features().get("titles", True) else _fit(title, title_room)
-        if title.strip() == "~":
+        if title.strip() == "~" and title_room >= 4:     # three cells keep the tilde: `Home` would lose its last letter under the mark
             title = "Home"                                # the home folder by name, not a bare tilde
         _put(screen, tx, title,
              _rgb(pal.text) if active else _rgb(pal.muted), bold=active)
@@ -1481,10 +1559,12 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         screen.cursor.y, screen.cursor.bg = last_row, row_bg
         if stripe:
             _put(screen, 0, _RAIL, _rgb(pal.waiting))
-        _put(screen, tx, _fit(kittymux_place.clean(msg), max(1, cols - tx - 1 - sep_cols - ins)), _rgb(state_fg), True)
+        _put(screen, tx, _fit(kittymux_place.clean(msg), max(1, cols - tx - 1 - sep_cols - ins)), _rgb(pal.waiting if asking else state_fg), True)
         screen.cursor.bold = False
         if not extra_data.for_layout:
             _dump_row(tab.tab_id, alert=kittymux_place.clean(msg))
+    elif _BAR_DUMP and not extra_data.for_layout:
+        _dump_row(tab.tab_id, alert="")                   # test hook: an alert that went away is gone from the dump too
     # Tabs are separated by their blank row alone (no hairline): spacing, not rules, as in Rex's sidebar.
     if extra_data.next_tab is not None and not extra_data.for_layout and last_row + 1 < screen.lines:
         _sep_column(screen, last_row + 1, 1, bar, pal, native)
@@ -1495,7 +1575,6 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     screen.cursor.bg = bar
     screen.cursor.fg = 0
     screen.cursor.bold = False
-    _fill = None
     return screen.cursor.x
 
 
@@ -1562,7 +1641,11 @@ def _draw_tab(
             _new_pass()                          # a new redraw pass starts at tab 1: nothing memoised before it is reused
         _remember_progress(tab)                  # every tab, including the rail: the panel reads this file, the bar does not have to draw the fill
         pal = _palette(draw_data)
-        if draw_data.tab_bar_edge in ("left", "right"):
+        if draw_data.tab_bar_edge in ("left", "right") and _attached():
+            end = _draw_attached(draw_data, screen, tab, index, extra_data, pal)
+        elif draw_data.tab_bar_edge in ("left", "right"):
+            if _BAR_DUMP and not extra_data.for_layout:
+                _dump_row(tab.tab_id, attached=False)
             end = _draw_vertical(draw_data, screen, tab, index, extra_data, pal)
         else:
             end = _draw_horizontal(max_title_length, screen, tab, index, extra_data, pal)

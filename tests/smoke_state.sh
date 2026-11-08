@@ -50,6 +50,9 @@ include $HOME_DIR/kittymux.conf
 watcher $HOME_DIR/python/pane-state.py
 tab_bar_edge left
 tab_bar_min_tabs 1
+# the frame sampler below crops a region that reaches past the bar into the focused shell: a blinking cursor there
+# would read as motion (CI saw 6 frames in 7 s and failed the motion-off check)
+cursor_blink_interval 0
 CONF
 cat > "$T/session.kitty" <<SESS
 new_tab devin
@@ -144,37 +147,56 @@ for o in json.load(sys.stdin):
 [ -n "${ID_S:-}" ] && [ -n "${ID_SH:-}" ] || fail "could not find the split tab (opencode=${ID_S:-} shell=${ID_SH:-})"
 kitty @ --to "$SOCK" focus-window --match "id:$ID_SH" >/dev/null 2>&1        # the shell pane is the active one
 expect "question in a background split" "$ID_S" waiting
+# the attention ring: kitty's own needs_attention flag (its bell colour on the divider), set without a bell, on the asking pane only
+attn() {   # attn <window id> → True/False, as kitty reports it
+  kitty @ --to "$SOCK" ls | python3 -c 'import sys, json
+w = [w for o in json.load(sys.stdin) for t in o["tabs"] for w in t["windows"] if w["id"] == int(sys.argv[1])]
+print(bool(w and w[0].get("needs_attention")))' "$1"
+}
+until_attn() {   # until_attn <window id> <True|False>: within ~8 s
+  for _ in $(seq 32); do [ "$(attn "$1")" = "$2" ] && return 0; sleep 0.25; done; return 1
+}
+until_attn "$ID_S" True || fail "the asking split pane was not marked (needs_attention: $(attn "$ID_S"))"
+[ "$(attn "$ID_SH")" = False ] || fail "the pane you are in was marked"
+echo "  ok   attention ring: the asking split pane is marked (kitty's bell colour), the pane you are in is not"
+touch "$STATE/ring-off"
+until_attn "$ID_S" False || fail "ring off: the mark stayed"
+rm -f "$STATE/ring-off"
+until_attn "$ID_S" True || fail "ring back on: the pane was not marked again"
+kitty @ --to "$SOCK" focus-window --match "id:$ID_S" >/dev/null 2>&1
+until_attn "$ID_S" False || fail "focusing the asking pane did not clear its mark"
+echo "  ok   attention ring: off clears it, on brings it back, focusing the pane clears it"
 kitty @ --to "$SOCK" focus-tab --match "title:codex" >/dev/null 2>&1
 
 if [ -n "${SMOKE_SHOT:-}" ] && command -v import >/dev/null 2>&1; then
   DISPLAY=$DISP import -window root "$SMOKE_SHOT" 2>/dev/null && echo "  screenshot: $SMOKE_SHOT"
 fi
-# the spinner must keep animating on its own (devin has no hooks, so this is the screen-detected
-# path that used to stutter): sample the bar region and require several distinct frames
+# the working glyph must STEP on its own (devin has no hooks, so this is the screen-detected path that once stuttered) and
+# must never spin: calm motion is one step every 3 s (kittymux_agents.SPINNER_FPS), so it holds still between steps
 if command -v import >/dev/null 2>&1 && command -v md5sum >/dev/null 2>&1 && command -v bc >/dev/null 2>&1; then
-  # Count distinct frames of a screen region over 3 s, sampling every ~50 ms (a short, odd pause
-  # cannot alias with the spinner's 1 s period).
-  distinct() {   # distinct <WxH+X+Y>
+  distinct() {   # distinct <WxH+X+Y> <seconds>: distinct frames of a screen region, sampled every ~50 ms
     local t0; t0=$(date +%s.%N)
-    while [ "$(echo "$(date +%s.%N) - $t0 < 3" | bc)" = 1 ]; do
+    while [ "$(echo "$(date +%s.%N) - $t0 < $2" | bc)" = 1 ]; do
       DISPLAY=$DISP import -window root -crop "$1" png:- 2>/dev/null | md5sum; sleep 0.03
     done | sort -u | wc -l
   }
-  # The regression this guards: marking the tab bar dirty alone does not make kitty RENDER, so on an
-  # otherwise idle window the spinner advanced ~1 frame/s (it only moved when the cursor blinked).
-  # A 10 fps spinner must show ~10 distinct frames in 3 s with nothing else going on.
-  spinner=$(distinct 420x60+0+20)
-  [ "$spinner" -ge 7 ] || fail "spinner is not animating continuously: $spinner distinct frames in 3 s on an idle window (expect ~10)"
-  echo "  ok   spinner animates continuously on an idle window ($spinner distinct frames in 3 s)"
-  # the `motion` switch: off holds one still frame (the flag is read live, no reload) and the timer stops; on turns it again
-  touch "$STATE/motion-off"; sleep 2.5
-  still=$(distinct 420x60+0+20)
-  [ "$still" -le 2 ] || fail "motion is off but the spinner still moved: $still distinct frames in 3 s (expect 1)"
-  echo "  ok   motion off: the spinner holds still ($still distinct frame(s) in 3 s)"
-  rm -f "$STATE/motion-off"; sleep 2.5
-  again=$(distinct 420x60+0+20)
-  [ "$again" -ge 7 ] || fail "motion is back on but the spinner did not resume: $again distinct frames in 3 s"
-  echo "  ok   motion on again: the spinner resumes ($again distinct frames in 3 s)"
+  # The regression this guards: marking the tab bar dirty alone does not make kitty RENDER, so on an otherwise idle window a
+  # step could be missed until the cursor blinked. Over 7 s (two beats) the glyph must have moved; over 1.2 s it must not spin.
+  calm=$(distinct 420x60+0+20 1.2)
+  [ "$calm" -le 2 ] || fail "the working glyph spins: $calm distinct frames in 1.2 s (calm motion steps every 3 s)"
+  stepped=$(distinct 420x60+0+20 7)
+  [ "$stepped" -ge 2 ] || fail "the working glyph never stepped: $stepped distinct frame(s) in 7 s on an idle window"
+  echo "  ok   the working glyph steps on an idle window and never spins ($calm frame(s) in 1.2 s, $stepped in 7 s)"
+  # the `motion` switch: off holds one still frame (the flag is read live, no reload) and the timer stops; on steps again
+  touch "$STATE/motion-off"
+  for _ in $(seq 8); do [ "$(distinct 420x60+0+20 1.2)" -le 1 ] && break; done    # the still frame is up (a deadline of ~10 s, not a guess)
+  still=$(distinct 420x60+0+20 7)
+  [ "$still" -le 1 ] || fail "motion is off but the working glyph still moved: $still distinct frames in 7 s (expect 1)"
+  echo "  ok   motion off: the working glyph holds still ($still distinct frame(s) in 7 s)"
+  rm -f "$STATE/motion-off"; sleep 1
+  again=$(distinct 420x60+0+20 7)
+  [ "$again" -ge 2 ] || fail "motion is back on but the working glyph did not resume: $again distinct frames in 7 s"
+  echo "  ok   motion on again: the working glyph steps ($again distinct frames in 7 s)"
 fi
 sleep 1
 A=$(ls -l --time-style=+%s%N "$STATE"/scan-*.json | awk '{print $6}')

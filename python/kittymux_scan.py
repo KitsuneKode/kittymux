@@ -40,7 +40,7 @@ _RT = sys.modules.setdefault("_kittymux_scan_rt", types.SimpleNamespace(
 ))
 
 SCAN_FAST, SCAN_IDLE = 0.5, 2.0
-SPIN_INTERVAL = 0.1
+SPIN_INTERVAL = 3.0          # one step of the working glyph (kittymux_agents.SPINNER_FPS); never a continuous spin
 HEARTBEAT = 3.0
 AGE_REFRESH = 20.0            # tabs that show "waiting 5m" / "done 2m" are redrawn this often, so the minutes tick (a working tab already redraws with its spinner)
 NOTIFY_EVERY = 10.0
@@ -59,11 +59,8 @@ def _ensure_path() -> None:
     global _helper_dirs_done
     if _helper_dirs_done:
         return
-    here = globals().get("__file__")
-    for d in (os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty"),
-              (os.path.dirname(os.path.realpath(here)) if here else "")):   # own dir inserted LAST → searched FIRST
-        if d and d not in sys.path:
-            sys.path.insert(0, d)
+    import kittymux_reload
+    kittymux_reload.prefer_own(globals().get("__file__"))
     _helper_dirs_done = True
 
 
@@ -481,7 +478,8 @@ def _agent_spec(window) -> dict | None:
     if not session:
         session = getattr(window, "session_name", "") or ""
     return {"window_id": wid, "agent": agent, "state": state, "title": getattr(window, "title", "") or "",
-            "tab_title": tab_title, "cwd": cwd, "session": session, "reason": verdict.get("reason") or "",
+            "tab_title": tab_title, "cwd": cwd, "session": session,
+            "reason": "" if _private() else (verdict.get("reason") or ""),     # private mode: no screen text in agents.json/tabs.json either
             "progress": _fraction(window), "limit_reset": verdict.get("reset_at")}
 
 
@@ -490,12 +488,138 @@ def _publish_agents(boss) -> None:
     try:
         _ensure_path()
         import kittymux_agentsnap
+        import kittymux_quiet
+        muted = kittymux_quiet.load_mutes(state_dir(), os.getpid())
         specs = []
         for window in list(getattr(boss, "all_windows", None) or []):
             spec = _agent_spec(window)
             if spec is not None:
+                spec["muted"] = str(spec.get("window_id")) in muted
                 specs.append(spec)
         kittymux_agentsnap.publish(state_dir(), os.getpid(), specs, time.time())
+        _publish_tabs(boss, muted)
+    except Exception:
+        _debug()
+
+
+def _os_window_geometry(osw, tm) -> dict:
+    """Where this OS window's bar is, for a client that draws over it (kittymux_tabsnap.geometry_of): kitty's own viewport (framebuffer
+    pixels), its logical size and scale, and the background opacity. {} when kitty cannot say."""
+    try:
+        from kitty.fast_data_types import get_options, get_os_window_size, viewport_for_window
+        central, bar, vw, vh, cell_w, cell_h = viewport_for_window(osw)
+        size = get_os_window_size(osw) or {}
+        visible = bool(getattr(tm, "tab_bar_should_be_visible", False)) and not getattr(tm, "tab_bar_hidden", False)
+        # `central` is the terminal. geometry_of drops a bar that does not push it aside.
+        return {"vw": vw, "vh": vh, "width": size.get("width"), "height": size.get("height"),
+                "bar": [int(bar.left), int(bar.top), int(bar.right), int(bar.bottom)] if visible else None,
+                "central": [int(central.left), int(central.top), int(central.right), int(central.bottom)],
+                "cell": [cell_w, cell_h],
+                "opacity": float(getattr(get_options(), "background_opacity", 1.0))}
+    except Exception:
+        return {}
+
+
+def layout_changed(boss) -> None:
+    """A window was resized (pane-state's on_resize): publish tabs.json now, so a client drawn over the bar follows without waiting
+    for the next scan. Cheap when nothing a client draws changed (the publish skips)."""
+    try:
+        _publish_agents(boss)
+    except Exception:
+        _debug()
+
+
+def _publish_tabs(boss, muted) -> None:
+    """This kitty's OS windows and tabs into the shared tabs.json (kittymux_tabsnap), for a client drawn outside kitty."""
+    try:
+        import kittymux_tabsnap
+        # Focus as the compositor sees it: 0 when no window of THIS kitty has it, so two kitties never both claim it (the boss's
+        # active tab manager is only this process's last one). Unknown (an older kitty) falls back to that.
+        try:
+            from kitty.fast_data_types import current_focused_os_window_id
+            focused_id = current_focused_os_window_id()
+        except Exception:
+            focused_id = None
+        colors = {}
+        try:
+            import kittymux_theme
+            from kitty.fast_data_types import get_options
+            from kitty.utils import color_as_int
+            o = get_options()
+            colors = kittymux_theme.colors_from_options(o, color_as_int(o.background), color_as_int)
+        except Exception:
+            colors = {}
+        specs = []
+        for osw, tm in list((getattr(boss, "os_window_map", None) or {}).items()):
+            tabs = []
+            active_tab = getattr(tm, "active_tab", None)
+            for tab in list(getattr(tm, "tabs", None) or []):
+                lead = getattr(tab, "active_window", None)
+                wins = []
+                for w in list(tab):
+                    spec = _agent_spec(w) or {}
+                    child = getattr(w, "child", None)
+                    cwd = (getattr(child, "current_cwd", None) or getattr(child, "cwd", None) or "") if child is not None else ""
+                    wins.append({"window_id": w.id, "active": w is lead, "cwd": cwd, "agent": spec.get("agent") or "",
+                                 "state": spec.get("state") or "", "reason": spec.get("reason") or "",
+                                 "progress": spec.get("progress"), "limit_reset": spec.get("limit_reset"),
+                                 "muted": str(w.id) in muted})
+                tabs.append({"tab_id": tab.id, "title": getattr(tab, "name", "") or getattr(tab, "title", "") or "",
+                             "active": tab is active_tab, "windows": wins})
+            specs.append({"os_window_id": osw, "wm_class": getattr(tm, "wm_class", "") or "kitty", "focused": (osw == focused_id) if focused_id is not None else tm is getattr(boss, "active_tab_manager", None),
+                          "session": "", "colors": colors, "tabs": tabs, "geometry": _os_window_geometry(osw, tm),
+                          "title": getattr(getattr(tm, "active_window", None), "title", "") or ""})
+        # Most scans change nothing a client draws: skip the file (its read, git lookups, compare) when this kitty's tabs are what
+        # was published last, except once per AGE_REFRESH so a kitty that exited is still pruned from the shared file.
+        key = repr(specs)
+        rt = vars(_RT)
+        now = time.monotonic()
+        if key == rt.get("tabs_key") and now - rt.get("tabs_at", 0.0) < AGE_REFRESH:
+            return
+        if kittymux_tabsnap.publish(state_dir(), os.getpid(), specs, time.time()) is None:
+            return                                      # another kitty is writing: try again next pass (nothing remembered)
+        rt["tabs_key"], rt["tabs_at"] = key, now
+    except Exception:
+        _debug()
+
+
+def ring_wanted(state: str, muted: bool, active: bool, on: bool = True) -> bool:
+    """A pane's divider takes kitty's bell colour while its agent needs you, the pane is not the one you are in, and it is not muted."""
+    return bool(on and state in ("waiting", "limited") and not muted and not active)
+
+
+def _sync_rings(boss, live: set) -> None:
+    """The cmux-style ring, drawn by kitty: a window with `needs_attention` gets the bell colour on its border (on the dividers beside it,
+    with kittymux's minimal borders). kitty sets that flag only on a bell and clears it when the window is focused; this sets it for a
+    pane whose agent needs you, WITHOUT a bell (no urgency hint, no focus change), and clears only the marks it set itself, so a real
+    bell's mark is never taken away. One pass per scan; a relayout only for a window that changed."""
+    try:
+        ours = vars(_RT).setdefault("rings", set())
+        on = _switch("ring")
+        import kittymux_quiet
+        muted = kittymux_quiet.load_mutes(state_dir(), os.getpid())
+        active = getattr(boss, "active_window", None)
+        for w in list(boss.all_windows):
+            wid = str(w.id)
+            state = (_RT.verdicts.get(wid) or {}).get("state") or ""
+            want = ring_wanted(state, wid in muted, w is active, on)
+            have = bool(getattr(w, "needs_attention", False))
+            if want and not have:                            # mark it
+                w.needs_attention = True
+                ours.add(wid)
+            elif not want and wid in ours:                   # our mark, no longer wanted: take it back (kitty may have already, on focus)
+                ours.discard(wid)
+                if not have:
+                    continue
+                w.needs_attention = False
+            else:
+                if not have:
+                    ours.discard(wid)                        # focused since: kitty cleared our mark itself
+                continue
+            tab = w.tabref() if hasattr(w, "tabref") else None
+            if tab is not None:
+                tab.relayout_borders()
+        ours &= live
     except Exception:
         _debug()
 
@@ -547,8 +671,12 @@ def scan_all(timer_id=None) -> None:
             _RT.verdicts.pop(wid, None)
             _RT.book.pop(wid, None)
             dirty = True
+        _sync_attached(boss, age_due)
+        _sync_rings(boss, live)
         if age_due:
             vars(_RT)["age_refresh"] = now
+            _sweep_cover(boss)
+            _prune_mutes(live)
         _maybe_autosave(now, live)
         _journal_tick(boss, live, time.time())
         for table in (_RT.notified, vars(_RT).get("alerted", {})):
@@ -563,6 +691,54 @@ def scan_all(timer_id=None) -> None:
         _publish_agents(boss)
         _sync_spinner()
         _retime(SCAN_FAST if n_agents else SCAN_IDLE)
+    except Exception:
+        _debug()
+
+
+def _prune_mutes(live) -> None:
+    """A closed window's mute goes with it (kittymux_quiet.prune_mutes): the file never outgrows the windows."""
+    try:
+        _ensure_path()
+        import kittymux_quiet
+        kittymux_quiet.prune_mutes(state_dir(), os.getpid(), live)
+    except Exception:
+        _debug()
+
+
+def _sync_attached(boss, sweep: bool) -> None:
+    """The kittymux client attached over this kitty's bar, or left it (kittymux_layout.attached): redraw the bar so it draws its tabs
+    or stops drawing them. A client that died leaves a record the sweep drops (every AGE_REFRESH). One stat a tick."""
+    try:
+        import kittymux_layout
+        sdir, pid = state_dir(), os.getpid()
+        if sweep:
+            kittymux_layout.sweep_attached(sdir, pid)
+        on = kittymux_layout.attached(sdir, pid)
+        rt = vars(_RT)
+        if rt.get("attached") == on:
+            return
+        rt["attached"] = on
+        try:
+            import tab_bar
+            tab_bar._ATTACH_CACHE["at"] = -1.0          # the bar reads the record again at once, not up to a second later
+        except Exception:
+            pass
+        for tm in list((getattr(boss, "os_window_map", None) or {}).values()):
+            try:
+                refresh_bar(tm)
+            except Exception:
+                pass
+    except Exception:
+        _debug()
+
+
+def _sweep_cover(boss) -> None:
+    """The pixel panel hides this kitty's bar while it lives (kittymux_layout.cover). A panel that was killed or crashed
+    cannot give it back, so every AGE_REFRESH the scanner drops a dead panel's cover and reloads the config once."""
+    try:
+        import kittymux_layout
+        if kittymux_layout.sweep_cover(state_dir(), os.getpid()):
+            boss.load_config_file()
     except Exception:
         _debug()
 
@@ -651,23 +827,22 @@ def _spin_tick(timer_id) -> None:
     if timer_id is not None and timer_id != _RT.spin_timer:
         return                                               # a tick of a timer that was removed in the same batch (see kittymux_timers): not ours any more
     try:
-        tms = _working_tms() if _motion_on() else []         # switched off while a spinner ran: the timer ends with its next beat
+        if not _motion_on():
+            # switched off while a step ran: one last redraw puts the still frame up now (a step is 3 s apart, so waiting
+            # for some other redraw would leave the old frame showing), then the timer ends
+            for tm in _working_tms():
+                refresh_bar(tm)
+            _stop_spinner()
+            return
+        tms = _working_tms()
         _trace(f"spin_tick tms={len(tms)}")
         if not tms:
             _stop_spinner()
             return
-        n = vars(_RT).get("spin_n", 0) + 1                  # (an _RT made by an older version lacks it)
-        _RT.spin_n = n
-        try:
-            from kitty.fast_data_types import current_focused_os_window_id
-            focused = current_focused_os_window_id()
-        except Exception:
-            focused = 0
+        _RT.spin_n = vars(_RT).get("spin_n", 0) + 1         # (an _RT made by an older version lacks it)
         for tm in tms:
-            # a window nobody is typing in animates at half rate: same information, half the redraws (a full bar redraw is the
-            # costliest thing this module does, and a kitty parked on another workspace used to pay it 10×/s for nothing)
-            if focused and tm.os_window_id != focused and n & 1:         # focus unknown (0) = full rate
-                continue
+            # every window steps on every tick: at one step per 3 s the cost is nothing, and skipping alternate ticks in an unfocused
+            # window made its mark jump two steps every 6 s (the half rate dates from the 10 fps spinner)
             refresh_bar(tm)
     except Exception:
         _debug()
@@ -700,6 +875,10 @@ def _sync_spinner() -> None:
         if working and _RT.spin_timer is None:
             _RT.spin_timer = _timers().add(__name__, "_spin_tick", SPIN_INTERVAL, True)
         elif not working:
+            if _RT.spin_timer is not None:
+                # motion went off (or the work ended) between steps: put the still frame up now, not at the next unrelated redraw
+                for tm in _working_tms():
+                    refresh_bar(tm)
             _stop_spinner()
     except Exception:
         _debug()

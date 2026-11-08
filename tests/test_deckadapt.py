@@ -11,7 +11,7 @@ import kittymux_switches as switches
 
 try:
     import kittymux_deckpx as dp
-except ImportError:
+except (ImportError, ValueError):   # gi raises ValueError when a typelib (Pango) is missing
     dp = None
 
 
@@ -33,6 +33,80 @@ def row(i, title, **kw):
 
 @unittest.skipIf(dp is None, "cairo/Pango/rsvg not installed")
 class AdaptTests(unittest.TestCase):
+    def test_without_a_session_each_repo_heads_its_run_of_tabs_in_tab_order(self):
+        rows = [
+            row(1, "og tags", status="working", session="", cwd="/w/website/src", branch="main"),
+            row(2, "docs", status="waiting", session="", cwd="/w/website", branch="main"),
+            row(3, "migrate", status="done", session="", cwd="/w/core", branch="release/2.4", current=True),
+            row(4, "notes", session="", cwd="/home/u"),
+            row(5, "again", status="working", session="", cwd="/w/website", branch="main"),
+        ]
+        names = {"/w/website/src": "website", "/w/website": "website", "/w/core": "core", "/home/u": "~"}
+        model = adapt.to_model(snap(rows, ""), 0, (-1, -1), "demo", "demo", project_of=names.get)
+        self.assertEqual([(sp.name, sp.branch) for sp in model.spaces],
+                         [("website", "main"), ("core", "release/2.4"), ("Home", ""), ("website", "main")])
+        self.assertEqual([a.title for a in model.agents], ["og tags", "docs", "migrate", "notes", "again"])   # never re-sorted
+        self.assertTrue(model.spaces[1].current)
+        self.assertFalse(model.spaces[0].current)
+        self.assertEqual(model.spaces[0].counts, {"working": 1, "waiting": 1})
+        # named sessions win: the repo grouping is only for an unnamed list
+        named = adapt.to_model(snap([row(1, "a", cwd="/w/core")], "work"), 0, (-1, -1), "demo", "work", project_of=names.get)
+        self.assertEqual([sp.name for sp in named.spaces], ["work"])
+
+    def test_a_tab_with_no_project_is_not_counted_in_the_space_above_it(self):
+        rows = [row(1, "api", status="working", session="", cwd="/w/core", branch="main"),
+                row(2, "scratch", status="waiting", session="", cwd="/mnt/gone")]
+        names = {"/w/core": "core"}
+        model = adapt.to_model(snap(rows, ""), 0, (-1, -1), "demo", "demo", project_of=lambda c: names.get(c, ""))
+        self.assertEqual([sp.name for sp in model.spaces], ["core"])
+        self.assertEqual(model.spaces[0].counts, {"working": 1})          # the question in /mnt/gone is not core's
+        self.assertEqual([a.title for a in model.agents], ["api", "scratch"])
+
+    def test_a_space_counts_its_tabs_and_the_chip_finds_the_first_question(self):
+        rows = [
+            row(1, "api", status="working", pr="#12", ports=(3000, 5173, 9229)),
+            row(2, "docs", status="waiting"),
+            row(3, "lint", status="working"),
+            row(4, "tests", status="done", session="other"),
+        ]
+        model = adapt.to_model(snap(rows, "work"), 0, (-1, -1), "demo", "work")
+        work = next(sp for sp in model.spaces if sp.name == "work")
+        self.assertEqual(work.counts, {"working": 2, "waiting": 1})
+        self.assertEqual(dp.rollup(work.counts), ("waiting", 1))
+        other = next(sp for sp in model.spaces if sp.name == "other")
+        self.assertEqual(dp.rollup(other.counts), ("done", 1))
+        api = next(a for a in model.agents if a.title == "api")
+        self.assertEqual(api.meta, "#12 \u00b7 :3000 :5173")
+        docs = next(a for a in model.agents if a.title == "docs")
+        self.assertEqual(adapt.first_waiting(model), (docs.row, -1))
+        self.assertEqual(dp.needs_you(model), 1)
+        calm = adapt.to_model(snap([row(1, "api", status="working")], "work"), 0, (-1, -1), "demo", "work")
+        self.assertEqual(adapt.first_waiting(calm), (-1, -1))
+
+    def test_a_muted_question_neither_lights_its_space_nor_takes_the_chip(self):
+        rows = [row(1, "quiet", status="waiting", muted=True), row(2, "loud", status="waiting"), row(3, "busy", status="working")]
+        model = adapt.to_model(snap(rows, "work"), 0, (-1, -1), "demo", "work")
+        self.assertTrue(model.agents[0].muted)
+        self.assertEqual(adapt.first_waiting(model), (model.agents[1].row, -1))
+        self.assertEqual(model.spaces[0].counts, {"waiting": 1, "working": 1})
+        alone = adapt.to_model(snap([row(1, "quiet", status="waiting", muted=True)], "work"), 0, (-1, -1), "demo", "work")
+        self.assertEqual(alone.spaces[0].state, "idle")
+        self.assertEqual(adapt.first_waiting(alone), (-1, -1))
+
+    def test_by_state_the_spaces_are_the_states(self):
+        rows = [row(1, "a", status="working", branch="main"), row(2, "b", status="waiting", session="other"), row(3, "c", status="done")]
+        groups = deck.group_by_state(deck.group_rows(rows, "work"))
+        items, flat = deck.flatten(groups, "work", None, headed=True)
+
+        class Snap:
+            pass
+        s = Snap()
+        s.items, s.rows, s.query, s.current_session, s.by_state = items, flat, "", "work", True
+        model = adapt.to_model(s, 0, (-1, -1), "demo", "work")
+        self.assertEqual([sp.name for sp in model.spaces], ["Needs you", "Working", "Finished"])
+        self.assertEqual({sp.branch for sp in model.spaces}, {""})                 # a state spans repos: no branch
+        self.assertEqual([a.title for a in model.agents], ["b", "a", "c"])
+
     def test_states_progress_and_empty_wording(self):
         rows = [
             row(1, "api", status="working", progress=("set", 42), current=True, branch="feat"),

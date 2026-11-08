@@ -78,6 +78,21 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(list(self.doc()["counts"]), list(S.COUNTS))
         self.assertEqual(self.doc()["counts"]["error"], 1)
 
+    def test_a_muted_agent_is_listed_but_never_needs_you(self):
+        """Mute (Rex adoption): still in the file, flagged, and left out of needs_you so a shell can honour it."""
+        self.pub([spec("waiting", reason="Do you want to proceed?", muted=True),
+                  spec("waiting", window_id=20, reason="Allow this command?"), spec("working", window_id=21)])
+        doc = self.doc()
+        by = {r["window_id"]: r for r in doc["agents"]}
+        self.assertIs(by[19]["muted"], True)
+        self.assertIs(by[20]["muted"], False)
+        self.assertEqual(doc["counts"]["waiting"], 2)            # the states are the states: additive, version 1
+        self.assertEqual(doc["needs_you"], 1)
+        self.assertEqual(doc["version"], 1)
+        self.assertTrue(self.pub([spec("waiting", reason="Do you want to proceed?", muted=False),
+                                  spec("waiting", window_id=20, reason="Allow this command?"), spec("working", window_id=21)], now=1793780701.0))
+        self.assertEqual(self.doc()["needs_you"], 2)              # unmuting is a write
+
     def test_waiting_keeps_the_question_and_limited_keeps_the_reset(self):
         self.pub([spec("waiting", reason="Do you want to proceed?")])
         self.assertEqual(self.doc()["agents"][0]["question"], "Do you want to proceed?")

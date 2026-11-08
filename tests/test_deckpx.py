@@ -3,10 +3,15 @@ import os
 import sys
 import unittest
 
+try:
+    import cairo
+except ImportError:
+    cairo = None
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
 try:
     import kittymux_deckpx as dp
-except ImportError:
+except (ImportError, ValueError):   # gi raises ValueError when a typelib (Pango) is missing
     dp = None
 import kittymux_theme as th
 
@@ -59,19 +64,174 @@ class RendererTests(unittest.TestCase):
         hits = []
         dp.render(model, pal, 280, 180, frame=dp.Frame(scroll=scroll), hits=hits)
         self.assertIn(23, {h[1] for h in hits if h[0] == "agent"})
-        opened = dp.Agent("web", "shell", 0, "core", can_open=True, opened=False)
+        opened = dp.Agent("web", "shell", 0, "core", can_open=True, opened=False, panes=2)
         hits = []
         dp.render(dp.Model("calm-otter", "demo", agents=[opened]), pal, 320, 400, hits=hits)
         agent = next(h for h in hits if h[0] == "agent")
-        self.assertEqual(dp.hit_at(hits, agent[2] + 2, agent[3] + 4), ("toggle", 0))
-        self.assertEqual(dp.hit_at(hits, agent[2] + 40, agent[3] + 4), ("agent", 0))
+        # the chevron is at the right end of the pill; the ring at the left cap belongs to the row
+        self.assertEqual(dp.hit_at(hits, agent[2] + agent[4] - 6, agent[3] + 10), ("toggle", 0))
+        self.assertEqual(dp.hit_at(hits, agent[2] + 6, agent[3] + 10), ("agent", 0))
+        self.assertEqual(dp.hit_at(hits, agent[2] + 60, agent[3] + 10), ("agent", 0))
 
-    def test_the_first_space_stays_where_the_spike_drew_it(self):
+    def test_a_space_heads_its_own_tabs(self):
+        """Machine -> Space -> Agents: one list, each space directly above its tabs, no second Spaces section."""
         pal = th.from_colors({})
+        model = dp.Model("calm-otter", "demo", spaces=[dp.Space("core", "main"), dp.Space("web", "dev")],
+                         agents=[dp.Agent("a", "codex", 0, "web"), dp.Agent("b", "codex", 0, "core"),
+                                 dp.Agent("c", "codex", 0, "web"), dp.Agent("loose", "shell", 0, "")])
+        kinds = [(k, i) for k, i, _y, _h, _p in dp.body_items(model)]
+        self.assertEqual(kinds, [("space", 0), ("agent", 1), ("space", 1), ("agent", 0), ("agent", 2), ("agent", 3)])
+        ys = [y for _k, _i, y, _h, _p in dp.body_items(model)]
+        self.assertEqual(ys, sorted(ys))
         hits = []
-        dp.render(dp.Model("calm-otter", "demo", spaces=[dp.Space("core", "main")],
-                           agents=[dp.Agent("Review", "codex", pal.accent, "core")]), pal, 400, 700, hits=hits)
-        self.assertEqual(next(h[3] for h in hits if h[0] == "space"), 76)
+        dp.render(model, pal, 400, 700, hits=hits)
+        self.assertEqual(next(h[3] for h in hits if h[0] == "space"), dp.HEADER_END + 6)
+
+    def test_the_working_ring_steps_and_never_sits_between_steps(self):
+        self.assertEqual([dp.step_phase(x) for x in (0, .1, .26, .5, .74, .99, 1.0, -0.1, float("nan"))],
+                         [0, 0, .25, .5, .5, .75, 0, .75, 0])
+        pal = th.from_colors({"color12": 0x2F6FEB})
+        size, frames = dp.ring_frames(pal, 1)
+        self.assertEqual(len(frames), dp.STEP_FRAMES)
+        self.assertEqual(len({bytes(f.get_data()) for f in frames}), dp.STEP_FRAMES)
+        self.assertGreaterEqual(size, 2 * dp.RING_R)
+        self.assertGreaterEqual(dp.STEP_MS, 1000)          # calm: a step every few seconds, never a spin
+        model = dp.Model("calm-otter", "demo", agents=[dp.Agent("Review", "codex", 0, "core", state="working")])
+        a = dp.render(model, pal, 280, 200, frame=dp.Frame(phase=.01))
+        b = dp.render(model, pal, 280, 200, frame=dp.Frame(phase=.2))
+        self.assertEqual(bytes(a.get_data()), bytes(b.get_data()))
+
+    def test_counts_and_rollup(self):
+        counts = dp.state_counts(["working", "idle", "working", "done", "waiting", "x"])
+        self.assertEqual(counts, {"working": 2, "done": 1, "waiting": 1})
+        self.assertEqual(dp.rollup(counts), ("waiting", 1))
+        self.assertEqual(dp.rollup({"done": 3, "working": 1}), ("working", 1))
+        self.assertEqual(dp.rollup({}), ("", 0))
+        self.assertEqual(dp.rollup({"waiting": 2, "limited": 1}), ("limited", 1))   # the same order as the space's colour
+        parent = dp.Agent("web", "shell", 0, "core", state="idle")
+        parent.children = [dp.Agent("t", "claude", 0, "core", state="waiting")]
+        model = dp.Model("s", "h", agents=[parent, dp.Agent("x", "codex", 0, "core", state="limited")])
+        self.assertEqual(dp.needs_you(model), 2)
+
+    def test_the_needs_you_chip_is_a_target_only_when_something_asks(self):
+        pal = th.from_colors({})
+        calm = dp.Model("s", "h", agents=[dp.Agent("x", "codex", 0, "core", state="working")])
+        hits = []
+        dp.render(calm, pal, 300, 300, hits=hits)
+        self.assertNotIn("needs", {h[0] for h in hits})
+        asks = dp.Model("s", "h", agents=[dp.Agent("x", "codex", 0, "core", state="waiting")])
+        hits = []
+        dp.render(asks, pal, 300, 300, hits=hits)
+        chip = next(h for h in hits if h[0] == "needs")
+        self.assertLess(chip[3] + chip[5], dp.HEADER_END)
+
+    def test_colour_is_only_for_state(self):
+        """The accent appears only around the tab you are in, and a mark is never drawn in its brand colour."""
+        accent, brand = 0xE0115F, 0x22B573
+        pal = th.from_colors({"background": 0x101014, "foreground": 0xE6E6EA, "active_border_color": accent})
+
+        def has(surface, colour, tol=24):
+            from PIL import Image
+            im = Image.frombuffer("RGBA", (surface.get_width(), surface.get_height()), bytes(surface.get_data()),
+                                  "raw", "BGRa", surface.get_stride(), 1)
+            r0, g0, b0 = colour >> 16 & 255, colour >> 8 & 255, colour & 255
+            return any(abs(r - r0) < tol and abs(g - g0) < tol and abs(b - b0) < tol and a > 200
+                       for r, g, b, a in zip(*[iter(im.tobytes())] * 4))
+
+        quiet = dp.Model("s", "h", spaces=[dp.Space("core", "main")],
+                         agents=[dp.Agent("x", "claude", brand, "core", state="idle", selected=True)])
+        here = dp.Model("s", "h", spaces=[dp.Space("core", "main")],
+                        agents=[dp.Agent("x", "claude", brand, "core", state="idle", current=True)])
+        a = dp.render(quiet, pal, 300, 200, frame=dp.Frame(hover=0))
+        b = dp.render(here, pal, 300, 200)
+        self.assertFalse(has(a, accent, 60), "the selection or a hover used the accent")
+        # where you are: the accent hairline, dimmed (ACCENT_HAIRLINE) so the state colours lead; never the accent at full strength
+        dim = th.blend(accent, pal.bar, dp.ACCENT_HAIRLINE)
+        self.assertTrue(has(b, dim, 30), "the current tab has no (dimmed) accent hairline")
+        self.assertFalse(has(b, accent), "the current tab's hairline is the accent at full strength")
+        self.assertFalse(has(a, brand) or has(b, brand), "a mark was drawn in its brand colour")
+
+    def test_key_hints_are_drawn_in_the_image_as_buttons(self):
+        """The key hints under the list are the panel's own pixels (wave 3.1), each one a hit with its index; `?` sits at the right."""
+        pal = th.from_colors({})
+        agents = [dp.Agent(f"t{i}", "claude", 0, "core") for i in range(30)]
+        model = dp.Model("s", "h", spaces=[dp.Space("core")], agents=agents)
+        keys = [("\u23ce", "jump"), ("/", "find"), ("a", "join"), ("t", "detach")]
+        hits = []
+        dp.render(model, pal, 272, 500, frame=dp.Frame(), hits=hits, keys=keys)
+        found = [h for h in hits if h[0] == "key"]
+        self.assertEqual([h[1] for h in found], [0, 1, 2, 3, 4])            # four hints, then `?`
+        top = 500 - dp.FOOTER_H
+        self.assertTrue(all(h[3] >= top for h in found))
+        help_ = found[-1]
+        self.assertGreater(help_[2], 272 - 40)
+        # the list never runs under the hints: no row hit reaches the band
+        self.assertTrue(all(h[3] + h[5] <= top + 0.01 for h in hits if h[0] in ("agent", "space", "pane")))
+        self.assertEqual(dp.hit_at(hits, found[1][2] + 2, found[1][3] + 2), ("key", 1))
+
+    def test_a_narrow_panel_drops_hints_from_the_right_but_keeps_help(self):
+        pal = th.from_colors({})
+        model = dp.Model("s", "h", agents=[dp.Agent("t", "claude", 0, "")])
+        keys = [("\u23ce", "jump"), ("/", "find"), ("a", "join"), ("t", "detach")]
+        hits = []
+        dp.render(model, pal, 150, 300, hits=hits, keys=keys)
+        idx = [h[1] for h in hits if h[0] == "key"]
+        self.assertIn(0, idx)
+        self.assertNotIn(3, idx)
+        self.assertEqual(idx[-1], len(keys))
+
+    def test_without_keys_the_body_reaches_the_bottom(self):
+        pal = th.from_colors({})
+        self.assertEqual(dp.body_bottom(400, None), 400)
+        self.assertEqual(dp.body_bottom(400, [("/", "find")]), 400 - dp.FOOTER_H)
+
+    def test_a_working_ring_cut_by_the_key_hints_is_not_animated_over_them(self):
+        pal = th.from_colors({})
+        agents = [dp.Agent(f"t{i}", "claude", 0, "core", state="working") for i in range(12)]
+        model = dp.Model("s", "h", spaces=[dp.Space("core")], agents=agents)
+        slots = []
+        height = 300
+        dp.render(model, pal, 272, height, spinners=slots, keys=[("/", "find")])
+        bottom = dp.body_bottom(height, [("/", "find")])
+        self.assertTrue(slots)
+        self.assertTrue(all(dp.HEADER_END <= cy - r and cy + r <= bottom for _cx, cy, r, _c in slots), slots)
+
+    def test_only_rings_the_size_of_the_stepped_frames_are_animated(self):
+        pal = th.from_colors({})
+        slots = []
+        pt = dp.Painter(cairo.Context(cairo.ImageSurface(cairo.FORMAT_ARGB32, 64, 64)), 1.0, pal, spinners=slots)
+        pt.spin_clip = (None, None)
+        pt.spinner(30, 30, dp.PANE_RING_R, pal.working, 0)
+        self.assertEqual(slots, [])                                   # a pane's ring would not line up with tab-sized frames
+        pt.spinner(30, 30, dp.RING_R, pal.working, 0)
+        self.assertEqual(len(slots), 1)
+
+    def test_a_muted_agent_never_needs_you_and_its_word_is_quiet(self):
+        """Mute: listed, but out of the chip's count, and its state word is not drawn in the waiting colour."""
+        pal = th.from_colors({"background": 0x101014, "foreground": 0xE6E6EA})
+        loud = dp.Agent("ask", "claude", 0, "core", state="waiting")
+        quiet = dp.Agent("ask", "claude", 0, "core", state="waiting", muted=True)
+        self.assertEqual(dp.needs_you(dp.Model("s", "h", agents=[loud, quiet])), 1)
+        parts = dp._second_line(pal, quiet, pal.bar, 0x808080)
+        self.assertEqual(parts[0][0], "Needs you")                  # the state is still true and readable
+        self.assertNotEqual(parts[0][1], th.ensure_contrast(pal.waiting, pal.bar, 4.5))
+        hits = []
+        dp.render(dp.Model("s", "h", agents=[quiet]), pal, 300, 200, hits=hits)    # draws (the bell-slash) without raising
+
+    def test_crossfade_interpolates_and_never_mixes_sizes(self):
+        a = dp.cairo.ImageSurface(dp.cairo.FORMAT_ARGB32, 4, 4)
+        b = dp.cairo.ImageSurface(dp.cairo.FORMAT_ARGB32, 4, 4)
+        for surf, value in ((a, 0), (b, 1)):
+            cr = dp.cairo.Context(surf)
+            cr.set_source_rgba(value, value, value, 1)
+            cr.paint()
+        mid = dp.crossfade(a, b, .5)
+        self.assertTrue(100 < bytes(mid.get_data())[0] < 156)
+        self.assertEqual(bytes(dp.crossfade(a, b, 1).get_data()), bytes(b.get_data()))
+        self.assertEqual(bytes(dp.crossfade(a, b, 0).get_data()), bytes(a.get_data()))
+        other = dp.cairo.ImageSurface(dp.cairo.FORMAT_ARGB32, 8, 8)
+        self.assertEqual(bytes(dp.crossfade(other, b, .5).get_data()), bytes(b.get_data()))
+        self.assertLessEqual(dp.FADE_MS, 200)
 
 
 if __name__ == "__main__":

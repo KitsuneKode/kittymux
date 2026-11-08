@@ -151,7 +151,7 @@ def fold(ops: list[dict]) -> list[dict]:
                 prev["sources"] = sorted(set(prev.get("sources", [])) | set(op.get("sources", [])))
                 if op.get("confidence") == "high":
                     prev["confidence"] = "high"                      # any authoritative source upgrades it
-                for field in ("body", "title", "tab", "reset_at", "tag", "source"):
+                for field in ("body", "title", "tab", "reset_at", "tag", "source", "agent"):   # one subject: the agent travels with the source
                     if op.get(field):
                         prev[field] = op[field]
                 continue
@@ -322,8 +322,12 @@ def ack(state_dir: str, now: float, *, ids: list | None = None, window: str | in
             _refresh(state_dir, now)
         finally:
             os.close(fd)
-    except Exception:
-        pass
+    except Exception as e:
+        try:
+            import kittymux_diag
+            kittymux_diag.log_failure(state_dir, "inbox ack", f"{type(e).__name__}: {e}")   # `kittymux doctor` shows it
+        except Exception:
+            pass
 
 
 def restore(state_dir: str, now: float, ids: list) -> None:

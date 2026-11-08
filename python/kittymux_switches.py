@@ -77,12 +77,14 @@ CATALOG: tuple[Switch, ...] = (
            **_legacy_off("KITTYMUX_BELL", "bell-off")),
     Switch("notify-private", "Notifications", "Private notifications", "Popups and the inbox say that something happened, never what was on screen.", False,
            **_legacy_on("KITTYMUX_NOTIFY_PRIVATE", ("1",), "notify-private")),
+    Switch("ring", "Notifications", "Mark the pane that needs you", "The divider beside a split pane whose agent needs you takes the bell colour.", True),
     Switch("sudo", "Notifications", "Password prompts", "A notification when sudo, doas, su or pkexec waits in a pane you are not in.", True),
     Switch("loginprompt", "Notifications", "Login prompts", "The same for ssh and git asking for a passphrase, a password or to trust a host.", True),
     Switch("pkgprompt", "Notifications", "Package prompts", "The same for pacman, paru, yay, apt and dnf waiting for a yes or a no.", True),
     # ── Safety and recovery ────────────────────────────────────────────────────────────────────────────────────────────
     Switch("autosave", "Safety and recovery", "Autosave sessions", "Save the layout and its agents now and then, so a crash can be restored.", True,
            **_legacy_off("KITTYMUX_AUTOSAVE", "autosave-off")),
+    Switch("closeguard", "Safety and recovery", "Confirm closing a busy agent", "Closing a working or waiting agent asks on its tab row first.", True),
     Switch("journal", "Safety and recovery", "Session journal", "Remember every agent session: what it ran, how long, in which folder.", True,
            **_legacy_off("KITTYMUX_JOURNAL", "journal-off")),
     Switch("changes", "Safety and recovery", "Track what an agent changed", "Take a snapshot at a run's start and end (never written into your repo).", True,
@@ -100,6 +102,8 @@ CATALOG: tuple[Switch, ...] = (
            consequence="kittymux will contact each provider's API with your own login to read your quotas, about every 5 minutes.",
            **_legacy_on("KITTYMUX_USAGE_LIVE", ("1", "on", "true", "yes"), "usage-live-on")),
     Switch("deckpx", "Opt-in", "Pixel Agents list", "Draw the panel's Agents list in pixels. Off keeps the cell list.", False),
+    Switch("pxcover", "Opt-in", "Pixel panel hides the bar", "While the pixel Agents list shows, hide the cell tab bar it repeats.", True,
+           flag_off="pxcover-off"),
 )
 
 BY_ID = {s.id: s for s in CATALOG}

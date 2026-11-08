@@ -53,10 +53,22 @@ _APP_LABELS = {
 }
 _GENERIC = frozenset({"", "kitty", "zsh", "bash", "fish", "sh", "node", "~"})
 _BOLD, _NOBOLD, _RESET = "\x1b[1m", "\x1b[22m", "\x1b[0m"
+_CAP_L, _CAP_R = "\ue0b6", "\ue0b4"   # nerd-font round caps: with a background colour between them, a pill in cells
 
 
 def _sgr_fg(rgb: int) -> str:
     return f"\x1b[38;2;{(rgb >> 16) & 255};{(rgb >> 8) & 255};{rgb & 255}m"
+
+
+def _sgr_bg(rgb: int) -> str:
+    return f"\x1b[48;2;{(rgb >> 16) & 255};{(rgb >> 8) & 255};{rgb & 255}m"
+
+
+def pill_colours(state_rgb: int, bar_bg: int) -> tuple[int, int]:
+    """(fill, ink) of a state pill on a title bar: the state colour at a low weight over the bar, the word in the state
+    colour lifted to 4.5:1 on that fill."""
+    fill = kittymux_theme.blend(state_rgb, bar_bg, 0.2)
+    return fill, kittymux_theme.ensure_contrast(state_rgb, fill, 4.5)
 
 
 def _norm(text: str) -> str:
@@ -99,22 +111,21 @@ def _basename(value: str) -> str:
 
 
 def _title_from_cmdline(cmdline: list[str]) -> str:
-    if not cmdline:
+    """The program a command line runs, by its position only (as `kittymux_agents.tool_in`): argv[0], else what follows a `--`
+    launcher or an env/sudo-style wrapper, else the script a runtime (`node …/claude`) runs. Never an argument: `git commit -m vim`
+    is git, and `git diff -- src/nvim` is git."""
+    argv, _shift = kittymux_agents.command_argv(cmdline or [])
+    if argv and _basename(argv[0]).lower() in kittymux_agents._LAUNCHERS and "--" in argv:
+        argv = argv[argv.index("--") + 1:]
+    while argv and _basename(argv[0]).lower() in kittymux_agents._WRAPPERS:
+        argv = argv[1:]
+        while argv and argv[0].startswith("-"):
+            argv = argv[1:]
+    if len(argv) > 1 and _basename(argv[0]).lower() in kittymux_agents._RUNTIMES and not argv[1].startswith("-"):
+        argv = argv[1:]
+    if not argv:
         return ""
-    argv = [_basename(arg) for arg in cmdline]
-    lowered = [arg.lower() for arg in argv]
-    if "--" in cmdline:
-        tail = cmdline[cmdline.index("--") + 1:]
-        tail_label = _title_from_cmdline(tail)
-        if tail_label:
-            return tail_label
-    for name in ("nvim", "vim", "hx", "helix", "claude", "codex"):
-        if name in lowered:
-            return _APP_LABELS[name]
-    for item in reversed(lowered):
-        if item in _APP_LABELS and item not in {"node"}:
-            return _APP_LABELS[item]
-    first = lowered[0].lstrip("-")
+    first = _basename(argv[0]).lower().lstrip("-")
     return _APP_LABELS.get(first, first)
 
 
@@ -163,11 +174,13 @@ def _state_rgb(state: str, pal, bg: int, title_rgb: int) -> int:
     return kittymux_theme.ensure_contrast(rgb, bg, 4.5)
 
 
-def _tail_text(state_mark: str, progress_text: str) -> str:
+def _tail_text(state_mark: str, progress_text: str, word: str = "") -> str:
     parts = []
     if progress_text:
         parts.append(progress_text)
-    if state_mark:
+    if word:
+        parts.append(_CAP_L + word + _CAP_R)
+    elif state_mark:
         parts.append(state_mark)
     return " ".join(parts)
 
@@ -213,11 +226,11 @@ def _styled(role: str, text: str, style: dict, *, bold_override: bool | None = N
 def render(f: kittymux_place.Facts, columns: int, style: dict, *, active: bool,
            icon: str = "", name: str = "", cells=len, state: str = "",
            state_mark: str = "", progress: tuple[str, int] | None = None,
-           branch_icon: str = _ICON_BRANCH) -> str:
+           branch_icon: str = _ICON_BRANCH, state_word: str = "", pill: tuple[int, int] | None = None) -> str:
     """One pane header: icon, bold name, the bar's place line, then progress and the state mark on the right.
 
     The place comes from `kittymux_place.layout`. What is given up, in order: the path (middle), the branch, the percent,
-    then the name. The state mark stays. A name that is the project takes the project's colour and is not drawn twice."""
+    the pill (a `state_word` with `pill` = (fill, ink) colours shrinks to the state mark), then the name. The mark stays. A name that is the project takes the project's colour and is not drawn twice."""
     avail = max(columns, 4) - 1
     name = kittymux_place.clean(name)
     mark = kittymux_place.clean(state_mark)
@@ -229,9 +242,11 @@ def render(f: kittymux_place.Facts, columns: int, style: dict, *, active: bool,
     icon_seg = (icon + " ") if icon else ""
     name_text = name
     progress_on = bool(progress_text)
+    word = kittymux_place.clean(state_word)
+    pill_on = bool(word and pill and mark)
 
     def tail():
-        return _tail_text(mark, progress_text if progress_on else "")
+        return _tail_text(mark, progress_text if progress_on else "", word if pill_on else "")
 
     def too_wide() -> bool:
         return _over(icon_seg, name_text, pieces, tail(), avail, cells)
@@ -245,6 +260,8 @@ def render(f: kittymux_place.Facts, columns: int, style: dict, *, active: bool,
         pieces = [(text, role) for text, role in pieces if role != "branch"]
     if too_wide() and progress_on:
         progress_on = False
+    if too_wide() and pill_on:
+        pill_on = False
     while too_wide() and cells(name_text) > 1:
         nxt = kittymux_place.mid_ellipsis(name_text, max(1, cells(name_text) - 1), cells)
         if not nxt or cells(nxt) >= cells(name_text):
@@ -291,7 +308,11 @@ def render(f: kittymux_place.Facts, columns: int, style: dict, *, active: bool,
         chunks = []
         if progress_on and progress_text:
             chunks.append(_sgr_fg(style["progress"][0]) + progress_text)
-        if mark:
+        if pill_on:
+            fill, ink = pill
+            chunks.append(_sgr_fg(fill) + _CAP_L + _sgr_bg(fill) + _sgr_fg(ink) + _BOLD + word + _NOBOLD
+                          + "\x1b[49m" + _sgr_fg(fill) + _CAP_R)
+        elif mark:
             chunks.append(_sgr_fg(style["state"][0]) + mark)
         tail_styled = " ".join(chunks)
     return left + (" " * pad) + tail_styled + _RESET
@@ -403,6 +424,28 @@ def _dump(window_id: int, text: str) -> None:
         pass
 
 
+def close_question(window_id, columns: int, pal, bg: int, cells=len) -> str:
+    """The close guard's one-line question in the waiting colour, fitted to the bar; '' when none stands for this window."""
+    try:
+        import kittymux_closeguard
+        if not kittymux_closeguard.asking(window_id):
+            return ""
+        line = kittymux_closeguard.text()
+        short = kittymux_closeguard.short_for([window_id])
+    except Exception:
+        return ""
+    if not line:
+        return ""
+    ink = kittymux_theme.ensure_contrast(pal.waiting, bg, 4.5)
+    room = max(1, columns - 2)
+    if cells(line) > room and short:
+        line = short                                   # a narrow pane keeps the part that matters: which key, again
+    while line and cells(line) > room:
+        line = line[:-2] + "…"
+    r, g, b = ink >> 16 & 255, ink >> 8 & 255, ink & 255
+    return f"\x1b[1;38;2;{r};{g};{b}m {line}\x1b[22m"
+
+
 def draw(data) -> str:
     try:
         if not _enabled():
@@ -419,6 +462,10 @@ def draw(data) -> str:
         active = bool(data.is_active)
         fg, bg = _bar_colours(opts, active, as_int)
         pal = _palette(opts, as_int)
+        asking = close_question(data.window_id, int(window.screen.columns), pal, bg, cells)
+        if asking:                                   # closing this busy agent asks first, on this one line (kittymux_closeguard)
+            _dump(data.window_id, asking)
+            return asking
         f = kittymux_place.facts(cwd, kittymux_git.info(cwd))
         rt = sys.modules.get("_kittymux_scan_rt")
         hook = (getattr(rt, "panes", (None, {}))[1].get(str(data.window_id)) or {})
@@ -427,8 +474,9 @@ def draw(data) -> str:
             {str(data.window_id): (getattr(rt, "verdicts", {}).get(str(data.window_id)) or {})}).get(str(data.window_id)) or {}
         agent = entry.get("agent")
         state = kittymux_agents.fresh_verdict(entry, time.monotonic())
-        animate = kittymux_features.enabled("motion")
-        mark = "" if not state or state == "idle" else kittymux_agents.state_glyph(state, animate=animate)
+        # calm: a pane header never spins. A pill names the state; the still glyph is what is left when it cannot fit.
+        mark = "" if not state or state == "idle" else kittymux_agents.state_glyph(state, animate=False)
+        word = "" if not mark else kittymux_agents.STATE_WORDS.get(state, "")
         titles = kittymux_features.enabled("titles")
         name = pane_name(data.title or "", agent, hook.get("cmd") or "", f, titles=titles)
         icon, brand = pane_icon(agent, hook.get("cmd") or "")
@@ -438,8 +486,9 @@ def draw(data) -> str:
             hue = kittymux_theme.project_hue(f.project, pal.accent, bg,
                                             avoid=(pal.waiting, pal.alert, pal.working, pal.done))
         style = derive_colours_full(fg, bg, pal, brand, active, state, project=f.project, hue=hue)
+        pill = pill_colours(style["state"][0], bg) if word else None
         out = render(f, int(window.screen.columns), style, active=active, icon=icon, name=name, cells=cells,
-                     state=state, state_mark=mark, progress=progress)
+                     state=state, state_mark=mark, progress=progress, state_word=word, pill=pill)
         _dump(data.window_id, out)
         return out
     except Exception:

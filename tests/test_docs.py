@@ -339,7 +339,7 @@ class YamlTests(unittest.TestCase):
 def repo_source_text() -> str:
     """Everything a doc can truthfully point at: the code, the config and the templates (not docs, not tests)."""
     chunks = []
-    for sub_dir in ("bin", "python", "lib", "assets", "tools"):
+    for sub_dir in ("bin", "python", "lib", "assets", "tools", "client"):
         for dirpath, _dirs, files in os.walk(os.path.join(ROOT, sub_dir)):
             if "__pycache__" in dirpath:
                 continue

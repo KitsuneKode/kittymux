@@ -155,6 +155,17 @@ No popups for one agent window for a while.
 kittymux snooze [1h] [--window ID] [--clear]
 ```
 
+## `kittymux mute`
+
+Mute one agent until you unmute it. It keeps running and stays listed with a bell-slash, but it sends no popup or bell and never counts as "needs you". Its events still reach the inbox, and `agents.json` marks it `muted` for other surfaces. In the panel, `m` or a right-click on a tab does the same.
+
+```sh
+kittymux mute [TAB]       # TAB: nothing = the tab you are in, a number, id:N, or words of its title
+kittymux mute --list
+kittymux unmute [TAB]
+kittymux mute --pid KITTY_PID --window WINDOW_ID     # one pane of a named kitty (what the client runs)
+```
+
 ## `kittymux explain`
 
 Why each agent pane is in its state, and every recent decision: state changes and notifications sent or held back.
@@ -197,6 +208,14 @@ A persistent native kitty Wayland panel with Agents and Usage views. It stays op
 ```sh
 kittymux panel [toggle|start|stop|status|summon|dock|wider|narrower]
 kittymux panel width 40
+```
+
+## `kittymux client`
+
+The [kittymux client](/docs/users/the-client): a sidebar drawn by Quickshell beside kitty (Qt's software renderer by default; `KITTYMUX_CLIENT_GPU=1` for OpenGL), with the tabs of every running kitty grouped by space or by state. It needs Quickshell and a Wayland compositor with layer-shell. It reads `tabs.json` and acts only when you click.
+
+```sh
+kittymux client [start|stop|toggle|status]
 ```
 
 ## `kittymux usage`

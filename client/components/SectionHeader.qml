@@ -1,0 +1,35 @@
+// A section: the space's name (its project hue as a small dot: identity, not state) or the state group's name, and how many tabs it holds.
+import QtQuick
+import qs.config
+
+Item {
+    id: sec
+    property string label: ""
+    property string hue: ""
+    property int count: 0
+    implicitHeight: Theme.sectionH
+
+    Row {
+        anchors.left: parent.left; anchors.leftMargin: Theme.s3
+        anchors.bottom: parent.bottom; anchors.bottomMargin: 6
+        spacing: 7
+        Rectangle {
+            visible: sec.hue !== ""
+            width: 6; height: 6; radius: 3
+            color: sec.hue || "transparent"
+            anchors.verticalCenter: parent.verticalCenter
+        }
+        // A long project name gives way to the count: it is cut at the right, never under the number.
+        Label {
+            text: sec.label; size: Theme.tCaption; weight: Theme.wSemibold; color: Theme.text2; elide: Text.ElideRight
+            width: Math.min(implicitWidth, Math.max(24, sec.width - 2 * Theme.s3 - (sec.hue !== "" ? 13 : 0) - countBox.width - 7))
+        }
+        RollingNumber {
+            id: countBox
+            value: sec.count
+            color: Theme.text2
+            weight: Theme.wRegular
+            anchors.verticalCenter: parent.verticalCenter
+        }
+    }
+}

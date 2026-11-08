@@ -186,6 +186,39 @@ class LayoutTests(unittest.TestCase):
         self.assertTrue(out.endswith("◐"), out)
         self.assertLess(out.index("main"), out.index("62%"))
 
+    def test_a_state_pill_names_the_state_and_yields_to_the_mark_when_tight(self):
+        f = P.facts("/work/kittymux/a/very/long/path/segment", REPO, HOME)
+        words = {"working": "Working", "waiting": "Needs you", "done": "Finished", "error": "Error", "limited": "Limited"}
+        for state, word in words.items():
+            mark = MARKS[state]
+            st = style(True, state, project=f.project, accent=ACCENT)
+            fill, ink = PT.pill_colours(st["state"][0], 0x2A2B3C)
+            self.assertGreaterEqual(T.contrast(ink, fill), 4.5)
+            wide = PT.render(f, 100, st, active=True, icon="G", name="short", state=state, state_mark=mark,
+                             progress=("set", 62), state_word=word, pill=(fill, ink))
+            self.assertTrue(plain(wide).endswith("\ue0b6" + word + "\ue0b4"), plain(wide))
+            self.assertIn(PT._sgr_bg(fill), wide)
+            self.assertIn("62%", plain(wide))
+            shrank = False
+            for columns in range(14, 101):
+                out = PT.render(f, columns, st, active=True, icon="G", name="short", state=state, state_mark=mark,
+                                progress=("set", 62), state_word=word, pill=(fill, ink))
+                text = plain(out)
+                self.assertLessEqual(len(text), columns, (columns, text))
+                self.assertTrue(text.endswith(mark) or text.endswith(word + "\ue0b4"), (columns, text))
+                if text.endswith(mark):
+                    shrank = True
+                    self.assertNotIn("62%", text)           # the percent goes before the pill does
+                    self.assertNotIn("\x1b[48;", out)
+            self.assertTrue(shrank, state)
+
+    def test_idle_has_no_pill(self):
+        f = P.facts("/work/kittymux", REPO, HOME)
+        st = style(True, "idle", project=f.project, accent=ACCENT)
+        out = PT.render(f, 80, st, active=True, icon="G", name="short", state="idle", state_mark="",
+                        state_word="Idle", pill=(0x333333, 0xFFFFFF))
+        self.assertNotIn("\ue0b6", out)
+
     def test_the_percent_yields_before_the_name_and_the_mark_stays(self):
         f = P.facts("/work/kittymux/a/very/long/path/segment", REPO, HOME)
         wide = plain(render(f, 80, name="short", state="working", progress=("set", 62)))
@@ -295,6 +328,46 @@ class DrawTests(unittest.TestCase):
             raise RuntimeError("kitty changed")
         with mock.patch.object(PT, "_kitty", side_effect=boom):
             self.assertEqual(PT.draw(self.data()), "")
+
+
+
+class CloseQuestionTests(unittest.TestCase):
+    """Closing a busy agent asks on the pane's own title bar, in the waiting colour, on one line (kittymux_closeguard)."""
+
+    def setUp(self):
+        import kittymux_closeguard as G
+        self.G = G
+        G.clear()
+        self.addCleanup(G.clear)
+        self.pal = T.from_colors({"background": 0x101014, "foreground": 0xE6E6EA})
+
+    def test_only_the_asking_window_shows_the_question_and_it_fits(self):
+        G = self.G
+        self.assertEqual(PT.close_question(7, 80, self.pal, self.pal.bar), "")
+        G.decide("window", 7, [7])
+        G.set_text(G.question("Claude Code", "working", "ctrl+shift+w"), G.short("ctrl+shift+w"))
+        line = PT.close_question(7, 80, self.pal, self.pal.bar)
+        self.assertIn("Close Claude Code? It is working", line)
+        self.assertEqual(PT.close_question(8, 80, self.pal, self.pal.bar), "")
+        narrow = re.sub(r"\x1b\[[0-9;]*m", "", PT.close_question(7, 30, self.pal, self.pal.bar))
+        self.assertEqual(narrow.strip(), "Close? Press again")                    # what to do survives a narrow pane
+        tiny = re.sub(r"\x1b\[[0-9;]*m", "", PT.close_question(7, 12, self.pal, self.pal.bar))
+        self.assertLessEqual(len(tiny), 12)
+        self.assertTrue(tiny.rstrip().endswith("…"))
+        self.assertNotIn("\n", line)
+
+
+class ProgramPositionTests(unittest.TestCase):
+    def test_an_argument_never_names_the_program(self):
+        self.assertEqual(PT._title_from_cmdline(["git", "commit", "-m", "vim"]), "git")
+        self.assertEqual(PT._title_from_cmdline(["git", "diff", "--", "src/nvim"]), "git")
+
+    def test_wrappers_launchers_and_runtimes_are_seen_through(self):
+        self.assertEqual(PT._title_from_cmdline(["sudo", "nvim", "x"]), PT._title_from_cmdline(["nvim", "x"]))
+        self.assertEqual(PT._title_from_cmdline(["env", "-i", "hx"]), PT._title_from_cmdline(["hx"]))
+        self.assertEqual(PT._title_from_cmdline(["mux-pty", "--", "codex"]), "Codex")
+        self.assertEqual(PT._title_from_cmdline(["node", "/opt/x/claude"]), "Claude")
+        self.assertEqual(PT._title_from_cmdline([]), "")
 
 
 if __name__ == "__main__":

@@ -425,3 +425,115 @@ class AttentionConfTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CoverTests(unittest.TestCase):
+    """The pixel Agents panel lists every tab, so the cell bar hides while it shows (wave 3.1: both drew the same tabs)."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.k = os.getppid()                  # a kitty that is alive for the whole test: a cover needs its kitty
+
+    @staticmethod
+    def dead_pid() -> int:
+        import subprocess
+        p = subprocess.Popen(["true"])
+        p.wait()
+        return p.pid
+
+    def test_a_live_panel_covers_its_kitty_only(self):
+        L.cover(self.dir, self.k, os.getpid())
+        self.assertTrue(L.covered(self.dir, self.k))
+        self.assertFalse(L.covered(self.dir, 4243))
+        self.assertEqual(L.cover_conf(self.dir, self.k), "tab_bar_min_tabs 9999\n")
+        self.assertEqual(L.cover_conf(self.dir, 4243), "")
+        self.assertEqual(stat.S_IMODE(os.stat(os.path.join(self.dir, f"bar-covered-{self.k}")).st_mode), 0o600)
+
+    def test_a_dead_panel_never_hides_the_bar(self):
+        L.cover(self.dir, self.k, self.dead_pid())
+        self.assertFalse(L.covered(self.dir, self.k))
+        self.assertEqual(L.cover_conf(self.dir, self.k), "")
+
+    def test_uncover_removes_only_its_own_cover(self):
+        L.cover(self.dir, self.k, os.getpid())
+        self.assertFalse(L.uncover(self.dir, self.k, os.getpid() + 1))     # another panel's cover stays
+        self.assertTrue(L.covered(self.dir, self.k))
+        self.assertTrue(L.uncover(self.dir, self.k, os.getpid()))
+        self.assertFalse(L.covered(self.dir, self.k))
+        self.assertFalse(L.uncover(self.dir, self.k, os.getpid()))         # nothing left: no change, no reload needed
+
+    def test_the_switch_off_keeps_the_bar(self):
+        L.cover(self.dir, self.k, os.getpid())
+        open(os.path.join(self.dir, "pxcover-off"), "w").close()
+        self.assertEqual(L.cover_conf(self.dir, self.k), "")
+
+    def test_main_hides_the_bar_after_the_layout(self):
+        L.save(self.dir, os.getpid(), L.Layout("left", "full"))
+        L.cover(self.dir, os.getpid(), os.getpid())
+        with mock.patch.object(L, "hypr_focus_on_activate", return_value=None), \
+             mock.patch.dict(os.environ, KITTYMUX_STATE=self.dir, KITTYMUX_LAYOUT_PID=str(os.getpid())):
+            import io, contextlib
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                L.main()
+        out = buf.getvalue()
+        self.assertIn("tab_bar_min_tabs 2", out)
+        self.assertGreater(out.index("tab_bar_min_tabs 9999"), out.index("tab_bar_min_tabs 2"))   # the later line wins
+
+    def test_cleanup_drops_only_a_cover_whose_kitty_is_gone(self):
+        """Another kitty loading its config must not take a dead panel's cover from a LIVE kitty: that kitty's scanner sweeps it and reloads."""
+        L.cover(self.dir, self.dead_pid(), os.getpid())                # the watched kitty is gone
+        L.cover(self.dir, os.getpid(), self.dead_pid())                # a live kitty, its panel died
+        L.cleanup_stale(self.dir)
+        names = os.listdir(self.dir)
+        self.assertIn(f"bar-covered-{os.getpid()}", names)
+        self.assertEqual([n for n in names if n.startswith("bar-covered-") and n != f"bar-covered-{os.getpid()}"], [])
+        self.assertTrue(L.sweep_cover(self.dir, os.getpid()))
+
+    def test_a_reused_pid_is_not_the_panel_or_the_kitty_that_made_the_cover(self):
+        with open(os.path.join(self.dir, f"bar-covered-{self.k}"), "w") as f:
+            f.write(f"{os.getpid()} 1 1")                              # this pid, but another process's start times
+        self.assertFalse(L.covered(self.dir, self.k))
+        L.cover(self.dir, os.getpid(), os.getpid())
+        self.assertTrue(L.covered(self.dir, os.getpid()))
+
+    def test_an_oversized_or_junk_cover_file_is_ignored(self):
+        with open(os.path.join(self.dir, f"bar-covered-{self.k}"), "w") as f:
+            f.write("9" * 100000)
+        self.assertFalse(L.covered(self.dir, self.k))
+        with open(os.path.join(self.dir, "bar-covered-4243"), "w") as f:
+            f.write("not a pid")
+        self.assertFalse(L.covered(self.dir, 4243))
+
+
+class SweepCoverTests(CoverTests):
+    def test_sweep_removes_a_dead_panels_cover_and_says_so(self):
+        L.cover(self.dir, self.k, self.dead_pid())
+        self.assertTrue(L.sweep_cover(self.dir, self.k))          # the kitty must reload to get its bar back
+        self.assertFalse(os.path.exists(os.path.join(self.dir, f"bar-covered-{self.k}")))
+        self.assertFalse(L.sweep_cover(self.dir, self.k))
+
+    def test_sweep_leaves_a_live_panel_alone(self):
+        L.cover(self.dir, self.k, os.getpid())
+        self.assertFalse(L.sweep_cover(self.dir, self.k))
+        self.assertTrue(L.covered(self.dir, self.k))
+
+
+class AttachTests(CoverTests):
+    """The client drawn over the bar (kittymux_layout.attach): the cover's record under its own name, never mistaken for a cover."""
+
+    def test_a_live_client_attaches_and_detaches(self):
+        self.assertTrue(L.attach(self.dir, self.k, os.getpid()))
+        self.assertTrue(L.attached(self.dir, self.k))
+        self.assertFalse(L.covered(self.dir, self.k))                         # attached is not covered: the bar keeps its place
+        self.assertFalse(L.attach(self.dir, self.k, os.getpid()))             # nothing changed
+        self.assertFalse(L.detach(self.dir, self.k, os.getpid() + 1))         # only the owner lets go
+        self.assertTrue(L.detach(self.dir, self.k, os.getpid()))
+        self.assertFalse(L.attached(self.dir, self.k))
+
+    def test_a_dead_client_does_not_count_and_is_swept(self):
+        L.attach(self.dir, self.k, self.dead_pid())
+        self.assertFalse(L.attached(self.dir, self.k))
+        self.assertTrue(L.sweep_attached(self.dir, self.k))
+        self.assertFalse(os.path.exists(os.path.join(self.dir, f"bar-attached-{self.k}")))
+        self.assertFalse(L.sweep_attached(self.dir, self.k))
