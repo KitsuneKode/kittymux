@@ -1,10 +1,28 @@
-# kittymux cards: the vertical bar's cards in pixels (rounded, sheen, shadow) and a short glow on a tab change.
-# Opt-in (`kittymux cards on`); emitted by the layout geninclude only for kitty >= 0.49.0 with slangc installed.
+# kittymux cards. The geninclude rewrites the var lines for the kitty that is loading this.
+textures a
+var float CELL_H = 0
+var bool GLASS = false
+var float3 FILL0 = float3(-1.0, -1.0, -1.0)
+var float3 FILL1 = float3(-1.0, -1.0, -1.0)
+var float3 FILL2 = float3(-1.0, -1.0, -1.0)
+var float3 FILL3 = float3(-1.0, -1.0, -1.0)
+var float3 FILL4 = float3(-1.0, -1.0, -1.0)
+var float3 FILL5 = float3(-1.0, -1.0, -1.0)
+var float3 FILL6 = float3(-1.0, -1.0, -1.0)
+var float3 FILL7 = float3(-1.0, -1.0, -1.0)
+
 startgroup
-    # static: redrawn only when the frame changes
+    # static, so kitty redraws it when the pointer moves and not while the pointer is still.
+    animation_step 0
+    shaders kittymux-hover-probe
+    output_texture a
+endgroup
+
+startgroup
     animation_step 0
     shaders kittymux-cards
 endgroup
+
 startgroup
     animation_start tab-change
     animation_stop 420

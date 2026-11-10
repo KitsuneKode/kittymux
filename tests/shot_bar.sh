@@ -75,6 +75,8 @@ fi
 printf 'font_family JetBrainsMono Nerd Font Mono\nfont_size 11\nwindow_padding_width 10\nconfirm_os_window_close 0\nallow_remote_control socket-only\ninclude %s/theme.conf\ninclude %s/kittymux.conf\nwatcher %s/python/pane-state.py\ntab_bar_edge left\ntab_bar_min_tabs 1\ngeninclude %s/python/kittymux_layout.py\n' \
   "$CFG" "$HOME_DIR" "$HOME_DIR" "$HOME_DIR" > "$CFG/kitty.conf"
 [ "${KMX_SHOT_CARDS:-}" = 1 ] && : > "$STATE/bar-cards"                      # kittymux cards on, through the real geninclude path
+[ "${KMX_SHOT_GLASS:-}" = 1 ] && : > "$STATE/bar-cards-glass"                # kittymux cards glass: bar pixels go translucent
+[ "${KMX_SHOT_GLASS:-}" = 1 ] && printf 'background_opacity 0.8\n' >> "$CFG/kitty.conf"
 [ -n "${KMX_SHOT_CONF:-}" ] && printf '%s\n' "$KMX_SHOT_CONF" >> "$CFG/kitty.conf"     # extra lines, e.g. a custom shader
 # synthetic repos (no user data); one tab reports OSC 9;4 progress (64 %): two repos with an `app` folder each, a repo with a linked worktree, a plain folder
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
@@ -136,7 +138,24 @@ X windowsize "$WID" 1390 890; sleep 0.4; X windowsize "$WID" 1400 900; sleep 1.2
 python3 -c "import sys;sys.path.insert(0,'$HOME_DIR/python');import kittymux_layout as L;L.save('$STATE',$KPID,L.Layout('left','$MODE',$WSTEP))"
 kitty @ --to "$SOCK" load-config >/dev/null 2>&1; sleep 1; kitty @ --to "$SOCK" load-config >/dev/null 2>&1
 sleep 6                                                              # the scanner reads the fake agents' screens
-X mousemove 900 500; sleep 0.5
+X mousemove --sync ${KMX_SHOT_XY:-900 500}; sleep 0.5                    # KMX_SHOT_XY="x y" puts the pointer over a bar row
+[ -n "${KMX_SHOT_XY:-}" ] && X getmouselocation --shell || true
+# KMX_SHOT_TAB=N focuses that tab index and grabs a frame of the tab-change animation
+if [ -n "${KMX_SHOT_TAB:-}" ]; then
+  kitty @ --to "$SOCK" focus-tab --match "index:${KMX_SHOT_TAB}" || true
+  sleep "${KMX_SHOT_TAB_SLEEP:-0.08}"
+fi
 DISPLAY=$DISP import -window root "$T/full.png"
 convert "$T/full.png" -crop 380x800+0+0 +repage "$OUT"
+# kitty's own framebuffer, which keeps alpha; the root import above composites onto Xvfb and flattens it
+[ -n "${KMX_SHOT_ALPHA:-}" ] && kitty @ --to "$SOCK" screenshot "$KMX_SHOT_ALPHA" >/dev/null 2>&1
+[ -n "${KMX_SHOT_PIPELINE:-}" ] && cp "$STATE/shaders/kittymux-cards.pipeline" "$KMX_SHOT_PIPELINE" 2>/dev/null || true
+[ -n "${KMX_SHOT_LOG:-}" ] && cp "$T/k.log" "$KMX_SHOT_LOG" 2>/dev/null || true
+if [ -n "${KMX_SHOT_CPU:-}" ]; then
+  _cpu() { awk '{print $14+$15}' "/proc/$KPID/stat"; }
+  _a=$(_cpu); sleep 2; _b=$(_cpu)
+  for _i in 1 2 3 4 5 6 7 8; do X mousemove $((60 + _i * 15)) 171; sleep 0.2; done
+  _c=$(_cpu)
+  printf 'idle_ticks %s\nmove_ticks %s\n' "$((_b - _a))" "$((_c - _b))" > "$KMX_SHOT_CPU"
+fi
 echo "wrote $OUT"

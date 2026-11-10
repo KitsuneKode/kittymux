@@ -40,6 +40,7 @@
   kittymux join        move this tab's panes into another tab as splits: join [--to TAB_ID] [--side right|below|left|above|auto] [--pane]
   kittymux keys        chords your own kitty config and kittymux both define (kittymux's wins: it loads later): keys [conflicts]
   kittymux dim         dim the panes that are not focused (kitty ≥ 0.49.2): dim [on|off|toggle|show]
+  kittymux cards       the vertical bar's cards in pixels (kitty ≥ 0.49.0): cards [on|off|toggle|show] | cards glass [on|off|toggle|show]
   kittymux screenshot  PNG of this kitty window (kitty's own renderer): screenshot [--tab|--window] [FILE]
   kittymux upgrade     after a git pull: refresh links, reload every running kitty twice, run doctor
   kittymux uninstall   show what install.sh added (dry run); --yes removes it, --purge also deletes the state dir
@@ -2774,18 +2775,16 @@ def dim(argv: list[str]) -> int:
     return 0
 
 
-def cards(argv: list[str]) -> int:
-    """`cards [on|off|toggle|show]`: the vertical bar's cards finished in pixels by kittymux's own shader
-    (assets/shaders/kittymux-cards: rounded corners, a top sheen, a soft shadow, a short glow on a tab change).
-    A flag file turns it on for every kitty ≥ 0.49.0 with the shader compiler (kittymux_layout.gated_conf)."""
+def _cards_flag(argv: list[str], flag_name: str, label: str) -> int:
+    """Turn one cards flag file on or off and reload the focused kitty so the geninclude picks it up."""
     cmd = argv[0] if argv else "toggle"
-    flag = os.path.join(kittymux_layout.state_dir(), kittymux_layout.CARDS_FLAG)
+    flag = os.path.join(kittymux_layout.state_dir(), flag_name)
     on = os.path.exists(flag)
     if cmd == "show":
-        print("bar cards: " + ("on" if on else "off"))
+        print(label + ": " + ("on" if on else "off"))
         return 0
     if cmd not in ("on", "off", "toggle"):
-        print("usage: kittymux cards [on|off|toggle|show]", file=sys.stderr)
+        print("usage: kittymux cards [on|off|toggle|show] | cards glass [on|off|toggle|show]", file=sys.stderr)
         return 2
     want = (not on) if cmd == "toggle" else cmd == "on"
     if want and not kittymux_layout.have_slangc():
@@ -2803,8 +2802,25 @@ def cards(argv: list[str]) -> int:
     sock = _focused_socket()
     if sock:
         _run(["kitty", "@", "--to", sock, "load-config"], 6)
-    print("bar cards: " + ("on" if want else "off"))
+    print(label + ": " + ("on" if want else "off"))
     return 0
+
+
+def cards(argv: list[str]) -> int:
+    """`cards [on|off|toggle|show]` and `cards glass [on|off|toggle|show]`.
+
+    The shader finishes the vertical bar's cards in pixels (rounded corners, a top sheen, a soft shadow, a row
+    under the pointer, a short glow on a tab change). Glass lets the bar's own pixels go
+    translucent so a compositor can blur what is behind the window; text and the cards stay opaque. It needs
+    kitty's background_opacity below 1. Flag files, applied by kittymux_layout.gated_conf for kitty ≥ 0.49.0
+    with the shader compiler."""
+    if argv and argv[0] == "glass":
+        return _cards_flag(argv[1:], kittymux_layout.GLASS_FLAG, "bar cards glass")
+    rc = _cards_flag(argv, kittymux_layout.CARDS_FLAG, "bar cards")
+    if argv[:1] == ["show"]:
+        glass = os.path.exists(os.path.join(kittymux_layout.state_dir(), kittymux_layout.GLASS_FLAG))
+        print("bar cards glass: " + ("on" if glass else "off"))
+    return rc
 
 
 def screenshot(argv: list[str]) -> int:
