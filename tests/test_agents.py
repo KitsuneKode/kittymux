@@ -183,8 +183,10 @@ class SpinnerTests(unittest.TestCase):
         self.assertEqual(A.state_glyph(""), "")
         self.assertEqual(A.state_glyph("idle"), "")
 
-    def test_spinner_uses_braille_block(self):
-        self.assertTrue(all(0x2800 <= ord(c) <= 0x28FF for c in A.SPINNER))
+    def test_spinner_is_a_turning_circle_not_dots(self):
+        # braille dots read as a menu button at the row's end (kittymux-ui skill)
+        self.assertEqual(A.SPINNER, "◐◓◑◒")
+        self.assertFalse(any(0x2800 <= ord(c) <= 0x28FF for c in A.SPINNER))
 
 
 class ToolTests(unittest.TestCase):

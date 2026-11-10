@@ -5,6 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 ## [Unreleased]
 
 ### Changed
+- **The working mark is a quarter-turning circle (`◐◓◑◒`), not braille dots.** At the end of a row the dots sat tiny and grey and read as a `⋮` menu button that does nothing; the circle reads as work turning over. It still steps once every 3 s and never spins.
 - **Tab progress is a hairline, not a tinted block.** An OSC 9;4 report filled the card from the left with a tint that, in a light theme especially, read as a second selection. It is now a coloured underline under the tab's last line (kitty's own underline colour, so it stays crisp in cells), the percent beside it, in the accent while it runs, yellow when paused and the alert colour across the whole tab on an error. The selection is the only filled card again.
 - **Bar cards (`kittymux cards`):** the hover highlight now spans the whole row like the active card (it stopped about five cells short of the tab number), and the soft shadow no longer flecks the space under letters in a light theme (a glyph's anti-aliased edge can match a card colour; a card pixel now has to be part of a flat run).
 

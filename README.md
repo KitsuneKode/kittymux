@@ -197,7 +197,7 @@ panel and the `ctrl+alt+y` jump queue all show the *same* one:
 
 | Glyph | State | Meaning |
 |---|---|---|
-| ⠋⠙⠹… (steps) | **working** | the agent is busy — the mark steps once every 3 s, on any window (calm: it never spins) |
+| ◐◓◑◒ (steps) | **working** | the agent is busy — the circle fills a quarter turn every 3 s, on any window (calm: it never spins) |
 | **!** | **waiting** | it is asking you something (a permission prompt, a question) — the question is shown as the reason |
 | **⊘** | **limited** | usage limit / quota exhausted — nothing will happen until you act |
 | **✕** | **error** | the agent reported an error; the message stays, and it is not a finished run |
@@ -217,7 +217,7 @@ The design follows how t3code's sidebar resolves thread status: one ordered
 resolver (limited › waiting › error › working › done › idle), "done" only while unseen. An error the agent reports is not a completion.
 
 **Splits.** A split tab shows a to-scale **mini-map** of its panes under its title (a row of quadrant blocks: left/right and top/bottom splits at their real proportions, each pane tinted by its state — amber waiting, blue working, red limited — the focused one brighter), and lists each agent pane on its own: in the deck/panel as indented child lines
-(`├ ◆ claude !`, `└ ⠋ codex`) you can hover (live preview of *that* pane) and click (focus it); in the bar as
+(`├ ◆ claude !`, `└ ◐ codex`) you can hover (live preview of *that* pane) and click (focus it); in the bar as
 `logo + state` chips under the tab. The tab itself shows the most important state of all its panes, and
 jumping to a tab that needs you lands on the pane that is asking. kitty rings a waiting split with its bell border.
 

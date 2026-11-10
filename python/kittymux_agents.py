@@ -286,13 +286,15 @@ def load_panes(panes_path: str) -> dict:
 
 
 # Shape + colour: state must be readable without colour vision, and calm — no orbs.
-#   working  a braille mark that steps every 3 s (calm: never a continuous spin)
+#   working  a quarter-turning circle ◐◓◑◒ that steps every 3 s (calm: never a continuous spin)
 #   waiting  a bold "!"   (the only one that asks for you)
 #   limited  a bold "⊘"   (usage limit / quota exhausted — nothing will happen until you act)
 #   error    a "✕"        (the agent reported a failure; the message stays; not a completion)
 #   done     a dim "✓"    (finished while you were away; clears when you look)
 #   unread   a faint "•"  (output arrived in a tab that has no agent)
-SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+# A circle filling a quarter at a time: it reads as work turning over. The braille dots
+# it replaced (⠋⠙⠹…) sat tiny and grey at the row's end and read as a "⋮" menu button.
+SPINNER = "◐◓◑◒"
 # status icons agents put in front of their window title (spinners, bullets, Droid's ⛬) — most fonts
 # have no glyph for them (a box in the bar), and the bar draws its own state mark and agent logo
 _TITLE_PREFIX = re.compile(r"^[\s⠁-⣿✳✻✽✦•●◐◓◑◒∙·⛬.-]+")
