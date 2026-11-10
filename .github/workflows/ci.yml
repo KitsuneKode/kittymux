@@ -25,6 +25,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: renderer libraries (the pixel panel's tests need cairo, Pango and rsvg via GObject)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3-gi python3-gi-cairo python3-cairo python3-pil gir1.2-pango-1.0 gir1.2-rsvg-2.0
       - name: python unit tests
         run: |
           python3 -m pip install --quiet fonttools      # the icon-font coverage tests read the font's real glyph table
@@ -43,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        kitty: ["0.49.1", "0.49.2"]
+        kitty: ["0.49.1", "0.49.2", "0.50.0"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -115,6 +119,9 @@ jobs:
           bash tests/smoke_titles.sh
           bash tests/smoke_panetitle.sh
           bash tests/smoke_pane_ux.sh
+          bash tests/smoke_closeguard.sh
+      - name: tabs.json for a client drawn outside kitty
+        run: bash tests/smoke_tabsnap.sh
       - name: join tabs (CLI and picker), exit save, workflow argv
         run: |
           bash tests/smoke_join.sh

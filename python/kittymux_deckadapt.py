@@ -17,6 +17,12 @@ def _state(raw) -> str:
     return raw if raw in _STATES else "idle"
 
 
+def _quiet(raw, row) -> str:
+    """A row's state for a space's roll-up: a muted question counts as nothing (it never asks for you)."""
+    state = _state(raw)
+    return "idle" if getattr(row, "muted", False) and state in ("waiting", "limited") else state
+
+
 def _loudest(states) -> str:
     best = "idle"
     for state in states:
@@ -51,9 +57,40 @@ def _brand(name: str) -> int:
     return agent.brand if agent else 0
 
 
-def to_model(snap, sel: int, hover, host: str, session: str):
-    """Spaces, agents and their open panes. Closed splits stay one row: hover never opens them."""
+def facts(row) -> str:
+    """The quiet facts after a tab's state word: its open pull request and the first ports it listens on."""
+    out = []
+    pr = getattr(row, "pr", "") or ""
+    if pr:
+        out.append(str(pr))
+    ports = [int(p) for p in (getattr(row, "ports", ()) or ()) if str(p).isdigit()][:2]
+    if ports:
+        out.append(" ".join(f":{p}" for p in ports))
+    return " \u00b7 ".join(out)
+
+
+def first_waiting(model):
+    """(row, pane) of the first tab or pane that asks for you, for the header's Needs-you chip; (-1, -1) when none."""
+    for agent in model.agents:
+        if agent.state in ("waiting", "limited") and not agent.muted:
+            return agent.row, -1
+        for child in agent.children:
+            if child.state in ("waiting", "limited") and not child.muted:
+                return child.row, child.pane
+    return -1, -1
+
+
+def _space_name(project: str) -> str:
+    return "Home" if project == "~" else project
+
+
+def to_model(snap, sel: int, hover, host: str, session: str, project_of=None):
+    """Machine → Space → Agents. A space is a named session; with none, a repo (`project_of(cwd)`) heads the run of tabs
+    that sit in it, in tab order (never re-sorted, so j/k still walk the list top to bottom). Closed splits stay one row:
+    hover never opens them."""
     dp = _px()
+    by_project = project_of is not None and not any(it.kind == "header" for it in snap.items)
+    by_state = bool(getattr(snap, "by_state", False))
     hover_row, hover_pane = _hover_pair(hover)
     spaces, agents = [], []
     space = None
@@ -64,8 +101,12 @@ def to_model(snap, sel: int, hover, host: str, session: str):
             return
         current = next((r.branch for r in members if r.current and r.branch), "")
         first = next((r.branch for r in members if r.branch), "")
-        space.branch = current or first
-        space.state = _loudest(_state(r.status) for r in members) if members else ""
+        space.branch = "" if by_state else (current or first)     # a state group spans repos: a branch would say nothing
+        states = [_quiet(r.status, r) for r in members]
+        for r in members:
+            states.extend(_quiet(pd.state, pd) for pd in r.pane_rows if pd.state and pd.state != _state(r.status))
+        space.state = _loudest(states) if members else ""
+        space.counts = dp.state_counts(_quiet(r.status, r) for r in members)
 
     for it in snap.items:
         if it.kind == "header":
@@ -75,6 +116,21 @@ def to_model(snap, sel: int, hover, host: str, session: str):
             members = []
         elif it.kind == "row":
             row = snap.rows[it.row]
+            if by_project:
+                try:
+                    name = _space_name(project_of(getattr(row, "cwd", "") or "") or "")
+                except Exception:
+                    name = ""
+                if name and (space is None or space.name != name):
+                    close_space()
+                    space = dp.Space(name)
+                    spaces.append(space)
+                    members = []
+                if not name and space is not None:     # no project: ungrouped, never counted in the space above it
+                    close_space()
+                    space, members = None, []
+                if name and row.current:
+                    space.current = True
             if space is not None:
                 members.append(row)
                 if it.row == sel:
@@ -86,7 +142,8 @@ def to_model(snap, sel: int, hover, host: str, session: str):
                 row.title or row.raw_title or "tab", row.agent or "shell", _brand(row.agent),
                 space.name if space is not None else "", age=row.age or "", state=_state(row.status),
                 progress=frac, active=picked, current=bool(row.current), selected=picked,
-                progress_state=pst, can_open=len(row.pane_rows) >= 2, opened=False, row=it.row))
+                progress_state=pst, can_open=len(row.pane_rows) >= 2, opened=False, row=it.row,
+                meta=facts(row), panes=max(1, int(getattr(row, "panes", 1) or 1)), muted=bool(getattr(row, "muted", False))))
         elif it.kind == "pane" and agents:
             parent = agents[-1]
             parent.opened = True
@@ -94,7 +151,8 @@ def to_model(snap, sel: int, hover, host: str, session: str):
             picked = hover_row == it.row and hover_pane == it.pane
             parent.children.append(dp.Agent(
                 pane.title or "pane", pane.agent or "shell", _brand(pane.agent), parent.space,
-                state=_state(pane.state), active=picked, selected=picked, row=it.row, pane=it.pane))
+                state=_state(pane.state), active=picked, selected=picked, row=it.row, pane=it.pane,
+                muted=bool(getattr(pane, "muted", False))))
     close_space()
     for agent in agents:
         if any(child.selected for child in agent.children):

@@ -132,7 +132,10 @@ def load_reports(path) -> dict:
         except (TypeError, ValueError):
             continue
         if isinstance(value, (list, tuple)) and len(value) == 2 and value[0] in TINT:
-            out[tid] = (value[0], int(value[1]))
+            try:
+                out[tid] = (value[0], int(value[1]))
+            except (TypeError, ValueError):
+                continue                                  # one bad entry costs only itself
     return out
 
 

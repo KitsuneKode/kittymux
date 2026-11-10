@@ -155,6 +155,25 @@ class FindSessionTests(unittest.TestCase):
             self.assertEqual(err.getvalue(), "")
             self.assertEqual(open(os.path.join(d, "cli-errors.log"), encoding="utf-8").read().count("kitty snapshot unavailable"), 1)
 
+    def test_one_kittys_cooldown_does_not_silence_another(self):
+        import tempfile
+        def down():
+            raise ValueError("kitty snapshot unavailable")
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIsNone(W.fetch_snapshot(down, d, sleep=lambda s: None, clock=lambda: 10.0, key="unix:/run/a"))
+            self.assertEqual(W.fetch_snapshot(lambda: [{"id": 2, "tabs": []}], d, sleep=lambda s: None, clock=lambda: 11.0, key="unix:/run/b"),
+                             [{"id": 2, "tabs": []}])
+            self.assertIsNone(W.fetch_snapshot(lambda: [{"id": 9}], d, sleep=lambda s: None, clock=lambda: 11.0, key="unix:/run/a"))
+
+    def test_a_state_dir_that_cannot_hold_the_lock_still_looks_the_session_up(self):
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            blocker = os.path.join(d, "file")
+            open(blocker, "w").close()                      # a file where the state dir should be: makedirs fails
+            self.assertEqual(W.fetch_snapshot(lambda: [{"id": 3, "tabs": []}], os.path.join(blocker, "state"), sleep=lambda s: None),
+                             [{"id": 3, "tabs": []}])
+
     def test_a_retry_that_succeeds_does_not_log_and_an_invalid_snapshot_is_not_retried(self):
         import os
         import tempfile

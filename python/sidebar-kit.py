@@ -58,6 +58,8 @@ import kittymux_place  # noqa: E402
 import kittymux_titles  # noqa: E402
 import kittymux_files  # noqa: E402
 import kittymux_progress  # noqa: E402
+import kittymux_layout  # noqa: E402
+import kittymux_quiet  # noqa: E402
 
 _STATE_DIR = Path(os.environ["KITTYMUX_STATE"]) if os.environ.get("KITTYMUX_STATE") else \
     Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))) / "kittymux"
@@ -127,6 +129,14 @@ def _panes_state(data: list) -> dict:
         return kittymux_agents.load_panes(str(_STATE_DIR / f"panes-{pid}.json"))
     except Exception:
         return {}
+
+
+def _watched_kitty_pid() -> int:
+    """The kitty whose tabs this panel lists (the one `_panes_state` reads): the target in panel mode, else the kitty we run in."""
+    try:
+        return int(os.environ.get("KITTYMUX_TARGET_PID", "0")) if _TARGET else os.getppid()
+    except ValueError:
+        return 0
 
 
 def _short_home(p: str) -> str:
@@ -200,20 +210,50 @@ def _listeners() -> list:
         return []
 
 
-class Snapshot:
-    __slots__ = ("rows", "items", "current_session", "source", "query", "open_tabs")
+_GROUP_FILE = "panel-group"          # "state" = the Agents list grouped by state (`g`); absent = by space
 
-    def __init__(self, rows: list, current_session: str, query: str = "", open_tabs=None):
-        self.source, self.query, self.open_tabs = rows, query, open_tabs
+
+def _group_mode() -> str:
+    try:
+        return (_STATE_DIR / _GROUP_FILE).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def _set_group_mode(by_state: bool) -> None:
+    path = _STATE_DIR / _GROUP_FILE
+    try:
+        if by_state:
+            _STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+            tmp = path.with_name(path.name + ".tmp")
+            tmp.write_text("state\n", encoding="utf-8")
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, path)
+        else:
+            path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+class Snapshot:
+    __slots__ = ("rows", "items", "current_session", "source", "query", "open_tabs", "by_state")
+
+    def __init__(self, rows: list, current_session: str, query: str = "", open_tabs=None, by_state: bool = False):
+        self.source, self.query, self.open_tabs, self.by_state = rows, query, open_tabs, by_state
         groups = deck.filter_groups(deck.group_rows(rows, current_session), query)   # indexes are assigned BEFORE filtering
-        self.items, self.rows = deck.flatten(groups, current_session, open_tabs)
+        if by_state:
+            groups = deck.group_by_state(groups)       # `g`: Needs you → Working → Finished → Idle, across every session
+        self.items, self.rows = deck.flatten(groups, current_session, open_tabs, headed=by_state)
         self.current_session = current_session
 
     def with_query(self, query: str) -> "Snapshot":
-        return Snapshot(self.source, self.current_session, query, self.open_tabs)
+        return Snapshot(self.source, self.current_session, query, self.open_tabs, self.by_state)
 
     def with_open(self, open_tabs) -> "Snapshot":
-        return Snapshot(self.source, self.current_session, self.query, None if open_tabs is None else frozenset(open_tabs))
+        return Snapshot(self.source, self.current_session, self.query, None if open_tabs is None else frozenset(open_tabs), self.by_state)
+
+    def with_grouping(self, by_state: bool) -> "Snapshot":
+        return self if bool(by_state) == self.by_state else Snapshot(self.source, self.current_session, self.query, self.open_tabs, bool(by_state))
 
 
 class Collector:
@@ -222,6 +262,7 @@ class Collector:
     def __init__(self):
         self._pr = PrCache()
         self._tidy = True                           # the `titles` switch, read once per collect
+        self._projects: dict = {}                   # cwd → project, filled HERE on the worker; the UI thread only reads it
 
     def branch(self, cwd: str) -> str:
         gi = kittymux_git.info(cwd)                 # reads .git/HEAD; no subprocess
@@ -232,9 +273,18 @@ class Collector:
         if not cwd:
             return ""
         try:
-            return kittymux_place.facts(cwd, kittymux_git.info(cwd), os.path.expanduser("~")).project
+            name = kittymux_place.facts(cwd, kittymux_git.info(cwd), os.path.expanduser("~")).project
         except Exception:
-            return ""
+            name = ""
+        if len(self._projects) > 512:
+            self._projects.clear()
+        self._projects[cwd] = name
+        return name
+
+    def project_cached(self, cwd: str) -> str:
+        """The project the worker last found for `cwd`, without touching the filesystem (the pixel list's grouping is drawn on the
+        UI thread: a slow or gone mount must not stall it). "" until the worker has seen that folder."""
+        return self._projects.get(cwd, "") if cwd else ""
 
     def _pane(self, w: dict, active_id: int, panes: dict, now: float) -> deck.PaneData:
         name, tool = kittymux_agents.identify(w)
@@ -243,9 +293,13 @@ class Collector:
             state = kittymux_agents.resolve_status(panes.get(str(w["id"])), agent is not None, now, _STALE_AFTER)
         else:
             state = kittymux_agents.fresh_verdict(panes.get(str(w["id"])), now)
-        title = (w.get("title") or "").strip() or _short_home(w.get("cwd", ""))
-        if self._tidy:
-            title = kittymux_titles.tidy(title, name, self._project(w.get("cwd", ""))).text or title
+        # a pane row says what RUNS there (an agent, a command, the shell): its tab row already names the repo, and two panes
+        # in one repo used to read "website" twice. The window title is the fallback when kitty reports no process.
+        title = kittymux_agents.running_label(w)
+        if not title:
+            title = (w.get("title") or "").strip() or _short_home(w.get("cwd", ""))
+            if self._tidy:
+                title = kittymux_titles.tidy(title, name, self._project(w.get("cwd", ""))).text or title
         return deck.PaneData(win_id=w["id"], glyph=agent.glyph if agent else kittymux_agents.TOOLS.get(tool, ""),
                              agent=name or "", tool=bool(tool and not agent), state=state,
                              title=kittymux_agents.strip_title_prefix(title), active=w["id"] == active_id, cwd=w.get("cwd", ""))
@@ -256,6 +310,10 @@ class Collector:
         except Exception:
             return None
         panes = _panes_state(data)
+        try:
+            mutes = kittymux_quiet.load_mutes(str(_STATE_DIR), _watched_kitty_pid())
+        except Exception:
+            mutes = set()
         try:
             self._tidy = kittymux_features.enabled("titles", str(_STATE_DIR))
         except Exception:
@@ -287,6 +345,10 @@ class Collector:
                 status = ("" if st == "idle" else st) if st else ("unread" if unread else "")
                 jump_to = int(deciding) if deciding and st in kittymux_agents.NEEDS_YOU else aw["id"]
                 pane_rows = tuple(self._pane(w, aw["id"], panes, now) for w in wins) if len(wins) >= 2 else ()
+                for pd in pane_rows:
+                    pd.muted = str(pd.win_id) in mutes
+                agent_ids = [str(w["id"]) for w in wins if kittymux_agents.identify(w)[0]] or [str(w["id"]) for w in wins]
+                muted = bool(mutes) and all(i in mutes for i in agent_ids)
                 current = bool((osw.get("is_focused") or (_PANEL and osw.get("last_focused"))) and tab.get("is_active"))
                 session = aw.get("session_name", "") or ""
                 if current:
@@ -296,7 +358,8 @@ class Collector:
                 ports = tuple(sorted({p for pid in pids
                                       for p in deck.ports_for(int(pid), children, listeners)}))
                 raw_title = kittymux_agents.strip_agent_prefix(tab.get("title") or "", name)
-                shown = kittymux_titles.tidy(tab.get("title") or "", name, self._project(cwd)).text if self._tidy else raw_title
+                project = self._project(cwd)          # also warms project_cached for the UI thread
+                shown = kittymux_titles.tidy(tab.get("title") or "", name, project).text if self._tidy else raw_title
                 try:
                     progress = reports.get(tab.get("id")) or kittymux_progress.from_ls(tab, wins)
                 except Exception:
@@ -311,7 +374,7 @@ class Collector:
                     msg=kittymux_agents.resolve_msg(panes.get(str(deciding or aw["id"])), st) if st else "",
                     age=(lambda e: kittymux_agents.state_age(st, e.get("ts_state"), now, reset_at=e.get("reset_at"), wall=time.time()))(panes.get(str(deciding or aw["id"])) or {}) if st else "",
                     pr=self._pr.get(cwd, branch), ports=ports, pane_rows=pane_rows,
-                    win_ids=tuple(w["id"] for w in wins), progress=progress))
+                    win_ids=tuple(w["id"] for w in wins), progress=progress, muted=muted))
         return Snapshot(rows, current_session)
 
 
@@ -401,6 +464,7 @@ class Sidebar(Handler):
         self._hover_pane = (-1, -1)             # (row, pane) of the child line under the pointer
         self._help = False                      # the `?` card is showing instead of the view body
         self._open = None                       # tab ids whose panes are listed under them; None until the first snapshot (then: the tab you are in)
+        self._by_state = _group_mode() == "state"   # `g`: by space (sessions, repos) or by state; remembered in $STATE/panel-group
         self.query, self.searching, self.full = "", False, None     # the `/` search
         self._gfx = None                        # None until the graphics probe, then "wait" | "ok" | "no"
         self._px = None
@@ -428,6 +492,7 @@ class Sidebar(Handler):
 
     def finalize(self) -> None:
         self._alive = False
+        self._drop_cover()
         if self._preview_timer is not None:
             self._preview_timer.cancel()
             self._preview_timer = None
@@ -950,7 +1015,7 @@ class Sidebar(Handler):
         if self._open is None:
             self._open = {r.tab_id for r in snap.rows if r.current and len(r.pane_rows) >= 2}      # the first look: your own tab is open, the rest are one line each
         self._open &= alive                      # a closed tab does not keep a seat
-        snap = snap.with_open(self._open)        # panes appear under a split tab only when it is open: nothing moves under the pointer by itself
+        snap = snap.with_open(self._open).with_grouping(self._by_state)        # panes appear under a split tab only when it is open: nothing moves under the pointer by itself
         self.full = snap                         # the unfiltered view; self.snap is what the `/` search leaves of it
         self.snap = snap.with_query(self.query) if self.query else snap
         snap = self.snap
@@ -976,7 +1041,7 @@ class Sidebar(Handler):
         self.draw_screen()
         self._schedule_spin()
 
-    # ---- spinner: redraw at frame rate only while something is working ----
+    # ---- working glyph: one redraw per step, only while something is working ----
     def _schedule_spin(self) -> None:
         if self._deckpx_on():                    # the spinner is a kitty animation; a timer here would spend idle CPU
             return
@@ -984,7 +1049,9 @@ class Sidebar(Handler):
             return
         if self._motion() and any(r.status == "working" for r in self.snap.rows):
             self._spin_pending = True
-            self.asyncio_loop.call_later(0.1, self._spin)
+            # one redraw per step of the working glyph (kittymux_agents.SPINNER_FPS, every 3 s): a 10 Hz redraw here repainted
+            # an unchanged screen and kept this kitty at about a quarter of a core while any agent worked
+            self.asyncio_loop.call_later(1.0 / kittymux_agents.SPINNER_FPS, self._spin)
 
     def _motion(self) -> bool:
         """The `motion` switch, read at most once a second (a stat per frame would cost more than the frame)."""
@@ -1014,6 +1081,15 @@ class Sidebar(Handler):
             self._preview_worker.invalidate()
             self._preview_inflight = False
             self.preview_for = 0
+            self.preview = []
+            return
+        if self._deckpx_on() and self.screen_size.cols < 64:
+            # the narrow pixel list shows no preview (the pane already shows its prompt): fetch none, and drop one already on its way
+            if self._preview_timer is not None:
+                self._preview_timer.cancel()
+                self._preview_timer = None
+            self._preview_worker.invalidate()
+            self._preview_inflight = False
             self.preview = []
             return
         r = self.snap.rows[self.sel]
@@ -1174,6 +1250,83 @@ class Sidebar(Handler):
     def _pane_line(self, r, j: int, bar_w: int, hovered: bool) -> str:
         return self._ansi(kittymux_agentsview.pane_row(self.kit, r, j, hovered, bar_w, self._motion()))
 
+    # ---- the pixel panel covers the cell bar (kittymux_layout.cover) ----------
+    # The pixel list repeats every tab of the kitty it watches, so while the panel runs in pixels that kitty's bar is hidden.
+    # Tied to the panel's pixel MODE, not the view on screen: flipping to Usage must not resize the user's panes. Settled for
+    # COVER_SETTLE_S so a burst (a probe, a switch toggled twice) is one reload. A killed panel is undone by `mux-panel stop`
+    # and by the scanner's sweep in the watched kitty.
+    COVER_SETTLE_S = 0.8
+
+    def _cover_target(self) -> int:
+        try:
+            return int(os.environ.get("KITTYMUX_TARGET_PID", "0")) if (_PANEL and _TARGET) else 0
+        except ValueError:
+            return 0
+
+    def _want_cover(self) -> bool:
+        """Cover while this panel can draw the pixel list: the switch on (read live, so turning it off in Settings gives the bar back at
+        once), the graphics probe answered, and the last Agents draw fitted in pixels (a panel too small falls back to cells)."""
+        if self._cover_target() <= 0:
+            return False
+        try:
+            on = self._deckpx_enabled()
+        except Exception:
+            on = False
+        return (on and getattr(self, "_gfx", None) == "ok" and bool(getattr(self, "_px_fits", False))
+                and kittymux_layout.cover_switch_on(str(_STATE_DIR)))
+
+    def _sync_cover(self) -> None:
+        want = self._want_cover()
+        if want == getattr(self, "_cover_want", False):
+            return
+        self._cover_want = want
+        handle = getattr(self, "_cover_timer", None)
+        if handle is not None:
+            handle.cancel()
+        try:
+            self._cover_timer = self.asyncio_loop.call_later(self.COVER_SETTLE_S, self._apply_cover)
+        except Exception:
+            self._cover_timer = None
+            self._apply_cover()
+
+    def _apply_cover(self) -> None:
+        self._cover_timer = None
+        pid = self._cover_target()
+        if pid <= 0:
+            return
+        try:
+            if getattr(self, "_cover_want", False) and self._alive:
+                changed = kittymux_layout.cover(str(_STATE_DIR), pid, os.getpid())
+            else:
+                changed = kittymux_layout.uncover(str(_STATE_DIR), pid, os.getpid())
+        except Exception:
+            _log_error()
+            self._cover_want = None                  # unknown: the next draw tries again
+            return
+        if changed:
+            self._reload_target()
+
+    def _drop_cover(self) -> None:
+        handle = getattr(self, "_cover_timer", None)
+        if handle is not None:
+            handle.cancel()
+        self._cover_timer = None
+        self._cover_want = False
+        pid = self._cover_target()
+        try:
+            if pid > 0 and kittymux_layout.uncover(str(_STATE_DIR), pid, os.getpid()):
+                self._reload_target()
+        except Exception:
+            _log_error()
+
+    def _reload_target(self) -> None:
+        """Re-read the watched kitty's config (its layout geninclude prints the cover). Never waits: the UI stays live."""
+        try:
+            subprocess.Popen(["kitty", "@", "--to", _TARGET, "load-config"], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        except Exception:
+            _log_error()
+
     # ---- pixel Agents list (opt-in `deckpx`; the cell list below is unchanged) ----
     def _pxmods(self):
         cached = getattr(self, "_px_mods", None)
@@ -1218,8 +1371,12 @@ class Sidebar(Handler):
     def _px_clear(self) -> None:
         gfx = getattr(self, "_px", None)
         self._px_active = False
+        self._px_hot_key = None
         self._px_sig = None
         self._px_hits = []
+        self._px_last = None
+        self._px_cancel_fade()
+        self._px_step_stop()
         if gfx is None:
             return
         self._px = None
@@ -1276,13 +1433,10 @@ class Sidebar(Handler):
         return host
 
     def _px_frames(self, deckpx, transport, pal):
-        if getattr(self, "_px_spin_key", None) != pal.working:
-            size, frames = 14, []
-            for i in range(12):
-                surf = deckpx.cairo.ImageSurface(deckpx.cairo.FORMAT_ARGB32, size, size)
-                deckpx.Painter(deckpx.cairo.Context(surf), 1, pal).spinner(size / 2, size / 2, 4.6, pal.working, i / 12)
-                frames.append(transport.rgba_of(surf))
-            self._px_spin_key, self._px_spin_frames = pal.working, (size, frames)
+        """The working ring's STEP_FRAMES arcs, made once per colour: kitty steps them every STEP_MS, so at rest nothing runs."""
+        if getattr(self, "_px_spin_key", None) != (pal.working, pal.bar):
+            size, surfs = deckpx.ring_frames(pal, 1)
+            self._px_spin_key, self._px_spin_frames = (pal.working, pal.bar), (size, [transport.rgba_of(f) for f in surfs])
         return self._px_spin_frames
 
     def _px_inside(self, mouse_event) -> bool:
@@ -1297,10 +1451,10 @@ class Sidebar(Handler):
         return mods[0].hit_at(self._px_hits, mouse_event.pixel_x, mouse_event.pixel_y - ch)
 
     def _draw_agents_chrome(self, cols, rows_n, bar_w) -> None:
-        """Tab strip (or the search line), footer, drawer and preview. The list between them is the image."""
+        """Tab strip (or the search line), and the preview column on a wide window. The list, its key hints and the
+        bottom are the image: no cell footer and no preview drawer under it."""
         p, w, snap = self.pal, self.write, self.snap
-        dr = self._drawer_rows()
-        self._foot_y = rows_n - 1 - dr
+        self._foot_y, self._foot_regions = -1, []
         if self.searching or self.query:
             total = len(self.full.rows) if self.full is not None else len(snap.rows)
             line = [(" / ", p.accent, True), (self.query, p.text, True), ("▏" if self.searching else "", p.accent, False),
@@ -1309,23 +1463,8 @@ class Sidebar(Handler):
         else:
             w(set_cursor_position(0, 0) + self._tabs_line(bar_w))
         blank = self._seg(" " * bar_w, bg=p.bar)
-        for yy in range(1, self._foot_y):
+        for yy in range(1, rows_n):
             w(set_cursor_position(0, yy) + blank)
-        w(set_cursor_position(0, self._foot_y) + self._footer(
-            [], [("⏎", "jump", "ENTER"), ("/", "find", "/"), ("a", "join", "A"), ("t", "detach", "T")], bar_w))
-        if dr and snap.rows:
-            r = snap.rows[self.sel]
-            row, pane = self._hover_pane
-            pd = r.pane_rows[pane] if row == self.sel and 0 <= pane < len(r.pane_rows) else None
-            top = rows_n - dr
-            w(set_cursor_position(0, top) + self._line([("─" * bar_w, p.line, False)], bar_w, p.bar))
-            who = pd.title if pd else r.title
-            w(set_cursor_position(0, top + 1) + self._line(
-                [(" " + deck.fit(f"{who} · {_short_home(pd.cwd if pd else r.cwd)}", bar_w - 2, _cells), p.faint, True)], bar_w, p.bar))
-            body = deck.tidy_preview(self.preview, dr - 2)
-            for j in range(dr - 2):
-                text = body[j] if j < len(body) else ""
-                w(set_cursor_position(0, top + 2 + j) + self._line([(" " + text, p.muted, False)], bar_w, p.bar))
         if cols >= 64:
             px = bar_w + 2
             pw = cols - px - 1
@@ -1345,6 +1484,9 @@ class Sidebar(Handler):
                     w(set_cursor_position(px, j + 2) + self._seg(deck.fit(ln, pw, _cells), fg=p.muted))
         self._draw_handle(cols, rows_n)
 
+    # the Agents view's key hints, most useful first (a narrow panel drops them from the right); the pixel list draws them itself
+    _AGENT_KEYS = (("\u23ce", "jump", "ENTER"), ("/", "find", "/"), ("a", "join", "A"), ("t", "detach", "T"))
+
     def _draw_agents_px(self) -> bool:
         if not self._deckpx_enabled():
             return False
@@ -1362,18 +1504,21 @@ class Sidebar(Handler):
         cols, rows_n, bar_w = self._geom()
         ss = self.screen_size
         cw, ch = ss.cell_width or 1, ss.cell_height or 1
-        dr = self._drawer_rows()
-        foot = rows_n - 1 - dr
+        # the image runs from under the tab strip to the bottom: the key hints are its own pixels, and there is no preview
+        # drawer (the pane already shows its prompt)
         px_w = min(getattr(ss, "width", 0) or bar_w * cw, bar_w * cw)
-        px_h = max(0, (foot - 1) * ch)
+        px_h = max(0, (rows_n - 1) * ch)
         self._px_w, self._px_h = px_w, px_h
-        if px_w < 40 or px_h < deckpx.HEADER_END + 40:
+        self._px_fits = not (px_w < 40 or px_h < deckpx.HEADER_END + 40)
+        if not self._px_fits:
             return False
         snap = self.snap
-        model = adapt.to_model(snap, self.sel, self._hover_pane, self._px_host(), snap.current_session or "kitty")
+        model = adapt.to_model(snap, self.sel, self._hover_pane, self._px_host(), snap.current_session or self._px_host(),
+                               project_of=self._collector.project_cached)
         self._px_model = model
         items = deckpx.body_items(model)
-        view_h = px_h - deckpx.HEADER_END
+        keys = [(k, label) for k, label, _t in self._AGENT_KEYS]
+        view_h = deckpx.body_bottom(px_h, keys) - deckpx.HEADER_END
         key = (self.sel, self._hover_pane)
         scroll = getattr(self, "_px_scroll", 0.0)
         if key != getattr(self, "_px_sel_key", None):
@@ -1383,12 +1528,13 @@ class Sidebar(Handler):
             self._px_sel_key = key
         scroll = deckpx.clamp_scroll(scroll, deckpx.content_height(model), view_h)
         self._px_scroll = scroll
-        frame = deckpx.Frame(hover=self._px_hover, hover_pane=self._px_hpane, scroll=scroll)
+        frame = deckpx.Frame(hover=self._px_hover, hover_pane=self._px_hpane, scroll=scroll,
+                             hot_key=getattr(self, "_px_hot_key", None))
         motion = self._motion()
         working = any(a.state == "working" or any(c.state == "working" for c in a.children) for a in model.agents) or any(s.state == "working" for s in model.spaces)
         tokens = (self.pal.bg, self.pal.fg, self.pal.bar, self.pal.accent, self.pal.working, self.pal.waiting,
                   self.pal.done, self.pal.alert, self.pal.text, self.pal.muted, self.pal.card, self.pal.card_hi)
-        sig = (px_w, px_h, round(scroll, 1), frame.hover, frame.hover_pane, model, tokens, motion and working)
+        sig = (px_w, px_h, round(scroll, 1), frame.hover, frame.hover_pane, frame.hot_key, model, tokens, motion and working)
         self._draw_agents_chrome(cols, rows_n, bar_w)
         if sig != getattr(self, "_px_sig", None) or getattr(self, "_px", None) is None:
             hits: list = []
@@ -1396,21 +1542,91 @@ class Sidebar(Handler):
             resources = getattr(self, "_px_res", None) or deckpx.Resources()
             self._px_res = resources
             surf = deckpx.render(model, self.pal, px_w, px_h, 1, frame, hits=hits, resources=resources,
-                                 spinners=slots if motion and working else None)
+                                 spinners=slots if motion and working else None, keys=keys)
             if getattr(self, "_px", None) is None:
                 self._px = transport.Graphics(_PxOut(self), "auto")
-            self._px.show(transport.rgba_of(surf), surf.get_width(), surf.get_height(), col=1, row=2, z=1)
-            if slots:
-                size, frames = self._px_frames(deckpx, transport, self.pal)
-                positions = [(round(cx - size / 2), round(cy + ch - size / 2)) for cx, cy, _r, _c in slots]
-                self._px.spinner(frames, size, positions, (cw, ch), 80, z=2)
+            states = _px_states(model)
+            old = getattr(self, "_px_last", None)
+            fade = (motion and old is not None and old[1] != states and old[0].get_width() == surf.get_width()
+                    and old[0].get_height() == surf.get_height())
+            self._px_last = (surf, states)
+            if fade:
+                # a state changed: cross-fade over ~FADE_MS in FADE_STEPS frames, then the real one. Hover and scroll never fade.
+                self._px_fade(deckpx, transport, old[0], surf, slots)
             else:
-                self._px.clear_spinner()
+                self._px_cancel_fade()
+                self._px.show(transport.rgba_of(surf), surf.get_width(), surf.get_height(), col=1, row=2, z=1)
+                self._px_place_rings(deckpx, transport, slots, cw, ch)
             self._px_hits = hits
             self._px_sig = sig
         self._px_active = True
         self.flush()
         return True
+
+    def _px_place_rings(self, deckpx, transport, slots, cw, ch) -> None:
+        if slots:
+            size, frames = self._px_frames(deckpx, transport, self.pal)
+            positions = [(round(cx - size / 2), round(cy + ch - size / 2)) for cx, cy, _r, _c in slots]
+            self._px.spinner(frames, size, positions, (cw, ch), deckpx.STEP_MS, z=2)
+            self._px_step_arm(deckpx)
+        else:
+            self._px.clear_spinner()
+            self._px_step_stop()
+
+    def _px_step_arm(self, deckpx) -> None:
+        """One timer while a ring is placed: every STEP_MS it moves the rings a quarter turn. None at rest."""
+        if getattr(self, "_px_step_handle", None) is None:
+            self._px_step_handle = self.asyncio_loop.call_later(deckpx.STEP_MS / 1000.0, self._px_step_tick)
+
+    def _px_step_stop(self) -> None:
+        handle = getattr(self, "_px_step_handle", None)
+        if handle is not None:
+            handle.cancel()
+        self._px_step_handle = None
+
+    def _px_step_tick(self) -> None:
+        self._px_step_handle = None
+        mods = self._pxmods()
+        gfx = getattr(self, "_px", None)
+        if not self._alive or gfx is None or not mods or not gfx.spinner_ready:
+            return
+        deckpx = mods[0]
+        self._px_step_n = (getattr(self, "_px_step_n", 0) + 1) % deckpx.STEP_FRAMES
+        gfx.step(self._px_step_n + 1)
+        self._px_step_arm(deckpx)
+
+    def _px_cancel_fade(self) -> None:
+        handle = getattr(self, "_px_fade_handle", None)
+        if handle is not None:
+            handle.cancel()
+        self._px_fade_handle = None
+
+    def _px_fade(self, deckpx, transport, old, new, slots) -> None:
+        """Show old→new blends FADE_STEPS times, FADE_MS apart in all, then `new` with its rings. One short burst per
+        state change: no timer outlives it."""
+        self._px_cancel_fade()
+        steps = max(1, deckpx.FADE_STEPS)
+        gap = deckpx.FADE_MS / 1000.0 / (steps + 1)
+        ss = self.screen_size
+        cw, ch = ss.cell_width or 1, ss.cell_height or 1
+
+        def step(k: int) -> None:
+            self._px_fade_handle = None
+            if not self._alive or getattr(self, "_px", None) is None or getattr(self, "_px_last", (None,))[0] is not new:
+                return
+            if k <= steps:
+                blend = deckpx.crossfade(old, new, k / (steps + 1))
+                self._px.show(transport.rgba_of(blend), blend.get_width(), blend.get_height(), col=1, row=2, z=1)
+                if k == 1:
+                    self._px.clear_spinner()
+                self.flush()
+                self._px_fade_handle = self.asyncio_loop.call_later(gap, step, k + 1)
+                return
+            self._px.show(transport.rgba_of(new), new.get_width(), new.get_height(), col=1, row=2, z=1)
+            self._px_place_rings(deckpx, transport, slots, cw, ch)
+            self.flush()
+
+        step(1)
 
     def _px_click(self, mouse_event) -> None:
         hit = self._px_hit(mouse_event)
@@ -1420,11 +1636,24 @@ class Sidebar(Handler):
             return
         kind, index = hit
         adapt = mods[1]
+        if kind == "key":                                # a key hint does exactly what its key does
+            token = self._AGENT_KEYS[index][2] if 0 <= index < len(self._AGENT_KEYS) else "?"
+            self._press(token)
+            return
         if kind == "search":
             self.searching = True
             self.draw_screen()
             return
         if kind == "space":
+            return
+        if kind == "needs":
+            row, pane = adapt.first_waiting(model)
+            if row < 0:
+                return
+            self.sel = row
+            self._clear_pointer_hover()
+            self.draw_screen()
+            self._jump(row, pane)
             return
         row, pane = adapt.hit_target(model, kind, index)
         if row < 0:
@@ -1445,11 +1674,17 @@ class Sidebar(Handler):
 
     def _px_move(self, mouse_event) -> None:
         if not self._px_inside(mouse_event):
-            if self._px_hover is not None or self._px_hpane is not None:
-                self._px_hover = self._px_hpane = None
+            if self._px_hover is not None or self._px_hpane is not None or getattr(self, "_px_hot_key", None) is not None:
+                self._px_hover = self._px_hpane = self._px_hot_key = None
                 self.draw_screen()
             return
         hit = self._px_hit(mouse_event)
+        hot = hit[1] if hit and hit[0] == "key" else None
+        if hot != getattr(self, "_px_hot_key", None):     # the hint under the pointer lights up: a button before it is pressed
+            self._px_hot_key = hot
+            self.draw_screen()
+            if hot is not None:
+                return
         model = getattr(self, "_px_model", None)
         mods = self._pxmods()
         if not hit or model is None or not mods or hit[0] not in ("agent", "pane"):
@@ -1484,6 +1719,7 @@ class Sidebar(Handler):
                 self._px_clear()
         if not pixel:
             self._px_clear()
+        self._sync_cover()
         if pixel:
             return
         cols, rows_n, bar_w = self._geom()
@@ -1503,7 +1739,7 @@ class Sidebar(Handler):
         w = self.write
         snap = self.snap
         # header: counts + hint
-        waiting = sum(1 for r in snap.rows if r.status in kittymux_agents.NEEDS_YOU)
+        waiting = sum(1 for r in snap.rows if deck.asks(r))          # a muted agent never counts as needing you
         working = sum(1 for r in snap.rows if r.status == "working")
         w(set_cursor_position(0, 0) + self._ansi(kittymux_agentsview.summary_row(self.kit, len(snap.rows), waiting, working, bar_w, self._motion())))
         if self.searching or self.query:
@@ -1705,10 +1941,16 @@ class Sidebar(Handler):
             self.sel = deck.step_group(self.snap.rows, self.sel, 1) if n else 0
         elif k == "K" and shifted:
             self.sel = deck.step_group(self.snap.rows, self.sel, -1) if n else 0
-        elif k == "G" and not shifted:
+        elif k == "HOME":
             self.sel = 0
-        elif k == "G" and shifted:
+        elif k == "G" and not shifted:
+            self._toggle_grouping()                    # Rex's "group by priority": by space <-> by state (Home is the first row)
+            return
+        elif k == "END" or (k == "G" and shifted):
             self.sel = max(0, n - 1)
+        elif k == "M" and not shifted:
+            self._toggle_mute(self.sel)
+            return
         elif k == "ENTER":
             self._jump()
             return
@@ -1840,9 +2082,31 @@ class Sidebar(Handler):
             self._request_preview(delay=True)
             self.draw_screen()
 
+    def _row_under(self, mouse_event) -> int:
+        """The tab row under the pointer in the Agents list (pixels or cells), else -1."""
+        if mouse_event.cell_x >= self._geom()[2]:
+            return -1
+        if self._deckpx_on():
+            hit = self._px_hit(mouse_event) if self._px_inside(mouse_event) else None
+            model, mods = getattr(self, "_px_model", None), self._pxmods()
+            if not hit or model is None or not mods or hit[0] not in ("agent", "pane", "toggle"):
+                return -1
+            return mods[1].hit_target(model, hit[0], hit[1])[0]
+        row, _pane = self._pane_at(mouse_event.cell_y)
+        return row if row >= 0 else self._row_at(mouse_event.cell_y)
+
     def on_click(self, mouse_event) -> None:
         x, y = mouse_event.cell_x, mouse_event.cell_y
         view = getattr(self, "_view", "agents")
+        button = int(getattr(mouse_event, "buttons", 0) or 0)
+        if button > 0 and button & int(getattr(MouseButton, "RIGHT", 4)):      # wheel "buttons" are negative
+            # a right-click on a tab mutes (or unmutes) its agent, like `m`; it never jumps
+            if view == "agents" and not self._help:
+                row = self._row_under(mouse_event)
+                if row >= 0:
+                    self.sel = row
+                    self._toggle_mute(row)
+            return
         hit = self._foot_hit(mouse_event)
         if hit and not (self.searching and view == "agents"):
             self._press(hit[1])
@@ -1914,6 +2178,47 @@ class Sidebar(Handler):
         self._px_clear()
         self._clamp()
         self.draw_screen()
+
+    def _toggle_grouping(self) -> None:
+        """`g`: the list by space (sessions, repos) or by state (Needs you -> Working -> Finished -> Idle). The selected tab stays selected."""
+        keep = self.snap.rows[self.sel].tab_id if self.snap.rows else None
+        self._by_state = not self._by_state
+        _set_group_mode(self._by_state)
+        if self.full is not None:
+            self.full = self.full.with_grouping(self._by_state)
+            self.snap = self.full.with_query(self.query) if self.query else self.full
+        else:
+            self.snap = self.snap.with_grouping(self._by_state)
+        self._clear_pointer_hover()
+        if keep is not None:
+            self.sel = next((i for i, r in enumerate(self.snap.rows) if r.tab_id == keep), 0)
+        self._px_scroll = 0.0
+        self._clamp()
+        self.draw_screen()
+
+    def _toggle_mute(self, row: int) -> None:
+        """`m` or a right-click: mute (or unmute) the agents of that tab. Muted: listed with a bell-slash, no popup or bell, never "needs you"."""
+        if not (0 <= row < len(self.snap.rows)):
+            return
+        r = self.snap.rows[row]
+        pid = _watched_kitty_pid()
+        if pid <= 0:
+            return
+        want = not r.muted
+        ids = [p.win_id for p in r.pane_rows if p.agent] or list(r.win_ids or (r.win_id,))
+        try:
+            for wid in ids:
+                kittymux_quiet.set_muted(str(_STATE_DIR), pid, wid, want)
+        except OSError:
+            _log_error()
+            return
+        for target in [r] + [p for p in r.pane_rows if p.win_id in ids]:
+            target.muted = want                        # show it at once; the next collect agrees
+        if not r.pane_rows:
+            r.muted = want
+        self._px_sig = None
+        self.draw_screen()
+        self._request_refresh()
 
     def _toggle_open(self, row: int, to=None) -> None:
         """Show or hide the panes of split tab `row`. Only a click on its ▸/▾ or →/←/o does this: hovering and an agent starting to ask never do."""
@@ -1989,6 +2294,11 @@ class Sidebar(Handler):
         if win:
             steps.append(("focus-window", "--match", f"id:{win}"))
         self._act(*steps)
+
+
+def _px_states(model) -> tuple:
+    """What a cross-fade watches: each tab's and pane's state. Hover, scroll and selection are not in it."""
+    return tuple((a.row, a.state, tuple(c.state for c in a.children)) for a in model.agents)
 
 
 def _append_log(text: str) -> None:

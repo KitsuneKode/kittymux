@@ -172,6 +172,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | *kitty's own, still on* | `ctrl+shift+↑↓` or `j k` a line · `ctrl+shift+z` / `x` prompts · `ctrl+shift+h` scrollback in a pager (`/` searches) · `ctrl+shift+g` last command's output · `ctrl+shift+e` open a URL by letter · `ctrl+shift+p` then `n` pick a `file:line` · `ctrl+shift+f3` command palette (search every action) |
 | `alt+shift+hjkl` | resize pane (about 3 columns a press) |
 | `ctrl+alt+q` | close pane (confirms if a process runs) |
+| `ctrl+shift+w` · `ctrl+shift+q` / `ctrl+alt+shift+w` | close pane · close tab, as kitty does. If the agent in it is **working or needs you**, its row in the bar asks first ("Close? Press again"; a pane title bar, when shown, says "Close Claude Code? It is working · ctrl+shift+w again") and the same key within 4 s closes. No dialog. `ctrl+alt+q` and the leader's `x` / `X` ask the same way. `kittymux settings off closeguard` stops asking |
 | `ctrl+alt+shift+s` | save session now |
 | `ctrl+space` then a key | **leader mode** (opt-in: `install.sh --leader`) — `?` shows the card |
 
@@ -196,7 +197,7 @@ panel and the `ctrl+alt+y` jump queue all show the *same* one:
 
 | Glyph | State | Meaning |
 |---|---|---|
-| ⠋⠙⠹… (animated) | **working** | the agent is busy — the spinner runs at 10 fps, on any window |
+| ⠋⠙⠹… (steps) | **working** | the agent is busy — the mark steps once every 3 s, on any window (calm: it never spins) |
 | **!** | **waiting** | it is asking you something (a permission prompt, a question) — the question is shown as the reason |
 | **⊘** | **limited** | usage limit / quota exhausted — nothing will happen until you act |
 | **✕** | **error** | the agent reported an error; the message stays, and it is not a finished run |

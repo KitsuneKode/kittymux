@@ -61,12 +61,12 @@ rename) and only when the document apart from `t` changed, so a poll does not re
   {"key": "w4035.20", "kitty_pid": 4035, "window_id": 20, "agent": "codex", "brand": "openai", "source": "agent",
    "state": "limited", "since": 1793780600.0, "title": "Review the parser", "tab_title": "parser",
    "cwd": "~/work/calm-otter", "project": "calm-otter", "session": "calm-otter", "question": null,
-   "progress": null, "limit_reset": 1793784393, "error": null, "action": {"op": "jump", "pid": 4035, "w": "20"}},
+   "progress": null, "limit_reset": 1793784393, "error": null, "action": {"op": "jump", "pid": 4035, "w": "20"}, "muted": false},
   {"key": "w4035.19", "kitty_pid": 4035, "window_id": 19, "agent": "claude", "brand": "claude", "source": "agent",
    "state": "working", "since": 1793780700.0, "title": "Port the configs", "tab_title": "calm-otter",
    "cwd": "~/work/calm-otter", "project": "calm-otter", "session": "calm-otter", "question": null,
-   "progress": 0.42, "limit_reset": null, "error": null, "action": {"op": "jump", "pid": 4035, "w": "19"}}
-], "counts": {"working": 1, "waiting": 0, "done": 0, "idle": 0, "limited": 1, "error": 0}}
+   "progress": 0.42, "limit_reset": null, "error": null, "action": {"op": "jump", "pid": 4035, "w": "19"}, "muted": false}
+], "counts": {"working": 1, "waiting": 0, "done": 0, "idle": 0, "limited": 1, "error": 0}, "needs_you": 1}
 ```
 
 | Field | Meaning |
@@ -89,54 +89,47 @@ rename) and only when the document apart from `t` changed, so a poll does not re
 | `limit_reset` | Epoch seconds when a `limited` row lifts, when that time is known. Otherwise `null`. |
 | `error` | The message when `state` is `error`. Otherwise `null`. |
 | `action` | The object `kittymux act` accepts: `{"op":"jump","pid":<int>,"w":"<digits>"}`. |
-| `counts` | How many rows are in each state. The keys are always `working`, `waiting`, `done`, `idle`, `limited`, `error`. |
+| `muted` | `true` when you muted this agent (`kittymux mute`, `m` or a right-click in the panel). It is still listed and its `state` is still true, but it sends no popup or bell and does not need you: a shell should show it quietly and leave it out of any "needs you" badge. Added in version 1. |
+| `counts` | How many rows are in each state. The keys are always `working`, `waiting`, `done`, `idle`, `limited`, `error`. Muted rows count in their state. |
+| `needs_you` | How many rows ask for you: `waiting` or `limited`, and not `muted`. The number for a badge. Added in version 1. |
 
 Rows are ordered by importance (`limited`, `waiting`, `error`, `working`, `done`, `idle`), then by `key`. An empty `agents` array means no known agent is in the foreground of a kitty that is still running. `panes-<pid>.json` and `scan-<pid>.json` are not this list: each is one kitty process, and `{}` means that process currently has nothing to report.
 
-## tabs.json — the bar's tabs, without drawing them again
+## tabs.json — every tab, for a client drawn outside kitty
 
-`$KITTYMUX_STATE/tabs.json` (or `~/.local/state/kittymux/tabs.json`) is the tab list a shell draws beside kitty. `agents.json` is agents only; this file is every tab, including a plain shell. The vertical bar writes it from the same title, place line, state, age and progress it draws. Each kitty replaces only its own windows and drops a window whose kitty pid is no longer alive. Mode `0600`. Rewritten atomically (a temporary file, then rename). A pass that changes nothing but `t` does not replace the file. Writes are coalesced to at most one every 250 ms per kitty, and the last change in that window is written when the interval ends. Schema version **1**.
+`$KITTYMUX_STATE/tabs.json` lists every tab of every running kitty, with or without an agent: what a client needs to draw the tab strip (the kittymux client,
+kuwai's Agents tab). The scanner writes it beside `agents.json` and the same way: each kitty replaces only its own entries and keeps those of kitties that are still
+alive, mode `0600`, atomic, and only when the document apart from `t` changed. Schema version **1**.
 
 ```json
-{"version": 1, "t": 1793780793.0, "windows": [
-  {"kitty_pid": 4035, "os_window_id": 1, "wm_class": "kitty", "focused": true, "session": "calm-otter",
+{"version": 1, "t": 1793780793.0, "needs_you": 1, "windows": [
+  {"key": "o4035.1", "kitty_pid": 4035, "os_window_id": 1, "wm_class": "kitty", "focused": true, "session": "",
+   "palette": {"bg": "#101014", "fg": "#e6e6ea", "muted": "#959599", "faint": "#66666a", "accent": "#c792ea",
+               "working": "#82aaff", "waiting": "#ffcb6b", "done": "#c3e88d", "alert": "#f07178"},
    "tabs": [
-     {"tab_id": 3, "index": 1, "active": true, "title": "Home", "subtitle": "zsh", "project": "~",
-      "hue": null, "branch": "", "cwd": "~", "agent": "", "brand": "", "state": "idle", "age": "",
-      "progress": null, "panes": 1, "needs_you": false, "action": {"op": "jump", "pid": 4035, "w": "19"}},
-     {"tab_id": 4, "index": 2, "active": false, "title": "Port the configs", "subtitle": "calm-otter/src  main",
-      "project": "calm-otter", "hue": "#a3d4a0", "branch": "main", "cwd": "~/work/calm-otter",
-      "agent": "claude", "brand": "claude", "state": "working", "age": "4m",
-      "progress": {"state": "set", "pct": 42}, "panes": 2, "needs_you": false,
-      "action": {"op": "jump", "pid": 4035, "w": "20"}}
-   ]}
-]}
+     {"tab_id": 2, "index": 1, "active": true, "title": "Review the parser", "cwd": "~/work/calm-otter", "project": "calm-otter",
+      "branch": "main", "hue": "#96cfb8", "panes": 2, "agent": "codex", "agent_window": 12, "brand": "openai", "state": "waiting",
+      "since": 1793780600.0, "progress": null, "question": "Allow edit to parser.rs?", "limit_reset": null, "muted": false,
+      "needs_you": true, "action": {"op": "jump", "pid": 4035, "w": "11"}}]}]}
 ```
 
 | Field | Meaning |
 |---|---|
-| `version` | `1`. A new field keeps this number. A rename, a removal, or a change of meaning bumps it. |
-| `t` | When this document was built, epoch seconds. Not a reason to reread the rows. |
-| `kitty_pid` | The kitty process that owns the OS window. |
-| `os_window_id` | That process's OS window. |
-| `wm_class` | The window class kitty set (`kitty`, unless the window was started with another). |
-| `focused` | True when this is the OS window kitty considers focused. |
-| `session` | The focused session in that OS window, or `""`. |
-| `tabs` | That window's tabs, in bar order. `index` starts at 1. |
-| `tab_id`, `active` | The tab, and whether it is the active tab of its OS window. |
-| `title` | The tidied title the bar uses. A bare `~` is `Home`, the same substitution the bar draws. |
-| `subtitle` | The place line's words (project, path, branch, separated as the bar separates them) or, when the bar draws the program instead, that program (`zsh`). No icons and no colour codes. |
-| `project`, `branch`, `cwd` | The bar's project name, git branch, and directory with home written as `~`. `project` is `~` in the home directory. Empty when unknown. |
-| `hue` | The project hue the bar uses, `#rrggbb`, or `null` when hue is off or the tab has no directory. |
-| `agent`, `brand` | The CLI name, and the `assets/icons` basename from `kittymux_agents.brand_of`. Both `""` when the tab is not an agent. |
-| `state` | A status-contract name: `limited`, `waiting`, `error`, `working`, `done`, `idle`. A tab with no agent is `idle`. The bar's `unread` mark is not a state here. |
-| `age` | How long the bar says the tab has been in this state (`4m`, `2h`, `3d`, or `↻12m` when a limit lifts). `""` under a minute, and for `idle`. |
-| `progress` | OSC 9;4 as the bar draws it: `{"state":"set","pct":42}`. `state` is `set`, `paused`, `error` or `indeterminate`. `pct` is 0–100. `null` when nothing is reported. |
+| `windows[]` | One kitty OS window each, ordered by `key` (`o<kitty_pid>.<os_window_id>`). `focused`: the OS window kitty last focused. |
+| `title` | The OS window's title (what the window manager shows), to tell one kitty's windows apart. |
+| `geometry` | Where the bar is, for a client that draws over it: `vw`, `vh` (framebuffer pixels), `width`, `height` (logical), `scale`, `edge` (`left`, `right`, `top`, `bottom`), `bar` [left, top, right, bottom] in framebuffer pixels (`null` when the bar is hidden), `cell` [width, height], `opacity`. `null` when kitty could not say. Republished when a window is resized. |
+| `palette` | The kitty theme's tokens (`kittymux_theme.from_colors`, `bar` is the bar's own background) as `#rrggbb`: draw with these, never with typed colours. |
+| `tabs[]` | In the bar's order; `index` counts from 1. `active`: the active tab of that OS window. |
+| `project`, `branch`, `hue` | The git project (or folder) and branch of the tab's active pane, and the project's colour as the bar gives its space. |
 | `panes` | How many panes the tab has. |
-| `needs_you` | True for `waiting` and `limited`. |
-| `action` | The object `kittymux act` accepts, aimed at the tab's focused window: `{"op":"jump","pid":<int>,"w":"<digits>"}`. |
+| `agent`, `brand`, `state`, `since`, `progress`, `question`, `limit_reset`, `muted` | From the pane that speaks for the tab: the one that needs you, then one in error, then one working, then the rest; a muted agent speaks only when nothing else in the tab does. Empty `agent` and `state` when no pane runs an agent. Field meanings as in `agents.json`. |
+| `agent_window` | That pane's window id: what `kittymux mute --pid <kitty_pid> --window <agent_window>` mutes. `null` without an agent. |
+| `needs_you` | The tab asks for you (`waiting` or `limited`, not muted). The top-level `needs_you` counts these tabs. |
+| `action` | `kittymux act` jumps to the tab's active pane. |
 
-Windows are ordered by `kitty_pid`, then `os_window_id`. An empty `windows` array means no kitty that is still running has published a tab. `agents.json` stays the agent list; this file does not replace it.
+A client that draws over a kitty's vertical bar tells that kitty with `kittymux client attach KITTY_PID OWNER_PID` (`bar-attached-<pid>`, the same record as the panel's cover): while the owner lives, the bar keeps its place and background and draws no tabs.
+
+A kitty that exits last leaves its entries behind (no other kitty is left to prune them): a client checks that `kitty_pid` still runs before it draws them.
 
 ## Notification hints
 

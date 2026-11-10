@@ -24,6 +24,7 @@ class PaneData:
     title: str = ""
     active: bool = False    # the tab's focused pane
     cwd: str = ""
+    muted: bool = False     # `kittymux mute`: listed with a bell-slash, never "needs you"
 
 
 @dataclass
@@ -50,6 +51,7 @@ class RowData:
     pane_rows: tuple = ()   # PaneData for every pane, when the tab is split (2+ panes)
     win_ids: tuple = ()     # every window of the tab (what "absorb" moves)
     progress: tuple | None = None   # OSC 9;4 (state, percent), or None when the tab reports none
+    muted: bool = False     # every agent pane of the tab is muted (`kittymux mute`): a bell-slash, never "needs you"
 
 
 @dataclass
@@ -80,16 +82,46 @@ def group_rows(rows: list[RowData], current_session: str) -> list[tuple[str, lis
     return [(name, groups[name]) for name in sorted(groups, key=key)]
 
 
-def flatten(groups: list[tuple[str, list[RowData]]], current_session: str, open_tabs=None) -> tuple[list[Item], list[RowData]]:
+# Group by priority (`g` in the panel): every tab, across sessions, under the state it is in, the loudest first. Error sits with
+# Needs you (it waits for you as much as a question does); an unread mark or no state at all is Idle.
+STATE_GROUPS = (("Needs you", ("waiting", "limited", "error")), ("Working", ("working",)), ("Finished", ("done",)))
+IDLE_GROUP = "Idle"
+
+
+def asks(r) -> bool:
+    """Does this row count as asking for you? A muted one never does."""
+    return r.status in ("waiting", "limited") and not getattr(r, "muted", False)
+
+
+def group_by_state(groups: list[tuple[str, list[RowData]]]) -> list[tuple[str, list[RowData]]]:
+    """The session groups (`group_rows`, which numbers the tabs as the bar does) regrouped by state: Needs you → Working → Finished → Idle.
+    Inside a group the session order is kept; empty groups are left out."""
+    rows = [r for _name, members in groups for r in members]
+    out = []
+    taken = set()
+    for label, states in STATE_GROUPS:
+        members = [r for r in rows if r.status in states]
+        taken.update(id(r) for r in members)
+        if members:
+            out.append((label, members))
+    idle = [r for r in rows if id(r) not in taken]
+    if idle:
+        out.append((IDLE_GROUP, idle))
+    return out
+
+
+def flatten(groups: list[tuple[str, list[RowData]]], current_session: str, open_tabs=None,
+            headed: bool = False) -> tuple[list[Item], list[RowData]]:
     """Items (headers + 2-line rows) and the flat row list they index into. A split tab lists its panes under it only when its tab id is in
-    `open_tabs` (None = every split tab is open): the list stays short until you ask for a tab's panes."""
+    `open_tabs` (None = every split tab is open): the list stays short until you ask for a tab's panes. `headed` gives even a lone
+    group its header (the by-state view always names its state)."""
     items: list[Item] = []
     flat: list[RowData] = []
-    only_unnamed = len(groups) == 1 and not groups[0][0]
+    only_unnamed = len(groups) == 1 and not groups[0][0] and not headed
     for name, members in groups:
         if not only_unnamed:                       # a lone unnamed group has nothing to say: its header would only repeat "N tabs"
             items.append(Item("header", 1, label=name or NO_SESSION, count=len(members),
-                              attn=sum(1 for r in members if r.status in ("waiting", "limited")), current=(name == current_session)))
+                              attn=sum(1 for r in members if asks(r)), current=(name == current_session)))
         for r in members:
             items.append(Item("row", 2, row=len(flat)))
             flat.append(r)

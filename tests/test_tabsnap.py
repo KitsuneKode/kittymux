@@ -1,207 +1,135 @@
-"""tabs.json: the bar's tab rows, written only when a visible field changed, and never half-written."""
-import itertools
+"""tabs.json: every tab of every running kitty, for the kittymux client (docs/inbox.md)."""
 import json
 import os
 import stat
 import sys
 import tempfile
 import unittest
-from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
-import kittymux_palette as P  # noqa: E402
-import kittymux_place as Place  # noqa: E402
-import kittymux_tabsnap as S  # noqa: E402
 
-HOME = "/home/calm"
-REPO = "/home/calm/work/calm-otter"
+import kittymux_tabsnap as T  # noqa: E402
 
-
-def tab(**over):
-    facts = over.pop("facts", Place.Facts("calm-otter", "", "src", "", "main"))
-    row = dict(tab_id=3, index=1, active=True, title="Port the configs", program="zsh", has_agent=True,
-               agent="claude", facts=facts, folder=True, cwd=REPO, home=HOME, hue=0xA3D4A0, state="working",
-               ts_state=1000.0 - 240, now=1000.0, panes=2, window_id=19, kitty_pid=4035, progress=("set", 42))
-    row.update(over)
-    return S.build_tab(**row)
+COLORS = {"background": 0x111114, "foreground": 0xE8E8EA, "active_border_color": 0xD98CB3,
+          **{f"color{n}": c for n, c in zip(range(1, 16), (0xE06C75, 0x98C379, 0xE5C07B, 0x61AFEF, 0xC678DD, 0x56B6C2, 0xABB2BF,
+                                                           0x5C6370, 0xE06C75, 0x98C379, 0xE5C07B, 0x61AFEF, 0xC678DD, 0x56B6C2, 0xFFFFFF))}}
 
 
-def window(pid=4035, osw=1, **over):
-    row = tab(kitty_pid=pid, **over)
-    return {"kitty_pid": pid, "os_window_id": osw, "wm_class": "kitty", "focused": True,
-            "session": "calm-otter", "tabs": [row]}
+def win(wid, active=False, agent="", state="", **kw):
+    return {"window_id": wid, "active": active, "cwd": "", "agent": agent, "state": state, **kw}
 
 
-class RowTests(unittest.TestCase):
-    def test_states_progress_hue_and_the_home_tilde(self):
-        row = tab()
-        self.assertEqual(list(row), list(S._TAB_FIELDS))
-        self.assertEqual(row["title"], "Port the configs")
-        self.assertEqual(row["subtitle"], "calm-otter/src  main")
-        self.assertEqual(row["project"], "calm-otter")
-        self.assertEqual(row["branch"], "main")
-        self.assertEqual(row["cwd"], "~/work/calm-otter")
-        self.assertEqual(row["hue"], "#a3d4a0")
-        self.assertEqual(row["state"], "working")
-        self.assertEqual(row["age"], "4m")
-        self.assertEqual(row["progress"], {"state": "set", "pct": 42})
-        self.assertFalse(row["needs_you"])
-        self.assertEqual(row["agent"], "claude")
-        self.assertEqual(row["brand"], "claude")
-        self.assertEqual(row["panes"], 2)
-        self.assertEqual(row["action"], P.validate_action({"op": "jump", "pid": 4035, "w": "19"}))
-
-        for state, needs in (("waiting", True), ("limited", True), ("error", False), ("done", False), ("idle", False)):
-            got = tab(state=state, progress=None, hue=None)
-            self.assertEqual(got["state"], state)
-            self.assertEqual(got["needs_you"], needs)
-            self.assertIsNone(got["progress"])
-            self.assertIsNone(got["hue"])
-        self.assertEqual(tab(state="unread")["state"], "idle")
-        self.assertEqual(tab(state="")["state"], "idle")
-        self.assertIsNone(tab(progress=("nope", 3))["progress"])
-        self.assertEqual(tab(progress=("indeterminate", 0))["progress"], {"state": "indeterminate", "pct": 0})
-
-        home = tab(title="~", program="zsh", has_agent=False, agent="", facts=Place.Facts("~", "", "", "", ""),
-                   cwd=HOME, hue=None, state="", progress=None, panes=1)
-        self.assertEqual(home["title"], "Home")
-        self.assertEqual(home["subtitle"], "zsh")
-        self.assertEqual(home["cwd"], "~")
-        self.assertEqual(home["state"], "idle")
-        self.assertEqual(home["age"], "")
-        self.assertIsNone(home["hue"])
-        self.assertIsNone(home["progress"])
-        self.assertFalse(home["needs_you"])
-        # an agent in home keeps the place rule: the program is not drawn in its place
-        agent_home = tab(title="~", program="zsh", facts=Place.Facts("~", "", "", "", ""), cwd=HOME, state="working")
-        self.assertEqual(agent_home["title"], "Home")
-        self.assertEqual(agent_home["subtitle"], "")
-        self.assertEqual(agent_home["agent"], "claude")
-
-    def test_show_program_matches_the_bar(self):
-        """The draw path's old condition, as a truth table, so the file and the pixels cannot drift."""
-        def drawn(has_agent, has_place, home_only, place_is_folder):
-            return (not has_agent) and ((not has_place) or (home_only and place_is_folder))
-
-        for bits in itertools.product((False, True), repeat=4):
-            self.assertEqual(S.show_program(*bits), drawn(*bits), bits)
-        self.assertEqual(S.display_title("~"), "Home")
-        self.assertEqual(S.display_title("  ~  "), "Home")
-        self.assertEqual(S.display_title("Port the configs"), "Port the configs")
+def spec(tabs, osw=1, focused=True, colors=None):
+    return {"os_window_id": osw, "wm_class": "kitty", "focused": focused, "colors": colors or {}, "tabs": tabs}
 
 
-class CoalesceTests(unittest.TestCase):
-    def test_at_most_one_write_per_gap_and_the_trailing_update_is_kept(self):
-        gate = S.Gate()
-        self.assertEqual(gate.gap, 0.25)
-        writes, armed = [], []
-
-        def write(item):
-            writes.append(item)
-
-        def arm(delay):
-            armed.append(delay)
-            return True
-
-        self.assertEqual(S.submit(gate, "a", 10.0, write, arm), "write")
-        self.assertEqual(writes, ["a"])
-        self.assertEqual(S.submit(gate, "b", 10.1, write, arm), "arm")
-        self.assertEqual(writes, ["a"])
-        self.assertEqual(len(armed), 1)
-        self.assertAlmostEqual(armed[0], 0.15)
-        self.assertEqual(S.submit(gate, "c", 10.2, write, arm), "hold")
-        self.assertEqual(len(armed), 1)
-        self.assertEqual(gate.fire(10.25), "c")
-        write("c")
-        self.assertEqual(writes, ["a", "c"])
-        self.assertEqual(S.submit(gate, "d", 10.30, write, arm), "arm")
-        self.assertEqual(len(armed), 2)
-        self.assertEqual(gate.fire(10.50), "d")
-        write("d")
-        self.assertEqual(S.submit(gate, "e", 10.75, write, arm), "write")
-        self.assertEqual(writes, ["a", "c", "d", "e"])
-
-    def test_a_timer_that_cannot_be_armed_still_writes_the_pending_update(self):
-        gate = S.Gate()
-        writes = []
-        S.submit(gate, "a", 0.0, writes.append, lambda delay: True)
-        self.assertEqual(S.submit(gate, "b", 0.1, writes.append, lambda delay: False), "write-now")
-        self.assertEqual(writes, ["a", "b"])
-
-
-class PublishTests(unittest.TestCase):
+class TabsnapTests(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()
-        self.alive = lambda pid: pid in (4035, 4036)
-
-    def pub(self, pid=4035, osw=1, now=1793780700.0, **over):
-        return S.publish(self.dir, pid, [window(pid, osw, **over)], now, alive=self.alive)
 
     def doc(self):
-        with open(S.path_for(self.dir), encoding="utf-8") as handle:
-            return json.load(handle)
+        with open(T.path_for(self.dir)) as f:
+            return json.load(f)
 
-    def test_a_repeat_is_not_a_write_and_the_file_is_private(self):
-        self.assertTrue(self.pub())
+    def publish(self, specs, pid=4035, now=100.0, alive=lambda p: True):
+        return T.publish(self.dir, pid, specs, now, alive=alive, home="/home/calm-otter")
+
+    def test_every_tab_is_listed_even_without_an_agent(self):
+        self.assertTrue(self.publish([spec([{"tab_id": 1, "title": "shell", "active": True, "windows": [win(5, True)]},
+                                            {"tab_id": 2, "title": "api", "windows": [win(6, True, "claude", "working", progress=0.42)]}])]))
         doc = self.doc()
         self.assertEqual(doc["version"], 1)
-        self.assertEqual(doc["windows"][0]["tabs"][0]["title"], "Port the configs")
-        self.assertEqual(stat.S_IMODE(os.stat(S.path_for(self.dir)).st_mode), 0o600)
-        with mock.patch("kittymux_tabsnap.os.replace") as replace:
-            self.assertFalse(self.pub(now=1793780800.0))
-        replace.assert_not_called()
-        self.assertEqual(self.doc()["t"], 1793780700.0)
-        self.assertTrue(self.pub(title="Home", now=1793780800.0))
-        self.assertEqual(self.doc()["windows"][0]["tabs"][0]["title"], "Home")
+        tabs = doc["windows"][0]["tabs"]
+        self.assertEqual([t["title"] for t in tabs], ["shell", "api"])
+        self.assertEqual([t["index"] for t in tabs], [1, 2])
+        self.assertEqual(tabs[0]["state"], "")
+        self.assertIsNone(tabs[0]["since"])
+        self.assertTrue(tabs[0]["active"])
+        self.assertEqual((tabs[1]["agent"], tabs[1]["brand"], tabs[1]["state"], tabs[1]["progress"]), ("claude", "claude", "working", 0.42))
+        self.assertEqual(tabs[1]["action"], {"op": "jump", "pid": 4035, "w": "6"})
+        self.assertEqual(stat.S_IMODE(os.stat(T.path_for(self.dir)).st_mode), 0o600)
 
-    def test_other_kitties_stay_and_a_dead_one_goes(self):
-        self.pub(4035, osw=1)
-        self.pub(4036, osw=2, now=1793780710.0)
-        got = [(w["kitty_pid"], w["os_window_id"]) for w in self.doc()["windows"]]
-        self.assertEqual(got, [(4035, 1), (4036, 2)])
-        self.alive = lambda pid: pid == 4036
-        self.pub(4036, osw=2, title="Review the parser", now=1793780720.0)
-        self.assertEqual([(w["kitty_pid"], w["os_window_id"]) for w in self.doc()["windows"]], [(4036, 2)])
+    def test_the_pane_that_asks_speaks_for_the_tab_and_a_muted_one_only_when_alone(self):
+        self.publish([spec([{"tab_id": 3, "title": "t", "windows": [
+            win(7, True, "claude", "working"), win(8, False, "codex", "waiting", reason="Allow edit?"),
+            win(9, False, "gemini", "waiting", muted=True)]}])])
+        tab = self.doc()["windows"][0]["tabs"][0]
+        self.assertEqual((tab["agent"], tab["state"], tab["question"], tab["needs_you"], tab["panes"]), ("codex", "waiting", "Allow edit?", True, 3))
+        self.assertEqual(tab["agent_window"], 8)
+        self.assertEqual(tab["action"]["w"], "7")                 # a click goes to the pane you left the tab on
+        self.publish([spec([{"tab_id": 3, "title": "t", "windows": [win(9, True, "gemini", "waiting", muted=True)]}])])
+        tab = self.doc()["windows"][0]["tabs"][0]
+        self.assertTrue(tab["muted"])
+        self.assertFalse(tab["needs_you"])
+        self.assertEqual(self.doc()["needs_you"], 0)
 
-    def test_this_kitty_replaces_only_its_own_windows(self):
-        self.pub(4035, osw=1)
-        self.pub(4036, osw=2, now=1793780710.0)
-        self.pub(4035, osw=3, now=1793780720.0)
-        got = [(w["kitty_pid"], w["os_window_id"]) for w in self.doc()["windows"]]
-        self.assertEqual(got, [(4035, 3), (4036, 2)])
+    def test_since_holds_while_the_state_holds(self):
+        tab = lambda st: [spec([{"tab_id": 1, "title": "t", "windows": [win(5, True, "claude", st)]}])]   # noqa: E731
+        self.publish(tab("working"), now=100.0)
+        self.publish(tab("working"), now=150.0)
+        self.assertEqual(self.doc()["windows"][0]["tabs"][0]["since"], 100.0)
+        self.publish(tab("done"), now=160.0)
+        self.assertEqual(self.doc()["windows"][0]["tabs"][0]["since"], 160.0)
 
-    def test_a_dead_pid_already_in_the_file_is_dropped(self):
-        os.makedirs(self.dir, mode=0o700, exist_ok=True)
-        with open(S.path_for(self.dir), "w", encoding="utf-8") as handle:
-            json.dump({"version": 1, "t": 1, "windows": [
-                {"kitty_pid": 1073741824, "os_window_id": 1, "wm_class": "kitty", "focused": False,
-                 "session": "", "tabs": []}]}, handle)
-        self.assertTrue(S.publish(self.dir, 4035, [window()], 1793780700.0, alive=lambda pid: False))
-        self.assertEqual([w["kitty_pid"] for w in self.doc()["windows"]], [4035])
+    def test_an_unchanged_document_is_not_rewritten(self):
+        s = [spec([{"tab_id": 1, "title": "t", "windows": [win(5, True)]}])]
+        self.assertTrue(self.publish(s, now=1.0))
+        self.assertFalse(self.publish(s, now=2.0))
 
-    def test_a_failed_replace_leaves_the_previous_file_and_the_temporary_is_gone(self):
-        self.assertTrue(self.pub())
-        with open(S.path_for(self.dir), encoding="utf-8") as handle:
-            old = handle.read()
+    def test_other_kitties_are_kept_while_alive_and_dropped_when_gone(self):
+        self.publish([spec([{"tab_id": 1, "title": "a", "windows": [win(5, True)]}])], pid=11)
+        self.publish([spec([{"tab_id": 1, "title": "b", "windows": [win(5, True)]}])], pid=22)
+        self.assertEqual(sorted(w["kitty_pid"] for w in self.doc()["windows"]), [11, 22])
+        self.publish([spec([{"tab_id": 1, "title": "b2", "windows": [win(5, True)]}])], pid=22, alive=lambda p: False)
+        self.assertEqual([w["kitty_pid"] for w in self.doc()["windows"]], [22])
 
-        def boom(src, dst):
-            with open(src, encoding="utf-8") as handle:
-                text = handle.read()
-            parsed = json.loads(text)
-            self.assertEqual(parsed["version"], 1)
-            self.assertEqual(parsed["windows"][0]["tabs"][0]["state"], "waiting")
-            raise OSError("disk full")
+    def test_the_palette_and_project_hue_come_from_the_live_theme(self):
+        pal = T.palette_of(COLORS)
+        self.assertEqual(set(pal), set(T._PALETTE))
+        self.assertTrue(all(len(v) == 7 and v.startswith("#") for v in pal.values()))
+        self.assertEqual(T.palette_of({}), {})
+        self.assertEqual(T._hue("", COLORS), "")
+        self.assertRegex(T._hue("calm-otter", COLORS), r"^#[0-9a-f]{6}$")
 
-        with mock.patch("kittymux_tabsnap.os.replace", side_effect=boom):
-            self.assertFalse(self.pub(state="waiting", now=1793780710.0))
-        with open(S.path_for(self.dir), encoding="utf-8") as handle:
-            self.assertEqual(handle.read(), old)
-        self.assertFalse([n for n in os.listdir(self.dir) if n.endswith(".tmp")])
-        self.assertEqual(json.loads(old)["windows"][0]["tabs"][0]["state"], "working")
+    def test_a_bar_that_covers_the_terminal_is_not_published(self):
+        # The window is 1762x1378 and the terminal still starts at x=0: the reported bar is not a bar.
+        covered = T.geometry_of({"vw": 1762, "vh": 1378, "width": 1762, "height": 1378,
+                                  "bar": [0, 0, 308, 1378], "central": [0, 0, 1762, 1378]})
+        self.assertIsNone(covered["bar"])
+        self.assertEqual(covered["edge"], "")
+        # The terminal starts where the bar ends: this one is real.
+        reserved = T.geometry_of({"vw": 1762, "vh": 1378, "width": 1762, "height": 1378,
+                                   "bar": [0, 0, 308, 1378], "central": [308, 0, 1762, 1378]})
+        self.assertEqual(reserved["bar"], [0, 0, 308, 1378])
+        self.assertEqual(reserved["edge"], "left")
+        self.assertFalse(T.bar_reserves_space([0, 0, 0, 0], [0, 0, 1762, 1378]))
 
-    def test_a_bad_pid_does_not_create_the_file(self):
-        self.assertFalse(S.publish(self.dir, True, [window()], 1.0, alive=self.alive))
-        self.assertFalse(os.path.exists(S.path_for(self.dir)))
+    def test_a_busy_lock_is_skipped_not_waited_for(self):
+        import fcntl
+        s = [spec([{"tab_id": 1, "title": "t", "windows": [win(5, True)]}])]
+        fd = os.open(os.path.join(self.dir, "tabs.lock"), os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)                         # another kitty is mid-write
+            self.assertIsNone(self.publish(s))                     # None: not written, try again; it returned at once
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+        self.assertTrue(self.publish(s))
+
+    def test_an_oversized_file_is_not_parsed(self):
+        with open(T.path_for(self.dir), "w") as f:
+            f.write('{"windows": [' + " " * (T.MAX_BYTES + 10) + "]}")
+        self.assertEqual(T._read(T.path_for(self.dir)), [])
+        self.assertTrue(self.publish([spec([{"tab_id": 1, "title": "t", "windows": [win(5, True)]}])]))
+        self.assertEqual(len(self.doc()["windows"]), 1)
+
+    def test_junk_is_dropped_never_raised(self):
+        self.assertTrue(self.publish([None, {"os_window_id": "x"}, spec([{"tab_id": None}, {"tab_id": 2, "windows": []},
+                                                                         {"tab_id": 4, "title": "\x1b[31mred", "windows": [win(1, True)]}])]))
+        tabs = self.doc()["windows"][0]["tabs"]
+        self.assertEqual([t["tab_id"] for t in tabs], [4])
+        self.assertNotIn("\x1b", tabs[0]["title"])
+        self.assertFalse(T.publish(self.dir, -1, [], 1.0))
 
 
 if __name__ == "__main__":

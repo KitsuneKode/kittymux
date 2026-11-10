@@ -10,6 +10,7 @@ kittymux tells you about an agent only when you are not looking at it. Focusing 
 | Cue                                  | When                                                                                          | Turn it off                                                    |
 | ------------------------------------ | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | Tab glyph and a stripe on the rail   | Any tab and any pane of it. A question in a split you are not in still lights the tab.        | Not switchable.                                                |
+| The divider beside the pane           | A split pane you are not in starts waiting: the divider beside it takes kitty's bell colour (`bell_border_color`) until you focus it. No bell, no focus change. | `kittymux features off ring`.                                   |
 | Header badges `! 2  ✓ 1`             | Agents that need you or finished unseen, across every tab of the window.                      | Not switchable.                                                |
 | Desktop notification: needs you or limit | An agent starts waiting or hits its limit. It shows the question.                         | `kittymux notify off`, or `KITTYMUX_NOTIFY=0`.                 |
 | Desktop notification: finished       | A run of 15 seconds or more ends unseen. Quick replies stay quiet.                            | `kittymux notify done off`, or `KITTYMUX_NOTIFY_DONE=0`.       |

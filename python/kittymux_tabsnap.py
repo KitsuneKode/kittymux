@@ -1,337 +1,257 @@
-"""tabs.json — the vertical bar's tabs, for a shell that draws them in real pixels.
+"""tabs.json — every tab of every running kitty, for a client drawn outside kitty (the kittymux client, kuwai's Agents tab).
 
-The bar already decides each tab's title, place line, state, age and progress. This module is that
-decision as data: `display_title` and `show_program` are what the bar draws, `build_tab` turns one
-tab into a row, and `publish` merges rows across kitty processes the way agents.json does. A kitty
-replaces only its own windows and drops a pid that is gone. The file is mode 0600, written by
-rename, and skipped when nothing but `t` changed.
-
-Writes are coalesced by `Gate` / `submit`: at most one per 250 ms, and the last update in that
-window is kept for a trailing write. The timer itself lives in the bar (`kittymux_timers`), not here.
-Pure: no kitty imports. Schema version 1 is docs/inbox.md.
+agents.json lists agents; a client that draws the tab strip also needs the tabs nobody's agent runs in, which tab is active, and how
+many panes each has. The scanner (one pass per kitty) calls `publish` with that kitty's OS windows. The file is shared like
+agents.json: this process replaces only its own entries and keeps entries whose kitty is still alive; mode 0600; atomic; and a
+write is skipped when nothing but `t` would change, so a client that watches the file wakes only for real changes. Schema version
+1 is docs/inbox.md. Pure: no kitty imports.
 """
 from __future__ import annotations
 
 import json
 import os
+import re
 
 import kittymux_agents
+import kittymux_agentsnap as snap
 import kittymux_git
 import kittymux_palette
 import kittymux_place
-import kittymux_progress
+import kittymux_theme
 
 VERSION = 1
 NAME = "tabs.json"
-GAP = 0.25
-PLACE_WIDTH = 240
-_LEGACY_CWD = 24
-_WIN_FIELDS = ("kitty_pid", "os_window_id", "wm_class", "focused", "session", "tabs")
-_TAB_FIELDS = ("tab_id", "index", "active", "title", "subtitle", "project", "hue", "branch", "cwd",
-               "agent", "brand", "state", "age", "progress", "panes", "needs_you", "action")
+# Which pane speaks for the tab: what asks for you first, then trouble, then work, then the rest. A muted agent speaks only
+# when nothing else in the tab does.
+LEAD = ("waiting", "limited", "error", "working", "done", "idle")
+_AGENT = re.compile(r"[a-z][a-z0-9-]{0,30}")
+_CLASS = re.compile(r"[A-Za-z0-9._-]{1,64}")
+_PALETTE = ("bg", "fg", "bar", "muted", "faint", "accent", "working", "waiting", "done", "alert")
+_TAB_FIELDS = ("tab_id", "index", "active", "title", "cwd", "project", "branch", "hue", "panes", "agent", "agent_window", "brand", "state", "since",
+               "progress", "question", "limit_reset", "muted", "needs_you", "action")
 
 
 def path_for(state_dir: str) -> str:
     return os.path.join(state_dir, NAME)
 
 
-def display_title(title: str) -> str:
-    """The title the bar draws for a tidied string. A bare `~` (the home folder) is Home."""
-    return "Home" if (title or "").strip() == "~" else (title or "")
+def _lead(windows: list) -> dict | None:
+    """The pane whose agent speaks for the tab, or None when no pane runs an agent."""
+    best, best_key = None, None
+    for w in windows:
+        state, agent = w.get("state"), str(w.get("agent") or "").strip().lower()
+        if state not in LEAD or not _AGENT.fullmatch(agent):
+            continue
+        key = (bool(w.get("muted")), LEAD.index(state), 0 if w.get("active") else 1)
+        if best_key is None or key < best_key:
+            best, best_key = w, key
+    return best
 
 
-def show_program(has_agent: bool, has_place: bool, home_only: bool, place_is_folder: bool) -> bool:
-    """True when the bar draws the program instead of the folder line.
-
-    No agent, and either there is no place line, or the line is only the home folder (it would
-    repeat `~`). An agent keeps its place line. A legacy branch/path line is not the home folder.
-    """
-    if has_agent:
-        return False
-    if not has_place:
-        return True
-    return bool(home_only and place_is_folder)
+def palette_of(colors: dict) -> dict:
+    """The kitty theme's tokens a client draws with (kittymux_theme.from_colors), as #rrggbb. {} when `colors` is empty."""
+    if not colors:
+        return {}
+    try:
+        pal = kittymux_theme.from_colors(colors)
+    except Exception:
+        return {}
+    return {k: kittymux_theme._hex(getattr(pal, k)) for k in _PALETTE}
 
 
-def hue_hex(rgb) -> str | None:
-    """`#rrggbb` for a project hue, or None. The bar's `project_hue` int, not a second palette."""
-    if isinstance(rgb, bool) or not isinstance(rgb, int) or not 0 <= rgb <= 0xFFFFFF:
-        return None
-    return f"#{rgb:06x}"
-
-
-def progress_obj(value) -> dict | None:
-    """The bar's `(state, percent)` as `{state, pct}`, or None when nothing was reported."""
-    if not isinstance(value, (tuple, list)) or len(value) != 2:
-        return None
-    state, pct = value[0], value[1]
-    if state not in kittymux_progress.TINT:
-        return None
-    if isinstance(pct, bool) or not isinstance(pct, (int, float)):
-        return None
-    return {"state": state, "pct": max(0, min(100, int(pct)))}
-
-
-def place_plain(facts, hide_project: bool, hide_worktree: bool, width: int = PLACE_WIDTH) -> str:
-    """The place line's words at `width` cells: project, path and branch. No icons, no colour."""
-    if facts is None:
+def _hue(project: str, colors: dict) -> str:
+    """The project's own colour, the one the bar gives its space (kittymux_theme.project_hue), or ""."""
+    if not project or not colors:
         return ""
-    runs = kittymux_place.layout(facts, width, icon="", branch_icon="", hide_project=hide_project,
-                                 hide_worktree=hide_worktree, cells=len)
-    return kittymux_place.clean_line("".join(text for text, _role in runs)).strip()
-
-
-def _pid(value) -> int | None:
-    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value < 2 ** 40:
-        return None
-    return value
-
-
-def _text(value, limit: int) -> str:
-    return kittymux_place.clean(str(value or ""))[:limit]
-
-
-def _short_cwd(cwd: str, home: str) -> str:
-    if not cwd:
+    try:
+        pal = kittymux_theme.from_colors(colors)
+        return kittymux_theme._hex(kittymux_theme.project_hue(project, pal.accent, pal.surface_hi,
+                                                                 avoid=(pal.waiting, pal.alert, pal.working, pal.done)))
+    except Exception:
         return ""
-    path = os.path.abspath(cwd)
-    root = os.path.abspath(home) if home else ""
-    if root and (path == root or path.startswith(root + os.sep)):
-        return "~" + path[len(root):]
-    return path
 
 
-def _contract_state(state: str) -> str:
-    return state if state in kittymux_agents.STATES else "idle"
-
-
-class Gate:
-    """At most one write per `gap` seconds, with the newest item kept for the trailing write.
-
-    `push` returns `("write", item)`, `("arm", delay)` or `("hold", None)`. The caller arms a timer
-    on `"arm"` and calls `fire` when it runs. No timer lives here.
-    """
-
-    def __init__(self, gap: float = GAP):
-        self.gap = gap
-        self.last: float | None = None
-        self.armed = False
-        self.pending = None
-
-    def push(self, item, now: float) -> tuple[str, object]:
-        self.pending = item
-        if self.armed:
-            return "hold", None
-        if self.last is None or now - self.last >= self.gap:
-            item = self.pending
-            self.pending = None
-            self.last = now
-            return "write", item
-        return "arm", self.gap - (now - self.last)
-
-    def arm(self) -> None:
-        self.armed = True
-
-    def fire(self, now: float):
-        """The trailing timer ran. The item to write, or None when nothing is waiting."""
-        self.armed = False
-        if self.pending is None:
-            return None
-        item = self.pending
-        self.pending = None
-        self.last = now
-        return item
-
-
-def submit(gate: Gate, item, now: float, write, arm) -> str:
-    """Run one `push`. `arm(delay)` is true when a trailing timer was scheduled.
-
-    When a timer cannot be scheduled the pending item is written now, so the last update is not
-    dropped. Returns `write`, `arm`, `hold` or `write-now`.
-    """
-    action, payload = gate.push(item, now)
-    if action == "write":
-        write(payload)
-        return "write"
-    if action == "arm":
-        gate.arm()
-        if arm(float(payload)):
-            return "arm"
-        gate.armed = False
-        pending = gate.fire(now)
-        if pending is not None:
-            write(pending)
-        return "write-now"
-    return "hold"
-
-
-def build_tab(*, tab_id: int, index: int, active: bool, title: str, program: str, has_agent: bool,
-              agent: str, facts, folder: bool, cwd: str, home: str, hue, state: str, ts_state,
-              now: float, panes: int, window_id: int, kitty_pid: int, progress=None, reset_at=None,
-              wall=None, home_only: bool | None = None, hide_project: bool | None = None,
-              hide_worktree: bool | None = None, title_key: str | None = None,
-              raw_title: str | None = None) -> dict | None:
-    """One tab row. `title` is the bar's tidied title, before the Home substitution. None when the
-    jump action would not validate."""
-    pid = _pid(kitty_pid)
-    tid = _pid(tab_id)
-    wid = _pid(window_id)
-    if pid is None or tid is None or wid is None or isinstance(index, bool) or not isinstance(index, int) or index < 1:
+def _tab(kitty_pid: int, index: int, spec: dict, home: str, previous: dict, now: float, colors: dict | None = None) -> dict | None:
+    tid = snap._wid(spec.get("tab_id"))
+    windows = [w for w in (spec.get("windows") or []) if isinstance(w, dict) and snap._wid(w.get("window_id")) is not None]
+    if tid is None or not windows:
         return None
-    action = kittymux_palette.validate_action({"op": "jump", "pid": pid, "w": str(wid)})
+    active = next((w for w in windows if w.get("active")), windows[0])
+    action = kittymux_palette.validate_action({"op": "jump", "pid": kitty_pid, "w": str(snap._wid(active.get("window_id")))})
     if action is None:
         return None
-    shown = display_title(_text(title, 400))
-    key = title if title_key is None else title_key
-    if facts is not None:
-        if hide_project is None:
-            hide_project = kittymux_place.redundant(key, facts)
-        if hide_worktree is None:
-            hide_worktree = kittymux_place.worktree_named(key, facts)
-    else:
-        hide_project, hide_worktree = False, False
-    if home_only is None:
-        home_only = kittymux_place.clean(title if raw_title is None else raw_title).strip() == "~"
-    if folder and cwd and facts is not None:
-        place, has_place, place_is_folder = place_plain(facts, hide_project, hide_worktree), True, True
-    elif cwd and not folder:
-        if facts is not None and facts.branch:
-            place = facts.branch
-        else:
-            place = kittymux_git.short_path(cwd, home, _LEGACY_CWD)
-        has_place, place_is_folder = bool(place), False
-    else:
-        place, has_place, place_is_folder = "", False, False
-    if show_program(bool(has_agent), has_place, bool(home_only), place_is_folder):
-        subtitle = _text(program, 80)
-    else:
-        # keep the place line's spacing (project, two spaces, branch); only controls go
-        subtitle = kittymux_place.clean_line(place).strip()[:240]
-    name = str(agent or "").strip().lower()
-    if not has_agent or not kittymux_agents.agent_in([name]):
-        name = ""
-    contract = _contract_state(state)
-    try:
-        n_panes = int(panes)
-    except (TypeError, ValueError):
-        n_panes = 0
-    if isinstance(panes, bool) or n_panes < 0:
-        n_panes = 0
+    cwd_raw = str(active.get("cwd") or spec.get("cwd") or "")
+    project = branch = ""
+    if cwd_raw:
+        try:
+            info = kittymux_git.info(cwd_raw)
+            facts = kittymux_place.facts(cwd_raw, info, home)
+            project, branch = snap._text(facts.project, 80), snap._text(facts.branch, 80)
+        except Exception:
+            pass
+    lead = _lead(windows)
+    state = lead.get("state") if lead else ""
+    agent = str(lead.get("agent") or "").strip().lower() if lead else ""
+    muted = bool(lead.get("muted")) if lead else False
+    reason = snap._text(lead.get("reason") or "", 160) if lead else ""
     row = {
         "tab_id": tid,
         "index": index,
-        "active": bool(active),
-        "title": shown,
-        "subtitle": subtitle,
-        "project": _text(getattr(facts, "project", "") or "", 80),
-        "hue": hue_hex(hue),
-        "branch": _text(getattr(facts, "branch", "") or "", 80),
-        "cwd": _text(_short_cwd(cwd, home), 240),
-        "agent": name,
-        "brand": kittymux_agents.brand_of(name),
-        "state": contract,
-        "age": kittymux_agents.state_age(contract, ts_state, now, reset_at=reset_at, wall=wall) or "",
-        "progress": progress_obj(progress),
-        "panes": n_panes,
-        "needs_you": contract in kittymux_agents.NEEDS_YOU,
+        "active": bool(spec.get("active")),
+        "title": snap._text(spec.get("title") or "", 80),
+        "cwd": snap._text(snap._short_cwd(cwd_raw, home), 240),
+        "project": project,
+        "branch": branch,
+        "hue": _hue(project, colors or {}),
+        "panes": len(windows),
+        "agent": agent,
+        "agent_window": snap._wid(lead.get("window_id")) if lead else None,      # what `kittymux mute --pid P --window W` mutes
+        "brand": kittymux_agents.brand_of(agent) if agent else "",
+        "state": state,
+        "since": None,
+        "progress": snap._progress(lead.get("progress")) if lead else None,
+        "question": reason if state == "waiting" and reason else None,
+        "limit_reset": snap._epoch(lead.get("limit_reset")) if state == "limited" else None,
+        "muted": muted,
+        "needs_you": state in kittymux_agents.NEEDS_YOU and not muted,
         "action": action,
     }
+    old = previous.get(tid)
+    since = old.get("since") if isinstance(old, dict) and old.get("state") == state else None
+    row["since"] = since if isinstance(since, (int, float)) and not isinstance(since, bool) else (round(float(now), 1) if state else None)
     return {k: row[k] for k in _TAB_FIELDS}
 
 
-def _signature(doc: dict) -> str:
-    body = {k: v for k, v in doc.items() if k != "t"}
-    return json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+def _window(kitty_pid: int, spec: dict, home: str, previous: dict, now: float) -> dict | None:
+    if not isinstance(spec, dict):
+        return None
+    osw = snap._wid(spec.get("os_window_id"))
+    if osw is None:
+        return None
+    wm_class = str(spec.get("wm_class") or "kitty")
+    colors = spec.get("colors") if isinstance(spec.get("colors"), dict) else {}
+    tabs = []
+    for spec_tab in spec.get("tabs") or []:
+        if isinstance(spec_tab, dict):
+            row = _tab(kitty_pid, len(tabs) + 1, spec_tab, home, previous, now, colors)
+            if row is not None:
+                tabs.append(row)
+    return {"key": f"o{kitty_pid}.{osw}", "kitty_pid": kitty_pid, "os_window_id": osw,
+            "wm_class": wm_class if _CLASS.fullmatch(wm_class) else "kitty", "focused": bool(spec.get("focused")),
+            "session": snap._text(spec.get("session") or "", 80), "title": snap._text(spec.get("title") or "", 200),
+            "geometry": geometry_of(spec.get("geometry")), "palette": palette_of(colors), "tabs": tabs}
 
 
-def _read(path: str) -> list:
+def _num(value, lo: float, hi: float):
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) and lo <= value <= hi else None
+
+
+def bar_reserves_space(bar, central) -> bool:
+    """The terminal has stepped aside for this bar. A zero bar, or one that overlaps the terminal, is not on screen:
+    a client must not cover the shell. No central rectangle means we cannot check, so the bar is kept."""
+    if not (isinstance(bar, (list, tuple)) and len(bar) == 4 and all(_num(v, 0, 1 << 16) is not None for v in bar)):
+        return False
+    left, top, right, bottom = (int(v) for v in bar)
+    if right - left < 8 or bottom - top < 8:
+        return False
+    if not (isinstance(central, (list, tuple)) and len(central) == 4 and all(_num(v, 0, 1 << 16) is not None for v in central)):
+        return True
+    cl, ct, cr, cb = (int(v) for v in central)
+    if left <= 1 and cl + 1 >= right - 1:
+        return True
+    if cr <= left + 1 < right:
+        return True
+    if top <= 1 and ct + 1 >= bottom - 1:
+        return True
+    if cb <= top + 1 < bottom:
+        return True
+    return False
+
+
+def geometry_of(spec) -> dict | None:
+    """The OS window's bar, for a client that draws over it: framebuffer size (`vw`, `vh`), logical size (`width`, `height`), `scale`
+    (framebuffer pixels per logical pixel), the bar's `edge` (left/right/top/bottom) and `bar` [left, top, right, bottom] in framebuffer
+    pixels, the `cell` size and the background `opacity`. None when kitty gave nothing usable; `bar` None when the bar is hidden."""
+    if not isinstance(spec, dict):
+        return None
+    vw, vh = _num(spec.get("vw"), 1, 1 << 16), _num(spec.get("vh"), 1, 1 << 16)
+    w, h = _num(spec.get("width"), 1, 1 << 16), _num(spec.get("height"), 1, 1 << 16)
+    if not (vw and vh and w and h):
+        return None
+    out = {"vw": int(vw), "vh": int(vh), "width": int(w), "height": int(h), "scale": round(vw / w, 4), "edge": "", "bar": None,
+           "cell": None, "opacity": None}
+    cell = spec.get("cell")
+    if isinstance(cell, (list, tuple)) and len(cell) == 2 and all(_num(c, 1, 4096) for c in cell):
+        out["cell"] = [int(c) for c in cell]
+    op = _num(spec.get("opacity"), 0, 1)
+    out["opacity"] = round(float(op), 3) if op is not None else None
+    bar = spec.get("bar")
+    if isinstance(bar, (list, tuple)) and len(bar) == 4 and all(_num(v, 0, 1 << 16) is not None for v in bar):
+        l, t, r, b = (int(v) for v in bar)
+        if r > l and b > t:
+            out["bar"] = [l, t, r, b]
+            if b - t >= vh - 1 and r - l < vw:
+                out["edge"] = "left" if l == 0 else "right"
+            else:
+                out["edge"] = "top" if t == 0 else "bottom"
+        if not bar_reserves_space(out["bar"], spec.get("central")):
+            out["bar"] = None
+            out["edge"] = ""
+    return out
+
+
+MAX_BYTES = 1 << 20       # a tabs.json larger than this is not ours (hundreds of tabs fit in a fraction): never parse it on kitty's main thread
+
+
+def _load(path: str):
+    """The document at `path`, read at most MAX_BYTES; None when missing, unreadable, too large or not JSON."""
     try:
-        with open(path, encoding="utf-8") as handle:
-            doc = json.load(handle)
+        with open(path, "rb") as f:
+            raw = f.read(MAX_BYTES + 1)
+        if len(raw) > MAX_BYTES:
+            return None
+        return json.loads(raw.decode("utf-8"))
     except (OSError, ValueError, UnicodeError):
-        return []
+        return None
+
+
+def _read(path: str, doc=None) -> list:
+    doc = _load(path) if doc is None else doc
     rows = doc.get("windows") if isinstance(doc, dict) else None
     return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
 
 
-def _alive(pid: int) -> bool:
-    return os.path.isdir(f"/proc/{pid}")
-
-
-def _keep(window: dict, kitty_pid: int, alive) -> bool:
-    other = _pid(window.get("kitty_pid"))
-    if other is None or other == kitty_pid:
-        return False
+def publish(state_dir: str, kitty_pid: int, specs, now: float, alive=None, home: str | None = None) -> bool | None:
+    """Replace this kitty's OS windows in tabs.json. True when the file was replaced, False when nothing changed (or it failed),
+    None when another kitty holds the lock right now (the caller tries again next pass). Never raises, never waits for a lock:
+    it runs on kitty's main thread. The rows (and their git lookups) are built BEFORE the lock, so the lock covers only the merge."""
     try:
-        return bool(alive(other))
-    except Exception:
-        return False
-
-
-def _window(raw: dict, kitty_pid: int) -> dict | None:
-    osw = _pid(raw.get("os_window_id"))
-    if osw is None or not isinstance(raw.get("tabs"), list):
-        return None
-    tabs = [t for t in raw["tabs"] if isinstance(t, dict)]
-    return {
-        "kitty_pid": kitty_pid,
-        "os_window_id": osw,
-        "wm_class": _text(raw.get("wm_class") or "kitty", 64) or "kitty",
-        "focused": bool(raw.get("focused")),
-        "session": _text(raw.get("session") or "", 80),
-        "tabs": tabs,
-    }
-
-
-def _write(path: str, text: str) -> None:
-    tmp = f"{path}.{os.getpid()}.tmp"
-    try:
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp, path)
-    except Exception:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
-
-
-def publish(state_dir: str, kitty_pid: int, windows, now: float, alive=None) -> bool:
-    """Replace this kitty's windows. True only when the file was replaced. Never raises."""
-    try:
-        pid = _pid(kitty_pid)
+        pid = snap._pid(kitty_pid)
         if pid is None:
             return False
-        fresh = []
-        for raw in windows or []:
-            if isinstance(raw, dict):
-                window = _window(raw, pid)
-                if window is not None:
-                    fresh.append(window)
-        check = alive or _alive
+        home = home if home is not None else os.path.expanduser("~")
+        check = alive or snap._alive
         import fcntl
         os.makedirs(state_dir, mode=0o700, exist_ok=True)
+        dest = path_for(state_dir)
+        previous = {t.get("tab_id"): t for w in _read(dest) if w.get("kitty_pid") == pid for t in (w.get("tabs") or []) if isinstance(t, dict)}
+        fresh = [w for w in (_window(pid, s, home, previous, now) for s in (specs or [])) if w is not None]
         lock = os.open(os.path.join(state_dir, "tabs.lock"), os.O_RDWR | os.O_CREAT, 0o600)
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            dest = path_for(state_dir)
-            old = _read(dest)
-            rows = [r for r in old if _keep(r, pid, check)] + fresh
-            rows.sort(key=lambda r: (_pid(r.get("kitty_pid")) or 0, _pid(r.get("os_window_id")) or 0))
-            doc = {"version": VERSION, "t": round(float(now), 1), "windows": rows}
-            if os.path.isfile(dest):
-                try:
-                    with open(dest, encoding="utf-8") as handle:
-                        current = json.load(handle)
-                    if isinstance(current, dict) and _signature(current) == _signature(doc):
-                        return False
-                except (OSError, ValueError, UnicodeError):
-                    pass
-            _write(dest, json.dumps(doc, ensure_ascii=False, separators=(",", ":")) + "\n")
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return None
+            current = _load(dest)                      # read once under the lock: the rows to keep AND what to compare against
+            old = _read(dest, current if current is not None else {})
+            rows = [w for w in old if snap._keep(w, pid, check)] + fresh
+            rows.sort(key=lambda w: (str(w.get("key") or "")))
+            tabs = [t for w in rows for t in (w.get("tabs") or []) if isinstance(t, dict)]
+            doc = {"version": VERSION, "t": round(float(now), 1), "windows": rows,
+                   "needs_you": sum(1 for t in tabs if t.get("needs_you"))}
+            if isinstance(current, dict) and snap._signature(current) == snap._signature(doc):
+                return False
+            snap._write(dest, json.dumps(doc, ensure_ascii=False, separators=(",", ":")) + "\n")
             return True
         finally:
             fcntl.flock(lock, fcntl.LOCK_UN)

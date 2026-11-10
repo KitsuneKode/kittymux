@@ -77,6 +77,8 @@ class GatedCardsTests(unittest.TestCase):
             self.assertIn("var bool GLASS = true", body)
             self.assertIn("shaders kittymux-hover-probe", body)
 
+    @unittest.skipUnless(os.path.exists("/usr/lib/kitty/kitty/shaders/slang.py"),
+                         "needs an installed kitty with shader-slang (CI's unit job has none; the smoke job does)")
     def test_the_pipeline_parses(self):
         # a child interpreter: importing kitty here would make later tests think they are inside kitty
         import subprocess

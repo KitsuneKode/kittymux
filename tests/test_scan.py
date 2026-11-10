@@ -1158,6 +1158,29 @@ class AgeRefreshTests(ScanBase):
             KS.scan_all()
             self.assertEqual(len(self.redraws), n + 1)              # the interval passed: one redraw so "5m" can become "6m"
 
+    def test_the_working_glyph_steps_calmly_and_settles_when_motion_goes_off(self):
+        """Calm motion: one step every few seconds, never a spin; switching motion off puts the still frame up at once."""
+        self.assertGreaterEqual(KS.SPIN_INTERVAL, 1.0)
+        import kittymux_agents as KA
+        self.assertLessEqual(KA.SPINNER_FPS, 1.0)
+        self.add(FakeWindow(1, "claude", DEVIN_THINKING))
+        with mock.patch.object(KS, "_motion_on", return_value=True):
+            KS.scan_all()
+        self.assertIsNotNone(KS._RT.spin_timer)
+        before = len(self.redraws)
+        with mock.patch.object(KS, "_motion_on", return_value=False):
+            KS._sync_spinner()
+        self.assertIsNone(KS._RT.spin_timer)
+        self.assertEqual(len(self.redraws), before + 1)             # the still frame now, not at the next unrelated redraw
+        with mock.patch.object(KS, "_motion_on", return_value=True):
+            KS._sync_spinner()
+        timer = KS._RT.spin_timer
+        before = len(self.redraws)
+        with mock.patch.object(KS, "_motion_on", return_value=False):
+            KS._spin_tick(timer)
+        self.assertIsNone(KS._RT.spin_timer)
+        self.assertEqual(len(self.redraws), before + 1)
+
     def test_an_idle_tab_never_triggers_age_redraws(self):
         self.add(FakeWindow(1, "claude", IDLE))
         t = [1000.0]
@@ -1697,5 +1720,5 @@ class AgentsFileTests(ScanBase):
             w.screen = "[sudo] password for zork: "
             KS.scan_all()
         path = os.path.join(self.state, "agents.json")
-        if os.path.exists(path):
-            self.assertEqual(json.load(open(path))["agents"], [])
+        self.assertTrue(os.path.exists(path), "the scanner published no agents.json")
+        self.assertEqual(json.load(open(path))["agents"], [])

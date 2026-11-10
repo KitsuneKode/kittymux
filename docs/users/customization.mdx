@@ -36,9 +36,9 @@ kittymux features preset minimal   # minimal, default or full
 kittymux features -h               # help
 ```
 
-`folder`, `hue`, `collide`, `panetitle`, `motion`, `titles`, `sudo`, `loginprompt`, `pkgprompt` and `socketlink` are live (the last three are notifications for a terminal waiting on you: see [Notifications and the inbox](/docs/users/notifications-and-inbox#when-a-plain-terminal-is-waiting-for-you)). `sheet` and `hover` are planned: the switch is saved and the command says so, but nothing reads it yet. See [The tab bar](/docs/users/the-tab-bar#choose-which-pieces-you-want).
+`folder`, `hue`, `collide`, `panetitle`, `motion`, `titles`, `ring`, `sudo`, `loginprompt`, `pkgprompt` and `socketlink` are live (the last three are notifications for a terminal waiting on you: see [Notifications and the inbox](/docs/users/notifications-and-inbox#when-a-plain-terminal-is-waiting-for-you)). `sheet` and `hover` are planned: the switch is saved and the command says so, but nothing reads it yet. See [The tab bar](/docs/users/the-tab-bar#choose-which-pieces-you-want).
 
-`kittymux settings on deckpx` draws the panel's Agents list in pixels. It is off by default, and `KITTYMUX_DECKPX=1` turns it on the same way. The other panel views stay cells. [The panel](/docs/users/peek-deck-and-panel#agents) says what you see.
+`kittymux settings on deckpx` draws the panel's Agents list in pixels. It is off by default, and `KITTYMUX_DECKPX=1` turns it on the same way. The other panel views stay cells. While a docked panel runs in pixels, the tab bar of the kitty it watches is hidden, since the panel already lists every tab. It stays hidden in the panel's other views and comes back when the panel closes. `kittymux settings off pxcover` (or `KITTYMUX_PXCOVER=0`) keeps the bar. [The panel](/docs/users/peek-deck-and-panel#agents) says what you see.
 
 ## Layout
 
@@ -66,6 +66,7 @@ Every colour comes from your live kitty theme. To pin the accent, set `KITTYMUX_
 | `KITTYMUX_ACCENT=#rrggbb`      |                                  | Pin the accent colour.                                              |
 | `KITTYMUX_ROFI_THEME=user`     |                                  | Leave your own rofi theme in charge of `pick`.                      |
 | `KITTYMUX_PROJECTS`            |                                  | The root the project picker lists.                                  |
+| `KITTYMUX_PXCOVER=0`           | `pxcover-off`                    | Keep the tab bar while the pixel Agents panel shows.                |
 | `KITTYMUX_USAGE_LIVE=1`        | `usage-live-on`                  | Let usage collectors fetch live quotas over the network. Only an explicit yes turns it on (`1`, `on`, `true`, `yes`). |
 | `KITTYMUX_DEBUG=1`             |                                  | Log bar drag errors to `barsize-debug.log`.                         |
 | `KITTYMUX_STATE`               |                                  | Use another state directory.                                        |
@@ -75,7 +76,7 @@ Every colour comes from your live kitty theme. To pin the accent, set `KITTYMUX_
 These need kitty 0.49.2 or later, and are never written to an older kitty's configuration.
 
 - **Clickable `file:line`.** On by default when your kitty supports it. `install.sh` links `open-actions.conf` only if you have none; otherwise it prints the two lines to add.
-- **Rounded, shadowed bar cards.** `kittymux cards on` (or `off`, `toggle`, `show`) runs kittymux's own shader over the tab bar only: the active card gets anti-aliased corners, a top sheen and a soft shadow, and it glows briefly when you change tab. The row under the pointer lifts by a quieter step of the same colour, and a progress fill, the waiting tint and an error fill round at the card's outer corners. `kittymux cards glass on` lets the bar's own pixels go translucent so a compositor can blur behind the window; text and the cards stay opaque, and kitty's `background_opacity` has to be below 1. It reads your theme's colours, needs `shader-slang`, and works with `kittymux dim` on at the same time.
+- **Rounded, shadowed bar cards.** `kittymux cards on` (or `off`, `toggle`, `show`) runs kittymux's own shader over the tab bar only: the active card gets anti-aliased corners, a top sheen and a soft shadow, and it glows briefly when you change tab. The row under the pointer lifts by a quieter step of the same colour, and a progress fill, the waiting tint and an error fill round at the card's outer corners. `kittymux cards glass on` lets the bar's own pixels go translucent so a compositor can blur behind the window; text and the cards stay opaque, and kitty's `background_opacity` has to be below 1. It reads your theme's colours, needs `shader-slang`, and works with `kittymux dim` on at the same time. Cards need only kitty 0.49.0.
 - **Dim the inactive pane.** `kittymux dim on`, `off`, `toggle` or `show`. It is off by default and needs the `shader-slang` package, because kitty compiles shaders with `slangc`. Without it, the command says so instead of failing on every reload.
 - **Screenshot.** `kittymux screenshot [--tab|--window] [FILE]` writes a PNG that kitty renders itself, by default to `~/Pictures/kittymux-<time>.png` with mode `0600`, because it can show anything that was on screen.
 

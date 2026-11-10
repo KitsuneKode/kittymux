@@ -121,7 +121,9 @@ class Graphics:
             self.command(f"a=a,i=10,r=1,z={gap}")
             for frame in frames[1:]:
                 self.upload(f"a=f,i=10,X=1,z={gap}", frame, size, size)
-            self.command("a=a,i=10,s=3,v=1")
+            # stopped (s=1): kitty never runs its frame loop for it. A playing animation, even with a 3 s gap, kept the panel's
+            # kitty rendering continuously (about a quarter of a core under software GL); the caller steps it with `step`.
+            self.command("a=a,i=10,s=1,c=1")
             self.spinner_ready = True
         self.command("a=d,d=i,i=10")  # keep frame data; replace only placements
         cw, ch = cell
@@ -129,6 +131,13 @@ class Graphics:
             col, row = int(x // cw), int(y // ch)
             self.out.write(f"\x1b[{row + 1};{col + 1}H")
             self.command(f"a=p,i=10,p={placement},C=1,z={int(z)},X={round(x - col * cw)},Y={round(y - row * ch)},q=1")
+        self.out.flush()
+
+    def step(self, frame: int) -> None:
+        """Show ring frame `frame` (1-based) on every placement: one command, one repaint, no running animation."""
+        if not self.spinner_ready:
+            return
+        self.command(f"a=a,i=10,c={max(1, int(frame))}")
         self.out.flush()
 
     def clear_spinner(self):

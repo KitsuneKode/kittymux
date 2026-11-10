@@ -178,6 +178,81 @@ class SidebarTests(unittest.TestCase):
             self.assertEqual(s._open, {1})
         s.finalize()
 
+    def test_the_bar_is_covered_only_while_the_pixel_list_can_show(self):
+        s = self.sidebar()
+        with patch.object(self.m, "_PANEL", True), patch.object(self.m, "_TARGET", "unix:/tmp/kmx-none"), \
+                patch.dict(os.environ, KITTYMUX_TARGET_PID="4242"), patch.object(s, "_deckpx_enabled", return_value=True):
+            s._gfx, s._px_fits = "ok", True
+            self.assertTrue(s._want_cover())
+            s._px_fits = False                                                      # too small for pixels: the cell list, and the bar
+            self.assertFalse(s._want_cover())
+            s._px_fits = True
+            with patch.object(s, "_deckpx_enabled", return_value=False):             # switched off in Settings: the bar comes back at once
+                self.assertFalse(s._want_cover())
+            (self.m._STATE_DIR / "pxcover-off").touch()
+            self.assertFalse(s._want_cover())
+        with patch.object(self.m, "_PANEL", False):
+            self.assertFalse(s._want_cover())                                       # an overlay deck covers nothing
+        s.finalize()
+
+    # ---- Rex adoption: group by priority (`g`), mute (`m`, right-click) ---------------------------------------------------------
+    def state_rows(self):
+        D = self.m.deck
+        return [D.RowData(1, 11, title="busy", status="working", session="a"), D.RowData(2, 22, title="asks", status="waiting", session="b"),
+                D.RowData(3, 33, title="done", status="done", session="a")]
+
+    def test_g_groups_by_state_keeps_the_selection_and_is_remembered(self):
+        s = self.applied(self.state_rows())
+        s.sel = 0                                                                               # "busy"
+        s.on_key_event(self.key("G"))
+        self.assertTrue(s.snap.by_state)
+        self.assertEqual([i.label for i in s.snap.items if i.kind == "header"], ["Needs you", "Working", "Finished"])
+        self.assertEqual(s.snap.rows[s.sel].title, "busy")
+        self.assertEqual((self.m._STATE_DIR / "panel-group").read_text().strip(), "state")
+        s.finalize()
+        again = self.applied(self.state_rows())                                                 # a new panel starts the way you left it
+        self.assertTrue(again.snap.by_state)
+        again.on_key_event(self.key("G"))
+        self.assertFalse(again.snap.by_state)
+        self.assertFalse((self.m._STATE_DIR / "panel-group").exists())
+        again.finalize()
+
+    def test_home_and_shift_g_still_go_to_the_ends(self):
+        s = self.applied(self.state_rows())
+        s.sel = 1
+        s.on_key_event(self.key("HOME"))
+        self.assertEqual(s.sel, 0)
+        s.on_key_event(self.key("G", mods=1))
+        self.assertEqual(s.sel, len(s.snap.rows) - 1)
+        s.finalize()
+
+    def test_m_mutes_the_picked_tab_and_again_unmutes_it(self):
+        s = self.applied(self.state_rows())
+        s.sel = next(i for i, r in enumerate(s.snap.rows) if r.title == "asks")
+        with patch.object(self.m, "_watched_kitty_pid", return_value=4242), patch.object(s, "_request_refresh"):
+            s.on_key_event(self.key("M"))
+            self.assertEqual(self.m.kittymux_quiet.load_mutes(str(self.m._STATE_DIR), 4242), {"22"})
+            self.assertTrue(s.snap.rows[s.sel].muted)
+            s.on_key_event(self.key("M"))
+            self.assertEqual(self.m.kittymux_quiet.load_mutes(str(self.m._STATE_DIR), 4242), set())
+        s.finalize()
+
+    def test_a_right_click_mutes_and_never_jumps(self):
+        s = self.applied(self.state_rows())
+        y_of = {}
+        for off, it in self.m.deck.visible(s.snap.items, s.scroll, s._avail()):
+            if it.kind == "row":
+                y_of[it.row] = off + 2
+        with patch.object(s, "_jump") as jump, patch.object(self.m, "_watched_kitty_pid", return_value=4242), \
+                patch.object(s, "_request_refresh"), patch.object(s, "_request_preview"):
+            done = next(i for i, r in enumerate(s.snap.rows) if r.title == "done")
+            s.on_click(types.SimpleNamespace(cell_x=8, cell_y=y_of[done], buttons=4))
+            jump.assert_not_called()
+            self.assertEqual(self.m.kittymux_quiet.load_mutes(str(self.m._STATE_DIR), 4242), {"33"})
+            s.on_click(types.SimpleNamespace(cell_x=8, cell_y=y_of[done], buttons=-1))      # a wheel "button" is not a right-click
+            self.assertEqual(self.m.kittymux_quiet.load_mutes(str(self.m._STATE_DIR), 4242), {"33"})
+        s.finalize()
+
     def test_a_click_on_an_agents_row_jumps_without_a_prior_hover(self):
         s = self.applied()
         y_of = {}
@@ -253,6 +328,31 @@ class SidebarTests(unittest.TestCase):
         self.assertEqual(self.collect("**Fix** the login redirect.").title, "Fix the login redirect")
         self.assertEqual(self.collect("Claude Code").title, "myproj")
         self.assertEqual(self.collect("Port Hyprland configs to Lua").title, "Port Hyprland configs to Lua")
+
+    def test_a_mixed_split_labels_each_pane_by_its_own_program(self):
+        data = json.loads(self.ls_json("website", extra_win=True))
+        data[0]["tabs"][0]["windows"][1]["foreground_processes"] = [{"cmdline": ["-zsh"]}, {"cmdline": ["pnpm", "dev"]}]
+        c = self.m.Collector()
+        with patch.object(self.m, "_rc", return_value=json.dumps(data)), patch.object(self.m, "_panes_state", return_value={}), \
+             patch.object(self.m, "_proc_ppids", return_value={}), patch.object(self.m, "_listeners", return_value=[]), \
+             patch.object(self.m.kittymux_features, "enabled", return_value=True):
+            r = c.collect().rows[0]
+        self.assertEqual([p.title for p in r.pane_rows], ["Claude Code", "pnpm dev"])
+
+    def test_a_split_pane_row_says_what_runs_there_not_the_repo(self):
+        """Two panes in one repo used to read "myproj" twice; each pane row names its agent or command."""
+        r = self.collect("website", extra_win=True)
+        self.assertEqual([p.title for p in r.pane_rows], ["Claude Code", "Claude Code"])
+        plain = self.collect("website", agent=False, extra_win=True)
+        self.assertEqual([p.title for p in plain.pane_rows], ["zsh", "zsh"])
+
+    def test_a_muted_agent_window_marks_its_tab_muted(self):
+        with patch.object(self.m, "_watched_kitty_pid", return_value=4242):
+            self.m.kittymux_quiet.set_muted(str(self.m._STATE_DIR), 4242, 21, True)
+            self.assertTrue(self.collect("website").muted)
+            r = self.collect("website", extra_win=True)                   # two agent panes, one muted: the tab is not
+            self.assertFalse(r.muted)
+            self.assertEqual([p.muted for p in r.pane_rows], [True, False])
 
     def test_with_the_switch_off_the_title_is_the_old_one(self):
         r = self.collect("I can't do that. I don't have access", tidy=False)

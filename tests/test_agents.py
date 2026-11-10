@@ -410,3 +410,54 @@ class StrictNamesTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RunningLabelTests(unittest.TestCase):
+    """A split's pane row says what runs in it (wave 3.1: two rows both said the repo, "website")."""
+
+    @staticmethod
+    def win(*cmdlines):
+        return {"foreground_processes": [{"pid": 100 + i, "cmdline": list(c)} for i, c in enumerate(cmdlines)]}
+
+    def test_an_agent_is_its_product_name(self):
+        self.assertEqual(A.running_label(self.win(["node", "/usr/lib/node_modules/@openai/codex/bin/codex"])), "Codex")
+        self.assertEqual(A.running_label(self.win(["claude", "--resume"])), "Claude Code")
+        self.assertEqual(A.running_label(self.win(["opencode"])), "OpenCode")
+
+    def test_a_command_is_its_program_and_first_word(self):
+        self.assertEqual(A.running_label(self.win(["-zsh"], ["pnpm", "dev"])), "pnpm dev")
+        self.assertEqual(A.running_label(self.win(["/usr/bin/nvim", "README.md"])), "nvim README.md")
+        self.assertEqual(A.running_label(self.win(["npm", "run", "--silent", "dev"])), "npm run")
+
+    def test_wrappers_and_relays_are_skipped(self):
+        self.assertEqual(A.running_label(self.win(["sudo", "pacman", "-Syu"])), "pacman")
+        self.assertEqual(A.running_label(self.win(["mux-pty", "--", "htop"])), "htop")
+
+    def test_a_bare_shell_is_the_shell(self):
+        self.assertEqual(A.running_label(self.win(["-zsh"])), "zsh")
+        self.assertEqual(A.running_label(self.win(["/bin/bash", "--login"])), "bash")
+
+    def test_nothing_known_is_empty(self):
+        self.assertEqual(A.running_label({}), "")
+        self.assertEqual(A.running_label(self.win([])), "")
+
+    def test_a_wrappers_own_options_are_not_the_program(self):
+        self.assertEqual(A.running_label(self.win(["sudo", "-u", "root", "htop"])), "htop")
+        self.assertEqual(A.running_label(self.win(["env", "FOO=1", "-u", "BAR", "pnpm", "dev"])), "pnpm dev")
+        self.assertEqual(A.running_label(self.win(["nohup", "make", "build"])), "make build")
+
+    def test_a_programs_own_double_dash_stays_its_own(self):
+        self.assertEqual(A.running_label(self.win(["git", "log", "--", "README.md"])), "git log")
+        self.assertEqual(A.running_label(self.win(["sudo", "--", "htop"])), "htop")
+
+    def test_no_operand_that_could_be_a_secret_or_code_is_shown(self):
+        """A pane label is drawn in the panel: an inline script, an assignment or a credential-shaped word never is."""
+        token = "sbp_" + "x" * 24
+        self.assertEqual(A.running_label(self.win(["python3", "-c", "token='" + "y" * 8 + "'; print(1)"])), "python3")
+        self.assertEqual(A.running_label(self.win(["curl", token])), "curl")
+        self.assertEqual(A.running_label(self.win(["mytool", "KEY=" + "z" * 12])), "mytool")
+        self.assertEqual(A.running_label(self.win(["deploy", "a1b2c3d4e5f6a7b8c9d0"])), "deploy")
+        self.assertEqual(A.running_label(self.win(["npm", "run", "dev"])), "npm run")
+
+    def test_a_long_argument_is_shortened_to_its_name(self):
+        self.assertEqual(A.running_label(self.win(["python3", "/home/x/very/deep/tools/serve.py", "--port", "8000"])), "python3 serve.py")

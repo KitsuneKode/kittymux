@@ -343,3 +343,18 @@ class SummaryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MutedRowTests(unittest.TestCase):
+    """A muted tab is still listed, quietly: a bell-slash, no needs-you stripe or tint (Rex adoption)."""
+
+    def test_a_muted_question_is_quiet_and_shows_a_bell_slash(self):
+        for kit in kits():
+            loud = row(status="waiting")
+            quiet = row(status="waiting", muted=True)
+            text = "".join(s.text for s in V.title_row(kit, quiet, False, False, 30))
+            self.assertIn(V.BELL_SLASH, text)
+            self.assertNotIn(V.BELL_SLASH, "".join(s.text for s in V.title_row(kit, loud, False, False, 30)))
+            self.assertEqual(V.row_bg(kit.p, quiet, False, False), kit.p.bar)          # no needs-you tint
+            self.assertNotEqual(V.row_bg(kit.p, loud, False, False), kit.p.bar)
+            self.assertNotEqual(V.title_row(kit, quiet, False, False, 30)[0].text, V.RAIL)   # no waiting stripe

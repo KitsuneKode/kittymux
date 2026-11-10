@@ -568,6 +568,17 @@ def cleanup_stale(sdir: str) -> int:
     except OSError:
         return 0
     for name in names:
+        prefix = next((p for p in (COVER_PREFIX, ATTACH_PREFIX) if name.startswith(p) and name[len(p):].isdigit()), "")
+        if prefix:
+            kitty = int(name[len(prefix):])
+            # only a record whose KITTY is gone: a live kitty's dead-owner record is swept by that kitty's scanner, which then redraws
+            if not _same(kitty, _cover_record(sdir, kitty, prefix)[2]):
+                try:
+                    os.unlink(os.path.join(sdir, name))
+                    removed += 1
+                except OSError:
+                    pass
+            continue
         if name.startswith("layout-") and name.endswith(".json") and name != "layout-default.json":
             try:
                 pid = int(name[len("layout-"):-len(".json")])
@@ -580,6 +591,162 @@ def cleanup_stale(sdir: str) -> int:
                 except OSError:
                     pass
     return removed
+
+
+# ── the pixel panel covers the bar ───────────────────────────────────────────
+# The pixel Agents panel lists every tab, so while it shows, the cell bar of the kitty it watches is hidden: the panel writes
+# bar-covered-<kitty pid> holding its own pid and reloads that kitty. A cover whose panel is gone is ignored (and swept), so a
+# crashed panel can never leave a kitty without its bar for longer than the next reload. Switch: `pxcover` (default on).
+COVER_PREFIX = "bar-covered-"
+# The kittymux client attached over this kitty's vertical bar (client/, attach mode): while its owner lives, the bar keeps its place and
+# its background but draws no tabs, so the client's pixels sit on kitty's own bar instead of beside a second copy of it. Same record as
+# a cover (owner pid, owner start, kitty start), so a dead or reused owner never counts.
+ATTACH_PREFIX = "bar-attached-"
+
+
+def _cover_path(sdir: str, pid: int, prefix: str = COVER_PREFIX) -> str:
+    return os.path.join(sdir, f"{prefix}{int(pid)}")
+
+
+def _alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.path.isdir("/proc"):
+        return os.path.exists(f"/proc/{pid}")
+    try:
+        os.kill(pid, 0)
+        return True
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+
+
+def _started(pid: int) -> str:
+    """The process's start time (clock ticks since boot, /proc/<pid>/stat field 22): with the pid, an identity a reused pid cannot fake.
+    '' when it cannot be read (no /proc): the pid alone then decides."""
+    try:
+        with open(f"/proc/{int(pid)}/stat", encoding="ascii", errors="replace") as f:
+            return f.read(4096).rsplit(")", 1)[1].split()[19]
+    except (OSError, IndexError, ValueError):
+        return ""
+
+
+def _same(pid: int, started: str) -> bool:
+    """`pid` is alive and, when a start time was recorded, is the very process that recorded it."""
+    if not _alive(pid):
+        return False
+    return not started or not os.path.isdir("/proc") or _started(pid) == started
+
+
+def _cover_record(sdir: str, pid: int, prefix: str = COVER_PREFIX) -> tuple[int, str, str]:
+    """(owner pid, owner start, kitty start) of a cover; (0, '', '') for none or a bad file (bounded read: a cover is a few bytes)."""
+    try:
+        with open(_cover_path(sdir, pid, prefix), encoding="ascii", errors="replace") as f:
+            raw = f.read(65)
+    except OSError:
+        return 0, "", ""
+    parts = raw.split()
+    if len(raw) > 64 or not parts or not all(p.isdigit() for p in parts):
+        return 0, "", ""
+    owner = int(parts[0])
+    return owner, (parts[1] if len(parts) > 1 else ""), (parts[2] if len(parts) > 2 else "")
+
+
+def _cover_owner(sdir: str, pid: int, prefix: str = COVER_PREFIX) -> int:
+    return _cover_record(sdir, pid, prefix)[0]
+
+
+def cover(sdir: str, kitty: int, owner: int, prefix: str = COVER_PREFIX) -> bool:
+    """Hide kitty `kitty`'s bar while process `owner` (the panel) lives. True when that changed anything."""
+    if _cover_owner(sdir, kitty, prefix) == owner:
+        return False
+    os.makedirs(sdir, mode=0o700, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=sdir, prefix=".cover-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(" ".join(x for x in (str(int(owner)), _started(owner), _started(kitty)) if x))
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, _cover_path(sdir, kitty, prefix))
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    return True
+
+
+def uncover(sdir: str, kitty: int, owner: int, prefix: str = COVER_PREFIX) -> bool:
+    """Give the bar back, if `owner` is the one hiding it. True when a cover was removed (the kitty needs a reload)."""
+    if _cover_owner(sdir, kitty, prefix) != owner:
+        return False
+    try:
+        os.unlink(_cover_path(sdir, kitty, prefix))
+        return True
+    except OSError:
+        return False
+
+
+def _live_cover(sdir: str, kitty: int, prefix: str = COVER_PREFIX) -> bool:
+    owner, owner_start, kitty_start = _cover_record(sdir, kitty, prefix)
+    return _same(owner, owner_start) and _same(kitty, kitty_start)
+
+
+def sweep_cover(sdir: str, kitty: int, prefix: str = COVER_PREFIX) -> bool:
+    """Drop a cover whose panel is gone (killed, crashed). True when one was dropped: that kitty must reload for its bar."""
+    if not os.path.exists(_cover_path(sdir, kitty, prefix)) or _live_cover(sdir, kitty, prefix):
+        return False
+    try:
+        os.unlink(_cover_path(sdir, kitty, prefix))
+        return True
+    except OSError:
+        return False
+
+
+def covered(sdir: str, kitty: int) -> bool:
+    """A live panel (the very process that wrote the cover) hides this very kitty's bar (not a later process with its pid)."""
+    return _live_cover(sdir, kitty)
+
+
+def attach(sdir: str, kitty: int, owner: int) -> bool:
+    """The client (process `owner`) now draws over kitty `kitty`'s vertical bar. True when that changed anything."""
+    return cover(sdir, kitty, owner, ATTACH_PREFIX)
+
+
+def detach(sdir: str, kitty: int, owner: int) -> bool:
+    """The client lets the bar draw itself again. True when a record was removed."""
+    return uncover(sdir, kitty, owner, ATTACH_PREFIX)
+
+
+def attached(sdir: str, kitty: int) -> bool:
+    """A live client (the very process that attached) draws over this very kitty's bar: the bar draws no tabs."""
+    return _live_cover(sdir, kitty, ATTACH_PREFIX)
+
+
+def sweep_attached(sdir: str, kitty: int) -> bool:
+    """Drop an attach record whose client is gone. True when one was dropped: that kitty's bar must redraw its tabs."""
+    return sweep_cover(sdir, kitty, ATTACH_PREFIX)
+
+
+def cover_switch_on(sdir: str, env=None) -> bool:
+    """The `pxcover` switch (default on), read from the catalog the way `attention_allowed` does. Unreadable: on (a live
+    panel's cover stays honoured; a dead one never is)."""
+    env = os.environ if env is None else env
+    try:
+        here = globals().get("__file__")
+        folder = os.path.dirname(os.path.realpath(here)) if here else ""
+        if folder and folder not in sys.path:
+            sys.path.insert(0, folder)
+        import kittymux_switches
+        return kittymux_switches.enabled("pxcover", sdir, env)
+    except Exception:
+        return True
+
+
+def cover_conf(sdir: str, kitty: int, env=None) -> str:
+    """The line that hides the bar while a live panel covers it; it comes after the layout's own, so it wins."""
+    return "tab_bar_min_tabs 9999\n" if covered(sdir, kitty) and cover_switch_on(sdir, env) else ""
 
 
 def kitty_pid() -> int:
@@ -603,9 +770,11 @@ def main() -> int:
     return (never sys.exit): it runs in kitty's process."""
     sdir = state_dir()
     cleanup_stale(sdir)
-    layout = load(sdir, kitty_pid())
+    pid = kitty_pid()
+    layout = load(sdir, pid)
     if layout is not None:                     # nothing saved → print nothing, change nothing
         sys.stdout.write(render_conf(layout))
+    sys.stdout.write(cover_conf(sdir, pid))    # after the layout: the pixel panel's cover wins while it shows
     sys.stdout.write(gated_conf(kitty_version(), sdir, have_slangc()))
     sys.stdout.write(attention_conf(sdir, hypr_focus_on_activate()))
     return 0

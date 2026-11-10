@@ -11,7 +11,7 @@ Every tab with an agent in it shows exactly one state. The tab bar, the deck, th
 
 | Glyph               | State        | Meaning                                                                                              |
 | ------------------- | ------------ | ---------------------------------------------------------------------------------------------------- |
-| `⠋⠙⠹…` (animated)   | **working**  | The agent is busy. The spinner runs at 10 frames a second, on any window.                            |
+| `⠋⠙⠹…` (steps)      | **working**  | The agent is busy. The mark steps once every 3 seconds, on any window; it never spins.              |
 | `!`                 | **waiting**  | It is asking you something: a permission prompt or a question. The question is shown as the reason.  |
 | `⊘`                 | **limited**  | A usage limit or quota is exhausted. Nothing will happen until you act.                              |
 | `✕`                 | **error**    | The agent reported an error. The message stays. It is not a finished run, and focusing the pane does not clear it. |

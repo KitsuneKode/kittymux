@@ -31,8 +31,8 @@ map --mode leader z launch --type=background @KITTYMUX_HOME@/bin/mux-zoom.sh
 map --mode leader equal layout_action equalize
 # cycle layout: splits, then stack
 map --mode leader space next_layout
-# close pane (confirms if busy)
-map --mode leader x close_window_with_confirmation
+# close pane (confirms if busy; a working or waiting agent asks first on its tab row; the leader and x again close it)
+map --mode leader x kitten @KITTYMUX_HOME@/python/close-kit.py window @KITTYMUX_LEADER@>x confirm
 # pane → its own tab
 map --mode leader d detach_window new-tab-right
 
@@ -62,8 +62,8 @@ map --mode leader 8 launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 8
 map --mode leader 9 launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 9
 # rename tab
 map --mode leader r set_tab_title
-# close tab
-map --mode leader shift+x close_tab
+# close tab (a busy agent in it asks first)
+map --mode leader shift+x kitten @KITTYMUX_HOME@/python/close-kit.py tab @KITTYMUX_LEADER@>shift+x
 
 # Kitty Home — sessions
 map --mode leader s launch --type=overlay @KITTYMUX_HOME@/bin/mux-sessionizer
