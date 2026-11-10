@@ -93,6 +93,51 @@ rename) and only when the document apart from `t` changed, so a poll does not re
 
 Rows are ordered by importance (`limited`, `waiting`, `error`, `working`, `done`, `idle`), then by `key`. An empty `agents` array means no known agent is in the foreground of a kitty that is still running. `panes-<pid>.json` and `scan-<pid>.json` are not this list: each is one kitty process, and `{}` means that process currently has nothing to report.
 
+## tabs.json — the bar's tabs, without drawing them again
+
+`$KITTYMUX_STATE/tabs.json` (or `~/.local/state/kittymux/tabs.json`) is the tab list a shell draws beside kitty. `agents.json` is agents only; this file is every tab, including a plain shell. The vertical bar writes it from the same title, place line, state, age and progress it draws. Each kitty replaces only its own windows and drops a window whose kitty pid is no longer alive. Mode `0600`. Rewritten atomically (a temporary file, then rename). A pass that changes nothing but `t` does not replace the file. Writes are coalesced to at most one every 250 ms per kitty, and the last change in that window is written when the interval ends. Schema version **1**.
+
+```json
+{"version": 1, "t": 1793780793.0, "windows": [
+  {"kitty_pid": 4035, "os_window_id": 1, "wm_class": "kitty", "focused": true, "session": "calm-otter",
+   "tabs": [
+     {"tab_id": 3, "index": 1, "active": true, "title": "Home", "subtitle": "zsh", "project": "~",
+      "hue": null, "branch": "", "cwd": "~", "agent": "", "brand": "", "state": "idle", "age": "",
+      "progress": null, "panes": 1, "needs_you": false, "action": {"op": "jump", "pid": 4035, "w": "19"}},
+     {"tab_id": 4, "index": 2, "active": false, "title": "Port the configs", "subtitle": "calm-otter/src  main",
+      "project": "calm-otter", "hue": "#a3d4a0", "branch": "main", "cwd": "~/work/calm-otter",
+      "agent": "claude", "brand": "claude", "state": "working", "age": "4m",
+      "progress": {"state": "set", "pct": 42}, "panes": 2, "needs_you": false,
+      "action": {"op": "jump", "pid": 4035, "w": "20"}}
+   ]}
+]}
+```
+
+| Field | Meaning |
+|---|---|
+| `version` | `1`. A new field keeps this number. A rename, a removal, or a change of meaning bumps it. |
+| `t` | When this document was built, epoch seconds. Not a reason to reread the rows. |
+| `kitty_pid` | The kitty process that owns the OS window. |
+| `os_window_id` | That process's OS window. |
+| `wm_class` | The window class kitty set (`kitty`, unless the window was started with another). |
+| `focused` | True when this is the OS window kitty considers focused. |
+| `session` | The focused session in that OS window, or `""`. |
+| `tabs` | That window's tabs, in bar order. `index` starts at 1. |
+| `tab_id`, `active` | The tab, and whether it is the active tab of its OS window. |
+| `title` | The tidied title the bar uses. A bare `~` is `Home`, the same substitution the bar draws. |
+| `subtitle` | The place line's words (project, path, branch, separated as the bar separates them) or, when the bar draws the program instead, that program (`zsh`). No icons and no colour codes. |
+| `project`, `branch`, `cwd` | The bar's project name, git branch, and directory with home written as `~`. `project` is `~` in the home directory. Empty when unknown. |
+| `hue` | The project hue the bar uses, `#rrggbb`, or `null` when hue is off or the tab has no directory. |
+| `agent`, `brand` | The CLI name, and the `assets/icons` basename from `kittymux_agents.brand_of`. Both `""` when the tab is not an agent. |
+| `state` | A status-contract name: `limited`, `waiting`, `error`, `working`, `done`, `idle`. A tab with no agent is `idle`. The bar's `unread` mark is not a state here. |
+| `age` | How long the bar says the tab has been in this state (`4m`, `2h`, `3d`, or `↻12m` when a limit lifts). `""` under a minute, and for `idle`. |
+| `progress` | OSC 9;4 as the bar draws it: `{"state":"set","pct":42}`. `state` is `set`, `paused`, `error` or `indeterminate`. `pct` is 0–100. `null` when nothing is reported. |
+| `panes` | How many panes the tab has. |
+| `needs_you` | True for `waiting` and `limited`. |
+| `action` | The object `kittymux act` accepts, aimed at the tab's focused window: `{"op":"jump","pid":<int>,"w":"<digits>"}`. |
+
+Windows are ordered by `kitty_pid`, then `os_window_id`. An empty `windows` array means no kitty that is still running has published a tab. `agents.json` stays the agent list; this file does not replace it.
+
 ## Notification hints
 
 `bin/mux-notify` already set `x-kittymux-pid` and `x-kittymux-window`. It also sets these, when the value is a short token:
@@ -120,7 +165,7 @@ kittymux inbox ledger [--json]                 how long agents waited on you (fi
 
 ## Building an add-on
 
-A shell panel needs only: **watch `inbox-snapshot.json`** for events and **`agents.json`** for who is working, render those, and run `kittymux inbox jump ID` / `ack ID` (or the row's `action`) on click. See
+A shell panel needs only: **watch `inbox-snapshot.json`** for events, **`agents.json`** for who is working and **`tabs.json`** for the tab list, render those, and run `kittymux inbox jump ID` / `ack ID` (or the row's `action`) on click. See
 [`addons/quickshell/`](../addons/quickshell/README.md) — a minimal Quickshell sample following exactly this contract. It is **not tested here** (Quickshell is not installed on the
 author's machine); the contract above is what is tested (`tests/test_inbox.py`, `tests/smoke_inbox.sh`).
 
