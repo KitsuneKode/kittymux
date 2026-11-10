@@ -1,8 +1,8 @@
 """Progress a program reports with OSC 9;4 (kitty ≥ 0.42 keeps it per window), as the vertical bar draws it.
 
-The tab's card fills from the left like a progress bar (Rex's tab progress): a soft tint of the accent while it runs,
-the waiting colour when paused, the alert colour on an error, a faint full tint when the amount is unknown. The
-percent takes the tab number's place. Pure: the bar hands in the tab and a window lookup.
+A hairline under the tab's last line runs from the left as far as the work has got: the accent while it runs, the
+waiting colour when paused, the alert colour (whole width) on an error, the whole width when the amount is unknown.
+The percent takes the tab number's place. Pure: the bar hands in the tab and a window lookup.
 
     printf '\\e]9;4;1;42\\e\\\\'     # 42 %          (0 clears, 2 error, 3 indeterminate, 4 paused)
 """

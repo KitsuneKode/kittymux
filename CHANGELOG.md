@@ -4,6 +4,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 
 ## [Unreleased]
 
+### Changed
+- **Tab progress is a hairline, not a tinted block.** An OSC 9;4 report filled the card from the left with a tint that, in a light theme especially, read as a second selection. It is now a coloured underline under the tab's last line (kitty's own underline colour, so it stays crisp in cells), the percent beside it, in the accent while it runs, yellow when paused and the alert colour across the whole tab on an error. The selection is the only filled card again.
+- **Bar cards (`kittymux cards`):** the hover highlight now spans the whole row like the active card (it stopped about five cells short of the tab number), and the soft shadow no longer flecks the space under letters in a light theme (a glyph's anti-aliased edge can match a card colour; a card pixel now has to be part of a flat run).
+
 ### Added
 - **`tabs.json`: the bar's tabs for a desktop shell.** `$KITTYMUX_STATE/tabs.json` lists every tab in every running kitty — the title, place line, state, age and progress the vertical bar already draws — so a shell can paint them in real pixels without deriving them again. Mode `0600`, schema version 1. Each kitty replaces only its own windows. The file is rewritten at most once every 250 ms, and only when something other than the timestamp changed.
 - **`kittymux cards`: the bar's cards in pixels.** kitty 0.49's custom shaders post-process the rendered frame, and kittymux now ships one (`assets/shaders/kittymux-cards`) that touches only the tab bar: the active card's square cell corners become anti-aliased rounded ones, its top edge catches a faint sheen, a soft shadow falls under it, and on a tab change it glows and settles (kitty's `tab-change` animation, 420 ms ease-out). The shader derives the bar and card colours from kitty's own background and foreground exactly as `kittymux_theme` does (sRGB blend, rounded per channel), so every theme works without a generated file. Opt-in, gated on kitty ≥ 0.49.0 and `slangc`, and shares the one `custom_shaders` line with `kittymux dim`.

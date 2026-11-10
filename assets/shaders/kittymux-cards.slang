@@ -105,6 +105,12 @@ fragment_main(float4 color, KittyTextures t, KittyCustomShaderData d) {
             bool above_card = near(above, card)
                 || (u0 && near(above, f0)) || (u1 && near(above, f1)) || (u2 && near(above, f2)) || (u3 && near(above, f3))
                 || (u4 && near(above, f4)) || (u5 && near(above, f5)) || (u6 && near(above, f6)) || (u7 && near(above, f7));
+            // a card is a flat run; a glyph's anti-aliased edge can match a card colour by chance, so it must repeat 3 px either side
+            if (above_card) {
+                float2 q = t.pos + float2(0, k) * px;
+                above_card = near(t.backbuffer.Sample(q + float2(3, 0) * px).rgb, above)
+                          && near(t.backbuffer.Sample(q - float2(3, 0) * px).rgb, above);
+            }
             if (above_card) {
                 float f = 1.0 - float(k) / (SHADOW + 1);
                 s = max(s, f * f);
@@ -120,6 +126,12 @@ fragment_main(float4 color, KittyTextures t, KittyCustomShaderData d) {
                 || (u2 && (near(side_r, f2) || near(side_l, f2))) || (u3 && (near(side_r, f3) || near(side_l, f3)))
                 || (u4 && (near(side_r, f4) || near(side_l, f4))) || (u5 && (near(side_r, f5) || near(side_l, f5)))
                 || (u6 && (near(side_r, f6) || near(side_l, f6))) || (u7 && (near(side_r, f7) || near(side_l, f7)));
+            if (side) {                                            // the same flat-run test, vertically
+                float3 hit = near(side_r, card) ? side_r : side_l;
+                float2 q = t.pos + (near(side_r, card) ? o : -o);
+                side = near(t.backbuffer.Sample(q + float2(0, 3) * px).rgb, hit)
+                    && near(t.backbuffer.Sample(q - float2(0, 3) * px).rgb, hit);
+            }
             if (side) {
                 float f = 1.0 - float(k) / (SHADOW / 2 + 1);
                 s = max(s, 0.45 * f * f);
@@ -133,7 +145,7 @@ fragment_main(float4 color, KittyTextures t, KittyCustomShaderData d) {
             float2 span = bar_span(d);
             if (span.x >= 0.0) {
                 float x0 = span.x + cell_px * 0.55 * px.x;
-                float x1 = span.y - cell_px * 2.4 * px.x;
+                float x1 = span.y - cell_px * 0.95 * px.x;          // the active card's right edge: the same card, one step quieter
                 float2 pix = t.pos * float2(d.viewport_size_pixels);
                 float2 rmin = float2(x0, hv.r) * float2(d.viewport_size_pixels);
                 float2 rmax = float2(x1, hv.g) * float2(d.viewport_size_pixels);

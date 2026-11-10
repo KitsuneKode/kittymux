@@ -1041,7 +1041,7 @@ def _sep_column(screen: Screen, y0: int, n: int, bg: int, pal, native: bool = Fa
         screen.draw(_LEFT_BLOCK[SEP_EIGHTS])
 
 
-# While a tab with OSC 9;4 progress is drawn: ((first_row, end_row), x_from, x_to, fill_bg). Text drawn into those
+# While a tab with OSC 9;4 progress is drawn: ((row, row + 1), x_from, x_to, None, line_colour): the hairline. Text drawn into those
 # cells keeps the fill behind it instead of the row's colour (kittymux_progress). Reset by every _draw_vertical.
 _fill: tuple | None = None
 
@@ -1056,10 +1056,15 @@ def _put(screen: Screen, x: int, text: str, fg: int, bold: bool = False) -> int:
         while split < len(text) and cx < f[2]:
             cx += max(0, wcswidth(text[split]))
             split += 1
-        bg = screen.cursor.bg
-        screen.cursor.bg = f[3]
-        screen.draw(text[:split])
-        screen.cursor.bg = bg
+        if f[3] is None:                                # progress hairline: underline the cells it covers
+            screen.cursor.decoration, screen.cursor.decoration_fg = 1, f[4]
+            screen.draw(text[:split])
+            screen.cursor.decoration = 0
+        else:
+            bg = screen.cursor.bg
+            screen.cursor.bg = f[3]
+            screen.draw(text[:split])
+            screen.cursor.bg = bg
         screen.draw(text[split:])
     else:
         screen.draw(text)
@@ -1336,13 +1341,16 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
         x_from, x_to = 1, cols - sep_cols - ins
         k = kittymux_progress.fill_cells(x_to - x_from, p_state, p_pct)
         tint = {"error": pal.alert, "paused": pal.waiting}.get(p_state, pal.accent)
-        fill_bg = _rgb(kittymux_theme.blend(tint, pal.surface_hi if active else pal.bar, kittymux_progress.TINT[p_state]))
         if k:
-            screen.cursor.bg = fill_bg
-            for r in range(y0 + hdr_rows, min(y0 + n_rows, screen.lines)):
-                screen.cursor.x, screen.cursor.y = x_from, r
-                screen.draw(" " * k)
-            _fill = ((y0 + hdr_rows, y0 + n_rows), x_from, x_from + k, fill_bg)
+            # a hairline under the card's last line (a coloured underline), not a tinted block: a block read as a second
+            # selection; the accent's one meaning is "where you are", so progress is a thin line, as in the deck and the shell
+            last = min(y0 + n_rows, screen.lines) - 1
+            screen.cursor.bg = row_bg
+            screen.cursor.x, screen.cursor.y = x_from, last
+            screen.cursor.decoration, screen.cursor.decoration_fg = 1, _rgb(tint)
+            screen.draw(" " * k)
+            screen.cursor.decoration = 0
+            _fill = ((last, last + 1), x_from, x_from + k, None, _rgb(tint))
     if index == 1 and not extra_data.for_layout:
         # one full-height separator line, drawn once; each tab re-asserts its rows
         _sep_column(screen, 0, screen.lines, bar, pal, native)
