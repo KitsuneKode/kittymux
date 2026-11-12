@@ -916,9 +916,12 @@ def answer_cmd(argv: list[str]) -> int:
     """`kittymux answer KEY allow|deny [--expect QUESTION]` or `kittymux answer KEY text WORDS… [--expect QUESTION]` — answer an
     agent's prompt from outside its pane (the rice notch's buttons). KEY is the agents.json row's `key` (w<kitty pid>.<window>).
     The pane's screen is read again first; nothing is typed unless the same prompt is still there (kittymux_answer.plan).
+    --dry-run checks the same and prints the keys instead of typing them.
     Exit 0 sent, 3 refused (the reason on stderr), 1 that kitty or pane is gone, 2 usage."""
     import kittymux_agentsnap
     import kittymux_answer
+    dry = "--dry-run" in argv                     # check everything, print what would be typed, type nothing
+    argv = [a for a in argv if a != "--dry-run"]
     expect = None
     if "--expect" in argv:
         i = argv.index("--expect")
@@ -928,7 +931,7 @@ def answer_cmd(argv: list[str]) -> int:
         expect, argv = argv[i + 1], argv[:i] + argv[i + 2:]
     m = re.fullmatch(r"w(\d+)\.(\d+)", argv[0]) if argv else None
     if m is None or len(argv) < 2 or argv[1] not in ("allow", "deny", "text") or (argv[1] != "text" and len(argv) != 2):
-        print("usage: kittymux answer KEY allow|deny [--expect Q]  |  kittymux answer KEY text WORDS… [--expect Q]", file=sys.stderr)
+        print("usage: kittymux answer KEY allow|deny [--expect Q] [--dry-run]  |  kittymux answer KEY text WORDS… [--expect Q] [--dry-run]", file=sys.stderr)
         return 2
     pid, wid, how = m.group(1), m.group(2), argv[1]
     sdir = kittymux_layout.state_dir()
@@ -953,6 +956,9 @@ def answer_cmd(argv: list[str]) -> int:
     if keys is None:
         print(f"kittymux answer: not sent: {why}", file=sys.stderr)
         return 3
+    if dry:
+        print(f"would type {keys!r} into {argv[0]} ({how})")
+        return 0
     if _run_input(["kitty", "@", "--to", sock, "send-text", "--match", f"id:{wid}", "--stdin"], keys.encode()) != 0:
         print("kittymux answer: kitty did not take the keys", file=sys.stderr)
         return 1

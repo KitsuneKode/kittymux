@@ -48,6 +48,10 @@ out=$(ans "$KEY" allow --expect "Delete the database?"); rc=$?
 [ $rc = 3 ] || fail "a different question was not refused (rc $rc: $out)"
 pane | grep -q "GOT:" && fail "a refused answer still typed into the pane"
 echo "  ok   a changed question is refused and nothing is typed"
+out=$(ans "$KEY" allow --expect "Do you want to proceed?" --dry-run); rc=$?
+[ $rc = 0 ] && printf '%s' "$out" | grep -q "would type '1'" || fail "--dry-run did not say what it would type (rc $rc: $out)"
+sleep 0.3; pane | grep -q "GOT:" && fail "--dry-run typed into the pane"
+echo "  ok   --dry-run checks the prompt and types nothing"
 out=$(ans "$KEY" allow --expect "Do you want to proceed?"); rc=$?
 [ $rc = 0 ] || fail "allow on the same prompt failed (rc $rc: $out)"
 for _ in $(seq 40); do pane | grep -q "GOT:1" && break; sleep 0.125; done
