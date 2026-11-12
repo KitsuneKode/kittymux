@@ -44,17 +44,46 @@ json_msg() {  # stdin: JSON → message field, or nothing
     command -v jq >/dev/null 2>&1 || return 0
     jq -r '(.message // ."last-assistant-message" // empty) | tostring' 2>/dev/null | head -n1
 }
+# The question a turn ENDS with (the agent's own last reply: Claude's Stop hook sends last_assistant_message, Codex's
+# notify last-assistant-message): the last sentence of the reply's last line, without markdown, when it ends in "?".
+# A reply that ends inside a code block, or with a statement, asks nothing. Evidence from the agent, never from silence.
+json_question() {  # stdin: JSON → the closing question, or nothing
+    command -v jq >/dev/null 2>&1 || return 0
+    local text line="" fence=0 l
+    text="$(jq -r '(.last_assistant_message // ."last-assistant-message" // empty) | tostring' 2>/dev/null | head -c 20000)"
+    [[ -n "$text" ]] || return 0
+    while IFS= read -r l; do
+        if [[ "$l" =~ ^[[:space:]]*'```' ]]; then fence=$(( 1 - fence )); line=""; continue; fi
+        (( fence )) && continue
+        [[ "$l" =~ [^[:space:]] ]] && line="$l"
+    done <<< "$text"
+    (( fence )) && return 0
+    line="$(printf '%s' "$line" | sed -E 's/^[[:space:]]*([-*+>#]+|[0-9]+[.)])[[:space:]]+//; s/[*_`]+//g; s/[[:space:]]+$//')"
+    local ends_asking='[?]["'"'"')”’]*$'             # "…?" with any closing quote or bracket after it
+    [[ "$line" =~ $ends_asking ]] || return 0
+    printf '%s' "$line" | sed -E 's/^(.*[.!?:;][[:space:]]+)?([^.!?:;]*\?[^[:space:]]*)$/\2/'
+}
 
+question=""
 if (( ! have_msg )) && [[ "$state" == "waiting" || "$state" == "done" ]]; then
+    payload_json=""
     # a JSON payload as the last argument (Codex notify)…
     if (( $# )); then
         last="${*: -1}"
-        [[ "$last" == \{* ]] && msg="$(printf '%s' "$last" | json_msg)"
+        [[ "$last" == \{* ]] && payload_json="$last"
     fi
     # …or on stdin (Claude Code hooks) — never block waiting for it
-    if [[ -z "$msg" && ! -t 0 ]]; then
-        msg="$(timeout 0.4 cat 2>/dev/null | json_msg)"
+    if [[ -z "$payload_json" && ! -t 0 ]]; then
+        payload_json="$(timeout 0.4 head -c 1000000 2>/dev/null)"
     fi
+    if [[ -n "$payload_json" ]]; then
+        msg="$(printf '%s' "$payload_json" | json_msg)"
+        [[ "$state" == "done" ]] && question="$(printf '%s' "$payload_json" | json_question)"
+    fi
+fi
+if [[ -n "$question" ]]; then                # the turn ended by asking you: it needs you, with that question
+    state="waiting"
+    msg="$question"
 fi
 [[ "$state" == "working" || "$state" == "idle" ]] && msg=""
 
