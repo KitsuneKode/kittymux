@@ -4,6 +4,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 
 ## [Unreleased]
 
+### Fixed
+- **A kitty that has run since before an upgrade keeps kittymux's bar.** After `kittymux upgrade`, a kitty started on an older release could show kitty's own plain tab bar (bare titles, no marks, no header): the new bar asked the reload helper the kitty already had in memory for something only the new helper has, and failed before it could refresh it. The bar now refreshes the helper first, so the same reload that brought the problem fixes it; no restart needed.
+
 ### Changed
 - **The working mark is a quarter-turning circle (`◐◓◑◒`), not braille dots.** At the end of a row the dots sat tiny and grey and read as a `⋮` menu button that does nothing; the circle reads as work turning over. It still steps once every 3 s and never spins.
 - **Tab progress is a hairline, not a tinted block.** An OSC 9;4 report filled the card from the left with a tint that, in a light theme especially, read as a second selection. It is now a coloured underline under the tab's last line (kitty's own underline colour, so it stays crisp in cells), the percent beside it, in the accent while it runs, yellow when paused and the alert colour across the whole tab on an error. The selection is the only filled card again.

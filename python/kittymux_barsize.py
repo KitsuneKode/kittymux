@@ -22,6 +22,9 @@ _own = os.path.dirname(os.path.realpath(_here)) if _here else ""
 if _own and _own not in sys.path:       # kittymux_reload sits next to this file: findable before prefer_own orders the path
     sys.path.insert(0, _own)
 import kittymux_reload  # noqa: E402
+if not hasattr(kittymux_reload, "prefer_own"):   # an older copy a running kitty kept (tab_bar.py: test_reload)
+    import importlib
+    kittymux_reload = importlib.reload(kittymux_reload)
 kittymux_reload.prefer_own(_here)
 import kittymux_layout as L  # noqa: E402
 

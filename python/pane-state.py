@@ -107,6 +107,9 @@ def _install_bar_drag() -> None:
         if own and own not in sys.path:      # kittymux_reload sits next to this file: findable before prefer_own orders the path
             sys.path.insert(0, own)
         import kittymux_reload
+        if not hasattr(kittymux_reload, "prefer_own"):   # an older copy a running kitty kept (tab_bar.py: test_reload)
+            import importlib
+            kittymux_reload = importlib.reload(kittymux_reload)
         kittymux_reload.prefer_own(here)
         import kittymux_barsize
         kittymux_barsize.install()
@@ -178,6 +181,9 @@ def _scan():
         if own and own not in sys.path:      # kittymux_reload sits next to this file: findable before prefer_own orders the path
             sys.path.insert(0, own)
         import kittymux_reload
+        if not hasattr(kittymux_reload, "prefer_own"):   # an older copy a running kitty kept (tab_bar.py: test_reload)
+            import importlib
+            kittymux_reload = importlib.reload(kittymux_reload)
         kittymux_reload.prefer_own(here)
         import kittymux_scan
         return kittymux_scan
