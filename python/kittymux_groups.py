@@ -72,5 +72,17 @@ def group(rows, *, collapse_after: int = COLLAPSE_AFTER, expanded: frozenset = f
     return out
 
 
+def step(groups, active_tab_id: int, direction: int):
+    """The tab ctrl+tab (direction 1) or ctrl+shift+tab (-1) goes to: the next row the bar DRAWS, wrapping, never one folded
+    away (a folded group has no rows). An active tab that is not drawn steps to the first or the last row. None when there is
+    nowhere else to go."""
+    ids = [r.tab_id for g in groups for r in g.rows]
+    if not ids or ids == [active_tab_id]:
+        return None
+    if active_tab_id not in ids:
+        return ids[0] if direction > 0 else ids[-1]
+    return ids[(ids.index(active_tab_id) + (1 if direction > 0 else -1)) % len(ids)]
+
+
 def needs_you(groups) -> int:
     return sum(1 for g in groups for r in g.rows if r.state == "waiting" and not r.muted)

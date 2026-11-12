@@ -218,7 +218,9 @@ class OverlayCloseBindTests(unittest.TestCase):
     EXEMPT = {"ctrl+alt+b": "the docked panel runs the same program",
               # the close guard is a no-UI kitten (it runs inside kitty, opens nothing): a second press is the answer to its question
               "ctrl+alt+q": "close-kit.py has no window", "ctrl+shift+w": "close-kit.py has no window",
-              "ctrl+shift+q": "close-kit.py has no window", "ctrl+alt+shift+w": "close-kit.py has no window"}
+              "ctrl+shift+q": "close-kit.py has no window", "ctrl+alt+shift+w": "close-kit.py has no window",
+              # tab navigation is a no-UI kitten too: it switches tabs and opens nothing
+              "ctrl+tab": "tabnav-kit.py has no window", "ctrl+shift+tab": "tabnav-kit.py has no window"}
 
     def binds(self):
         tpl = open(os.path.join(ROOT, "kittymux-keys.conf.tpl"), encoding="utf-8").read()
