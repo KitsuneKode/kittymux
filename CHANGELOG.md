@@ -5,6 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 ## [Unreleased]
 
 ### Added
+- **`kittymux answer KEY allow|deny|text …`** answers an agent's prompt from outside its pane, for a shell's Allow and Deny buttons. It reads that pane again first and types only while the same prompt is on screen (`--expect` the question it showed you); allow/deny for Claude Code and Codex, whose prompts were captured live; a typed answer for a question the agent ended its turn with. It types into that one pane, never the focused one.
 - **Brand tiles in the pixel tab bar are lit:** each agent's tile is a gradient between two of its own colours (Gemini's blue into purple, Claude's clay, Codex's green…), with a faint light on its top edge; the split badge too.
 - **T3 Code** (`t3`) is a known program: its tab shows T3 Code's own mark (traced from the app's icon by `tools/trace-t3code.py`) on its night-sky gradient.
 

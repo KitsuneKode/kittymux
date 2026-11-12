@@ -40,6 +40,7 @@
   kittymux peek        the peek card (a right-click on a tab) from the keyboard: peek [TAB_ID | --waiting]  (--waiting: the agent that needs you longest)
   kittymux palette     one searchable list of what needs you, every tab, agents to reopen or start, and a few actions (ctrl+alt+shift+space): palette
   kittymux join        move this tab's panes into another tab as splits: join [--to TAB_ID] [--side right|below|left|above|auto] [--pane]
+  kittymux answer      answer an agent's prompt from outside its pane, only while that prompt is on screen: answer KEY allow|deny|text WORDS… [--expect Q]
   kittymux keys        chords your own kitty config and kittymux both define (kittymux's wins: it loads later): keys [conflicts]
   kittymux dim         dim the panes that are not focused (kitty ≥ 0.49.2): dim [on|off|toggle|show]
   kittymux cards       the vertical bar's cards in pixels (kitty ≥ 0.49.0): cards [on|off|toggle|show] | cards glass [on|off|toggle|show]
@@ -895,6 +896,69 @@ def _inbox_socket(pid) -> str | None:
         if _owned_socket(path):
             return f"unix:{path}"
     return None
+
+
+def _run_input(cmd: list[str], data: bytes, timeout: float = 4.0) -> int:
+    """_run with bytes on stdin (kitty @ send-text --stdin: sent exactly, no escape processing)."""
+    try:
+        inherited = {}
+        if "--to" in cmd and cmd.index("--to") + 1 < len(cmd):
+            import kittymux_sockets
+            fd = kittymux_sockets.socket_fd(cmd[cmd.index("--to") + 1])
+            if fd is not None:
+                inherited["pass_fds"] = (fd,)
+        return subprocess.run(cmd, input=data, capture_output=True, timeout=timeout, **inherited).returncode
+    except Exception:
+        return 1
+
+
+def answer_cmd(argv: list[str]) -> int:
+    """`kittymux answer KEY allow|deny [--expect QUESTION]` or `kittymux answer KEY text WORDS… [--expect QUESTION]` — answer an
+    agent's prompt from outside its pane (the rice notch's buttons). KEY is the agents.json row's `key` (w<kitty pid>.<window>).
+    The pane's screen is read again first; nothing is typed unless the same prompt is still there (kittymux_answer.plan).
+    Exit 0 sent, 3 refused (the reason on stderr), 1 that kitty or pane is gone, 2 usage."""
+    import kittymux_agentsnap
+    import kittymux_answer
+    expect = None
+    if "--expect" in argv:
+        i = argv.index("--expect")
+        if i + 1 >= len(argv):
+            print("kittymux answer: --expect needs the question", file=sys.stderr)
+            return 2
+        expect, argv = argv[i + 1], argv[:i] + argv[i + 2:]
+    m = re.fullmatch(r"w(\d+)\.(\d+)", argv[0]) if argv else None
+    if m is None or len(argv) < 2 or argv[1] not in ("allow", "deny", "text") or (argv[1] != "text" and len(argv) != 2):
+        print("usage: kittymux answer KEY allow|deny [--expect Q]  |  kittymux answer KEY text WORDS… [--expect Q]", file=sys.stderr)
+        return 2
+    pid, wid, how = m.group(1), m.group(2), argv[1]
+    sdir = kittymux_layout.state_dir()
+    try:
+        with open(kittymux_agentsnap.path_for(sdir), encoding="utf-8") as f:
+            rows = json.load(f).get("agents") or []
+    except (OSError, ValueError, AttributeError):
+        rows = []
+    row = next((r for r in rows if isinstance(r, dict) and r.get("key") == argv[0]), None)
+    if row is None:
+        print(f"kittymux answer: no agent {argv[0]} in agents.json", file=sys.stderr)
+        return 1
+    sock = _inbox_socket(pid)
+    if sock is None:
+        print("kittymux answer: that kitty is no longer running (or has no control socket)", file=sys.stderr)
+        return 1
+    rc, screen = _run(["kitty", "@", "--to", sock, "get-text", "--match", f"id:{wid}"], 4)
+    if rc != 0:
+        print("kittymux answer: that pane is gone", file=sys.stderr)
+        return 1
+    keys, why = kittymux_answer.plan(how, row, screen, expect=expect, text=" ".join(argv[2:]))
+    if keys is None:
+        print(f"kittymux answer: not sent: {why}", file=sys.stderr)
+        return 3
+    if _run_input(["kitty", "@", "--to", sock, "send-text", "--match", f"id:{wid}", "--stdin"], keys.encode()) != 0:
+        print("kittymux answer: kitty did not take the keys", file=sys.stderr)
+        return 1
+    kittymux_inbox.ack(sdir, time.time(), window=wid, pid=pid)
+    print(f"{OK} answered {argv[0]}: {how}")
+    return 0
 
 
 def inbox_jump(ev: dict) -> int:
@@ -3375,6 +3439,8 @@ def _dispatch(argv: list[str]) -> int:
         return palette_cmd(argv[1:])
     if cmd == "act":
         return act_cmd(argv[1:])
+    if cmd == "answer":
+        return answer_cmd(argv[1:])
     if cmd == "fanout":
         return fanout(argv[1:])
     if cmd == "checkpoint":
