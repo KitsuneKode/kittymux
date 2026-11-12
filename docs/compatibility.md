@@ -29,8 +29,9 @@ and a TUI that rewords its prompts needs a one-line change in `python/kittymux_s
 | Claude Code | tested (working — both the `esc to interrupt` form and the newer `· Verb… (6m 52s · ↓ 35k tokens)` line, permission prompt, usage limit) | `kittymux hooks --install` |
 | Codex CLI | tested (working incl. `• Working (… • esc to interrupt)`, usage limit; status lines without the esc hint, like `• Reviewing approval request (3s)`, match by shape — not yet seen live) | `notify` → `mux-status` |
 | Devin | tested (working via `esc twice to interrupt` and its busy input placeholder `Guide Devin while it works`; idle prompt (its composer reads `Ask Devin to build features` only when idle, so a busy line above it is stale); "N subagents" footers are not read as work — whether they mean running subagents is unverified) | — |
-| OpenCode | idle screen checked live; its working marker (`esc interrupt`) follows the documented hint | — |
-| Gemini CLI, Cursor Agent, Amp, Antigravity (`agy`) | patterns follow each tool's documented hints; **not verified against live sessions** | — |
+| OpenCode | idle screen checked live; its working marker (`esc interrupt`) follows the documented hint. Captured live 2026-11-12: by default it runs a shell command **without asking** (no approval prompt to detect unless you configure it to ask), and a question asked in plain text ends its turn, so it reads `done` | — |
+| Cursor Agent, Antigravity (`agy`) | Captured live 2026-11-12: the first run in a folder stops at a **trust prompt** ("Do you trust the contents of this directory/project?"), now read as `waiting` with that question. Other patterns follow each tool's documented hints | — |
+| Gemini CLI, Amp | patterns follow each tool's documented hints; **not verified against live sessions** (Gemini CLI was not installed for the capture) | — |
 | Factory `droid` | "No active subscription found" read as `limited` (seen live); working/permission markers not verified; its `⛬` title icon is stripped | — |
 | grok, qwen, kimi, goose, kilo, vibe (Mistral), junie, auggie | logo + hooks/title activity only | — |
 | aider, crush | no readable TUI markers → hooks or title activity only | — |

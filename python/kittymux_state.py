@@ -54,7 +54,11 @@ WAITING_RE = re.compile(
     r"|press\s+enter\s+to\s+confirm"
     r"|(?:allow|approve)\s+(?:this|once|always)"
     r"|yes,\s+(?:and\s+)?(?:allow|don(?:'|’)t\s+ask)"
-    r"|waiting\s+for\s+(?:your\s+)?(?:approval|permission|confirmation)",
+    r"|waiting\s+for\s+(?:your\s+)?(?:approval|permission|confirmation)"
+    # first run in a folder: Antigravity's and Cursor Agent's trust prompts block until answered (captured live, 2026-11-12)
+    r"|do\s+you\s+trust\s+the\s+contents\s+of\s+this"
+    r"|[↑↓]+\s*/\s*[↑↓]+\s+navigate\s*[·•|]\s*enter\s+(?:to\s+)?(?:confirm|select)"
+    r"|use\s+arrow\s+keys\s+to\s+navigate,?\s+enter\s+to\s+select",
     _I)
 WORKING_RE = re.compile(
     r"\besc(?:ape)?(?:\s+twice)?\s+to\s+(?:interrupt|cancel|stop)\b"

@@ -417,6 +417,7 @@ for _glyph, _names in (
     ("\ue0ee", ("npm",)),
     ("\ue0ec", ("pnpm",)),
     ("\ue0ed", ("yarn",)),
+    ("\uf233", ("t3", "t3code")),           # T3 Code's server (`t3`, which execs the app's t3code binary)
 ):
     for _n in _names:
         TOOLS[_n] = _glyph
@@ -440,9 +441,13 @@ for _mark, _names in (
     ("npm", ("npm",)),
     ("pnpm", ("pnpm",)),
     ("yarn", ("yarn",)),
+    ("t3code", ("t3", "t3code")),
 ):
     for _n in _names:
         TOOL_MARKS[_n] = _mark
+
+# A program whose mark is a brand (an app, not a language or a tool): its tile wears the brand, like an agent's.
+TOOL_TINTS = {"t3code": 0x3B2A8C}
 _WRAPPERS = {"env", "sudo", "doas", "command", "exec", "nohup", "time"}
 
 

@@ -1660,6 +1660,7 @@ def _px_row(tab, pal) -> "kittymux_groups.Row":
     else:
         tool = kittymux_agents.tool_in(foreground)
         mark = kittymux_agents.TOOL_MARKS.get(tool or "", "")
+        tint = kittymux_agents.TOOL_TINTS.get(mark)
         if not tool:
             # a plain shell says what it runs, and only where it is INSIDE its project: the group label already names it
             shell = next((_basename(c[0]).lstrip("-") for c in foreground or () if c), "") or "shell"

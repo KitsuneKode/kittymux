@@ -99,9 +99,44 @@ def _more(pt, cx, y, label, p, hits, kind, s, w=None):
     hits.append(Hit(kind, int(round(y * s)), int(round((y + MORE_H) * s))))
 
 
+# A brand tile is a diagonal gradient between two of the brand's own colours (Rex's tiles read lit, not flat). Brands
+# not listed derive theirs from their tint (gradient_for). Keyed by assets/icons basename.
+GRADIENTS = {
+    "googlegemini": (0x4285F4, 0x9B72CB),   # Gemini: Google blue into its purple
+    "claude": (0xE38B69, 0xC4603E),
+    "openai": (0x1DB892, 0x0B7A5E),
+    "t3code": (0x5A44C4, 0x1B1446),         # T3 Code's own icon: the night sky, purple into navy
+    "antigravity": (0x3186FF, 0x5B4CF0),
+    "opencode": (0xFAB283, 0xE3824F),
+    "cursor": (0x6A9BF7, 0x3C6BD9),
+}
+
+
+def _mix(c: int, to: int, t: float) -> int:
+    ch = [(round(((c >> s) & 255) * (1 - t) + ((to >> s) & 255) * t)) for s in (16, 8, 0)]
+    return (ch[0] << 16) | (ch[1] << 8) | ch[2]
+
+
+def gradient_for(mark: str, tint: int) -> tuple[int, int]:
+    """(top-left, bottom-right) colours of a brand tile."""
+    return GRADIENTS.get(mark) or (_mix(tint, 0xFFFFFF, 0.12), _mix(tint, 0x000000, 0.16))
+
+
+def _brand_rrect(pt: dp.Painter, x, y, w, h, r, mark: str, tint: int):
+    s, cr = pt.s, pt.cr
+    a, b = gradient_for(mark, tint)
+    grad = cairo.LinearGradient(x * s, y * s, (x + w) * s, (y + h) * s)
+    grad.add_color_stop_rgb(0, *_rgb(a))
+    grad.add_color_stop_rgb(1, *_rgb(b))
+    dp.rrect(cr, x * s, y * s, w * s, h * s, r * s)
+    cr.set_source(grad)
+    cr.fill()
+    pt.fill_rrect(x + r * 0.6, y + 0.6, w - r * 1.2, 0.8, 0.4, 0xFFFFFF, 0.16)     # light catching the tile's top edge
+
+
 def _tile(pt: dp.Painter, x, y, row: G.Row, p: th.Palette):
     if row.tint is not None:
-        pt.fill_rrect(x, y, TILE, TILE, 6, row.tint)
+        _brand_rrect(pt, x, y, TILE, TILE, 6, row.mark, row.tint)
         fg, alpha = 0xFFFFFF, 1.0
     else:
         c, a = pt.veil(0.09)
@@ -133,7 +168,10 @@ def _stack(pt: dp.Painter, x, y, marks, p):
     pt.fill_rrect(bx - 1.5, by - 1.5, bs + 3, bs + 3, 5, p.bar)
     if len(marks) == 1:
         tint = BRAND_OF_MARK.get(marks[0])
-        pt.fill_rrect(bx, by, bs, bs, 4, tint if tint is not None else p.surface_hi)
+        if tint is not None:
+            _brand_rrect(pt, bx, by, bs, bs, 4, marks[0], tint)
+        else:
+            pt.fill_rrect(bx, by, bs, bs, 4, p.surface_hi)
         pt.icon(marks[0], bx + 2, by + 2, bs - 4, 0xFFFFFF if tint is not None else p.text)
     else:
         pt.fill_rrect(bx, by, bs, bs, 4, p.surface_hi)

@@ -402,3 +402,25 @@ class MenuReasonTests(unittest.TestCase):
     def test_no_question_gives_no_reason_rather_than_chrome(self):
         screen = "some output line\n  ❯ 1. Yes\n    2. No\n  Enter to select · Esc to cancel"
         self.assertEqual(S.classify_screen(screen), ("waiting", ""))
+
+
+# Captured live from each agent's first run in a new folder (2026-11-12); paths and model names replaced with synthetic ones.
+AGY_TRUST = ("Accessing workspace:\n/tmp/work-calm-otter\nDo you trust the contents of this project?\n"
+             "Antigravity CLI requires permission to read, edit, and execute\nfiles here.\n> Yes, I trust this folder\n  No, exit\n"
+             "  ↑/↓ Navigate · enter Confirm\n                                auto · model-x · high\n")
+CURSOR_TRUST = ("  ╭──────────────────────────────────────╮\n  │  ⚠ Workspace Trust Required          │\n"
+                "  │  Cursor Agent can execute code and access files in     │\n  │  Do you trust the contents of this directory?          │\n"
+                "  │    /tmp/work-calm-otter             │\n  │  ▶ [a] Trust this workspace                            │\n"
+                "  │    [q] Quit                                            │\n  │  Use arrow keys to navigate, Enter to select, or       │\n"
+                "  │  press the key shown                                   │\n  ╰──────────────────────────────────────╯\n")
+
+
+class TrustPromptTest(unittest.TestCase):
+    """A trust prompt blocks the agent until you answer: it needs you, and the question is what the notch shows."""
+    def test_antigravity_trust_prompt_is_waiting_with_its_question(self):
+        self.assertEqual(S.classify_screen(AGY_TRUST), ("waiting", "Do you trust the contents of this project?"))
+
+    def test_cursor_trust_prompt_is_waiting_with_its_question(self):
+        marker, line = S.classify_screen(CURSOR_TRUST)
+        self.assertEqual(marker, "waiting")
+        self.assertIn("Do you trust the contents of this directory?", line)

@@ -79,6 +79,7 @@ When a page and the code disagree, the code and this file win; fix the page.
 - A glyph added to the icon font reaches a RUNNING kitty only after a restart (it loads fonts once): draw a new glyph only when
   `kittymux_agents.glyph_font_loaded()` says that kitty started after the installed font (see the mascot in the bar header).
   The mascot glyph (E0F9) is traced from `assets/brand/mascot.png` by `tools/trace-mascot.py` → `assets/icons/kittymux.svg`.
+  T3 Code's mark is traced from the app's own icon by `tools/trace-t3code.py` → `assets/icons/t3code.svg` (the pixel bar only; no font glyph).
 - Never move the user's focus unasked. A bell → `window_alert_on_bell` → xdg-activation request is turned into a focus change (and a workspace switch) by compositors with Hyprland's `misc:focus_on_activate`;
   `kittymux_layout.attention_conf` (geninclude) switches kitty's alert off and `kittymux_scan._alert` skips the bell when `hypr_focus_on_activate()` is true (override: `attention-on`). Focus moves only on a user
   action (click, `inbox jump`, `ctrl+alt+y`, a notification action). Tests that touch this must not depend on the compositor running them (patch `hypr_focus_on_activate`).
