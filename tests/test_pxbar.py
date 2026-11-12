@@ -225,6 +225,59 @@ class ViewportFollowTest(unittest.TestCase):
         self.assertNotIn(3, PX._S.view)
 
 
+class UiScaleTest(unittest.TestCase):
+    """The bar's type and geometry follow the terminal font (2026-11-12: a fixed 13 px title read small and out of place
+    beside the owner's 14.5 pt terminal font)."""
+
+    def test_the_title_tracks_the_terminal_font(self):
+        self.assertEqual(PX.ui_scale(None), 1.0)                 # unknown: as designed
+        self.assertEqual(PX.ui_scale(10.0), 1.0)                  # a small font never shrinks the bar below its design
+        k = PX.ui_scale(14.5)                                     # 14.5 pt = 19.3 px: a ~16 px title
+        self.assertAlmostEqual(13 * k, 16.0, delta=0.6)
+        self.assertEqual(PX.ui_scale(40.0), 1.5)                  # clamped: a huge font never eats the terminal
+
+    def test_publish_renders_at_the_scaled_size(self):
+        from unittest.mock import patch
+        seen = {}
+
+        def fake_render(groups, pal, width, height, scale, host, resources, start, alpha=1.0):
+            seen.update(width=width, height=height, scale=scale)
+            return types.SimpleNamespace(png=b"", hits=(), start=0, shown=1, total=1)
+        fdt = types.SimpleNamespace(get_boss=lambda: types.SimpleNamespace(set_background_image=lambda *a, **k: None),
+                                    mark_os_window_dirty=lambda *_: None, wakeup_main_loop=lambda: None)
+        import kittymux_groups as G
+        saved = (dict(PX._S.windows), dict(PX._S.view))
+        self.addCleanup(lambda: (PX._S.windows.clear(), PX._S.windows.update(saved[0]), PX._S.view.clear(), PX._S.view.update(saved[1])))
+        with patch.object(PX, "metrics", return_value=(320, 900, 1.0)), patch.object(PX, "_resources", return_value=None), \
+                patch.object(PX, "font_points", return_value=14.5), \
+                patch.dict(sys.modules, {"kitty.fast_data_types": fdt, "kittymux_barpx": types.SimpleNamespace(render=fake_render)}):
+            PX.publish(9, G.group([G.Row(tab_id=1, title="t", project="p", active=True)]), None)
+        k = round(PX.ui_scale(14.5) * 8) / 8                      # eighths: the picture's scale run (8 x scale px) encodes it exactly,
+        self.assertEqual(seen["scale"] * 8, int(seen["scale"] * 8))   # so the shaders decode the same scale (CodeRabbit on #29)
+        self.assertAlmostEqual(seen["scale"], k)
+        self.assertAlmostEqual(seen["width"], 320 / k)
+        self.assertAlmostEqual(seen["height"], 900 / k)
+
+
+class RowEndSlotTest(unittest.TestCase):
+    """The × replaces the end mark in ITS slot (2026-11-12: on a two-line row the × sat 8 px below the working wave, with the
+    wave's top still showing above it). The picture, the wave shader and the hover shader agree on the line's centre, and the
+    hover shader's y grows UP, so the top line is the max of the two candidates, never the min."""
+
+    def src(self, name):
+        with open(os.path.join(os.path.dirname(__file__), "..", "assets", "shaders", name), encoding="utf-8") as f:
+            return f.read()
+
+    def test_one_slot_for_the_mark_and_the_cross(self):
+        import inspect
+        import kittymux_barpx as bp
+        self.assertIn("title_cy = y + (15 if row.meta else h / 2)", inspect.getsource(bp))
+        self.assertIn("static const float CY = 15.0;", self.src("kittymux-pxwave.slang"))
+        hover = self.src("kittymux-pxbar.slang")
+        self.assertIn("cy = max(y1 - 15.0 * sc, (y0 + y1) * 0.5)", hover)
+        self.assertNotIn("cy = min(y1 - 15.0 * sc", hover)
+
+
 class GlassTest(unittest.TestCase):
     def test_the_sidebar_is_a_little_denser_than_the_terminal(self):
         self.assertEqual(PX.glass_alpha(1.0), 1.0)

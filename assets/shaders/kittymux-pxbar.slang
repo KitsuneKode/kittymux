@@ -91,11 +91,11 @@ fragment_main(float4 color, KittyTextures t, KittyCustomShaderData d) {
     if (t.pos.y > top + px.y * 0.5 || t.pos.y < bot - px.y * 0.5) return color;
     float2 p = t.pos / px;
     bool rail = span.y / px.x < RAIL_MAX * sc;
-    float r0 = (rail ? 9.0 : R) * sc;
+    float r0 = (rail ? 10.0 : R) * sc;
     float x0 = INSET * sc, x1 = span.y / px.x - INSET * sc, y0 = bot / px.y, y1 = top / px.y;
-    if (rail) {                                                     // the rail's card: kittymux_barpx draws the active one 30 px wide
+    if (rail) {                                                     // the rail's card: kittymux_barpx draws the active one RAIL_CARD_W (42) px wide
         float mid = span.y / px.x * 0.5;
-        x0 = mid - 15.0 * sc; x1 = mid + 15.0 * sc; y0 += 2.0 * sc; y1 -= 2.0 * sc;
+        x0 = mid - 21.0 * sc; x1 = mid + 21.0 * sc; y0 += 2.0 * sc; y1 -= 2.0 * sc;
     }
     float2 q = float2(max(max(x0 + r0 - p.x, p.x - (x1 - r0)), 0.0), max(max(y0 + r0 - p.y, p.y - (y1 - r0)), 0.0));
     float inside = 1.0 - smoothstep(r0 - 0.75, r0 + 0.75, length(q));
@@ -109,12 +109,22 @@ fragment_main(float4 color, KittyTextures t, KittyCustomShaderData d) {
     float3 hi = dec(clamp(lerp(e, veil, lift * inside) + ink, 0.0, 1.0));
     // the close cross, in the top line of the row (a two-line row keeps its second line); every size in logical px × sc
     if (rail) return float4(hi, color.a);                          // the rail: the tile is the whole row, no cross over it
-    float cx = x1 - (PAD - INSET + 6.0) * sc, cy = min(y1 - 15.0 * sc, (y0 + y1) * 0.5);
+    float cx = x1 - (PAD - INSET + 6.0) * sc, cy = max(y1 - 15.0 * sc, (y0 + y1) * 0.5);   // y grows UP: max is the top line (the end mark's slot)
     float2 r = (p - float2(cx, cy)) / sc;
     if (abs(r.x) < 11.0 && abs(r.y) < 10.0) hi = lerp(color.rgb, dec(lerp(eb, veil, lift)), inside);   // the cover stays inside the band
+    // the cross itself (the mockup's 10 px glyph, stroke 1.6): arms 3 px from the centre, a ~1.3 px line, muted until the
+    // pointer is on its own 18 px square, which then lifts a step like a button
+    float2 mr = (m / px - float2(cx, cy)) / sc;
+    bool hot = abs(mr.x) < 9.0 && abs(mr.y) < 9.0;
+    if (hot) {
+        float2 qs = max(abs(r) - float2(9.0 - 5.0), 0.0);
+        float sq = 1.0 - smoothstep(5.0 - 0.75 / sc, 5.0 + 0.75 / sc, length(qs));
+        hi = lerp(hi, dec(lerp(eb, veil, lift * 2.2)), sq * inside);
+    }
     float d1 = abs(r.x - r.y) * 0.7071, d2 = abs(r.x + r.y) * 0.7071;
-    float on = (max(abs(r.x), abs(r.y)) < 4.5) ? 1.0 - smoothstep(0.6 / sc, 1.4 / sc, min(d1, d2)) : 0.0;
-    float3 cross_ink = lerp(bar, veil, 0.62);
+    float arm = 1.0 - smoothstep(3.0, 3.0 + 0.9 / sc, max(abs(r.x), abs(r.y)));       // round-ish ends, no hard square cut
+    float on = arm * (1.0 - smoothstep(0.62 - 0.45 / sc, 0.62 + 0.45 / sc, min(d1, d2)));
+    float3 cross_ink = lerp(bar, veil, hot ? 0.82 : 0.5);
     hi = lerp(hi, cross_ink, on);
     return float4(hi, color.a);
 }
