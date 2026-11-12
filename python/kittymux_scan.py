@@ -460,6 +460,37 @@ def _fraction(window):
     return round(pct / 100, 4)
 
 
+def _env_var(pid, name: str) -> str:
+    """One variable from a process's environment (/proc), or "". Only that value is read out; nothing else is kept."""
+    try:
+        with open(f"/proc/{int(pid)}/environ", "rb") as f:
+            data = f.read(1 << 20)
+    except (OSError, ValueError, TypeError):
+        return ""
+    key = name.encode() + b"="
+    for item in data.split(b"\0"):
+        if item.startswith(key):
+            return item[len(key):].decode("utf-8", "replace")
+    return ""
+
+
+def _account(child, agent: str) -> str:
+    """The account the agent in this pane runs under (kittymux_agentsnap.account_label): read from the foreground processes'
+    own environment, so a pane started with CLAUDE_CONFIG_DIR=~/.claude_personal says "personal". Never raises."""
+    try:
+        import kittymux_agentsnap
+        var = kittymux_agentsnap._ACCOUNT_VARS.get(agent, ("", ""))[0]
+        if not var or child is None:
+            return ""
+        for proc in list(getattr(child, "foreground_processes", None) or [])[:8]:
+            value = _env_var(proc.get("pid"), var)
+            if value:
+                return kittymux_agentsnap.account_label(agent, {var: value}, os.path.expanduser("~"))
+    except Exception:
+        pass
+    return ""
+
+
 def _agent_spec(window) -> dict | None:
     wid = getattr(window, "id", None)
     verdict = _RT.verdicts.get(str(wid)) or {}
@@ -481,7 +512,7 @@ def _agent_spec(window) -> dict | None:
     if not session:
         session = getattr(window, "session_name", "") or ""
     return {"window_id": wid, "agent": agent, "state": state, "title": getattr(window, "title", "") or "",
-            "tab_title": tab_title, "cwd": cwd, "session": session,
+            "tab_title": tab_title, "cwd": cwd, "session": session, "account": _account(child, agent),
             "reason": "" if _private() else (verdict.get("reason") or ""),     # private mode: no screen text in agents.json/tabs.json either
             "progress": _fraction(window), "limit_reset": verdict.get("reset_at")}
 
