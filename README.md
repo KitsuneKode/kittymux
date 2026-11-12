@@ -135,6 +135,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+shift+a` | last session |
 | `ctrl+alt+t` / `+shift` | new tab beside / at end |
 | `shift+←` / `shift+→` | prev / next tab (session-scoped) |
+| `ctrl+tab` / `ctrl+shift+tab` | next / prev tab in the order the bar draws (skips folded groups) |
 | `ctrl+alt+shift+←/→` · `↑/↓` | move the tab — arrows follow the bar: ←/→ on a horizontal bar, ↑/↓ on a vertical one (both always work) |
 | `alt+1..9` · `alt+0` | jump to tab N (session-scoped) · `alt+0` = the last tab (not the scratch tab) |
 | `ctrl+alt+\`` | flip to previously active tab (MRU) |

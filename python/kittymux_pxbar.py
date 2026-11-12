@@ -187,6 +187,13 @@ def clear(os_window_id: int) -> None:
         pass
 
 
+def drawn_groups(os_window_id: int):
+    """The groups the picture on screen shows (its rows in drawn order, folded groups empty), or None when none is up."""
+    w = _S.windows.get(os_window_id)
+    sig = (w or {}).get("sig") or ()
+    return list(sig[0]) if sig else None
+
+
 def active(os_window_id: int) -> bool:
     return os_window_id in _S.windows
 

@@ -25,6 +25,8 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
   `bash tests/smoke_inbox.sh` (real OSC 99 notifications from an agent pane → typed inbox events, the pane follows a completion, focus acknowledges),
   `bash tests/smoke_click.sh` (tab clicks with wobble and slowness; a middle-click spares an agent tab),
   `bash tests/smoke_pxbar.sh` (the pixel tab bar: the picture is up, a click lands on the row drawn there and never on the blank cells under it, the close cross closes a plain tab, a busy agent's asks first; `tests/probe_pxbar.py` dumps the picture's hit bands),
+  `bash tests/smoke_tabnav.sh` (real `ctrl+tab` / `ctrl+shift+tab` key events walk the rows in the order the pixel bar draws them, across
+  two interleaved projects, and wrap; `SMOKE_TABNAV_CONTROL=1` leaves the maps out and must FAIL — kitty's own order; SKIPs without cairo),
   `bash tests/smoke_native.sh` (kitty ≥ 0.49.2: the native divider's pixels, the real X cursor name over it, a native drag, the single-pane fallback),
   `bash tests/smoke_resize.sh` (a fast pointer burst: the bar edge reaches the pointer, every tab re-flows on release),
   `bash tests/smoke_panes.sh` (`ctrl+alt+1..9`, `ctrl+alt+0` = last pane and the `ctrl+alt+e` overview agree on pane numbers; `alt+1..9` / `alt+0` jump tabs; `alt+shift+h/l` resize ~3 columns and `alt+shift+=` equalizes; `ctrl+alt+z` zooms a corner pane on both axes and restores it; ends with a focus tripwire on every OTHER kitty; `ctrl+alt+PgUp/Home/End` scroll — real key events),
