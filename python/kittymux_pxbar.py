@@ -200,6 +200,7 @@ def band_at(os_window_id: int, x_px: float, y_px: float):
     return whole
 
 
+RAIL_MAX = 130          # logical px, kittymux_barpx.RAIL_MAX (no cairo import here): the rail has no close cross
 MARGIN = 2              # tab rows kept in view beyond the active one when the view follows it
 CLOSE_W = 34            # logical px at a row's right end that are the close cross (matches the shader's cover)
 TITLE_LINE = 32         # logical px: the cross sits in a row's first line
@@ -226,6 +227,8 @@ def close_hit(os_window_id: int, x_px: float, y_px: float) -> int:
     if w is None or band is None or band.kind != "tab":
         return 0
     scale = w["sig"][4] if w.get("sig") else 1.0
+    if w["right"] / scale < RAIL_MAX:
+        return 0                                  # the rail: a click on a tile activates it, never closes it
     if x_px < w["right"] - CLOSE_W * scale or y_px >= band.y0 + TITLE_LINE * scale:
         return 0
     return band.tab_id

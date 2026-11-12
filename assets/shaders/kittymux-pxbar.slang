@@ -12,6 +12,7 @@ static const float INSET = 5.0;      // logical px, matches kittymux_barpx.INSET
 static const float PAD = 10.0;       // logical px, matches kittymux_barpx.PAD
 static const float R = 10.0;         // logical px, the band's corner radius (kittymux_barpx.ACTIVE_R: hover and active nest)
 static const float REACH = 64.0;     // logical px searched up and down the row map (taller than any row)
+static const float RAIL_MAX = 130.0; // logical px, kittymux_barpx.RAIL_MAX: narrower is the rail
 static const float RUN = 8.0;        // kittymux_barpx.SCALE_RUN: column 0 ends in a run of RUN × scale device px
 static const float CARD_M = 6.0;     // logical px: the terminal is a card inset this far from the window's top, right, bottom
 static const float CARD_R = 10.0;    // logical px: its corner radius (Rex: the content rests on the sidebar's material)
@@ -89,8 +90,13 @@ fragment_main(float4 color, KittyTextures t, KittyCustomShaderData d) {
     float top = m.y + (up - 1.0) * px.y, bot = m.y - (down - 1.0) * px.y;
     if (t.pos.y > top + px.y * 0.5 || t.pos.y < bot - px.y * 0.5) return color;
     float2 p = t.pos / px;
-    float r0 = R * sc;
+    bool rail = span.y / px.x < RAIL_MAX * sc;
+    float r0 = (rail ? 9.0 : R) * sc;
     float x0 = INSET * sc, x1 = span.y / px.x - INSET * sc, y0 = bot / px.y, y1 = top / px.y;
+    if (rail) {                                                     // the rail's card: kittymux_barpx draws the active one 30 px wide
+        float mid = span.y / px.x * 0.5;
+        x0 = mid - 15.0 * sc; x1 = mid + 15.0 * sc; y0 += 2.0 * sc; y1 -= 2.0 * sc;
+    }
     float2 q = float2(max(max(x0 + r0 - p.x, p.x - (x1 - r0)), 0.0), max(max(y0 + r0 - p.y, p.y - (y1 - r0)), 0.0));
     float inside = 1.0 - smoothstep(r0 - 0.75, r0 + 0.75, length(q));
     bool light = dot(bar, float3(0.2126, 0.7152, 0.0722)) > 0.4;
@@ -102,6 +108,7 @@ fragment_main(float4 color, KittyTextures t, KittyCustomShaderData d) {
     float3 ink = (e - eb) * 0.3 * inside;                           // a settled title lifts toward full strength under the pointer
     float3 hi = dec(clamp(lerp(e, veil, lift * inside) + ink, 0.0, 1.0));
     // the close cross, in the top line of the row (a two-line row keeps its second line); every size in logical px × sc
+    if (rail) return float4(hi, color.a);                          // the rail: the tile is the whole row, no cross over it
     float cx = x1 - (PAD - INSET + 6.0) * sc, cy = min(y1 - 15.0 * sc, (y0 + y1) * 0.5);
     float2 r = (p - float2(cx, cy)) / sc;
     if (abs(r.x) < 11.0 && abs(r.y) < 10.0) hi = lerp(color.rgb, dec(lerp(eb, veil, lift)), inside);   // the cover stays inside the band

@@ -336,3 +336,24 @@ class PruneTest(unittest.TestCase):
         finally:
             for t, v in zip((PX._S.windows, PX._S.view, PX._S.wave), saved):
                 t.clear(); t.update(v)
+
+
+class RailCrossTest(unittest.TestCase):
+    def test_the_rail_has_no_close_target(self):
+        from unittest.mock import patch
+        saved = dict(PX._S.windows)
+        try:
+            PX._S.windows[8] = {"sig": ((), None, 60, 900, 1.0, ""), "right": 60, "hits": (Hit("tab", 64, 98, 11, ""),)}
+            with patch.object(PX, "cross_shown", return_value=True):
+                self.assertEqual(PX.close_hit(8, 50, 70), 0)
+        finally:
+            PX._S.windows.clear(); PX._S.windows.update(saved)
+
+    def test_the_rail_width_matches_the_renderer(self):
+        try:
+            import kittymux_barpx as BP
+        except (ImportError, ValueError):
+            self.skipTest("cairo/pango/rsvg not installed")
+        self.assertEqual(PX.RAIL_MAX, BP.RAIL_MAX)
+        shader = open(os.path.join(os.path.dirname(__file__), "..", "assets", "shaders", "kittymux-pxbar.slang"), encoding="utf-8").read()
+        self.assertIn(f"RAIL_MAX = {BP.RAIL_MAX}.0", shader)
