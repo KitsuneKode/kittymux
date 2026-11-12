@@ -275,7 +275,8 @@ def chords_in_tpl(tpl_text: str) -> list[tuple[str, int, str]]:
 def conflicts_from_binds(binds: list, tpl_text: str) -> list[str]:
     """kittymux chords (any modifiers) that the window manager binds with EXACTLY those modifiers — the WM gets
     the key first, so kitty never sees it (or both react). A super+ctrl+alt bind is a different chord."""
-    taken = {(b.get("modmask", 0) & _MOD_MASK, str(b.get("key", "")).lower()) for b in binds}
+    taken = {(b.get("modmask", 0) & _MOD_MASK, str(b.get("key", "")).lower()) for b in binds
+             if not b.get("submap")}                  # a submap's binds act only while it is entered (Hyprland's resize mode)
     return sorted({written for written, mask, key in chords_in_tpl(tpl_text) if (mask, key) in taken})
 
 
