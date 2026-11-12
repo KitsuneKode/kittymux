@@ -395,6 +395,10 @@ class MenuReasonTests(unittest.TestCase):
         screen = "│ Do you want to proceed? │\n│ ❯ 1. Yes                │\n│   2. No                 │"
         self.assertEqual(S.classify_screen(screen), ("waiting", "Do you want to proceed?"))
 
+    def test_claudes_quote_bar_is_not_part_of_the_question(self):
+        screen = "▌ Allow edit to Notifs.qml?\n  ❯ 1. Yes\n    2. No\n  Esc to cancel · Tab to amend"
+        self.assertEqual(S.classify_screen(screen), ("waiting", "Allow edit to Notifs.qml?"))
+
     def test_no_question_gives_no_reason_rather_than_chrome(self):
         screen = "some output line\n  ❯ 1. Yes\n    2. No\n  Enter to select · Esc to cancel"
         self.assertEqual(S.classify_screen(screen), ("waiting", ""))

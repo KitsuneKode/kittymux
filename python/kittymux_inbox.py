@@ -123,6 +123,14 @@ def make_event(kind: str, agent: str, window: int | str, source: str, now: float
     return ev
 
 
+_GENERIC = re.compile(r"^(?:\w[\w .-]{0,30}\s)?(?:needs your (?:permission|attention|input|approval)|is waiting for your (?:input|answer|response))\.?$", _I)
+
+
+def generic_body(text: str) -> bool:
+    """An agent's stock line for a moment ("Claude needs your permission"), not what it actually asks."""
+    return bool(_GENERIC.match(str(text or "").strip()))
+
+
 def merge_key(ev: dict) -> tuple:
     """Two events with the same key inside MERGE_WINDOW_S are the same occurrence reported twice (by the agent's own notification AND the
     screen scan, say). A limit is one occurrence per agent per reset, whichever window noticed it."""
@@ -153,6 +161,9 @@ def fold(ops: list[dict]) -> list[dict]:
                     prev["confidence"] = "high"                      # any authoritative source upgrades it
                 for field in ("body", "title", "tab", "reset_at", "tag", "source", "agent"):   # one subject: the agent travels with the source
                     if op.get(field):
+                        # the question read off the screen beats the agent's stock line for the same moment
+                        if field == "body" and prev.get("body") and generic_body(op["body"]) and not generic_body(prev["body"]):
+                            continue
                         prev[field] = op[field]
                 continue
             ev = {k: v for k, v in op.items() if k != "op"}

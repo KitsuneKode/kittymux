@@ -32,9 +32,15 @@ _here = globals().get("__file__")
 _own = os.path.dirname(os.path.realpath(_here)) if _here else ""
 if _own and _own not in sys.path:       # kittymux_reload sits next to this file: findable before prefer_own orders the path
     sys.path.insert(0, _own)
-import kittymux_reload  # noqa: E402
-kittymux_reload.prefer_own(_here)
 import importlib  # noqa: E402
+import kittymux_reload  # noqa: E402
+# A running kitty keeps the kittymux_reload it first imported, perhaps from before prefer_own existed: `import` hands back
+# that copy. Refresh it before calling into it, or the bar fails to load and kitty draws its plain one (test_reload).
+try:
+    kittymux_reload = importlib.reload(kittymux_reload)
+except Exception:
+    pass
+kittymux_reload.prefer_own(_here)
 import kittymux_agents  # noqa: E402
 import kittymux_barsize  # noqa: E402
 import kittymux_changes  # noqa: E402

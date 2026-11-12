@@ -100,6 +100,23 @@ class BootstrapTests(unittest.TestCase):
                                  cwd="/", env={"KITTY_CONFIG_DIRECTORY": cfg, "PATH": os.environ.get("PATH", "")}, capture_output=True, text=True, timeout=60)
         self.assertEqual(run.returncode, 0, run.stderr[-600:])
 
+    def test_a_kitty_holding_an_older_kittymux_reload_still_loads_the_new_bar(self):
+        # A kitty started before prefer_own existed keeps that kittymux_reload in sys.modules: `import` hands back the old
+        # copy, and calling prefer_own on it raised before the bar reached its reload, so kitty drew its plain fallback bar
+        # (2026-11-12, a kitty started on e415a52 hot-reloaded to 7601482). The bar must refresh kittymux_reload first.
+        import importlib.util
+        from unittest.mock import patch
+        here = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "python", "kittymux_reload.py")
+        spec = importlib.util.spec_from_file_location("kittymux_reload", here)
+        stale = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(stale)
+        del stale.prefer_own
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from test_tab_bar_header import load_tab_bar
+        with patch.dict(sys.modules, {"kittymux_reload": stale}):
+            tb, _boss = load_tab_bar()
+        self.assertTrue(callable(getattr(tb, "draw_tab", None)))
+
 
 if __name__ == "__main__":
     unittest.main()

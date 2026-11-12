@@ -60,6 +60,9 @@ def _ensure_path() -> None:
     if _helper_dirs_done:
         return
     import kittymux_reload
+    if not hasattr(kittymux_reload, "prefer_own"):   # an older copy a running kitty kept (tab_bar.py: test_reload)
+        import importlib
+        kittymux_reload = importlib.reload(kittymux_reload)
     kittymux_reload.prefer_own(globals().get("__file__"))
     _helper_dirs_done = True
 

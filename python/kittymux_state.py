@@ -87,7 +87,7 @@ _HINT_RE = re.compile(
     r"enter\s+to\s+(?:select|confirm|submit)|esc\s+to\s+(?:cancel|go\s+back|exit)|tab\s+to\s+amend|to\s+navigate|↑\s*/?\s*↓"
     r"|press\s+enter\s+to", _I)
 _OPTION_RE = re.compile(r"^[❯›>]?\s*\d+[.)]\s")
-_BOX = "│┃|╭╮╰╯─━┌┐└┘├┤ \t"
+_BOX = "│┃|╭╮╰╯─━┌┐└┘├┤▌▍▎▏▐ \t"           # box borders and quote bars (Claude Code draws ▌ before a question)
 
 
 def _question_above(lines: list, i: int, reach: int = 14) -> str:

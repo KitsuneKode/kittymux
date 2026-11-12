@@ -104,6 +104,8 @@ jobs:
         run: bash tests/smoke_workflows.sh
       - name: an upgraded, running kitty draws cleanly after two reloads
         run: bash tests/smoke_reload.sh
+      - name: a kitty started on an older release upgrades in place and keeps kittymux's bar (not kitty's plain fallback)
+        run: bash tests/smoke_upgrade.sh
       - name: kitty survives a timer being removed inside a timer callback (the 2026-10-07 crash), with a control that proves the rig can see it
         run: bash tests/smoke_timers.sh
       - name: scripts written for /tmp/mykitty-<pid> still find kitty when its socket lives in a private directory

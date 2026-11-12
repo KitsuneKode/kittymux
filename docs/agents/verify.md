@@ -7,7 +7,10 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
 - `python3 -m unittest discover -s tests` and `bash tests/test_mux_status.sh && bash tests/test_socket_lib.sh`.
 - Real-kitty smoke tests (Xvfb, private config/socket, SKIP if tools are missing): `bash tests/smoke_state.sh`
   (states from screens, spinner frame rate on an idle window, spacer-row click, `agents.json` and `tabs.json`) and `bash tests/smoke_reload.sh`
-  (a running kitty upgraded under itself must draw cleanly after two reloads; `SMOKE_KEEP_STALE=1` must FAIL).
+  (a running kitty upgraded under itself must draw cleanly after two reloads; `SMOKE_KEEP_STALE=1` must FAIL), and
+  `bash tests/smoke_upgrade.sh` (a kitty started on a whole older release, e415a52, upgraded in place to the checkout: the bar must
+  still be kittymux's, not kitty's plain fallback; `SMOKE_UPGRADE_TO=7601482` must FAIL — that release called `prefer_own` on the
+  `kittymux_reload` the running kitty still held).
   `bash tests/smoke_sidebar.sh` (collapse/expand button, right-click peek, edge drag with real mouse events),
   `bash tests/smoke_drag.sh` (tab drag-to-reorder with real pointer events — kitty's DnD works under Xvfb),
   `bash tests/smoke_resume.sh` (fake agents → `sessions save` → a second kitty restores them: claude started with `--resume <id>` and its flags, a lone opencode with `-c`, ambiguous droids as saved; autosave + pruning),
