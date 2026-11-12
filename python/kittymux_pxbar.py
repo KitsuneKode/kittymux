@@ -48,6 +48,13 @@ def metrics(os_window_id: int):
     return int(g.right), fb_h, scale
 
 
+def prune(live) -> None:
+    """Forget OS windows that are gone (their picture, scroll and wave): the state is keyed by something that keeps arriving."""
+    for table in (_S.windows, _S.view, _S.wave):
+        for osw in [k for k in table if k not in live]:
+            table.pop(osw, None)
+
+
 def wave(os_window_id: int, on: bool, fire=None) -> bool:
     """Start or stop the working loader's animation (kittymux-pxwave.slang) for one OS window, only when that changes.
     Returns True when it fired."""
@@ -71,6 +78,11 @@ def wants_wave(groups, animate: bool, shader: bool) -> bool:
 def publish(os_window_id: int, groups, pal, host: str = "", animate: bool = True) -> bool:
     """Render and show the picture when what it shows changed. Returns True when it swapped."""
     wave(os_window_id, wants_wave(groups, animate, cross_shown()))
+    try:
+        from kitty.fast_data_types import get_boss
+        prune(get_boss().os_window_map)
+    except Exception:
+        pass
     m = metrics(os_window_id)
     if m is None:                             # no bar on the left (moved to the right edge): no picture, no hit bands
         clear(os_window_id)

@@ -305,3 +305,34 @@ class WaveTest(unittest.TestCase):
         self.assertIn("shaders kittymux-pxwave", pl)
         step = int(pl.split("animation_step 66")[0] and 66)
         self.assertGreaterEqual(step, 50)                                            # 20 fps at most: a loader, not a video
+
+
+class HiddenBarTest(unittest.TestCase):
+    """tab_bar_min_tabs 2 and one tab left: kitty hides the bar and stops drawing it; the picture must go with it."""
+    def test_a_hidden_bar_drops_its_picture(self):
+        from unittest.mock import patch
+        for hidden, visible, cleared in ((False, False, True), (True, True, True), (False, True, False)):
+            tm = types.SimpleNamespace(os_window_id=7, tab_bar_hidden=hidden, tab_bar_should_be_visible=visible)
+            with patch.object(PX, "active", return_value=True), patch.object(PX, "clear") as cl:
+                BS.pxbar_after_layout(tm)
+            self.assertEqual(cl.called, cleared, (hidden, visible))
+
+    def test_no_picture_nothing_to_do(self):
+        from unittest.mock import patch
+        tm = types.SimpleNamespace(os_window_id=7, tab_bar_hidden=False, tab_bar_should_be_visible=False)
+        with patch.object(PX, "active", return_value=False), patch.object(PX, "clear") as cl:
+            BS.pxbar_after_layout(tm)
+        cl.assert_not_called()
+
+
+class PruneTest(unittest.TestCase):
+    def test_closed_os_windows_are_forgotten(self):
+        saved = (dict(PX._S.windows), dict(PX._S.view), dict(PX._S.wave))
+        try:
+            for t in (PX._S.windows, PX._S.view, PX._S.wave):
+                t.clear(); t.update({1: {}, 2: {}})
+            PX.prune({2: object()})
+            self.assertEqual((set(PX._S.windows), set(PX._S.view), set(PX._S.wave)), ({2}, {2}, {2}))
+        finally:
+            for t, v in zip((PX._S.windows, PX._S.view, PX._S.wave), saved):
+                t.clear(); t.update(v)

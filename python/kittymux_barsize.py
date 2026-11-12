@@ -882,12 +882,46 @@ def _install_native_edge() -> None:
         _debug_exc()
 
 
+def pxbar_after_layout(tm) -> None:
+    """After kitty lays the tab bar out: a bar that is no longer shown (one tab under `tab_bar_min_tabs 2`, or hidden) takes
+    its picture away at once. kitty stops calling the bar's code while it is hidden, and the picture is the OS window's
+    background image, so it would stay behind the terminal's text as a ghost sidebar."""
+    import kittymux_pxbar as PX
+    if not PX.active(tm.os_window_id):
+        return
+    if getattr(tm, "tab_bar_hidden", False) or not tm.tab_bar_should_be_visible:
+        PX.clear(tm.os_window_id)
+
+
+def _install_pxbar_visibility() -> None:
+    """Wrap TabManager.layout_tab_bar once: kitty calls it whenever the bar appears or disappears."""
+    try:
+        from kitty.tabs import TabManager
+        if getattr(TabManager.layout_tab_bar, "_kittymux_wrapped", False):
+            return
+        original = TabManager.layout_tab_bar
+
+        def wrapped(self, *args, **kwargs):
+            result = original(self, *args, **kwargs)
+            try:
+                pxbar_after_layout(self)
+            except Exception:
+                _debug_exc()
+            return result
+
+        wrapped._kittymux_wrapped = True                        # type: ignore[attr-defined]
+        TabManager.layout_tab_bar = wrapped                      # type: ignore[method-assign]
+    except Exception:
+        _debug_exc()
+
+
 def install() -> bool:
     """Wrap TabManager.handle_tab_bar_mouse once (+ the spacer-row hit test). Safe to call
     repeatedly; never raises."""
     _install_tab_hit_testing()
     _install_tab_drag()
     _install_native_edge()
+    _install_pxbar_visibility()
     if _S.installed:
         return True
     try:
