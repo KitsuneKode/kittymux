@@ -62,4 +62,36 @@ kill -0 "$KPID" 2>/dev/null || fail "kitty died"
 if grep -qE "Failed to load custom tab_bar|Custom draw tab function failed" "$T/kitty.log"; then
   fail "after the upgrade kitty draws its plain bar: kittymux's tab_bar.py did not load"
 fi
+
+# Clicks after the upgrade: with the pixel bar on, a click on a row activates the tab DRAWN there. (2026-11-12: the hooks
+# into kitty were kept from the first load, so the old release's hit test answered with its text cells: wrong tab.)
+PXDEPS=1; python3 -c "import cairo, gi; gi.require_version('Pango', '1.0'); gi.require_version('Rsvg', '2.0')" 2>/dev/null || PXDEPS=0
+[ $PXDEPS = 0 ] && echo "  skip the pixel-bar click after the upgrade: cairo/pango/rsvg not installed (as smoke_pxbar)"
+if [ $PXDEPS = 1 ] && [ -e "$TREE/python/kittymux_pxbar.py" ] && [ -e "$HOME_DIR/tests/probe_pxbar.py" ]; then
+  : > "$STATE/pxbar-on"
+  kitty @ --to "$SOCK" load-config >/dev/null 2>&1 || fail "load-config with pxbar on failed"; sleep 1; redraw
+  W=$(DISPLAY=$DISP xdotool search --class kmx-upgrade 2>/dev/null | head -1)
+  kitty @ --to "$SOCK" focus-tab --match title:notes >/dev/null 2>&1
+  band() {   # "y0 y1" of the row drawn for the tab titled $1; fails while no picture is up
+    kitty @ --to "$SOCK" kitten "$HOME_DIR/tests/probe_pxbar.py" "$T/px.json" >/dev/null 2>&1 || return 1
+    kitty @ --to "$SOCK" ls > "$T/ls.json" 2>/dev/null || return 1
+    python3 - "$T/px.json" "$T/ls.json" "$1" <<'P'
+import json, sys
+px, ls, title = json.load(open(sys.argv[1])), json.load(open(sys.argv[2])), sys.argv[3]
+tid = next(t["id"] for t in ls[0]["tabs"] if t["title"] == title)
+w = next(iter(px["windows"].values()))
+print(*next(h[1:3] for h in w["hits"] if h[0] == "tab" and h[3] == tid))
+P
+  }
+  B=""; for _ in $(seq 60); do B=$(band api 2>/dev/null) && [ -n "$B" ] && break; sleep 0.25; done
+  [ -n "$B" ] || fail "no pixel bar picture after switching pxbar on (the new code did not take over)"
+  set -- $B
+  active() { kitty @ --to "$SOCK" ls | python3 -c 'import sys,json
+print(next(t["title"] for t in json.load(sys.stdin)[0]["tabs"] if t["is_active"]))'; }
+  [ "$(active)" = notes ] || fail "precondition: 'notes' should be active, '$(active)' is"
+  DISPLAY=$DISP xdotool mousemove --window "$W" 90 $(( ($1 + $2) / 2 )) click 1
+  for _ in $(seq 40); do [ "$(active)" = api ] && break; sleep 0.125; done
+  [ "$(active)" = api ] || fail "after the upgrade a click on the row drawn for 'api' activated '$(active)': the hit test is the old release's"
+  echo "  ok   after the upgrade a click on a pixel-bar row activates the tab drawn there"
+fi
 echo "PASS: a kitty started on $OLD_REV upgrades in place to ${SMOKE_UPGRADE_TO:-this checkout} and keeps drawing kittymux's bar (3 tabs intact)"

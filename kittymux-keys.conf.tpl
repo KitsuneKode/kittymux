@@ -30,6 +30,10 @@ map ctrl+alt+n           new_os_window_with_cwd
 
 map shift+left           launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh prev
 map shift+right          launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh next
+# ctrl+tab / ctrl+shift+tab — next / previous tab in the order the bar draws it (the pixel bar's groups; never into a folded
+# group); without the pixel bar, kitty's own next_tab / previous_tab
+map ctrl+tab             kitten @KITTYMUX_HOME@/python/tabnav-kit.py next
+map ctrl+shift+tab       kitten @KITTYMUX_HOME@/python/tabnav-kit.py prev
 # alt+1..9 — jump to tab N within the session (WezTerm/mux convention). Costs readline's alt-digit repeat-arg — a fair trade.
 map alt+1                launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 1
 map alt+2                launch --type=background @KITTYMUX_HOME@/bin/mux-nav.sh 2

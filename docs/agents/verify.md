@@ -10,7 +10,8 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
   (a running kitty upgraded under itself must draw cleanly after two reloads; `SMOKE_KEEP_STALE=1` must FAIL), and
   `bash tests/smoke_upgrade.sh` (a kitty started on a whole older release, e415a52, upgraded in place to the checkout: the bar must
   still be kittymux's, not kitty's plain fallback; `SMOKE_UPGRADE_TO=7601482` must FAIL — that release called `prefer_own` on the
-  `kittymux_reload` the running kitty still held).
+  `kittymux_reload` the running kitty still held). Then, with `pxbar` on, a click on a row must activate the tab drawn there;
+  `SMOKE_UPGRADE_TO=a414690` must FAIL there — that release kept the first load's hooks into kitty, so the old hit test answered; that step skips without cairo/pango/rsvg, as smoke_pxbar does, so CI runs only the first part).
   `bash tests/smoke_sidebar.sh` (collapse/expand button, right-click peek, edge drag with real mouse events),
   `bash tests/smoke_drag.sh` (tab drag-to-reorder with real pointer events — kitty's DnD works under Xvfb),
   `bash tests/smoke_resume.sh` (fake agents → `sessions save` → a second kitty restores them: claude started with `--resume <id>` and its flags, a lone opencode with `-c`, ambiguous droids as saved; autosave + pruning),
@@ -25,6 +26,8 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
   `bash tests/smoke_inbox.sh` (real OSC 99 notifications from an agent pane → typed inbox events, the pane follows a completion, focus acknowledges),
   `bash tests/smoke_click.sh` (tab clicks with wobble and slowness; a middle-click spares an agent tab),
   `bash tests/smoke_pxbar.sh` (the pixel tab bar: the picture is up, a click lands on the row drawn there and never on the blank cells under it, the close cross closes a plain tab, a busy agent's asks first; `tests/probe_pxbar.py` dumps the picture's hit bands),
+  `bash tests/smoke_tabnav.sh` (real `ctrl+tab` / `ctrl+shift+tab` key events walk the rows in the order the pixel bar draws them, across
+  two interleaved projects, and wrap; `SMOKE_TABNAV_CONTROL=1` leaves the maps out and must FAIL — kitty's own order; SKIPs without cairo),
   `bash tests/smoke_native.sh` (kitty ≥ 0.49.2: the native divider's pixels, the real X cursor name over it, a native drag, the single-pane fallback),
   `bash tests/smoke_resize.sh` (a fast pointer burst: the bar edge reaches the pointer, every tab re-flows on release),
   `bash tests/smoke_panes.sh` (`ctrl+alt+1..9`, `ctrl+alt+0` = last pane and the `ctrl+alt+e` overview agree on pane numbers; `alt+1..9` / `alt+0` jump tabs; `alt+shift+h/l` resize ~3 columns and `alt+shift+=` equalizes; `ctrl+alt+z` zooms a corner pane on both axes and restores it; ends with a focus tripwire on every OTHER kitty; `ctrl+alt+PgUp/Home/End` scroll — real key events),
