@@ -20,6 +20,8 @@ PLACEHOLDER = "/kittymux/pxbar"          # any non-empty path: kitty takes the P
 _S = sys.modules.setdefault("_kittymux_pxbar_rt", types.SimpleNamespace(windows={}, resources=None, last_ms=0.0, expanded=set()))
 if not hasattr(_S, "expanded"):
     _S.expanded = set()
+_S.wave = {}                              # os window id → the wave event last fired; a reload rebuilds kitty's pipeline
+                                          # (its animations stop), so this module forgets and fires again
 if not hasattr(_S, "view"):
     _S.view = {}                          # os window id → {"start", "user", "active"}: where the picture is scrolled to; dropped by clear()
 
@@ -46,8 +48,29 @@ def metrics(os_window_id: int):
     return int(g.right), fb_h, scale
 
 
-def publish(os_window_id: int, groups, pal, host: str = "") -> bool:
+def wave(os_window_id: int, on: bool, fire=None) -> bool:
+    """Start or stop the working loader's animation (kittymux-pxwave.slang) for one OS window, only when that changes.
+    Returns True when it fired."""
+    if _S.wave.get(os_window_id) == on:
+        return False
+    _S.wave[os_window_id] = on
+    try:
+        if fire is None:
+            from kitty.fast_data_types import fire_custom_shader_event as fire
+        fire("kmx-wave-on" if on else "kmx-wave-off", os_window_id)
+    except Exception:
+        pass
+    return True
+
+
+def wants_wave(groups, animate: bool, shader: bool) -> bool:
+    """The loader moves when motion is on, the pxbar shader runs, and a row the bar shows is working (a muted one is still)."""
+    return bool(animate and shader and any(r.state == "working" and not r.muted for g in groups for r in g.rows))
+
+
+def publish(os_window_id: int, groups, pal, host: str = "", animate: bool = True) -> bool:
     """Render and show the picture when what it shows changed. Returns True when it swapped."""
+    wave(os_window_id, wants_wave(groups, animate, cross_shown()))
     m = metrics(os_window_id)
     if m is None:                             # no bar on the left (moved to the right edge): no picture, no hit bands
         clear(os_window_id)
@@ -129,6 +152,9 @@ def clear(os_window_id: int) -> None:
     """Take the picture away (the switch went off, the bar moved, the client attached): the window's own background, the
     one kitty.conf configures if any, comes back."""
     _S.view.pop(os_window_id, None)
+    if _S.wave.get(os_window_id):
+        wave(os_window_id, False)
+    _S.wave.pop(os_window_id, None)
     if _S.windows.pop(os_window_id, None) is None:
         return
     try:

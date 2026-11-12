@@ -71,9 +71,13 @@ def _nudge(bar: int, d: int) -> int:
     return (r << 16) | (bar & 0xFFFF)
 
 
-def marker(bar: int, i: int) -> int:
-    """The row map colour of the i-th tab row: the bar with its red channel nudged up (down on a very light bar)."""
-    return _nudge(bar, MAP_STEP * (1 + i % 2))
+WORKING_STEP = 5    # a working row's markers sit in their own family (+30/+36): kittymux-pxwave.slang finds the rows to animate
+
+
+def marker(bar: int, i: int, working: bool = False) -> int:
+    """The row map colour of the i-th tab row: the bar with its red channel nudged up (down on a very light bar). A working
+    row's markers are a separate, larger family, so the wave shader can tell it from the rest."""
+    return _nudge(bar, MAP_STEP * ((WORKING_STEP if working else 0) + 1 + i % 2))
 
 
 def scale_marker(bar: int) -> int:
@@ -468,7 +472,7 @@ def render(groups, pal: th.Palette, width: int, height: int, *, host: str = "", 
                 hc, ha = pt.veil(0.06)
                 pt.fill_rrect(INSET + 8, y, width - 2 * INSET - 16, 1, 0.5, hc, ha)       # the card's top light
             # the row map: column 0, this row's band
-            cr.set_source_rgb(*_rgb(marker(pal.bar, tab_i)))
+            cr.set_source_rgb(*_rgb(marker(pal.bar, tab_i, row.state == "working" and not row.muted)))
             cr.rectangle(0, y0, 1, y1 - y0)
             cr.fill()
             tab_i += 1

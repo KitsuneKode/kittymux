@@ -1710,8 +1710,8 @@ def _px_project(facts) -> str:
 def _px_phase(state: str) -> int:
     """The working loader's frame: the same calm clock as the cell bar's spinner (kittymux_agents.SPINNER_FPS), still when the
     motion switch is off. It is part of the picture's signature, so the picture changes once a step, never in between."""
-    if state != "working" or not _features().get("motion", True):
-        return 0
+    if state != "working" or not _features().get("motion", True) or kittymux_pxbar.cross_shown():
+        return 0                              # still, or the shader animates the loader itself (kittymux-pxwave.slang)
     return int(time.monotonic() * kittymux_agents.SPINNER_FPS) % 3
 
 
@@ -1746,7 +1746,7 @@ def _draw_px(draw_data, screen, tab, index, extra_data, pal) -> int:
             rows = [_px_row(t, pal) for t in tm.tab_bar_data] if tm is not None else []
             groups = kittymux_groups.group(rows, expanded=kittymux_pxbar.expanded())
             kittymux_pxbar.prune_expanded(g.project for g in groups)
-            kittymux_pxbar.publish(osw, groups, pal, _host())
+            kittymux_pxbar.publish(osw, groups, pal, _host(), animate=_features().get("motion", True))
         except Exception:
             _log_exception(tab, index)
             _MEMO[("px_failed", osw)] = True              # this pass draws the cell bar: never a blank bar behind a bug

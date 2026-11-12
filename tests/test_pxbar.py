@@ -269,3 +269,39 @@ class ActionsTest(unittest.TestCase):
             self.assertEqual(PX.band_at(5, 100, 20).kind, "header")
         finally:
             PX._S.windows.clear(); PX._S.windows.update(saved)
+
+
+class WaveTest(unittest.TestCase):
+    """The working loader's animation runs only while a shown row works, motion is on and the shader is there; events fire on changes only."""
+    def setUp(self):
+        self.saved = dict(PX._S.wave)
+        PX._S.wave.clear()
+
+    def tearDown(self):
+        PX._S.wave.clear(); PX._S.wave.update(self.saved)
+
+    def groups(self, *states, muted=False):
+        import kittymux_groups as G
+        return G.group([G.Row(tab_id=i, title="t", project="p", state=s, muted=muted) for i, s in enumerate(states, 1)])
+
+    def test_it_wants_a_working_row_motion_and_the_shader(self):
+        self.assertTrue(PX.wants_wave(self.groups("idle", "working"), True, True))
+        self.assertFalse(PX.wants_wave(self.groups("idle", "done"), True, True))
+        self.assertFalse(PX.wants_wave(self.groups("working"), False, True))        # motion off
+        self.assertFalse(PX.wants_wave(self.groups("working"), True, False))        # no shader: nothing to animate
+        self.assertFalse(PX.wants_wave(self.groups("working", muted=True), True, True))
+
+    def test_events_fire_only_when_the_answer_changes(self):
+        fired = []
+        f = lambda name, osw: fired.append((name, osw))
+        for on in (True, True, False, False, True):
+            PX.wave(4, on, fire=f)
+        self.assertEqual(fired, [("kmx-wave-on", 4), ("kmx-wave-off", 4), ("kmx-wave-on", 4)])
+
+    def test_the_pipeline_declares_both_events_and_a_calm_step(self):
+        pl = open(os.path.join(os.path.dirname(__file__), "..", "assets", "shaders", "kittymux-pxbar.pipeline"), encoding="utf-8").read()
+        self.assertIn("animation_start user:kmx-wave-on", pl)
+        self.assertIn("animation_stop user:kmx-wave-off", pl)
+        self.assertIn("shaders kittymux-pxwave", pl)
+        step = int(pl.split("animation_step 66")[0] and 66)
+        self.assertGreaterEqual(step, 50)                                            # 20 fps at most: a loader, not a video
