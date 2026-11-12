@@ -134,18 +134,19 @@ def _brand_rrect(pt: dp.Painter, x, y, w, h, r, mark: str, tint: int):
     pt.fill_rrect(x + r * 0.6, y + 0.6, w - r * 1.2, 0.8, 0.4, 0xFFFFFF, 0.16)     # light catching the tile's top edge
 
 
-def _tile(pt: dp.Painter, x, y, row: G.Row, p: th.Palette):
+def _tile(pt: dp.Painter, x, y, row: G.Row, p: th.Palette, side=TILE):
+    r = 6 * side / TILE
     if row.tint is not None:
-        _brand_rrect(pt, x, y, TILE, TILE, 6, row.mark, row.tint)
+        _brand_rrect(pt, x, y, side, side, r, row.mark, row.tint)
         fg, alpha = 0xFFFFFF, 1.0
     else:
         c, a = pt.veil(0.09)
-        pt.fill_rrect(x, y, TILE, TILE, 6, c, a)
+        pt.fill_rrect(x, y, side, side, r, c, a)
         fg, alpha = p.muted, 1.0
-    size = 12
-    if row.mark and pt.icon(row.mark, x + (TILE - size) / 2, y + (TILE - size) / 2, size, fg, alpha):
+    size = round(12 * side / TILE)
+    if row.mark and pt.icon(row.mark, x + (side - size) / 2, y + (side - size) / 2, size, fg, alpha):
         return
-    _prompt(pt, x, y, fg)
+    _prompt(pt, x + (side - TILE) / 2, y + (side - TILE) / 2, fg)
 
 
 def _prompt(pt: dp.Painter, x, y, color):
@@ -160,11 +161,11 @@ def _prompt(pt: dp.Painter, x, y, color):
     cr.stroke()
 
 
-def _stack(pt: dp.Painter, x, y, marks, p):
+def _stack(pt: dp.Painter, x, y, marks, p, side=TILE):
     """The badge on a tile's corner for the other agents in this tab's splits: their mark, or +N for two or more."""
     if not marks:
         return
-    bx, by, bs = x + TILE - 8, y + TILE - 8, 12
+    bx, by, bs = x + side - 8, y + side - 8, 12
     pt.fill_rrect(bx - 1.5, by - 1.5, bs + 3, bs + 3, 5, p.bar)
     if len(marks) == 1:
         tint = BRAND_OF_MARK.get(marks[0])
@@ -352,18 +353,25 @@ def _progress(pt: dp.Painter, x, y, w, row: G.Row, p):
 
 
 RAIL_MAX = 130      # logical px: narrower than this the bar is the rail (tiles only, a state dot on each tile)
-RAIL_ROW = 34
+RAIL_ROW = 38
+RAIL_TILE = 26      # the rail's tiles: the 9-column rail kitty allows is ~80 logical px wide, so tiles fill it (owner, 2026-11-12)
+RAIL_CARD_W, RAIL_CARD_R = 42, 10    # the active (and hovered) tile's card; the shader draws the hover at the same size
+RAIL_BTN = 28       # the expand button in the rail's header
 PIP = {"waiting": "waiting", "done": "done", "error": "alert", "limited": "waiting", "working": "working"}
 
 
 def _render_rail(pt, cr, groups, pal, width, height, s, hits, start=0):
     """Returns (start, shown, total)."""
     cx = width / 2
-    _tile(pt, cx - TILE / 2, (HEADER_H - TILE) / 2, G.Row(0, "", "", mark="kittymux"), pal)
+    by = (HEADER_H - RAIL_BTN) / 2                             # the way back open: the wide bar's sidebar icon, as a button
+    c, a = pt.veil(0.06)
+    pt.fill_rrect(cx - RAIL_BTN / 2, by, RAIL_BTN, RAIL_BTN, 8, c, a)
+    _sidebar_icon(pt, cx, HEADER_H / 2, pal.muted)
     n = G.needs_you(groups)
     if n:
-        pt.dot(cx + TILE / 2 - 1, (HEADER_H - TILE) / 2 + 1, 4, pal.waiting)
-    _action(hits, "collapse", 0, 0, width, HEADER_H, s)         # the rail's mascot expands the sidebar again
+        pt.fill_rrect(cx + RAIL_BTN / 2 - 6.5, by - 2.5, 9, 9, 4.5, pal.bar)
+        pt.dot(cx + RAIL_BTN / 2 - 2, by + 2, 3.2, pal.waiting)
+    _action(hits, "collapse", 0, 0, width, HEADER_H, s)         # the whole header expands the sidebar again
     total = sum(len(g.rows) for g in groups)
     start = max(0, min(start, max(0, total - 1)))
     need = HEADER_H + sum((11 if gi else 0) + (20 if g.hidden else RAIL_ROW * len(g.rows)) for gi, g in enumerate(groups))
@@ -403,22 +411,22 @@ def _render_rail(pt, cr, groups, pal, width, height, s, hits, start=0):
             y0, y1 = int(round(y * s)), int(round((y + RAIL_ROW) * s))
             if row.active:
                 c, a = pt.veil(0.085)
-                pt.fill_rrect(cx - 15, y + 2, 30, RAIL_ROW - 4, 9, c, a)
+                pt.fill_rrect(cx - RAIL_CARD_W / 2, y + 2, RAIL_CARD_W, RAIL_ROW - 4, RAIL_CARD_R, c, a)
             cr.set_source_rgb(*_rgb(marker(pal.bar, tab_i)))
             cr.rectangle(0, y0, 1, y1 - y0)
             cr.fill()
             tab_i += 1
-            ty = y + (RAIL_ROW - TILE) / 2
-            _tile(pt, cx - TILE / 2, ty, row, pal)
-            _stack(pt, cx - TILE / 2, ty, row.stack, pal)
+            ty = y + (RAIL_ROW - RAIL_TILE) / 2
+            _tile(pt, cx - RAIL_TILE / 2, ty, row, pal, RAIL_TILE)
+            _stack(pt, cx - RAIL_TILE / 2, ty, row.stack, pal, RAIL_TILE)
             tone = PIP.get(row.state) if not row.muted else None
             if tone:
-                pt.fill_rrect(cx + TILE / 2 - 5.5, ty - 2.5, 9, 9, 4.5, pal.bar)
-                pt.dot(cx + TILE / 2 - 1, ty + 2, 3, getattr(pal, tone))
+                pt.fill_rrect(cx + RAIL_TILE / 2 - 6, ty - 3, 10, 10, 5, pal.bar)
+                pt.dot(cx + RAIL_TILE / 2 - 1, ty + 2, 3.4, getattr(pal, tone))
             if row.progress:
                 pst, pct = row.progress
                 frac = 1.0 if pst in ("error", "indeterminate") else max(0.0, min(1.0, (pct or 0) / 100))
-                pt.fill_rrect(cx - TILE / 2, y + RAIL_ROW - 3, TILE * frac, 2, 1, {"error": pal.alert, "paused": pal.waiting}.get(pst, pal.working))
+                pt.fill_rrect(cx - RAIL_TILE / 2, y + RAIL_ROW - 3, RAIL_TILE * frac, 2, 1, {"error": pal.alert, "paused": pal.waiting}.get(pst, pal.working))
             hits.append(Hit("tab", y0, y1, tab_id=row.tab_id))
             y += RAIL_ROW
         if full:

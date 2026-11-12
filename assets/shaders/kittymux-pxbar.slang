@@ -91,11 +91,11 @@ fragment_main(float4 color, KittyTextures t, KittyCustomShaderData d) {
     if (t.pos.y > top + px.y * 0.5 || t.pos.y < bot - px.y * 0.5) return color;
     float2 p = t.pos / px;
     bool rail = span.y / px.x < RAIL_MAX * sc;
-    float r0 = (rail ? 9.0 : R) * sc;
+    float r0 = (rail ? 10.0 : R) * sc;
     float x0 = INSET * sc, x1 = span.y / px.x - INSET * sc, y0 = bot / px.y, y1 = top / px.y;
-    if (rail) {                                                     // the rail's card: kittymux_barpx draws the active one 30 px wide
+    if (rail) {                                                     // the rail's card: kittymux_barpx draws the active one RAIL_CARD_W (42) px wide
         float mid = span.y / px.x * 0.5;
-        x0 = mid - 15.0 * sc; x1 = mid + 15.0 * sc; y0 += 2.0 * sc; y1 -= 2.0 * sc;
+        x0 = mid - 21.0 * sc; x1 = mid + 21.0 * sc; y0 += 2.0 * sc; y1 -= 2.0 * sc;
     }
     float2 q = float2(max(max(x0 + r0 - p.x, p.x - (x1 - r0)), 0.0), max(max(y0 + r0 - p.y, p.y - (y1 - r0)), 0.0));
     float inside = 1.0 - smoothstep(r0 - 0.75, r0 + 0.75, length(q));

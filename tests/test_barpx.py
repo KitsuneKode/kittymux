@@ -207,6 +207,22 @@ class ControlsTest(unittest.TestCase):
         out = B.render(session(), pal(), width=90, height=400)
         self.assertEqual(set(self.acts(out)), {"collapse"})
 
+    def test_the_rail_uses_its_width(self):
+        # 2026-11-12, the owner: the rail had "too much margin" (20 px tiles in a 9-column bar) and no visible way back open
+        self.assertGreaterEqual(B.RAIL_TILE, 26)
+        self.assertGreaterEqual(B.RAIL_CARD_W, 40)
+        self.assertGreaterEqual(B.RAIL_ROW, B.RAIL_TILE + 10)
+        out = B.render(session(), pal(), width=90, height=400)
+        tabs = [hb for hb in out.hits if hb.kind == "tab"]
+        self.assertTrue(all(hb.y1 - hb.y0 == B.RAIL_ROW for hb in tabs))
+
+    def test_the_rail_card_is_one_card_in_the_picture_and_the_shader(self):
+        import os
+        src = open(os.path.join(os.path.dirname(__file__), "..", "assets", "shaders", "kittymux-pxbar.slang"), encoding="utf-8").read()
+        half = B.RAIL_CARD_W / 2
+        self.assertIn(f"x0 = mid - {half:.1f} * sc; x1 = mid + {half:.1f} * sc;", src)
+        self.assertIn(f"float r0 = (rail ? {float(B.RAIL_CARD_R):.1f} : R) * sc;", src)
+
     def test_the_wave_steps_through_its_frames(self):
         row = lambda ph: G.group([G.Row(tab_id=1, title="t", project="p", state="working", phase=ph)])
         frames = {B.render(row(ph), pal(), width=268, height=200).png for ph in (0, 1, 2)}
