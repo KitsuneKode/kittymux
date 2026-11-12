@@ -249,6 +249,20 @@ kittymux palette
 
 Exit status is 2 for an argument, and 1 when it is not started inside a kitty with a socket or when no pane is focused. `kittymux act JSON` is what the palette runs after you choose. It is not meant to be typed: it refuses anything that is not one of the palette's own actions.
 
+## `kittymux answer`
+
+Answers an agent's prompt from outside its pane, for a shell's Allow and Deny buttons (the rice notch).
+
+```sh
+kittymux answer w4035.19 allow --expect "Do you want to proceed?"
+kittymux answer w4035.19 deny
+kittymux answer w4035.19 text yes, update the docs too
+```
+
+`KEY` is the row's `key` in `agents.json`. Before it types anything, kittymux reads that pane's screen again: `allow` and `deny` need the agent's permission menu still on screen (and, with `--expect`, the same question), and `text` needs the agent to be waiting on a question it asked at the end of its turn, with no menu on screen. `allow` and `deny` work for Claude Code (`1` / Esc) and Codex (Enter / Esc), the prompts captured from the real agents; other agents are refused, so you answer them in their pane. A typed answer is one plain line. It types into that one pane, never the focused one. `--dry-run` checks the same and prints what it would type, typing nothing.
+
+Exit status is 0 when it typed (or, with `--dry-run`, would have), 3 when it refused (the reason is on stderr: the prompt changed or is gone, the agent is not verified), 1 when that kitty or pane is gone, and 2 for an argument.
+
 ## `kittymux join`
 
 Moves this tab's panes into another tab as splits, keeping their shape. See [Tabs and panes](/docs/users/tabs-and-panes#join-a-tab-into-another).
