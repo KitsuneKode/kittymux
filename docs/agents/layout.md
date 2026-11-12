@@ -86,6 +86,7 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
   falls back to kitty's own title, never a blank bar. Colours derive from the bar's REAL fg/bg (`window_title_bar_*` else the tab colours) and the same state colours as the tab bar.
   `KITTYMUX_PANETITLE_DUMP=1` records what each pane drew (`tests/smoke_panetitle.sh`).
 - `tests/shot_panes.sh` — the pane-guide screenshots (`assets/panes-*.png`: layout, `ctrl+alt+e` digits, six `alt+shift+l`, `alt+shift+=`), taken with REAL key events in a private kitty; asserts the widths it claims (50 → 70 → 50/50 columns). Re-run after changing a pane key or the look of kitty borders.
+- `tests/shot_states.sh` — the all-states screen (plan 015 §4): `shot_bar.sh` with `KMX_SHOT_SCENE=states` (working, needs you, done unseen, limited, error, a needs-you split, OSC 9;4 set/paused/failed, a worktree, a 60-character title, twins, plain programs, no git) and `many` (40 tabs), dark and light at the default width, 16 columns and the rail, plus a contact sheet. The before pictures are `assets/states/before/`.
 - `tests/shot_bar.sh` — a screenshot of the bar (dark|light, any width, rail) with synthetic repos; `tests/profile_bar.sh` — draw cost with N tabs (compare two trees; the folder line costs ~0.02 ms/draw at 23 tabs).
 - `assets/notify/` (built by `tools/build-notify-icons.py`) — one PNG per agent for notifications; `docs/brand/` — the mascot
   brief and image-model prompts (`tools/build-brand.py` derives sizes from `assets/brand/mascot.png`); `docs/notifications.md` — the
