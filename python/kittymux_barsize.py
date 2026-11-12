@@ -38,6 +38,7 @@ _DEFAULTS = dict(
     last_cost=0.0,          # how long the last width change took (s): the next one waits at least this long
     installed=False,
     toggle_down=False,      # a press landed on the collapse/expand button; the release decides
+    px_down=None,           # the pixel tab bar: ("close", tab id) or ("group", project) pressed; the release decides
     peek_down=0,            # tab id under a right-button press; the release opens its peek card
     watchdog=None,          # timer id
     trail=None,             # timer id of the pending "apply the latest pointer position" (see _drag_to)
@@ -332,6 +333,127 @@ def _open_peek(tm, tab_id: int) -> None:
         _debug(traceback.format_exc())
 
 
+def _in_divider(tm, x: float) -> bool:
+    """x is in the bar's resize grab zone (the same test the drag uses)."""
+    try:
+        geo = _bar_geometry(tm)
+        if geo is None:
+            return False
+        _, _edge, inner, cell_w, _window_px = geo
+        return bool(L.in_grab_zone(x, inner, cell_w, native=native_edge_active(tm.os_window_id)))
+    except Exception:
+        return False
+
+
+# The pixel bar's controls run exactly what their keys run: the action is read from kittymux-keys.conf.tpl by its chord,
+# so a control and its key can never drift apart (test_pxbar pins every chord below to a map line).
+PX_CONTROL_KEYS = {
+    "search": "ctrl+alt+shift+space",   # the command palette
+    "palette": "ctrl+alt+shift+space",  # the footer's filter field: the same palette
+    "inbox": "ctrl+alt+shift+q",        # peek at what needs you
+    "usage": "ctrl+alt+u",              # usage and limits
+    "keys": "ctrl+alt+slash",           # the keys sheet
+}
+
+
+_TPL_MAX = 256 * 1024     # the key template is ~20 KB; anything far larger is not ours, and the click path never reads more
+
+
+def _key_template(path: str) -> str:
+    """kittymux-keys.conf.tpl, read at most _TPL_MAX bytes and cached by mtime (a control click runs on kitty's main thread)."""
+    try:
+        mtime = os.stat(path).st_mtime
+    except OSError:
+        return ""
+    cache = getattr(_S, "tpl_cache", None)
+    if cache and cache[0] == path and cache[1] == mtime:
+        return cache[2]
+    with open(path, encoding="utf-8", errors="replace") as f:
+        text = f.read(_TPL_MAX + 1)
+    if len(text) > _TPL_MAX:
+        text = ""
+    _S.tpl_cache = (path, mtime, text)
+    return text
+
+
+def mapped_action(chord: str, tpl_text: str, home: str) -> str:
+    """The action kittymux's template maps to `chord` (its first plain `map` line), with @KITTYMUX_HOME@ filled in; '' if none."""
+    for line in tpl_text.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) == 3 and parts[0] == "map" and parts[1] == chord:
+            return parts[2].strip().replace("@KITTYMUX_HOME@", home)
+    return ""
+
+
+def _px_action(tm, name: str) -> None:
+    """The pixel bar's controls: collapse to the rail (and back); the others dispatch their key's action through kitty."""
+    if name == "collapse":
+        _toggle_collapsed(tm)
+        return
+    chord = PX_CONTROL_KEYS.get(name)
+    if not chord:
+        return
+    try:
+        from kitty.fast_data_types import get_boss
+        home = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+        action = mapped_action(chord, _key_template(os.path.join(home, "kittymux-keys.conf.tpl")), home)
+        window = tm.active_tab.active_window if tm.active_tab is not None else None
+        if action:
+            get_boss().combine(action, window_for_dispatch=window)
+    except Exception:
+        import traceback
+        _debug(traceback.format_exc())
+
+
+def _pxbar_click(tm, x: float, y: float, action: int) -> bool:
+    """The pixel tab bar's own targets (kittymux_pxbar): a press then a release on the same close cross closes that tab
+    (busy agents ask first); a click on a folded group's label opens it. True when the event was ours."""
+    import kittymux_pxbar as PX
+    from kitty.fast_data_types import GLFW_PRESS, GLFW_RELEASE, get_boss
+    osw = tm.os_window_id
+    if not PX.active(osw):
+        return False
+    if action == GLFW_PRESS:
+        if _in_divider(tm, x):                     # the resize grab zone overlaps the row ends: the divider comes first
+            return False
+        tid = PX.close_hit(osw, x, y)
+        band = PX.band_at(osw, x, y)
+        if tid:
+            _S.px_down = ("close", tid)
+            return True
+        if band is not None and band.kind == "group":
+            _S.px_down = ("group", band.project)
+            return True
+        if band is not None and band.kind in ("up", "down"):
+            _S.px_down = ("page", band.kind)
+            return True
+        if band is not None and band.kind == "act":
+            _S.px_down = ("act", band.project)
+            return True
+        return False
+    if action == GLFW_RELEASE and getattr(_S, "px_down", None):
+        kind, what = _S.px_down
+        _S.px_down = None
+        if kind == "close" and PX.close_hit(osw, x, y) == what:
+            PX.close_tab(get_boss(), what)
+        elif kind == "group":
+            band = PX.band_at(osw, x, y)
+            if band is not None and band.kind == "group" and band.project == what:
+                PX.toggle_group(what)
+                tm.mark_tab_bar_dirty()
+        elif kind == "page":
+            band = PX.band_at(osw, x, y)
+            if band is not None and band.kind == what:
+                PX.page(osw, -1 if what == "up" else 1)
+                tm.mark_tab_bar_dirty()
+        elif kind == "act":
+            band = PX.band_at(osw, x, y)
+            if band is not None and band.kind == "act" and band.project == what:     # released on the same control
+                _px_action(tm, what)
+        return True
+    return False
+
+
 def _handle(tm, x: float, y: float, button: int, action: int) -> bool:
     """True when the event was ours: the collapse/expand button (acts on release, like a button),
     or a left press on the bar's inner edge, which starts a resize drag."""
@@ -348,6 +470,8 @@ def _handle(tm, x: float, y: float, button: int, action: int) -> bool:
             if tm.tab_bar.tab_id_at(int(x), int(y)) == tid:      # released on the same tab
                 _open_peek(tm, tid)
             return True
+    if button == GLFW_MOUSE_BUTTON_LEFT and _S.drag is None and tm.tab_bar.is_vertical and _pxbar_click(tm, x, y, action):
+        return True
     if button == GLFW_MOUSE_BUTTON_LEFT and _S.drag is None and tm.tab_bar.is_vertical:
         if action == GLFW_PRESS and _toggle_zone(tm, x, y):
             _S.toggle_down = True
@@ -401,6 +525,12 @@ def make_tab_id_at(original):
     past its midpoint (kittymux_layout.drag_target), so reordering does not cascade. Anything unexpected
     falls back to kitty's own answer."""
     def tab_id_at(self, x, y):
+        try:
+            px = pxbar_tab_at(self, x, y)
+            if px is not None:
+                return px
+        except Exception:
+            pass
         tid = original(self, x, y)
         try:
             if not (getattr(self, "is_vertical", False) and self.laid_out_once):
@@ -425,6 +555,23 @@ def make_tab_id_at(original):
             return tid
     tab_id_at._kittymux_wrapped = True                          # type: ignore[attr-defined]
     return tab_id_at
+
+
+def pxbar_tab_at(tab_bar, x, y):
+    """With the pixel tab bar showing (kittymux_pxbar), the tab drawn under a window-pixel point: its id, 0 for a header,
+    a label or the empty space under the rows (a click there activates nothing), None when no picture is up (kitty's own
+    cell extents answer). The picture's rows need not line up with cells, so the cells must not decide."""
+    if not getattr(tab_bar, "is_vertical", False):
+        return None
+    import kittymux_pxbar as PX
+    osw = getattr(tab_bar, "os_window_id", None)
+    if osw is None or not PX.active(osw):
+        return None
+    g = tab_bar.window_geometry
+    if not (g.left <= x < g.right and g.top <= y < g.bottom):
+        return 0
+    band = PX.band_at(osw, x, y)
+    return band.tab_id if band is not None and band.kind == "tab" else 0
 
 
 def native_insert_drag() -> bool:
@@ -754,12 +901,87 @@ def _install_native_edge() -> None:
         _debug_exc()
 
 
+def pxbar_after_layout(tm) -> None:
+    """After kitty lays the tab bar out: a bar that is no longer shown (one tab under `tab_bar_min_tabs 2`, or hidden) takes
+    its picture away at once. kitty stops calling the bar's code while it is hidden, and the picture is the OS window's
+    background image, so it would stay behind the terminal's text as a ghost sidebar."""
+    import kittymux_pxbar as PX
+    if not PX.active(tm.os_window_id):
+        return
+    if getattr(tm, "tab_bar_hidden", False) or not tm.tab_bar_should_be_visible:
+        PX.clear(tm.os_window_id)
+
+
+def pxbar_after_vertical(bar, data) -> None:
+    """kitty draws a red "…" one row under the last vertical tab it fits. With the pixel bar it is a stray mark on the picture,
+    which says "↓ N below" itself: blank that cell back to the default background."""
+    import kittymux_pxbar as PX
+    extents = tuple(getattr(bar, "tab_extents", ()) or ())
+    if not PX.active(getattr(bar, "os_window_id", 0)) or not extents or len(extents) >= len(data):
+        return
+    s = bar.screen
+    row = extents[-1].y.end + 1
+    if row >= s.lines:
+        return
+    x, y = s.cursor.x, s.cursor.y
+    s.cursor.x, s.cursor.y = 0, row
+    s.cursor.bg = s.cursor.fg = 0
+    s.draw(" ")
+    s.cursor.x, s.cursor.y = x, y
+
+
+def _install_pxbar_ellipsis() -> None:
+    """Wrap TabBar.update_vertical once (pxbar_after_vertical)."""
+    try:
+        from kitty.tab_bar import TabBar
+        if getattr(TabBar.update_vertical, "_kittymux_wrapped", False):
+            return
+        original = TabBar.update_vertical
+
+        def wrapped(self, data, *args, **kwargs):
+            result = original(self, data, *args, **kwargs)
+            try:
+                pxbar_after_vertical(self, data)
+            except Exception:
+                _debug_exc()
+            return result
+
+        wrapped._kittymux_wrapped = True                        # type: ignore[attr-defined]
+        TabBar.update_vertical = wrapped                         # type: ignore[method-assign]
+    except Exception:
+        _debug_exc()
+
+
+def _install_pxbar_visibility() -> None:
+    """Wrap TabManager.layout_tab_bar once: kitty calls it whenever the bar appears or disappears."""
+    try:
+        from kitty.tabs import TabManager
+        if getattr(TabManager.layout_tab_bar, "_kittymux_wrapped", False):
+            return
+        original = TabManager.layout_tab_bar
+
+        def wrapped(self, *args, **kwargs):
+            result = original(self, *args, **kwargs)
+            try:
+                pxbar_after_layout(self)
+            except Exception:
+                _debug_exc()
+            return result
+
+        wrapped._kittymux_wrapped = True                        # type: ignore[attr-defined]
+        TabManager.layout_tab_bar = wrapped                      # type: ignore[method-assign]
+    except Exception:
+        _debug_exc()
+
+
 def install() -> bool:
     """Wrap TabManager.handle_tab_bar_mouse once (+ the spacer-row hit test). Safe to call
     repeatedly; never raises."""
     _install_tab_hit_testing()
     _install_tab_drag()
     _install_native_edge()
+    _install_pxbar_visibility()
+    _install_pxbar_ellipsis()
     if _S.installed:
         return True
     try:

@@ -27,6 +27,22 @@ def _rt():
     return rt
 
 
+def window_states(windows) -> dict:
+    """{window id (str): (fresh verdict, agent)} for kitty windows, from the scanner's runtime record (no kitty imports).
+    One copy of this rule: close-kit's keys and the pixel bar's close cross both ask it."""
+    import kittymux_agents
+    rt = sys.modules.get("_kittymux_scan_rt")
+    hooks = (getattr(rt, "panes", (None, {}))[1] or {}) if rt is not None else {}
+    verdicts = getattr(rt, "verdicts", {}) if rt is not None else {}
+    now = time.monotonic()
+    out = {}
+    for w in windows:
+        key = str(w.id)
+        entry = kittymux_agents.merge_scan({key: hooks.get(key) or {}}, {key: verdicts.get(key) or {}}).get(key) or {}
+        out[key] = (kittymux_agents.fresh_verdict(entry, now), entry.get("agent") or "")
+    return out
+
+
 def busy_windows(states: dict, window_ids) -> list:
     """The windows among `window_ids` whose agent is busy, in order. `states` maps a window id (str) to a state."""
     return [w for w in window_ids if (states.get(str(w)) or "") in BUSY]

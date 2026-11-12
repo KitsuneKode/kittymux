@@ -81,6 +81,17 @@ def compact_age(seconds) -> str:
     return f"{int(s // 60)}m" if s < 3600 else f"{int(s // 3600)}h" if s < 172800 else f"{int(s // 86400)}d"
 
 
+def countdown(seconds) -> str:
+    """Time left, rounded to the NEAREST unit (an age floors: "at least 5m"; a countdown that floors says 1h when the agent
+    beside it says "resets in 2h"). Never under 1m: it is about to lift."""
+    s = max(float(seconds), 60.0)
+    if s < 3570:
+        return f"{max(1, round(s / 60))}m"
+    if s < 172800:
+        return f"{max(1, round(s / 3600))}h"
+    return f"{round(s / 86400)}d"
+
+
 _AGED_STATES = ("waiting", "limited", "error", "done", "working")
 
 
@@ -96,7 +107,7 @@ def state_age(state: str, ts_state, now: float, minimum: float = 60.0, reset_at=
         except (TypeError, ValueError):
             remaining = 0.0
         if remaining > 0:
-            return "\u21bb" + compact_age(max(remaining, 60.0))
+            return "\u21bb" + countdown(remaining)
     try:
         age = float(now) - float(ts_state)
     except (TypeError, ValueError):
@@ -406,10 +417,37 @@ for _glyph, _names in (
     ("\ue0ee", ("npm",)),
     ("\ue0ec", ("pnpm",)),
     ("\ue0ed", ("yarn",)),
+    ("\uf233", ("t3", "t3code")),           # T3 Code's server (`t3`, which execs the app's t3code binary)
 ):
     for _n in _names:
         TOOLS[_n] = _glyph
 _TOOL_RANK = {name: i for i, name in enumerate(TOOLS)}
+
+# The same tools' marks as assets/icons basenames, for the pixel tab bar (kittymux_barpx). A tool missing here (ssh, btop,
+# man…) gets the drawn shell prompt rather than a made-up logo.
+TOOL_MARKS: dict[str, str] = {}
+for _mark, _names in (
+    ("neovim", ("nvim", "vim", "vi", "hx", "helix", "micro", "nano", "emacs")),
+    ("git", ("git", "lazygit", "tig", "gitui")),
+    ("docker", ("docker", "podman", "lazydocker")),
+    ("kubernetes", ("kubectl", "k9s", "helm")),
+    ("postgresql", ("psql", "pgcli")),
+    ("rust", ("cargo", "rustc")),
+    ("go", ("go",)),
+    ("python", ("python", "python3", "ipython", "uv")),
+    ("nodedotjs", ("node", "npx")),
+    ("bun", ("bun",)),
+    ("deno", ("deno",)),
+    ("npm", ("npm",)),
+    ("pnpm", ("pnpm",)),
+    ("yarn", ("yarn",)),
+    ("t3code", ("t3", "t3code")),
+):
+    for _n in _names:
+        TOOL_MARKS[_n] = _mark
+
+# A program whose mark is a brand (an app, not a language or a tool): its tile wears the brand, like an agent's.
+TOOL_TINTS = {"t3code": 0x3B2A8C}
 _WRAPPERS = {"env", "sudo", "doas", "command", "exec", "nohup", "time"}
 
 

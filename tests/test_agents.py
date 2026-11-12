@@ -12,6 +12,10 @@ class ResetCountdownTests(unittest.TestCase):
         self.assertEqual(A.state_age("limited", 0.0, 1000.0, reset_at=1000 + 12 * 60 + 5, wall=1000), "\u21bb12m")
         self.assertEqual(A.state_age("limited", 0.0, 1000.0, reset_at=1000 + 3 * 3600 + 100, wall=1000), "\u21bb3h")
         self.assertEqual(A.state_age("limited", 0.0, 1000.0, reset_at=1000 + 20, wall=1000), "\u21bb1m")      # never "0m": it is about to lift
+        # a countdown rounds to the nearest unit: 1h59m left is "2h" (the agent's own "resets in 2h" beside it), 1h20m is "1h"
+        self.assertEqual(A.state_age("limited", 0.0, 1000.0, reset_at=1000 + 7140, wall=1000), "\u21bb2h")
+        self.assertEqual(A.state_age("limited", 0.0, 1000.0, reset_at=1000 + 4800, wall=1000), "\u21bb1h")
+        self.assertEqual(A.state_age("limited", 0.0, 1000.0, reset_at=1000 + 3590, wall=1000), "\u21bb1h")
 
     def test_without_a_reset_or_once_it_has_passed_it_is_how_long_ago_as_before(self):
         self.assertEqual(A.state_age("limited", 100.0, 100.0 + 600), "10m")

@@ -402,3 +402,57 @@ class MenuReasonTests(unittest.TestCase):
     def test_no_question_gives_no_reason_rather_than_chrome(self):
         screen = "some output line\n  ❯ 1. Yes\n    2. No\n  Enter to select · Esc to cancel"
         self.assertEqual(S.classify_screen(screen), ("waiting", ""))
+
+
+# Captured live from each agent's first run in a new folder (2026-11-12); paths and model names replaced with synthetic ones.
+AGY_TRUST = ("Accessing workspace:\n/tmp/work-calm-otter\nDo you trust the contents of this project?\n"
+             "Antigravity CLI requires permission to read, edit, and execute\nfiles here.\n> Yes, I trust this folder\n  No, exit\n"
+             "  ↑/↓ Navigate · enter Confirm\n                                auto · model-x · high\n")
+CURSOR_TRUST = ("  ╭──────────────────────────────────────╮\n  │  ⚠ Workspace Trust Required          │\n"
+                "  │  Cursor Agent can execute code and access files in     │\n  │  Do you trust the contents of this directory?          │\n"
+                "  │    /tmp/work-calm-otter             │\n  │  ▶ [a] Trust this workspace                            │\n"
+                "  │    [q] Quit                                            │\n  │  Use arrow keys to navigate, Enter to select, or       │\n"
+                "  │  press the key shown                                   │\n  ╰──────────────────────────────────────╯\n")
+
+
+class TrustPromptTest(unittest.TestCase):
+    """A trust prompt blocks the agent until you answer: it needs you, and the question is what the notch shows."""
+    def test_antigravity_trust_prompt_is_waiting_with_its_question(self):
+        self.assertEqual(S.classify_screen(AGY_TRUST), ("waiting", "Do you trust the contents of this project?"))
+
+    def test_cursor_trust_prompt_is_waiting_with_its_question(self):
+        marker, line = S.classify_screen(CURSOR_TRUST)
+        self.assertEqual(marker, "waiting")
+        self.assertIn("Do you trust the contents of this directory?", line)
+
+
+# The three agents' question tools, captured live 2026-11-12 (a menu that blocks until answered; text kept, paths synthetic).
+AGY_QUESTION = ("● Explored 1 file (SKILL.md) (ctrl+o to expand)\n? Should the new file be called alpha.txt or beta.txt?\nQuestion\n"
+                "──────────────────────────────────────────────────────────────\nQuestion 1/1: Should the new file be called alpha.txt or\n"
+                "beta.txt?\n> 1. (Recommended) alpha.txt\n  2. beta.txt\n  3. Write-in...\n  ↑/↓ Navigate · enter Select · esc Skip\n"
+                "esc to cancel                   auto · model-x · high\n")
+CURSOR_QUESTION = ("  Waiting for your choice before creating anything.\n ┌──────────────────────────────────────────────────────────┐\n"
+                   " │ Clarifying Questions                                     │\n │                                                          │\n"
+                   " │ Question 1 of 1                                          │\n │                                                          │\n"
+                   " │ 1. Should the new file be called alpha.txt or beta.txt?  │\n │                                                          │\n"
+                   " │   › [ ] alpha.txt                                        │\n │     [ ] beta.txt                                         │\n"
+                   " │     [ ] Other: (type to answer)                          │\n │                                                          │\n"
+                   " │ ↑/↓ option · ←/→ question · Space select · Enter         │\n │ next/submit · Esc to skip                                │\n"
+                   " └──────────────────────────────────────────────────────────┘\n")
+OPENCODE_QUESTION = ("  ┃\n  ┃  Questions\n  ┃\n  ┃  Should the new file be called alpha.txt or beta.txt?\n  ┃\n  ┃  1. alpha.txt\n"
+                     "  ┃     Name the new file alpha.txt\n  ┃  2. beta.txt\n  ┃     Name the new file beta.txt\n  ┃  3. Type your own answer\n"
+                     "  ┃\n  ┃  ↑↓ select  enter submit  esc dismiss\n  ┃\n ✓ Server  ○ UI  Theme  Tools  Experiments\n")
+
+
+class QuestionToolTest(unittest.TestCase):
+    """Each agent's own question tool blocks until you answer; the notch and popups show the whole question."""
+    Q = "Should the new file be called alpha.txt or beta.txt?"
+
+    def test_antigravity_asks_with_the_whole_wrapped_question(self):
+        self.assertEqual(S.classify_screen(AGY_QUESTION), ("waiting", self.Q))
+
+    def test_cursor_clarifying_questions_wait_with_the_numbered_question(self):
+        self.assertEqual(S.classify_screen(CURSOR_QUESTION), ("waiting", self.Q))
+
+    def test_opencode_questions_panel_waits(self):
+        self.assertEqual(S.classify_screen(OPENCODE_QUESTION), ("waiting", self.Q))

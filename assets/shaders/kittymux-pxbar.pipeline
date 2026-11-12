@@ -1,0 +1,16 @@
+# kittymux pxbar: the pixel tab bar's shaders (kittymux_barpx). Emitted by the geninclude when the pxbar switch is on.
+# The wave runs FIRST: the hover group paints the picture's row map (column 0) away, and the wave finds its rows there.
+#
+# the working loader: kittymux fires user:kmx-wave-on while a row it shows is working and user:kmx-wave-off when none is
+# (kittymux_pxbar.publish); between them kitty redraws at 15 fps, and not at all otherwise
+startgroup
+    animation_start user:kmx-wave-on
+    animation_stop user:kmx-wave-off
+    animation_step 66
+    shaders kittymux-pxwave
+endgroup
+# hover, the close cross and the terminal's card: static, kitty redraws it when the pointer moves
+startgroup
+    animation_step 0
+    shaders kittymux-pxbar
+endgroup

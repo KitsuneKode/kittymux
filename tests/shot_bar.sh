@@ -128,8 +128,48 @@ if [ "${KMX_SHOT_SCENE:-}" = home ]; then
   printf 'new_tab\ncd %s\n%s\nnew_tab\ncd %s\n%s\nfocus_tab 1\n' "$T/home" "$L" "$T/home" "$L" > "$T/session"
   export HOME="$T/home"
 fi
+# KMX_SHOT_SCENE=states: every state and edge case of plan 015 §4 at once (tests/shot_states.sh drives it)
+if [ "${KMX_SHOT_SCENE:-}" = states ]; then
+  b64() { printf %s "$1" | base64 | tr -d '\n'; }
+  ST() { printf "launch bash -c 'printf \"\\\\033]1337;SetUserVar=kittymux_status=%s\\\\007\"; exec -a %s sleep 86400'\n" "$(b64 "$1")" "$2"; }
+  TITLE="A sixty-character title that has to be cut somewhere sensible"
+  {
+    printf 'new_tab\ncd %s\nlaunch sh\n' "$W/kittymux"                                                          # the active tab: a plain shell
+    printf 'new_tab\ncd %s\n' "$W/web"
+    printf "launch bash -c 'printf \"· Pondering… (12s · ↓ 1.2k tokens)\\\\n\"; exec -a claude sleep 86400'\n"     # working
+    printf 'new_tab\ncd %s\n' "$W/api"
+    printf "launch bash -c 'printf \" Bash command\\\\n   rm -rf node_modules\\\\n Do you want to proceed?\\\\n ❯ 1. Yes\\\\n   2. No\\\\n\"; exec -a claude sleep 86400'\n"   # needs you
+    printf 'new_tab\ncd %s\n' "$W/web"; ST done codex                                                           # done, unseen
+    printf 'new_tab\ncd %s\n' "$W/docs"
+    printf "launch bash -c 'printf \"Usage limit reached · resets in 2h\\\\n\"; exec -a claude sleep 86400'\n"   # limited (a RELATIVE reset: a clock time like "2pm" reads as already lifted after 2pm, by design)
+    printf 'new_tab\ncd %s\n' "$W/api"; ST error goose                                                          # error (an agent whose screen is not read)
+    printf 'new_tab\ncd %s\nlaunch sh\nfocus\n' "$W/kittymux/python"                                             # needs you in a background split
+    printf "launch --location=hsplit bash -c 'printf \" Edit file\\\\n Do you want to make this edit?\\\\n ❯ 1. Yes\\\\n\"; exec -a claude sleep 86400'\n"
+    printf 'new_tab\ncd %s\n' "$W/web"; printf "launch sh -c 'printf \"\\\\033]9;4;1;64\\\\033\\\\\\\\\"; exec sh'\n"          # progress 64 %%
+    printf 'new_tab\ncd %s\n' "$W/web"; printf "launch sh -c 'printf \"\\\\033]9;4;4;30\\\\033\\\\\\\\\"; exec sh'\n"          # progress paused
+    printf 'new_tab\ncd %s\n' "$W/api"; printf "launch sh -c 'printf \"\\\\033]9;4;2;80\\\\033\\\\\\\\\"; exec sh'\n"          # progress failed
+    printf 'new_tab\ncd %s\nlaunch sh -c %s\n' "$W/kittymux/.worktrees/hue" "'printf \"\\\\033]2;$TITLE\\\\007\"; exec sh'"  # a worktree, a 60-character title
+    printf 'new_tab\ncd %s\nlaunch sh\n' "$W/kittymux"                                                          # a twin of tab 1
+    printf 'new_tab\ncd %s\nlaunch bash -c %s\n' "$W/kittymux" "'exec -a nvim sleep 86400'"                     # plain programs
+    printf 'new_tab\ncd %s\nlaunch bash -c %s\n' "$W/api" "'exec -a lazygit sleep 86400'"
+    printf 'new_tab\ncd %s\nlaunch bash -c %s\n' "$W/docs" "'exec -a btop sleep 86400'"
+    printf 'new_tab\ncd %s\nlaunch bash -c %s\n' "$W/web" "'exec -a ssh sleep 86400'"
+    printf 'new_tab\ncd %s\nlaunch sh\n' "$T/plain/notes"                                                       # no git
+    printf 'focus_tab 0\n'                      # kitty's session index starts at 0: the plain shell in tab 1 is active
+  } > "$T/session"
+fi
+# KMX_SHOT_SCENE=many: 50 plain tabs: 30 in the active project (it never folds, so the bar overflows and pages) and 20 in four
+# other repos (settled, so they fold to their labels)
+if [ "${KMX_SHOT_SCENE:-}" = many ]; then
+  : > "$T/session"
+  for i in $(seq 50); do
+    if [ "$i" -le 30 ]; then d=$W/kittymux; else case $((i % 4)) in 0) d=$W/web ;; 1) d=$W/api ;; 2) d=$W/docs ;; *) d=$T/plain/notes ;; esac; fi
+    printf 'new_tab\ncd %s\nlaunch sh\n' "$d" >> "$T/session"
+  done
+  printf 'focus_tab 0\n' >> "$T/session"
+fi
 env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_DATA_HOME=$T/data \
-  KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
+  KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_SOCKET_DIRS=$T KITTYMUX_NOTIFY=0 \
   kitty -o linux_display_server=x11 --class kmx-shot --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
 for _ in $(seq 240); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 3
 X() { DISPLAY=$DISP xdotool "$@"; }
@@ -146,7 +186,7 @@ if [ -n "${KMX_SHOT_TAB:-}" ]; then
   sleep "${KMX_SHOT_TAB_SLEEP:-0.08}"
 fi
 DISPLAY=$DISP import -window root "$T/full.png"
-convert "$T/full.png" -crop 380x800+0+0 +repage "$OUT"
+convert "$T/full.png" -crop 380x900+0+0 +repage "$OUT"
 # kitty's own framebuffer, which keeps alpha; the root import above composites onto Xvfb and flattens it
 [ -n "${KMX_SHOT_ALPHA:-}" ] && kitty @ --to "$SOCK" screenshot "$KMX_SHOT_ALPHA" >/dev/null 2>&1
 [ -n "${KMX_SHOT_PIPELINE:-}" ] && cp "$STATE/shaders/kittymux-cards.pipeline" "$KMX_SHOT_PIPELINE" 2>/dev/null || true

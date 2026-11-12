@@ -9,6 +9,7 @@ ROOT = os.path.join(os.path.dirname(__file__), "..")
 
 SAFE = {
     ("kittymux_agents.py", "TOOLS"): "filled once at import from a constant table",
+    ("kittymux_agents.py", "TOOL_MARKS"): "filled once at import from a constant table",
     ("kittymux_barsize.py", "_DEFAULTS"): "a fixed set of named fields; copied into sys.modules['_kittymux_barsize_rt'], never grown",
     ("kittymux_git.py", "_cache"): "capped at _CACHE_MAX, oldest dropped",
     ("kittymux_keymap.py", "_MOD_NAME"): "a copy of a constant table",
