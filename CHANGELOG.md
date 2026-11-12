@@ -5,6 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 ## [Unreleased]
 
 ### Added
+- **An agent that ends its turn by asking you something needs you.** When Claude Code's reply (its Stop hook) or Codex's (its notify) ends with a question, the tab reads "needs you" with that question, instead of "done"; the question you'd otherwise miss is in the bar, the inbox and the notch. Only the agent's own last sentence counts (a reply ending in a statement or a code block is done). Agents without hooks are unchanged.
 - **Brand tiles in the pixel tab bar are lit:** each agent's tile is a gradient between two of its own colours (Gemini's blue into purple, Claude's clay, Codex's green…), with a faint light on its top edge; the split badge too.
 - **T3 Code** (`t3`) is a known program: its tab shows T3 Code's own mark (traced from the app's icon by `tools/trace-t3code.py`) on its night-sky gradient.
 
