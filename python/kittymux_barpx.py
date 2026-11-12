@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 import cairo
 
+import kittymux_agents
 import kittymux_deckpx as dp
 import kittymux_groups as G
 import kittymux_theme as th
@@ -28,6 +29,7 @@ ROW2_H = 46         # a row with a second line
 TILE = 20
 T_TITLE, T_META, T_LABEL = 13, 11, 11
 MAP_STEP = 6        # the row map's marker colours: the bar's red channel +6 and +12
+BRAND_OF_MARK = {kittymux_agents.brand_of(n): a.brand for n, a in kittymux_agents.AGENTS.items() if kittymux_agents.brand_of(n)}
 
 
 @dataclass(frozen=True)
@@ -93,8 +95,9 @@ def _stack(pt: dp.Painter, x, y, marks, p):
     bx, by, bs = x + TILE - 8, y + TILE - 8, 12
     pt.fill_rrect(bx - 1.5, by - 1.5, bs + 3, bs + 3, 5, p.bar)
     if len(marks) == 1:
-        pt.fill_rrect(bx, by, bs, bs, 4, p.surface_hi)
-        pt.icon(marks[0], bx + 2, by + 2, bs - 4, p.text)
+        tint = BRAND_OF_MARK.get(marks[0])
+        pt.fill_rrect(bx, by, bs, bs, 4, tint if tint is not None else p.surface_hi)
+        pt.icon(marks[0], bx + 2, by + 2, bs - 4, 0xFFFFFF if tint is not None else p.text)
     else:
         pt.fill_rrect(bx, by, bs, bs, 4, p.surface_hi)
         pt.text(bx + 1.5, by + bs / 2, f"+{len(marks)}", 7.5, p.text, weight=dp.Pango.Weight.BOLD, family=UI)

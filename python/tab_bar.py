@@ -1676,10 +1676,41 @@ def _px_row(tab, pal) -> "kittymux_groups.Row":
     elif state == "done":
         summary = _changes_summary(str(entry.get("wid", "")))
         meta = summary if summary and summary != "no changes" else ""
+    stack = _px_stack(tab.tab_id, mark)
+    if not info and stack:                   # a shell in front of an agent: the agent that matters most leads the tile
+        lead = stack[0]
+        mark, stack = lead, stack[1:]
+        who = next((n for n in kittymux_agents.AGENTS if kittymux_agents.brand_of(n) == lead), "")
+        tint = kittymux_agents.AGENTS[who].brand if who else None
+        if who and path is not None and not kittymux_agents.tool_in(foreground):
+            title = _APP_LABELS.get(who, who.capitalize())           # the shell in front said "sh": name the agent that leads
     return kittymux_groups.Row(
         tab_id=tab.tab_id, title=title, project=facts.project if facts else "other", branch=facts.branch if facts else "",
         state=state, active=bool(tab.is_active), mark=mark, tint=tint, meta=meta, meta_tone=tone,
-        age=age if state in ("waiting", "limited", "done") else "", path=path, progress=_tab_progress(tab))
+        age=age if state in ("waiting", "limited", "done") else "", path=path, progress=_tab_progress(tab), stack=stack)
+
+
+_STACK_ORDER = {"waiting": 0, "limited": 1, "error": 2, "working": 3, "done": 4}
+
+
+def _px_stack(tab_id: int, lead_mark: str) -> tuple:
+    """The marks of the agents in this tab's OTHER panes, the one that needs you first: the badge on the row's tile.
+    A shell beside an agent adds nothing; a tab with one pane has no badge."""
+    try:
+        t = get_boss().tab_for_id(tab_id)
+        wins = list(t) if t is not None else []
+        if len(wins) < 2:
+            return ()
+        import kittymux_closeguard
+        active = t.active_window.id if t.active_window is not None else 0
+        found = []
+        for wid, (st, agent) in kittymux_closeguard.window_states(wins).items():
+            mark = kittymux_agents.brand_of(agent) if agent else ""
+            if mark and int(wid) != active:
+                found.append((_STACK_ORDER.get(st, 9), mark))
+        return tuple(m for _o, m in sorted(found))
+    except Exception:
+        return ()
 
 
 def _draw_px(draw_data, screen, tab, index, extra_data, pal) -> int:
