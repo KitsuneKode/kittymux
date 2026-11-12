@@ -11,7 +11,7 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
   `bash tests/smoke_upgrade.sh` (a kitty started on a whole older release, e415a52, upgraded in place to the checkout: the bar must
   still be kittymux's, not kitty's plain fallback; `SMOKE_UPGRADE_TO=7601482` must FAIL — that release called `prefer_own` on the
   `kittymux_reload` the running kitty still held). Then, with `pxbar` on, a click on a row must activate the tab drawn there;
-  `SMOKE_UPGRADE_TO=a414690` must FAIL there — that release kept the first load's hooks into kitty, so the old hit test answered).
+  `SMOKE_UPGRADE_TO=a414690` must FAIL there — that release kept the first load's hooks into kitty, so the old hit test answered; that step skips without cairo/pango/rsvg, as smoke_pxbar does, so CI runs only the first part).
   `bash tests/smoke_sidebar.sh` (collapse/expand button, right-click peek, edge drag with real mouse events),
   `bash tests/smoke_drag.sh` (tab drag-to-reorder with real pointer events — kitty's DnD works under Xvfb),
   `bash tests/smoke_resume.sh` (fake agents → `sessions save` → a second kitty restores them: claude started with `--resume <id>` and its flags, a lone opencode with `-c`, ambiguous droids as saved; autosave + pruning),

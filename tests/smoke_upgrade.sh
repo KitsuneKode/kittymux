@@ -65,7 +65,9 @@ fi
 
 # Clicks after the upgrade: with the pixel bar on, a click on a row activates the tab DRAWN there. (2026-11-12: the hooks
 # into kitty were kept from the first load, so the old release's hit test answered with its text cells: wrong tab.)
-if [ -e "$TREE/python/kittymux_pxbar.py" ] && [ -e "$HOME_DIR/tests/probe_pxbar.py" ]; then
+PXDEPS=1; python3 -c "import cairo, gi; gi.require_version('Pango', '1.0'); gi.require_version('Rsvg', '2.0')" 2>/dev/null || PXDEPS=0
+[ $PXDEPS = 0 ] && echo "  skip the pixel-bar click after the upgrade: cairo/pango/rsvg not installed (as smoke_pxbar)"
+if [ $PXDEPS = 1 ] && [ -e "$TREE/python/kittymux_pxbar.py" ] && [ -e "$HOME_DIR/tests/probe_pxbar.py" ]; then
   : > "$STATE/pxbar-on"
   kitty @ --to "$SOCK" load-config >/dev/null 2>&1 || fail "load-config with pxbar on failed"; sleep 1; redraw
   W=$(DISPLAY=$DISP xdotool search --class kmx-upgrade 2>/dev/null | head -1)
