@@ -1,5 +1,6 @@
 """The pixel tab bar's glue: clicks land on the tab drawn under the pointer, never on the blank cells beneath it."""
 import os
+import re
 import sys
 import types
 import unittest
@@ -118,8 +119,6 @@ class ToolMarksTest(unittest.TestCase):
         self.assertLessEqual(set(A.TOOL_MARKS), set(A.TOOLS))
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class CrossShownTest(unittest.TestCase):
@@ -303,7 +302,9 @@ class WaveTest(unittest.TestCase):
         self.assertIn("animation_start user:kmx-wave-on", pl)
         self.assertIn("animation_stop user:kmx-wave-off", pl)
         self.assertIn("shaders kittymux-pxwave", pl)
-        step = int(pl.split("animation_step 66")[0] and 66)
+        wave_group = pl[pl.index("animation_start user:kmx-wave-on"):]
+        wave_group = wave_group[:wave_group.index("endgroup")]
+        step = int(re.search(r"animation_step\s+(\d+)", wave_group).group(1))
         self.assertGreaterEqual(step, 50)                                            # 20 fps at most: a loader, not a video
 
 
@@ -357,3 +358,70 @@ class RailCrossTest(unittest.TestCase):
         self.assertEqual(PX.RAIL_MAX, BP.RAIL_MAX)
         shader = open(os.path.join(os.path.dirname(__file__), "..", "assets", "shaders", "kittymux-pxbar.slang"), encoding="utf-8").read()
         self.assertIn(f"RAIL_MAX = {BP.RAIL_MAX}.0", shader)
+
+
+class ReviewFixesTest(unittest.TestCase):
+    def test_a_failed_wave_event_is_not_recorded_so_the_next_pass_retries(self):
+        saved = dict(PX._S.wave)
+        try:
+            PX._S.wave.clear()
+            def boom(name, osw):
+                raise RuntimeError("no pipeline")
+            self.assertFalse(PX.wave(3, True, fire=boom))
+            self.assertNotIn(3, PX._S.wave)
+            self.assertTrue(PX.wave(3, True, fire=lambda n, o: None))
+        finally:
+            PX._S.wave.clear(); PX._S.wave.update(saved)
+
+    def test_only_working_rows_in_view_move_the_wave(self):
+        import kittymux_groups as G
+        g = G.group([G.Row(tab_id=i, title="t", project="p", state="working" if i == 30 else "idle") for i in range(1, 41)],
+                    collapse_after=99)
+        self.assertFalse(PX.wants_wave(g, True, True, start=0, shown=20))
+        self.assertTrue(PX.wants_wave(g, True, True, start=20, shown=20))
+        self.assertTrue(PX.wants_wave(g, True, True))                               # no picture yet: all rows
+
+    def test_the_key_template_read_is_bounded_and_cached(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "kittymux-keys.conf.tpl")
+            open(p, "w").write("map ctrl+alt+u launch x\n")
+            self.assertIn("ctrl+alt+u", BS._key_template(p))
+            open(p, "w").write("x" * (BS._TPL_MAX + 10))
+            os.utime(p, (1, 1))
+            self.assertEqual(BS._key_template(p), "")
+            self.assertEqual(BS._key_template(os.path.join(d, "missing")), "")
+
+
+
+class EllipsisTest(unittest.TestCase):
+    """kitty's red overflow '…' under the last vertical tab is blanked while the pixel bar shows (it says '↓ N below' itself)."""
+    def bar(self, n_extents, lines=40):
+        drawn = []
+        cur = types.SimpleNamespace(x=3, y=7, bg=1, fg=1)
+        screen = types.SimpleNamespace(lines=lines, cursor=cur, draw=lambda t: drawn.append((cur.x, cur.y, t, cur.bg)))
+        Ext = namedtuple("Ext", "tab_id x y")
+        Rng = namedtuple("Rng", "start end")
+        ext = tuple(Ext(i, Rng(0, 20), Rng(i * 2, i * 2 + 1)) for i in range(n_extents))
+        return types.SimpleNamespace(os_window_id=7, screen=screen, tab_extents=ext), drawn, cur
+
+    def test_the_cell_under_the_last_drawn_tab_is_blanked(self):
+        from unittest.mock import patch
+        bar, drawn, cur = self.bar(5)
+        with patch.object(PX, "active", return_value=True):
+            BS.pxbar_after_vertical(bar, list(range(9)))
+        self.assertEqual(drawn, [(0, 10, " ", 0)])
+        self.assertEqual((cur.x, cur.y), (3, 7))                         # the cursor is put back
+
+    def test_nothing_when_every_tab_fits_or_without_a_picture(self):
+        from unittest.mock import patch
+        bar, drawn, _cur = self.bar(5)
+        with patch.object(PX, "active", return_value=True):
+            BS.pxbar_after_vertical(bar, list(range(5)))
+        with patch.object(PX, "active", return_value=False):
+            BS.pxbar_after_vertical(bar, list(range(9)))
+        self.assertEqual(drawn, [])
+
+
+if __name__ == "__main__":
+    unittest.main()

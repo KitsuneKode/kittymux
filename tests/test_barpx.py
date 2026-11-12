@@ -182,8 +182,6 @@ class ViewportTest(unittest.TestCase):
             self.assertNotEqual(run, col[h - 1])
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 @unittest.skipIf(B is None, "cairo/pango/rsvg not installed")
@@ -213,3 +211,25 @@ class ControlsTest(unittest.TestCase):
         row = lambda ph: G.group([G.Row(tab_id=1, title="t", project="p", state="working", phase=ph)])
         frames = {B.render(row(ph), pal(), width=268, height=200).png for ph in (0, 1, 2)}
         self.assertEqual(len(frames), 3)
+
+
+@unittest.skipIf(B is None, "cairo/pango/rsvg not installed")
+class EndMarksTest(unittest.TestCase):
+    def png(self, **kw):
+        return B.render(G.group([G.Row(tab_id=1, title="t", project="p", **kw)]), pal(), width=268, height=200).png
+
+    def test_waiting_and_done_rows_show_their_age_beside_the_mark(self):
+        self.assertNotEqual(self.png(state="waiting", age="10m"), self.png(state="waiting"))
+        self.assertNotEqual(self.png(state="done", age="3m"), self.png(state="done"))
+
+    def test_an_unread_row_has_a_mark(self):
+        self.assertNotEqual(self.png(state="unread"), self.png(state=""))
+
+    def test_a_muted_waiting_row_does_not_count_or_show_the_chip(self):
+        g = G.group([G.Row(tab_id=1, title="t", project="p", state="waiting", muted=True)])
+        self.assertEqual(G.needs_you(g), 0)
+        self.assertNotEqual(self.png(state="waiting", muted=True), self.png(state="waiting"))
+
+
+if __name__ == "__main__":
+    unittest.main()

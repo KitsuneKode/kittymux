@@ -1697,7 +1697,18 @@ def _px_row(tab, pal) -> "kittymux_groups.Row":
         tab_id=tab.tab_id, title=title, project=_px_project(facts), branch=facts.branch if facts else "",
         state=state, active=bool(tab.is_active), mark=mark, tint=tint, meta=meta, meta_tone=tone,
         age=age if state in ("waiting", "limited", "done") or (info and state in ("", "idle")) else "", path=path,
-        progress=_tab_progress(tab), stack=stack, phase=_px_phase(state))
+        progress=_tab_progress(tab), stack=stack, phase=_px_phase(state),
+        muted=str(entry.get("wid", "")) in _px_mutes())
+
+
+@_per_pass
+def _px_mutes() -> frozenset:
+    """The muted windows of this kitty (`kittymux mute`), read once per pass: a muted agent stays listed, never needs you."""
+    try:
+        import kittymux_quiet
+        return frozenset(kittymux_quiet.load_mutes(kittymux_features.state_dir(), os.getpid()))
+    except Exception:
+        return frozenset()
 
 
 def _px_project(facts) -> str:

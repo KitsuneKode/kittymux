@@ -254,6 +254,15 @@ def _cross(pt: dp.Painter, cx, cy, color, r=3.5):
     cr.stroke()
 
 
+def _age_before(pt, row, x_right, cy, p, narrow) -> float:
+    """How long a row has needed you, or since it finished, faint, just left of its mark; none on a narrow bar."""
+    if not row.age or narrow:
+        return 0
+    w = pt.text_w(row.age, T_META, family=UI, tnum=True)
+    pt.text(x_right - w, cy, row.age, T_META, p.faint, family=UI, tnum=True)
+    return w + 6
+
+
 def _end(pt: dp.Painter, row: G.Row, right, cy, p, narrow) -> float:
     """The row's end mark; returns how much width it took (the title stops before it)."""
     if row.state == "waiting" and not row.muted:
@@ -261,12 +270,15 @@ def _end(pt: dp.Painter, row: G.Row, right, cy, p, narrow) -> float:
         w = pt.text_w(label, 10.5, weight=dp.Pango.Weight.SEMIBOLD, family=UI) + 12
         pt.fill_rrect(right - w, cy - 9, w, 18, 9, p.waiting, 0.18)
         pt.text(right - w + 6, cy, label, 10.5, p.waiting, weight=dp.Pango.Weight.SEMIBOLD, family=UI)
-        return w
+        return w + _age_before(pt, row, right - w - 6, cy, p, narrow)
     if row.state == "working":
         _wave(pt, right, cy, p.muted if row.muted else p.working, row.phase)
         return 14
     if row.state == "done":
         pt.dot(right - 3, cy, 3, p.done)
+        return 8 + _age_before(pt, row, right - 12, cy, p, narrow)
+    if row.state == "unread":
+        pt.dot(right - 3, cy, 2.5, p.muted)                 # fresh output you haven't seen (kittymux-ui: •)
         return 8
     if row.state == "error":
         _cross(pt, right - 5, cy, p.alert)

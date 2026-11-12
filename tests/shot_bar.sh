@@ -158,11 +158,12 @@ if [ "${KMX_SHOT_SCENE:-}" = states ]; then
     printf 'focus_tab 0\n'                      # kitty's session index starts at 0: the plain shell in tab 1 is active
   } > "$T/session"
 fi
-# KMX_SHOT_SCENE=many: 40 plain tabs in five repos, for collapsing and the bar's overflow
+# KMX_SHOT_SCENE=many: 50 plain tabs: 30 in the active project (it never folds, so the bar overflows and pages) and 20 in four
+# other repos (settled, so they fold to their labels)
 if [ "${KMX_SHOT_SCENE:-}" = many ]; then
   : > "$T/session"
-  for i in $(seq 40); do
-    case $((i % 5)) in 0) d=$W/kittymux ;; 1) d=$W/web ;; 2) d=$W/api ;; 3) d=$W/docs ;; *) d=$T/plain/notes ;; esac
+  for i in $(seq 50); do
+    if [ "$i" -le 30 ]; then d=$W/kittymux; else case $((i % 4)) in 0) d=$W/web ;; 1) d=$W/api ;; 2) d=$W/docs ;; *) d=$T/plain/notes ;; esac; fi
     printf 'new_tab\ncd %s\nlaunch sh\n' "$d" >> "$T/session"
   done
   printf 'focus_tab 0\n' >> "$T/session"
@@ -185,7 +186,7 @@ if [ -n "${KMX_SHOT_TAB:-}" ]; then
   sleep "${KMX_SHOT_TAB_SLEEP:-0.08}"
 fi
 DISPLAY=$DISP import -window root "$T/full.png"
-convert "$T/full.png" -crop 380x800+0+0 +repage "$OUT"
+convert "$T/full.png" -crop 380x900+0+0 +repage "$OUT"
 # kitty's own framebuffer, which keeps alpha; the root import above composites onto Xvfb and flattens it
 [ -n "${KMX_SHOT_ALPHA:-}" ] && kitty @ --to "$SOCK" screenshot "$KMX_SHOT_ALPHA" >/dev/null 2>&1
 [ -n "${KMX_SHOT_PIPELINE:-}" ] && cp "$STATE/shaders/kittymux-cards.pipeline" "$KMX_SHOT_PIPELINE" 2>/dev/null || true

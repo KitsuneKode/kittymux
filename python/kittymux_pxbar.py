@@ -60,24 +60,31 @@ def wave(os_window_id: int, on: bool, fire=None) -> bool:
     Returns True when it fired."""
     if _S.wave.get(os_window_id) == on:
         return False
-    _S.wave[os_window_id] = on
     try:
         if fire is None:
             from kitty.fast_data_types import fire_custom_shader_event as fire
         fire("kmx-wave-on" if on else "kmx-wave-off", os_window_id)
     except Exception:
-        pass
+        return False                         # not recorded: the next pass tries again
+    _S.wave[os_window_id] = on
     return True
 
 
-def wants_wave(groups, animate: bool, shader: bool) -> bool:
-    """The loader moves when motion is on, the pxbar shader runs, and a row the bar shows is working (a muted one is still)."""
-    return bool(animate and shader and any(r.state == "working" and not r.muted for g in groups for r in g.rows))
+def wants_wave(groups, animate: bool, shader: bool, start: int = 0, shown: int | None = None) -> bool:
+    """The loader moves when motion is on, the pxbar shader runs, and a row IN VIEW is working (a muted one is still; a
+    working tab scrolled off the picture has no wave to move). `start`/`shown` are the picture's viewport."""
+    rows = [r for g in groups for r in g.rows]
+    if shown is not None:
+        rows = rows[start:start + shown]
+    return bool(animate and shader and any(r.state == "working" and not r.muted for r in rows))
 
 
 def publish(os_window_id: int, groups, pal, host: str = "", animate: bool = True) -> bool:
     """Render and show the picture when what it shows changed. Returns True when it swapped."""
-    wave(os_window_id, wants_wave(groups, animate, cross_shown()))
+    shader = cross_shown()
+    seen = _S.windows.get(os_window_id) or {}
+    view0 = _S.view.get(os_window_id) or {}
+    wave(os_window_id, wants_wave(groups, animate, shader, view0.get("start", 0), seen.get("shown")))
     try:
         from kitty.fast_data_types import get_boss
         prune(get_boss().os_window_map)
@@ -118,6 +125,7 @@ def publish(os_window_id: int, groups, pal, host: str = "", animate: bool = True
     wakeup_main_loop()
     _S.last_ms = (time.perf_counter() - t0) * 1000
     _S.windows[os_window_id] = {"sig": sig, "hits": pic.hits, "right": right, "shown": pic.shown, "total": pic.total}
+    wave(os_window_id, wants_wave(groups, animate, shader, pic.start, pic.shown))      # the viewport may have moved
     return True
 
 

@@ -356,6 +356,26 @@ PX_CONTROL_KEYS = {
 }
 
 
+_TPL_MAX = 256 * 1024     # the key template is ~20 KB; anything far larger is not ours, and the click path never reads more
+
+
+def _key_template(path: str) -> str:
+    """kittymux-keys.conf.tpl, read at most _TPL_MAX bytes and cached by mtime (a control click runs on kitty's main thread)."""
+    try:
+        mtime = os.stat(path).st_mtime
+    except OSError:
+        return ""
+    cache = getattr(_S, "tpl_cache", None)
+    if cache and cache[0] == path and cache[1] == mtime:
+        return cache[2]
+    with open(path, encoding="utf-8", errors="replace") as f:
+        text = f.read(_TPL_MAX + 1)
+    if len(text) > _TPL_MAX:
+        text = ""
+    _S.tpl_cache = (path, mtime, text)
+    return text
+
+
 def mapped_action(chord: str, tpl_text: str, home: str) -> str:
     """The action kittymux's template maps to `chord` (its first plain `map` line), with @KITTYMUX_HOME@ filled in; '' if none."""
     for line in tpl_text.splitlines():
@@ -376,8 +396,7 @@ def _px_action(tm, name: str) -> None:
     try:
         from kitty.fast_data_types import get_boss
         home = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-        with open(os.path.join(home, "kittymux-keys.conf.tpl"), encoding="utf-8") as f:
-            action = mapped_action(chord, f.read(), home)
+        action = mapped_action(chord, _key_template(os.path.join(home, "kittymux-keys.conf.tpl")), home)
         window = tm.active_tab.active_window if tm.active_tab is not None else None
         if action:
             get_boss().combine(action, window_for_dispatch=window)
@@ -893,6 +912,46 @@ def pxbar_after_layout(tm) -> None:
         PX.clear(tm.os_window_id)
 
 
+def pxbar_after_vertical(bar, data) -> None:
+    """kitty draws a red "…" one row under the last vertical tab it fits. With the pixel bar it is a stray mark on the picture,
+    which says "↓ N below" itself: blank that cell back to the default background."""
+    import kittymux_pxbar as PX
+    extents = tuple(getattr(bar, "tab_extents", ()) or ())
+    if not PX.active(getattr(bar, "os_window_id", 0)) or not extents or len(extents) >= len(data):
+        return
+    s = bar.screen
+    row = extents[-1].y.end + 1
+    if row >= s.lines:
+        return
+    x, y = s.cursor.x, s.cursor.y
+    s.cursor.x, s.cursor.y = 0, row
+    s.cursor.bg = s.cursor.fg = 0
+    s.draw(" ")
+    s.cursor.x, s.cursor.y = x, y
+
+
+def _install_pxbar_ellipsis() -> None:
+    """Wrap TabBar.update_vertical once (pxbar_after_vertical)."""
+    try:
+        from kitty.tab_bar import TabBar
+        if getattr(TabBar.update_vertical, "_kittymux_wrapped", False):
+            return
+        original = TabBar.update_vertical
+
+        def wrapped(self, data, *args, **kwargs):
+            result = original(self, data, *args, **kwargs)
+            try:
+                pxbar_after_vertical(self, data)
+            except Exception:
+                _debug_exc()
+            return result
+
+        wrapped._kittymux_wrapped = True                        # type: ignore[attr-defined]
+        TabBar.update_vertical = wrapped                         # type: ignore[method-assign]
+    except Exception:
+        _debug_exc()
+
+
 def _install_pxbar_visibility() -> None:
     """Wrap TabManager.layout_tab_bar once: kitty calls it whenever the bar appears or disappears."""
     try:
@@ -922,6 +981,7 @@ def install() -> bool:
     _install_tab_drag()
     _install_native_edge()
     _install_pxbar_visibility()
+    _install_pxbar_ellipsis()
     if _S.installed:
         return True
     try:
