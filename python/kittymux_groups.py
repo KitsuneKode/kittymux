@@ -31,6 +31,7 @@ class Row:
     progress: tuple | None = None  # (state, percent) from OSC 9;4
     muted: bool = False
     stack: tuple = ()              # the marks of the other agents in this tab's splits, most important first
+    phase: int = 0                 # the working loader's frame (steps with kittymux_agents.SPINNER_FPS; 0 when motion is off)
 
 
 @dataclass(frozen=True)

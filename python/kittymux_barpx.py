@@ -32,6 +32,9 @@ MAP_STEP = 6        # the row map's marker colours: the bar's red channel +6 and
 SCALE_RUN = 8       # column 0's last pixels: a run of round(8 × scale) device px in the scale marker, so the shader knows the scale
 BOTTOM = 12         # logical px kept clear at the bottom for the scale run
 MORE_H = 22         # the "↑ N above" / "↓ N below" bands when the tabs don't all fit
+ACTIVE_R = 10       # the active card's corner radius; the shader's hover band uses the same (kittymux-pxbar.slang R)
+FOOT_H = 40         # the footer: the filter field that opens the palette, with its chord
+PALETTE_CHORD = "⌃⌥⇧ Space"   # kittymux-keys.conf.tpl: ctrl+alt+shift+space opens the command palette
 BRAND_OF_MARK = {kittymux_agents.brand_of(n): a.brand for n, a in kittymux_agents.AGENTS.items() if kittymux_agents.brand_of(n)}
 
 
@@ -42,7 +45,9 @@ class Hit:
     y0: int
     y1: int
     tab_id: int = 0
-    project: str = ""
+    project: str = ""          # a group's project; for kind "act" the action ("search", "collapse", "palette")
+    x0: int = 0                # device px; x0 == x1 == 0: the whole width
+    x1: int = 0
 
 
 @dataclass(frozen=True)
@@ -131,11 +136,108 @@ def _stack(pt: dp.Painter, x, y, marks, p):
         pt.text(bx + 1.5, by + bs / 2, f"+{len(marks)}", 7.5, p.text, weight=dp.Pango.Weight.BOLD, family=UI)
 
 
-def _wave(pt: dp.Painter, right, cy, color):
-    """The working mark's still frame: three bars. The shader moves them (they are drawn in exactly `color`)."""
-    for i, h in enumerate((5, 10, 7)):
+WAVE = ((5, 10, 7), (8, 6, 10), (10, 8, 5))   # three frames: the bars rise and fall, one step per SPINNER_FPS tick
+
+
+def _wave(pt: dp.Painter, right, cy, color, phase=0):
+    """The working loader: three bars, one frame per step of the bar's calm clock (never a continuous animation)."""
+    for i, h in enumerate(WAVE[phase % len(WAVE)]):
         x = right - 12 + i * 4
         pt.fill_rrect(x, cy - h / 2, 2, h, 1, color)
+
+
+def _search_icon(pt: dp.Painter, cx, cy, color):
+    s, cr = pt.s, pt.cr
+    cr.set_source_rgba(*dp.rgb(color))
+    cr.set_line_width(1.5 * s)
+    cr.set_line_cap(cairo.LINE_CAP_ROUND)
+    cr.new_sub_path()
+    cr.arc((cx - 1) * s, (cy - 1) * s, 4.2 * s, 0, 6.2832)
+    cr.move_to((cx + 2.2) * s, (cy + 2.2) * s)
+    cr.line_to((cx + 5) * s, (cy + 5) * s)
+    cr.stroke()
+
+
+def _sidebar_icon(pt: dp.Painter, cx, cy, color):
+    """The collapse button: a window with its sidebar, as macOS draws it."""
+    pt.stroke_rrect(cx - 6.5, cy - 5.5, 13, 11, 2.5, color, 1.0, 1.4)
+    pt.fill_rrect(cx - 3.6, cy - 3, 1.4, 6, 0.7, color)
+
+
+def _action(hits, name, x, y, w, h, s):
+    hits.append(Hit("act", int(round(y * s)), int(round((y + h) * s)), project=name,
+                    x0=int(round(x * s)), x1=int(round((x + w) * s))))
+
+
+def _inbox_icon(pt, cx, cy, color):
+    s, cr = pt.s, pt.cr
+    pt.stroke_rrect(cx - 6, cy - 5, 12, 10, 2.5, color, 1.0, 1.4)
+    cr.set_source_rgba(*dp.rgb(color))
+    cr.set_line_width(1.4 * s)
+    cr.set_line_join(cairo.LINE_JOIN_ROUND)
+    cr.move_to((cx - 6) * s, (cy + 0.5) * s)
+    for px_, py_ in ((cx - 2.5, cy + 0.5), (cx - 1.5, cy + 2.2), (cx + 1.5, cy + 2.2), (cx + 2.5, cy + 0.5), (cx + 6, cy + 0.5)):
+        cr.line_to(px_ * s, py_ * s)
+    cr.stroke()
+
+
+def _gauge_icon(pt, cx, cy, color):
+    s, cr = pt.s, pt.cr
+    cr.set_source_rgba(*dp.rgb(color))
+    cr.set_line_width(1.4 * s)
+    cr.set_line_cap(cairo.LINE_CAP_ROUND)
+    cr.new_sub_path()
+    cr.arc(cx * s, (cy + 2) * s, 6 * s, 3.4, 6.03)
+    cr.stroke()
+    cr.move_to(cx * s, (cy + 2) * s)
+    cr.line_to((cx + 3) * s, (cy - 1.5) * s)
+    cr.stroke()
+
+
+def _keys_icon(pt, cx, cy, color):
+    pt.stroke_rrect(cx - 7, cy - 4.5, 14, 9, 2, color, 1.0, 1.3)
+    for i in range(3):
+        pt.fill_rrect(cx - 4.5 + i * 3.5, cy - 2, 1.6, 1.6, 0.4, color)
+    pt.fill_rrect(cx - 3, cy + 1.2, 6, 1.4, 0.4, color)
+
+
+FOOT_ICONS = (("inbox", _inbox_icon), ("usage", _gauge_icon), ("keys", _keys_icon))
+
+
+def _footer(pt, width, height, p, hits, s, narrow=False):
+    """The keyboard's way in, made visible: a filter field that opens the command palette (with its chord when there is
+    room), then the inbox, usage and the keys sheet. A hairline separates it from the tabs, as Rex's footer is."""
+    top = height - BOTTOM - FOOT_H
+    c, a = pt.veil(0.07)
+    pt.fill_rrect(PAD, top, width - 2 * PAD, 1, 0.5, c, a)
+    y, h = top + 8, 24
+    icons = () if narrow else FOOT_ICONS      # narrow: the filter alone, so it stays readable
+    icons_w = len(icons) * 26
+    x, w = INSET + 3, width - 2 * (INSET + 3) - icons_w - 4
+    c, a = pt.veil(0.055)
+    pt.fill_rrect(x, y, w, h, 7, c, a)
+    _search_icon(pt, x + 13, y + h / 2, p.faint)
+    pt.text(x + 25, y + h / 2, "Filter", 11.5, p.faint, family=UI)
+    kw = pt.text_w(PALETTE_CHORD, 10, family=UI)
+    if w - kw - 70 > 0:
+        pt.text(x + w - kw - 9, y + h / 2, PALETTE_CHORD, 10, p.faint, family=UI)
+    _action(hits, "palette", x, y, w, h, s)
+    ix = x + w + 4 + 13
+    for name, draw in icons:
+        draw(pt, ix, y + h / 2, p.muted)
+        _action(hits, name, ix - 13, y, 26, h, s)
+        ix += 26
+
+
+def _diff_line(pt, x, cy, text, room, p):
+    """`7 files +142 −30`: the counts in the done and alert colours, the rest faint; tabular figures so they don't jitter."""
+    for tok in text.split():
+        col = p.done if tok.startswith("+") else p.alert if tok.startswith(("−", "-")) and tok[1:].isdigit() else p.faint
+        w = pt.text_w(tok + " ", T_META, family=UI, tnum=True)
+        if w > room:
+            break
+        pt.text(x, cy, tok, T_META, col, family=UI, tnum=True)
+        x, room = x + w, room - w
 
 
 def _cross(pt: dp.Painter, cx, cy, color, r=3.5):
@@ -157,7 +259,7 @@ def _end(pt: dp.Painter, row: G.Row, right, cy, p, narrow) -> float:
         pt.text(right - w + 6, cy, label, 10.5, p.waiting, weight=dp.Pango.Weight.SEMIBOLD, family=UI)
         return w
     if row.state == "working":
-        _wave(pt, right, cy, p.muted if row.muted else p.working)
+        _wave(pt, right, cy, p.muted if row.muted else p.working, row.phase)
         return 14
     if row.state == "done":
         pt.dot(right - 3, cy, 3, p.done)
@@ -207,7 +309,7 @@ def _render_rail(pt, cr, groups, pal, width, height, s, hits, start=0):
     n = G.needs_you(groups)
     if n:
         pt.dot(cx + TILE / 2 - 1, (HEADER_H - TILE) / 2 + 1, 4, pal.waiting)
-    hits.append(Hit("header", 0, int(round(HEADER_H * s))))
+    _action(hits, "collapse", 0, 0, width, HEADER_H, s)         # the rail's mascot expands the sidebar again
     total = sum(len(g.rows) for g in groups)
     start = max(0, min(start, max(0, total - 1)))
     need = HEADER_H + sum((11 if gi else 0) + (20 if g.hidden else RAIL_ROW * len(g.rows)) for gi, g in enumerate(groups))
@@ -296,13 +398,22 @@ def render(groups, pal: th.Palette, width: int, height: int, *, host: str = "", 
     y = 0
     _tile(pt, PAD, (HEADER_H - TILE) / 2, G.Row(0, "", "", mark="kittymux"), pal)
     pt.text(PAD + TILE + 9, HEADER_H / 2, host or "kittymux", T_TITLE, pal.text, weight=dp.Pango.Weight.SEMIBOLD, family=UI,
-            width=max(10, right - (PAD + TILE + 9) - 30))
+            width=max(10, right - (PAD + TILE + 9) - (70 if narrow else 96)))
+    # the header's actions at its right end: collapse to the rail, then search (the palette); the needs-you count before them
+    ax = right - 9
+    _sidebar_icon(pt, ax, HEADER_H / 2, pal.muted)
+    _action(hits, "collapse", ax - 12, HEADER_H / 2 - 12, 24, 24, s)
+    if not narrow:                            # narrow, the host keeps its room: search is the footer's Filter too
+        ax -= 26
+        _search_icon(pt, ax, HEADER_H / 2, pal.muted)
+        _action(hits, "search", ax - 12, HEADER_H / 2 - 12, 24, 24, s)
+    chip_right = ax - 16
     n = G.needs_you(groups)
     if n:
         label = str(n)
         w = max(18, pt.text_w(label, 11, weight=dp.Pango.Weight.SEMIBOLD, family=UI, tnum=True) + 12)
-        pt.fill_rrect(right - w, HEADER_H / 2 - 9, w, 18, 9, pal.waiting, 0.18)
-        pt.text(right - w + (w - pt.text_w(label, 11, weight=dp.Pango.Weight.SEMIBOLD, family=UI, tnum=True)) / 2, HEADER_H / 2,
+        pt.fill_rrect(chip_right - w, HEADER_H / 2 - 9, w, 18, 9, pal.waiting, 0.18)
+        pt.text(chip_right - w + (w - pt.text_w(label, 11, weight=dp.Pango.Weight.SEMIBOLD, family=UI, tnum=True)) / 2, HEADER_H / 2,
                 label, 11, pal.waiting, weight=dp.Pango.Weight.SEMIBOLD, family=UI, tnum=True)
     hits.append(Hit("header", 0, int(round(HEADER_H * s))))
     y = HEADER_H
@@ -311,7 +422,8 @@ def render(groups, pal: th.Palette, width: int, height: int, *, host: str = "", 
     start = max(0, min(start, max(0, total - 1)))
     need = HEADER_H + sum((GAP if gi else 0) + LABEL_H + sum(ROW2_H if r.meta else ROW_H for r in g.rows)
                           for gi, g in enumerate(groups))
-    limit = height - BOTTOM
+    limit = height - BOTTOM - FOOT_H
+    _footer(pt, width, height, pal, hits, s, narrow)
     if start or need > limit:
         limit -= MORE_H                       # room for the "↓ N below" band
     if start:
@@ -352,7 +464,7 @@ def render(groups, pal: th.Palette, width: int, height: int, *, host: str = "", 
             y0, y1 = int(round(y * s)), int(round((y + h) * s))
             if row.active:
                 c, a = pt.veil(0.085)
-                pt.fill_rrect(INSET, y, width - 2 * INSET, h, 8, c, a)
+                pt.fill_rrect(INSET, y, width - 2 * INSET, h, ACTIVE_R, c, a)
                 hc, ha = pt.veil(0.06)
                 pt.fill_rrect(INSET + 8, y, width - 2 * INSET - 16, 1, 0.5, hc, ha)       # the card's top light
             # the row map: column 0, this row's band
@@ -369,10 +481,13 @@ def render(groups, pal: th.Palette, width: int, height: int, *, host: str = "", 
             tone = pal.faint if row.muted else (pal.text if live else pal.muted)
             weight = dp.Pango.Weight.MEDIUM if live and not row.muted else dp.Pango.Weight.NORMAL
             room = right - tx - (end_w + 8 if end_w else 0)
-            tw = pt.text(tx, title_cy, row.title, T_TITLE, tone, weight=weight, family=UI, width=max(10, room))
+            title = row.title or "Untitled"                   # never a row with nothing to name it
+            tw = pt.text(tx, title_cy, title, T_TITLE, tone if row.title else pal.faint, weight=weight, family=UI, width=max(10, room))
             if row.path and not narrow and room - tw > 40:
                 pt.text(tx + tw + 5, title_cy, row.path, T_META, pal.faint, family=UI, width=room - tw - 5)
-            if row.meta:
+            if row.meta and row.meta_tone == "diff":
+                _diff_line(pt, tx, y + 31, row.meta, right - tx, pal)
+            elif row.meta:
                 mt = {"waiting": pal.muted, "alert": pal.alert, "working": pal.muted}.get(row.meta_tone, pal.faint)
                 pt.text(tx, y + 31, row.meta, T_META, mt, family=UI, width=max(10, right - tx))
             if row.progress:
@@ -381,7 +496,7 @@ def render(groups, pal: th.Palette, width: int, height: int, *, host: str = "", 
             y += h
     below = total - start - shown
     if below > 0:
-        _more(pt, width / 2, height - BOTTOM - MORE_H, f"↓ {below} below", pal, hits, "down", s)
+        _more(pt, width / 2, height - BOTTOM - FOOT_H - MORE_H, f"↓ {below} below", pal, hits, "down", s)
     buf = _png(surf)
     return Picture(buf, tuple(hits), W, H, start, shown, total)
 
@@ -393,9 +508,14 @@ def _png(surf) -> bytes:
     return out.getvalue()
 
 
-def hit_at(hits, y_px: int):
-    """The band at device-pixel row y, or None."""
+def hit_at(hits, y_px: int, x_px: int | None = None):
+    """The band at a device-pixel point, or None: a control with its own x range wins over the full-width band under it."""
+    whole = None
     for h in hits:
         if h.y0 <= y_px < h.y1:
-            return h
-    return None
+            if h.x1 > h.x0:
+                if x_px is not None and h.x0 <= x_px < h.x1:
+                    return h
+            elif whole is None:
+                whole = h
+    return whole

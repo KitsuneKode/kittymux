@@ -150,10 +150,16 @@ def band_at(os_window_id: int, x_px: float, y_px: float):
     w = _S.windows.get(os_window_id)
     if w is None or x_px < 0 or x_px >= w["right"]:
         return None
+    whole = None
     for h in w["hits"]:
         if h.y0 <= y_px < h.y1:
-            return h
-    return None
+            x0, x1 = getattr(h, "x0", 0), getattr(h, "x1", 0)
+            if x1 > x0:                                   # a control with its own x range wins over the band under it
+                if x0 <= x_px < x1:
+                    return h
+            elif whole is None:
+                whole = h
+    return whole
 
 
 MARGIN = 2              # tab rows kept in view beyond the active one when the view follows it

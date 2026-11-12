@@ -232,3 +232,40 @@ class GlassTest(unittest.TestCase):
         self.assertEqual(PX.glass_alpha(0.85), 0.902)
         self.assertGreater(PX.glass_alpha(0.6), 0.6)
         self.assertEqual(PX.glass_alpha("bogus"), 1.0)
+
+
+class ActionsTest(unittest.TestCase):
+    def test_collapse_toggles_and_the_others_run_their_keys_action(self):
+        from unittest.mock import patch
+        tm = types.SimpleNamespace(active_tab=None)
+        ran = []
+        boss = types.SimpleNamespace(combine=lambda action, window_for_dispatch=None: ran.append(action))
+        with patch.object(BS, "_toggle_collapsed") as tog, \
+                patch.dict(sys.modules, {"kitty.fast_data_types": types.SimpleNamespace(get_boss=lambda: boss)}):
+            for name in ("collapse", "search", "palette", "inbox", "usage", "keys", "nothing"):
+                BS._px_action(tm, name)
+        tog.assert_called_once_with(tm)
+        self.assertEqual(len(ran), 5)
+        self.assertTrue(ran[0].startswith("kitten ") and ran[0].endswith("python/palette-kit.py"))
+        self.assertNotIn("@KITTYMUX_HOME@", " ".join(ran))
+
+    def test_every_control_names_a_chord_the_template_maps(self):
+        tpl = open(os.path.join(os.path.dirname(__file__), "..", "kittymux-keys.conf.tpl"), encoding="utf-8").read()
+        for name, chord in BS.PX_CONTROL_KEYS.items():
+            self.assertTrue(BS.mapped_action(chord, tpl, "/h"), f"{name}: {chord} is not mapped in kittymux-keys.conf.tpl")
+
+    def test_the_footer_shows_the_palette_s_real_chord(self):
+        import kittymux_barpx as BP
+        self.assertEqual(BS.PX_CONTROL_KEYS["palette"], "ctrl+alt+shift+space")
+        self.assertEqual(BP.PALETTE_CHORD, "⌃⌥⇧ Space")
+
+    def test_a_control_band_wins_in_the_runtime_too(self):
+        Ctl = namedtuple("Ctl", "kind y0 y1 tab_id project x0 x1")
+        saved = dict(PX._S.windows)
+        try:
+            PX._S.windows[5] = {"sig": None, "right": 300, "hits": (
+                Ctl("header", 0, 40, 0, "", 0, 0), Ctl("act", 4, 36, 0, "collapse", 260, 290))}
+            self.assertEqual(PX.band_at(5, 270, 20).project, "collapse")
+            self.assertEqual(PX.band_at(5, 100, 20).kind, "header")
+        finally:
+            PX._S.windows.clear(); PX._S.windows.update(saved)

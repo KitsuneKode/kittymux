@@ -184,3 +184,32 @@ class ViewportTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(B is None, "cairo/pango/rsvg not installed")
+class ControlsTest(unittest.TestCase):
+    """The header's collapse and search, the footer's filter (the palette), the rail's mascot: each a control with its own x range."""
+    def acts(self, out):
+        return {h.project: h for h in out.hits if h.kind == "act"}
+
+    def test_the_wide_bar_has_collapse_search_and_the_palette(self):
+        out = B.render(session(), pal(), width=268, height=400, host="archlinux")
+        a = self.acts(out)
+        self.assertEqual(set(a), {"collapse", "search", "palette", "inbox", "usage", "keys"})
+        self.assertLess(a["search"].x1, a["collapse"].x0 + 1)                    # search sits left of collapse
+        self.assertGreater(a["palette"].y0, max(h.y1 for h in out.hits if h.kind == "tab") - 1)
+
+    def test_a_control_wins_over_the_band_under_it(self):
+        out = B.render(session(), pal(), width=268, height=400, host="archlinux")
+        c = self.acts(out)["collapse"]
+        self.assertEqual(B.hit_at(out.hits, (c.y0 + c.y1) // 2, (c.x0 + c.x1) // 2).project, "collapse")
+        self.assertEqual(B.hit_at(out.hits, (c.y0 + c.y1) // 2, 5).kind, "header")
+
+    def test_the_rail_mascot_expands_the_bar(self):
+        out = B.render(session(), pal(), width=90, height=400)
+        self.assertEqual(set(self.acts(out)), {"collapse"})
+
+    def test_the_wave_steps_through_its_frames(self):
+        row = lambda ph: G.group([G.Row(tab_id=1, title="t", project="p", state="working", phase=ph)])
+        frames = {B.render(row(ph), pal(), width=268, height=200).png for ph in (0, 1, 2)}
+        self.assertEqual(len(frames), 3)

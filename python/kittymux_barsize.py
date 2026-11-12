@@ -342,6 +342,47 @@ def _in_divider(tm, x: float) -> bool:
         return False
 
 
+# The pixel bar's controls run exactly what their keys run: the action is read from kittymux-keys.conf.tpl by its chord,
+# so a control and its key can never drift apart (test_pxbar pins every chord below to a map line).
+PX_CONTROL_KEYS = {
+    "search": "ctrl+alt+shift+space",   # the command palette
+    "palette": "ctrl+alt+shift+space",  # the footer's filter field: the same palette
+    "inbox": "ctrl+alt+shift+q",        # peek at what needs you
+    "usage": "ctrl+alt+u",              # usage and limits
+    "keys": "ctrl+alt+slash",           # the keys sheet
+}
+
+
+def mapped_action(chord: str, tpl_text: str, home: str) -> str:
+    """The action kittymux's template maps to `chord` (its first plain `map` line), with @KITTYMUX_HOME@ filled in; '' if none."""
+    for line in tpl_text.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) == 3 and parts[0] == "map" and parts[1] == chord:
+            return parts[2].strip().replace("@KITTYMUX_HOME@", home)
+    return ""
+
+
+def _px_action(tm, name: str) -> None:
+    """The pixel bar's controls: collapse to the rail (and back); the others dispatch their key's action through kitty."""
+    if name == "collapse":
+        _toggle_collapsed(tm)
+        return
+    chord = PX_CONTROL_KEYS.get(name)
+    if not chord:
+        return
+    try:
+        from kitty.fast_data_types import get_boss
+        home = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+        with open(os.path.join(home, "kittymux-keys.conf.tpl"), encoding="utf-8") as f:
+            action = mapped_action(chord, f.read(), home)
+        window = tm.active_tab.active_window if tm.active_tab is not None else None
+        if action:
+            get_boss().combine(action, window_for_dispatch=window)
+    except Exception:
+        import traceback
+        _debug(traceback.format_exc())
+
+
 def _pxbar_click(tm, x: float, y: float, action: int) -> bool:
     """The pixel tab bar's own targets (kittymux_pxbar): a press then a release on the same close cross closes that tab
     (busy agents ask first); a click on a folded group's label opens it. True when the event was ours."""
@@ -364,6 +405,9 @@ def _pxbar_click(tm, x: float, y: float, action: int) -> bool:
         if band is not None and band.kind in ("up", "down"):
             _S.px_down = ("page", band.kind)
             return True
+        if band is not None and band.kind == "act":
+            _S.px_down = ("act", band.project)
+            return True
         return False
     if action == GLFW_RELEASE and getattr(_S, "px_down", None):
         kind, what = _S.px_down
@@ -380,6 +424,10 @@ def _pxbar_click(tm, x: float, y: float, action: int) -> bool:
             if band is not None and band.kind == what:
                 PX.page(osw, -1 if what == "up" else 1)
                 tm.mark_tab_bar_dirty()
+        elif kind == "act":
+            band = PX.band_at(osw, x, y)
+            if band is not None and band.kind == "act" and band.project == what:     # released on the same control
+                _px_action(tm, what)
         return True
     return False
 

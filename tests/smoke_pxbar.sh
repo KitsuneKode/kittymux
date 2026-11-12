@@ -120,6 +120,28 @@ wobble_click $(( right - 16 )) $(( y0 + 16 ))
 has_tabs alpha bravo echo -- agent || fail "a second click on the working agent's cross did not close it alone (tabs: $(titles))"
 echo "  ok   a busy agent's cross asks first, a second click closes it"
 
+# 5. the header's collapse control folds the bar to the rail, and the rail's mascot opens it again (kittymux_layout saves the mode)
+mode() { python3 -c "import sys;sys.path.insert(0,'$HOME_DIR/python');import kittymux_layout as L;l=L.load('$STATE',$KPID);print(l.mode if l else 'none')"; }
+control() {   # "x y" (window px, logical) of a control's centre
+  probe
+  python3 - "$T/px.json" "$1" <<'P'
+import json, sys
+w = next(iter(json.load(open(sys.argv[1]))["windows"].values()))
+h = next(h for h in w["hits"] if h[0] == "act" and h[4] == sys.argv[2])
+s = w.get("scale", 1.0) or 1.0
+print(int((h[5] + h[6]) / 2 / s), int((h[1] + h[2]) / 2 / s))
+P
+}
+read -r cx cy < <(control collapse) || fail "no collapse control in the picture"
+wobble_click "$cx" "$cy"
+for _ in $(seq 40); do [ "$(mode)" = compact ] && break; sleep 0.25; done
+[ "$(mode)" = compact ] || fail "the collapse control did not fold the bar to the rail (mode: $(mode))"
+for _ in $(seq 40); do read -r cx cy < <(control collapse 2>/dev/null) && [ "$cx" -lt 60 ] && break; sleep 0.25; done
+wobble_click "$cx" "$cy"
+for _ in $(seq 40); do [ "$(mode)" = full ] && break; sleep 0.25; done
+[ "$(mode)" = full ] || fail "the rail's mascot did not open the bar again (mode: $(mode))"
+echo "  ok   the header folds the bar to the rail and the rail's mascot opens it"
+
 tripwire || exit 1
 echo "  ok   no other kitty on this machine was touched"
 echo "PASS: the pixel tab bar maps clicks to the rows it draws, and its close cross closes (busy agents ask first)"

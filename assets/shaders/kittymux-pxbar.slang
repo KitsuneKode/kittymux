@@ -10,7 +10,7 @@ static const float EPS = 0.008;      // distance between gamma-encoded colours: 
                                      // even on a black bar (in linear RGB they were 0.002 apart there and merged)
 static const float INSET = 5.0;      // logical px, matches kittymux_barpx.INSET
 static const float PAD = 10.0;       // logical px, matches kittymux_barpx.PAD
-static const float R = 8.0;          // logical px, the band's corner radius
+static const float R = 10.0;         // logical px, the band's corner radius (kittymux_barpx.ACTIVE_R: hover and active nest)
 static const float REACH = 64.0;     // logical px searched up and down the row map (taller than any row)
 static const float RUN = 8.0;        // kittymux_barpx.SCALE_RUN: column 0 ends in a run of RUN × scale device px
 static const float CARD_M = 6.0;     // logical px: the terminal is a card inset this far from the window's top, right, bottom

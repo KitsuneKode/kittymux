@@ -1678,7 +1678,7 @@ def _px_row(tab, pal) -> "kittymux_groups.Row":
         meta, tone, age = "Working" + (f" · {age}" if age else ""), "working", ""
     elif state == "done":
         summary = _changes_summary(str(entry.get("wid", "")))
-        meta = summary if summary and summary != "no changes" else ""
+        meta, tone = (summary, "diff") if summary and summary != "no changes" else ("", "")
     stack = _px_stack(tab.tab_id, mark)
     if not info and stack:                   # a shell in front of an agent: the agent that matters most leads the tile
         lead = stack[0]
@@ -1688,9 +1688,25 @@ def _px_row(tab, pal) -> "kittymux_groups.Row":
         if who and path is not None and not kittymux_agents.tool_in(foreground):
             title = _APP_LABELS.get(who, who.capitalize())           # the shell in front said "sh": name the agent that leads
     return kittymux_groups.Row(
-        tab_id=tab.tab_id, title=title, project=facts.project if facts else "other", branch=facts.branch if facts else "",
+        tab_id=tab.tab_id, title=title, project=_px_project(facts), branch=facts.branch if facts else "",
         state=state, active=bool(tab.is_active), mark=mark, tint=tint, meta=meta, meta_tone=tone,
-        age=age if state in ("waiting", "limited", "done") else "", path=path, progress=_tab_progress(tab), stack=stack)
+        age=age if state in ("waiting", "limited", "done") or (info and state in ("", "idle")) else "", path=path,
+        progress=_tab_progress(tab), stack=stack, phase=_px_phase(state))
+
+
+def _px_project(facts) -> str:
+    """A group's label: the project, or "home" for tabs in your home folder (a lone "~" reads as a glitch), "other" without a folder."""
+    if not facts:
+        return "other"
+    return "home" if facts.project in ("~", "") else facts.project
+
+
+def _px_phase(state: str) -> int:
+    """The working loader's frame: the same calm clock as the cell bar's spinner (kittymux_agents.SPINNER_FPS), still when the
+    motion switch is off. It is part of the picture's signature, so the picture changes once a step, never in between."""
+    if state != "working" or not _features().get("motion", True):
+        return 0
+    return int(time.monotonic() * kittymux_agents.SPINNER_FPS) % 3
 
 
 _STACK_ORDER = {"waiting": 0, "limited": 1, "error": 2, "working": 3, "done": 4}
