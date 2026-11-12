@@ -52,6 +52,50 @@ _S = sys.modules.setdefault("_kittymux_barsize_rt", types.SimpleNamespace(**_DEF
 for _k, _v in _DEFAULTS.items():        # a namespace made by an OLDER version of this file lacks the newer fields
     if not hasattr(_S, _k):
         setattr(_S, _k, _v)
+# ── hooks into kitty's own methods ────────────────────────────────────────────
+# A running kitty keeps a patched method for as long as it runs, while this file is executed again on every config reload.
+# A hook is therefore rebuilt by EVERY load, around kitty's own method: "already wrapped, skip" kept the first load's code for
+# days (2026-11-12: a kitty started before the pixel tab bar still hit-tested clicks with the old tab_id_at, so a click on a
+# row activated the tab whose old text cell sat there; tests/test_rewrap.py). The wrapper's globals were current, its code was not.
+_LOAD = object()            # this execution of the module; a hook built by another one is rebuilt
+_ORIGINAL_NAMES = ("original", "orig_rects", "o_start", "o_update", "o_end")   # what older releases called it in the closure
+
+
+def _kittys_own(fn):
+    """kitty's method under our hook(s) from any load, or None when a hook does not say what it wraps."""
+    for _ in range(8):
+        if not getattr(fn, "_kittymux_wrapped", False):
+            return fn
+        inner = getattr(fn, "_kittymux_original", None)
+        if inner is None:                                # an older release: kitty's method sits in the wrapper's closure
+            try:
+                cells = dict(zip(fn.__code__.co_freevars, (c.cell_contents for c in fn.__closure__ or ())))
+            except Exception:
+                cells = {}
+            inner = next((cells[n] for n in _ORIGINAL_NAMES if callable(cells.get(n))), None)
+        if inner is None:
+            return None
+        fn = inner
+    return None
+
+
+def _hook(owner, attr: str, make) -> bool:
+    """Put `make(kitty's own method)` on `owner.attr`, once per load of this module. A hook that does not say what it
+    wraps is left alone: wrapping a wrapper would run our code twice. True when the hook in place is this load's."""
+    current = getattr(owner, attr)
+    if getattr(current, "_kittymux_load", None) is _LOAD:
+        return True
+    own = _kittys_own(current)
+    if own is None:
+        return False
+    fn = make(own)
+    fn._kittymux_wrapped = True                          # type: ignore[attr-defined]
+    fn._kittymux_load = _LOAD                            # type: ignore[attr-defined]
+    fn._kittymux_original = own                          # type: ignore[attr-defined]
+    setattr(owner, attr, fn)
+    return True
+
+
 _APPLY_MIN = 0.016         # seconds: at most ~60 width changes a second, and never faster than 1.5x what the last one cost
                             # (a re-layout resizes every pane's terminal: queueing them faster than they finish is what janks)
 
@@ -638,15 +682,14 @@ def _install_tab_drag() -> None:
     if native_insert_drag():
         try:
             from kitty.tab_bar import TabBar
-            if hasattr(TabBar, "_drop_spans") and not getattr(TabBar._drop_spans, "_kittymux_wrapped", False):
-                TabBar._drop_spans = make_drop_spans(TabBar._drop_spans)              # type: ignore[method-assign]
+            if hasattr(TabBar, "_drop_spans"):
+                _hook(TabBar, "_drop_spans", make_drop_spans)
         except Exception:
             pass
         return
     try:
         from kitty.tabs import TabManager
-        if not getattr(TabManager.on_tab_drop_move, "_kittymux_wrapped", False):
-            TabManager.on_tab_drop_move = make_on_tab_drop_move(TabManager.on_tab_drop_move)   # type: ignore[method-assign]
+        _hook(TabManager, "on_tab_drop_move", make_on_tab_drop_move)
     except Exception:
         pass
 
@@ -654,8 +697,7 @@ def _install_tab_drag() -> None:
 def _install_tab_hit_testing() -> None:
     try:
         from kitty.tab_bar import TabBar
-        if not getattr(TabBar.tab_id_at, "_kittymux_wrapped", False):
-            TabBar.tab_id_at = make_tab_id_at(TabBar.tab_id_at)  # type: ignore[method-assign]
+        _hook(TabBar, "tab_id_at", make_tab_id_at)
     except Exception:
         pass
 
@@ -864,38 +906,43 @@ def _native_end(boss) -> bool:
     return True
 
 
+def _make_set_borders_rects(orig_rects):
+    def set_borders_rects(os_window_id, tab_id, rects):
+        return _borders_hook(orig_rects, os_window_id, tab_id, rects)
+    return set_borders_rects
+
+
+def _make_drag_resize_start(o_start):
+    def drag_resize_start(self, edges, x, y, window_id, cell_width, cell_height):
+        got = _native_start(self, edges, x, y, window_id, cell_width, cell_height)
+        return got if got is not None else o_start(self, edges, x, y, window_id, cell_width, cell_height)
+    return drag_resize_start
+
+
+def _make_drag_resize_update(o_update):
+    def drag_resize_update(self, x, y):
+        if not _native_update(self, x, y):
+            o_update(self, x, y)
+    return drag_resize_update
+
+
+def _make_drag_resize_end(o_end):
+    def drag_resize_end(self):
+        if not _native_end(self):
+            o_end(self)
+    return drag_resize_end
+
+
 def _install_native_edge() -> None:
-    """Hook kitty's border hand-off and its divider-drag callbacks, once per process. The wrappers only delegate to this module's functions
-    (looked up by name at call time), so a later reload's new code takes effect without re-wrapping."""
+    """Hook kitty's border hand-off and its divider-drag callbacks (rebuilt by each load: _hook)."""
     try:
         import kitty.borders as B
         from kitty.boss import Boss
-        if not getattr(B.set_borders_rects, "_kittymux_wrapped", False):
-            orig_rects = B.set_borders_rects
-
-            def set_borders_rects(os_window_id, tab_id, rects):
-                return _borders_hook(orig_rects, os_window_id, tab_id, rects)
-
-            set_borders_rects._kittymux_wrapped = True                         # type: ignore[attr-defined]
-            B.set_borders_rects = set_borders_rects
-        if not getattr(Boss.drag_resize_start, "_kittymux_wrapped", False):
-            o_start, o_update, o_end = Boss.drag_resize_start, Boss.drag_resize_update, Boss.drag_resize_end
-
-            def drag_resize_start(self, edges, x, y, window_id, cell_width, cell_height):
-                got = _native_start(self, edges, x, y, window_id, cell_width, cell_height)
-                return got if got is not None else o_start(self, edges, x, y, window_id, cell_width, cell_height)
-
-            def drag_resize_update(self, x, y):
-                if not _native_update(self, x, y):
-                    o_update(self, x, y)
-
-            def drag_resize_end(self):
-                if not _native_end(self):
-                    o_end(self)
-
-            drag_resize_start._kittymux_wrapped = True                         # type: ignore[attr-defined]
-            Boss.drag_resize_start, Boss.drag_resize_update, Boss.drag_resize_end = drag_resize_start, drag_resize_update, drag_resize_end
-        _S.edge_installed = True
+        ok = _hook(B, "set_borders_rects", _make_set_borders_rects)
+        for attr, make in (("drag_resize_start", _make_drag_resize_start), ("drag_resize_update", _make_drag_resize_update),
+                           ("drag_resize_end", _make_drag_resize_end)):
+            ok = _hook(Boss, attr, make) and ok
+        _S.edge_installed = ok
     except Exception:
         _S.edge_installed = False
         _debug_exc()
@@ -931,13 +978,8 @@ def pxbar_after_vertical(bar, data) -> None:
 
 
 def _install_pxbar_ellipsis() -> None:
-    """Wrap TabBar.update_vertical once (pxbar_after_vertical)."""
-    try:
-        from kitty.tab_bar import TabBar
-        if getattr(TabBar.update_vertical, "_kittymux_wrapped", False):
-            return
-        original = TabBar.update_vertical
-
+    """Wrap TabBar.update_vertical (pxbar_after_vertical)."""
+    def make(original):
         def wrapped(self, data, *args, **kwargs):
             result = original(self, data, *args, **kwargs)
             try:
@@ -945,21 +987,17 @@ def _install_pxbar_ellipsis() -> None:
             except Exception:
                 _debug_exc()
             return result
-
-        wrapped._kittymux_wrapped = True                        # type: ignore[attr-defined]
-        TabBar.update_vertical = wrapped                         # type: ignore[method-assign]
+        return wrapped
+    try:
+        from kitty.tab_bar import TabBar
+        _hook(TabBar, "update_vertical", make)
     except Exception:
         _debug_exc()
 
 
 def _install_pxbar_visibility() -> None:
-    """Wrap TabManager.layout_tab_bar once: kitty calls it whenever the bar appears or disappears."""
-    try:
-        from kitty.tabs import TabManager
-        if getattr(TabManager.layout_tab_bar, "_kittymux_wrapped", False):
-            return
-        original = TabManager.layout_tab_bar
-
+    """Wrap TabManager.layout_tab_bar: kitty calls it whenever the bar appears or disappears."""
+    def make(original):
         def wrapped(self, *args, **kwargs):
             result = original(self, *args, **kwargs)
             try:
@@ -967,49 +1005,44 @@ def _install_pxbar_visibility() -> None:
             except Exception:
                 _debug_exc()
             return result
-
-        wrapped._kittymux_wrapped = True                        # type: ignore[attr-defined]
-        TabManager.layout_tab_bar = wrapped                      # type: ignore[method-assign]
+        return wrapped
+    try:
+        from kitty.tabs import TabManager
+        _hook(TabManager, "layout_tab_bar", make)
     except Exception:
         _debug_exc()
 
 
+def _make_handle_tab_bar_mouse(original):
+    def wrapped(self, x, y, button, modifiers, action):
+        try:
+            if _handle(self, x, y, button, action):
+                return None
+            if _tap_before(self, x, y, button, action):
+                return None
+        except Exception:
+            import traceback
+            _debug(traceback.format_exc())                  # never break kitty's own handling
+        result = original(self, x, y, button, modifiers, action)
+        try:
+            _tap_after(self, x, y, button, action)
+        except Exception:
+            _debug_exc()
+        return result
+    return wrapped
+
+
 def install() -> bool:
-    """Wrap TabManager.handle_tab_bar_mouse once (+ the spacer-row hit test). Safe to call
-    repeatedly; never raises."""
+    """Hook kitty's tab bar mouse handling, hit test, drags and the pixel bar's visibility. Called by every load of this module
+    (each config reload): every hook is rebuilt by this load's code (_hook). Safe to call repeatedly; never raises."""
     _install_tab_hit_testing()
     _install_tab_drag()
     _install_native_edge()
     _install_pxbar_visibility()
     _install_pxbar_ellipsis()
-    if _S.installed:
-        return True
     try:
         from kitty.tabs import TabManager
-        if getattr(TabManager.handle_tab_bar_mouse, "_kittymux_wrapped", False):
-            _S.installed = True
-            return True
-        original = TabManager.handle_tab_bar_mouse
-
-        def wrapped(self, x, y, button, modifiers, action):
-            try:
-                if _handle(self, x, y, button, action):
-                    return None
-                if _tap_before(self, x, y, button, action):
-                    return None
-            except Exception:
-                import traceback
-                _debug(traceback.format_exc())                  # never break kitty's own handling
-            result = original(self, x, y, button, modifiers, action)
-            try:
-                _tap_after(self, x, y, button, action)
-            except Exception:
-                _debug_exc()
-            return result
-
-        wrapped._kittymux_wrapped = True                        # type: ignore[attr-defined]
-        TabManager.handle_tab_bar_mouse = wrapped               # type: ignore[method-assign]
-        _S.installed = True
-        return True
+        _S.installed = _hook(TabManager, "handle_tab_bar_mouse", _make_handle_tab_bar_mouse)
+        return _S.installed
     except Exception:
         return False
