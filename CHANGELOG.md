@@ -18,6 +18,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 
 ### Fixed
 - **A usage limit's countdown agrees with the agent.** `↻1h` sat beside "resets in 2h": the countdown floored like an age. It rounds to the nearest unit now (`↻2h`), never under `↻1m`.
+- **`kittymux doctor` no longer reports a window-manager submap's keys as taken.** Hyprland's resize submap binds `shift+left`/`shift+right`, but only while you are in it; doctor said kittymux's tab keys would never reach kitty.
 - **A kitty that has run since before an upgrade keeps kittymux's bar.** After `kittymux upgrade`, a kitty started on an older release could show kitty's own plain tab bar (bare titles, no marks, no header): the new bar asked the reload helper the kitty already had in memory for something only the new helper has, and failed before it could refresh it. The bar now refreshes the helper first, so the same reload that brought the problem fixes it; no restart needed.
 
 ### Changed

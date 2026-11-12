@@ -275,8 +275,15 @@ def chords_in_tpl(tpl_text: str) -> list[tuple[str, int, str]]:
 def conflicts_from_binds(binds: list, tpl_text: str) -> list[str]:
     """kittymux chords (any modifiers) that the window manager binds with EXACTLY those modifiers — the WM gets
     the key first, so kitty never sees it (or both react). A super+ctrl+alt bind is a different chord."""
-    taken = {(b.get("modmask", 0) & _MOD_MASK, str(b.get("key", "")).lower()) for b in binds}
+    taken = {(b.get("modmask", 0) & _MOD_MASK, str(b.get("key", "")).lower()) for b in binds
+             if not b.get("submap") or _universal(b)}  # a submap's binds act only while it is entered, unless universal (`u`)
     return sorted({written for written, mask, key in chords_in_tpl(tpl_text) if (mask, key) in taken})
+
+
+def _universal(bind: dict) -> bool:
+    """A bind with Hyprland's `u` flag acts in every submap. hyprctl reports it as the string "true"/"false" (0.54+)."""
+    v = bind.get("submap_universal")
+    return v is True or (isinstance(v, str) and v.strip().lower() == "true")
 
 
 def _hypr_conflicts() -> list[str]:
