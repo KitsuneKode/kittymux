@@ -46,7 +46,7 @@ inbox schema doc, the tests, and keep `version` stable (consumers ignore unknown
 
 **Muted** (`kittymux_quiet.mutes-<kitty pid>.json`: window ids, set by `kittymux mute`, `m` or a right-click in the panel; pruned as windows close) is not a state: the state stays
 true everywhere. A muted window gets no popup and no bell (`kittymux_quiet.quiet_reason`, the same path as snooze), never counts as "needs you" (`kittymux_deck.asks`, the panel's chip, a
-space's roll-up, `agents.json`'s `needs_you`), and is drawn quietly with a bell-slash. Its events still reach the inbox. `agents.json` rows carry `muted` (additive, version 1).
+space's roll-up, `agents.json`'s `needs_you`), and is drawn quietly with a bell-slash. Its events still reach the inbox. `agents.json` rows carry `muted` (additive, version 1), and `account` (`kittymux_agentsnap.account_label`: `""` for the default config dir, else a label from `CLAUDE_CONFIG_DIR`/`CODEX_HOME`'s basename, read by `kittymux_scan._account` from `/proc/<fg pid>/environ`; only that one variable is read, the path is never written).
 
 **Closing a busy agent** (`python/close-kit.py`, rules in `kittymux_closeguard`): a close key on a pane or tab whose agent is `working`, `waiting` or `limited` shows a one-line question for
 `CONFIRM_S` (4 s) on the tab's row in the bar (`tab_bar._close_ask`, short form) and on the pane title bar when kitty draws one (`kittymux_panetitle.close_question`, full form); the same key again closes. No dialog, no overlay, no focus change, no Escape (Escape belongs to the agent). Nothing busy closes exactly as kitty would.

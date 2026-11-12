@@ -5,6 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 ## [Unreleased]
 
 ### Added
+- **`agents.json` says which account an agent runs under** (`account`): `""` for the default config dir, `"personal"` for a Claude started with `CLAUDE_CONFIG_DIR=~/.claude_personal` (Codex: `CODEX_HOME`), so a shell can say which account hit its limit. Read from the agent's own environment; the path is never written.
 - **Brand tiles in the pixel tab bar are lit:** each agent's tile is a gradient between two of its own colours (Gemini's blue into purple, Claude's clay, Codex's green…), with a faint light on its top edge; the split badge too.
 - **T3 Code** (`t3`) is a known program: its tab shows T3 Code's own mark (traced from the app's icon by `tools/trace-t3code.py`) on its night-sky gradient.
 

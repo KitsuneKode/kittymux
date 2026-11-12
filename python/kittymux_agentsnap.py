@@ -25,7 +25,27 @@ COUNTS = ("working", "waiting", "done", "idle", "limited", "error")
 _AGENT = re.compile(r"[a-z][a-z0-9-]{0,30}")
 _FIELDS = ("key", "kitty_pid", "window_id", "agent", "brand", "source", "state", "since",
            "title", "tab_title", "cwd", "project", "session", "question", "progress",
-           "limit_reset", "error", "action", "muted")
+           "limit_reset", "error", "action", "muted", "account")
+# The variable that picks an agent's config dir, and that dir's default (relative to home): another dir is another account.
+_ACCOUNT_VARS = {"claude": ("CLAUDE_CONFIG_DIR", ".claude"), "codex": ("CODEX_HOME", ".codex")}
+_LABEL_CHARS = re.compile(r"[^A-Za-z0-9_-]")
+
+
+def account_label(agent: str, env: dict, home: str) -> str:
+    """The account an agent runs under: "" for its default config dir (or none set), else a short label from the dir's
+    name ("~/.claude_personal" -> "personal"). Only the agent's own variable counts; the value itself is never kept."""
+    var, default = _ACCOUNT_VARS.get(agent, ("", ""))
+    raw = str((env or {}).get(var) or "").strip() if var else ""
+    if not raw:
+        return ""
+    path = os.path.normpath(raw)
+    if path == os.path.normpath(os.path.join(home, default)):
+        return ""
+    name = _LABEL_CHARS.sub("", os.path.basename(path)).lstrip("._-")
+    for prefix in (agent + "_", agent + "-"):
+        if name.lower().startswith(prefix):
+            name = name[len(prefix):]
+    return name[:32]
 
 
 def path_for(state_dir: str) -> str:
@@ -137,6 +157,7 @@ def _row(kitty_pid: int, spec: dict, home: str) -> dict | None:
         "error": reason if failed else None,
         "action": action,
         "muted": bool(spec.get("muted")),     # `kittymux mute`: still listed, never "needs you", no popup or bell
+        "account": _LABEL_CHARS.sub("", str(spec.get("account") or ""))[:32],   # account_label: "" is the default config dir
     }
     return {k: row[k] for k in _FIELDS}
 

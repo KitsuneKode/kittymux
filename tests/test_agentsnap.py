@@ -153,5 +153,42 @@ class PublishTests(unittest.TestCase):
         self.assertFalse(os.path.exists(S.path_for(self.dir)))
 
 
+class AccountTests(PublishTests):
+    """Which account an agent runs under (the rice notch asked, 2026-11-12: the owner runs two Claude accounts, and the notch
+    should say which one hit its limit). "" is the default config dir; otherwise a short label from the dir's name."""
+
+    HOME = "/home/calm-otter"
+
+    def label(self, agent, env):
+        return S.account_label(agent, env, self.HOME)
+
+    def test_the_default_config_dir_is_no_account(self):
+        self.assertEqual(self.label("claude", {}), "")
+        self.assertEqual(self.label("claude", {"CLAUDE_CONFIG_DIR": self.HOME + "/.claude"}), "")
+        self.assertEqual(self.label("claude", {"CLAUDE_CONFIG_DIR": self.HOME + "/.claude/"}), "")
+        self.assertEqual(self.label("codex", {"CODEX_HOME": self.HOME + "/.codex"}), "")
+
+    def test_another_config_dir_names_the_account(self):
+        self.assertEqual(self.label("claude", {"CLAUDE_CONFIG_DIR": self.HOME + "/.claude_personal"}), "personal")
+        self.assertEqual(self.label("claude", {"CLAUDE_CONFIG_DIR": self.HOME + "/.claude-work"}), "work")
+        self.assertEqual(self.label("claude", {"CLAUDE_CONFIG_DIR": "/srv/agents/team-a"}), "team-a")
+        self.assertEqual(self.label("codex", {"CODEX_HOME": self.HOME + "/.codex_alt"}), "alt")
+
+    def test_only_its_own_agents_variable_counts(self):
+        self.assertEqual(self.label("codex", {"CLAUDE_CONFIG_DIR": self.HOME + "/.claude_personal"}), "")
+        self.assertEqual(self.label("opencode", {"CLAUDE_CONFIG_DIR": self.HOME + "/.claude_personal"}), "")
+
+    def test_the_label_is_short_and_plain(self):
+        self.assertEqual(self.label("claude", {"CLAUDE_CONFIG_DIR": "/x/" + "a" * 90}), "a" * 32)
+        self.assertEqual(self.label("claude", {"CLAUDE_CONFIG_DIR": "/x/.claude_per\x1bsonal"}), "personal")
+
+    def test_rows_carry_the_account(self):
+        self.pub([spec("limited", account="personal"), spec("working", window_id=20)])
+        by = {r["window_id"]: r for r in self.doc()["agents"]}
+        self.assertEqual(by[19]["account"], "personal")
+        self.assertEqual(by[20]["account"], "")
+        self.assertEqual(self.doc()["version"], 1)                # additive, like `muted`
+
+
 if __name__ == "__main__":
     unittest.main()
