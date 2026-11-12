@@ -83,6 +83,22 @@ class EventTests(unittest.TestCase):
 
 
 class FoldTests(unittest.TestCase):
+    def test_the_screens_question_beats_the_agents_stock_line(self):
+        # the order seen on 2026-11-11: the screen reads the question, the hook says it 6 s later
+        a = ev("permission", src="screen", t=1000.0, body="Allow edit to Notifs.qml?")
+        b = ev("permission", src="agent", t=1006.0, body="Claude needs your permission")
+        self.assertEqual(I.fold([a, b])[0]["body"], "Allow edit to Notifs.qml?")
+        # the other way round, the question still wins
+        c = ev("permission", src="agent", t=1000.0, body="Claude needs your permission")
+        d = ev("permission", src="screen", t=1004.0, body="Allow edit to Notifs.qml?")
+        self.assertEqual(I.fold([c, d])[0]["body"], "Allow edit to Notifs.qml?")
+
+    def test_generic_body(self):
+        for t in ("Claude needs your permission", "Claude is waiting for your input", "needs your attention", "Codex needs your approval."):
+            self.assertTrue(I.generic_body(t), t)
+        for t in ("Allow edit to Notifs.qml?", "Which approach should I take?", ""):
+            self.assertFalse(I.generic_body(t), t)
+
     def test_the_same_thing_reported_by_two_sources_is_one_event(self):
         a = ev("permission", src="agent", t=1000.0)
         b = ev("permission", src="screen", t=1003.0, confidence="low", body="Allow rm?")
