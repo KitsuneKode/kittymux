@@ -53,12 +53,13 @@ def publish(os_window_id: int, groups, pal, host: str = "") -> bool:
         clear(os_window_id)
         return False
     right, fb_h, scale = m
+    alpha = material_alpha()
     rows = [r for g in groups for r in g.rows]
     active = next((r.tab_id for r in rows if r.active), 0)
     view = _S.view.setdefault(os_window_id, {"start": 0, "user": False, "active": active})
     if view["active"] != active:                 # you moved to another tab: the view follows it again
         view.update(user=False, active=active)
-    sig = (tuple(groups), pal, right, fb_h, scale, host, view["start"], view["user"])
+    sig = (tuple(groups), pal, right, fb_h, scale, host, view["start"], view["user"], alpha)
     w = _S.windows.get(os_window_id)
     if w is not None and w.get("sig") == sig:
         return False
@@ -67,13 +68,15 @@ def publish(os_window_id: int, groups, pal, host: str = "") -> bool:
     pic = None
     for _ in range(4):                           # at most a few renders: the "↑ above" band changes how many fit
         pic = bp.render(groups, pal, width=right / scale, height=fb_h / scale, scale=scale, host=host,
-                        resources=_resources(), start=view["start"])
+                        resources=_resources(), start=view["start"], alpha=alpha)
         i = next((k for k, r in enumerate(rows) if r.tab_id == active), None)
         if view["user"] or i is None or pic.start <= i < pic.start + max(1, pic.shown):
             break
-        view["start"] = i if i < pic.start else max(0, i - max(1, pic.shown) + 1)
+        shown = max(1, pic.shown)
+        margin = min(MARGIN, max(0, shown - 1) // 2)          # a little context around the active tab, never past the ends
+        view["start"] = max(0, i - margin) if i < pic.start else max(0, i - shown + 1 + min(margin, len(rows) - 1 - i))
     view["start"] = pic.start
-    sig = (tuple(groups), pal, right, fb_h, scale, host, view["start"], view["user"])
+    sig = (tuple(groups), pal, right, fb_h, scale, host, view["start"], view["user"], alpha)
     from kitty.fast_data_types import get_boss, mark_os_window_dirty, wakeup_main_loop
     get_boss().set_background_image(PLACEHOLDER, (os_window_id,), False, "clamped", png_data=pic.png)
     mark_os_window_dirty(os_window_id)
@@ -92,6 +95,26 @@ def page(os_window_id: int, direction: int) -> None:
     step = max(1, int(w.get("shown") or 1) - 1)
     view["start"] = max(0, min(int(w.get("total") or 0) - 1, view["start"] + direction * step))
     view["user"] = True
+
+
+def glass_alpha(opacity) -> float:
+    """The sidebar as material: a little denser than the terminal's background_opacity (a structural surface reads
+    heavier than the content beside it), opaque when the window is."""
+    try:
+        op = float(opacity)
+    except (TypeError, ValueError):
+        return 1.0
+    if op >= 1.0:
+        return 1.0
+    return round(min(1.0, op + (1.0 - op) * 0.35), 3)
+
+
+def material_alpha() -> float:
+    try:
+        from kitty.fast_data_types import get_options
+        return glass_alpha(getattr(get_options(), "background_opacity", 1.0))
+    except Exception:
+        return 1.0
 
 
 def configured_background(opts) -> tuple:
@@ -133,6 +156,7 @@ def band_at(os_window_id: int, x_px: float, y_px: float):
     return None
 
 
+MARGIN = 2              # tab rows kept in view beyond the active one when the view follows it
 CLOSE_W = 34            # logical px at a row's right end that are the close cross (matches the shader's cover)
 TITLE_LINE = 32         # logical px: the cross sits in a row's first line
 

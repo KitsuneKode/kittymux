@@ -186,7 +186,7 @@ class ViewportFollowTest(unittest.TestCase):
         PX._S.windows.clear()
         PX._S.view.clear()
 
-        def fake_render(groups, pal, width, height, scale, host, resources, start):
+        def fake_render(groups, pal, width, height, scale, host, resources, start, alpha=1.0):
             total = sum(len(g.rows) for g in groups)
             start = max(0, min(start, total - 1))
             shown = min(10, total - start)
@@ -209,7 +209,7 @@ class ViewportFollowTest(unittest.TestCase):
 
     def test_the_active_tab_is_scrolled_into_view(self):
         PX.publish(3, self.groups(35), None)
-        self.assertEqual(PX._S.view[3]["start"], 25)          # rows 26..35: the active 35th is the last one shown
+        self.assertEqual(PX._S.view[3]["start"], 27)          # rows 28..37: the active 35th with two more under it
 
     def test_a_page_click_scrolls_and_stays_until_you_change_tab(self):
         PX.publish(3, self.groups(5), None)
@@ -218,9 +218,17 @@ class ViewportFollowTest(unittest.TestCase):
         PX.publish(3, self.groups(5), None)
         self.assertEqual(PX._S.view[3]["start"], 9)           # a page is the rows shown less one, so one row carries over
         PX.publish(3, self.groups(2), None)
-        self.assertEqual(PX._S.view[3]["start"], 1)           # you went to tab 2 (row index 1): the view starts on it
+        self.assertEqual(PX._S.view[3]["start"], 0)           # you went to tab 2 (row index 1): back in view, one row of context above
 
     def test_clearing_the_picture_forgets_the_view(self):
         PX.publish(3, self.groups(35), None)
         PX.clear(3)
         self.assertNotIn(3, PX._S.view)
+
+
+class GlassTest(unittest.TestCase):
+    def test_the_sidebar_is_a_little_denser_than_the_terminal(self):
+        self.assertEqual(PX.glass_alpha(1.0), 1.0)
+        self.assertEqual(PX.glass_alpha(0.85), 0.902)
+        self.assertGreater(PX.glass_alpha(0.6), 0.6)
+        self.assertEqual(PX.glass_alpha("bogus"), 1.0)

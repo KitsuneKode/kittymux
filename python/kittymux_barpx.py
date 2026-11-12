@@ -170,7 +170,29 @@ def _end(pt: dp.Painter, row: G.Row, right, cy, p, narrow) -> float:
         w = pt.text_w(row.age, T_META, family=UI, tnum=True)
         pt.text(right - w, cy, row.age, T_META, tone, family=UI, tnum=True)
         return w
+    if row.progress and row.progress[0] not in ("indeterminate",):
+        pst, pct = row.progress
+        label = "failed" if pst == "error" else f"{max(0, min(100, int(pct or 0)))}%"
+        tone = {"error": p.alert, "paused": p.waiting}.get(pst, p.muted)
+        w = pt.text_w(label, T_META, family=UI, tnum=True)
+        pt.text(right - w, cy, label, T_META, tone, family=UI, tnum=True)
+        return w
     return 0
+
+
+def _progress(pt: dp.Painter, x, y, w, row: G.Row, p):
+    """OSC 9;4 progress under the row: a faint track the length of the text column and its fill, so it reads as progress and
+    not as an underline. Indeterminate fills the track at half strength."""
+    pst, pct = row.progress
+    c, a = pt.veil(0.08)
+    pt.fill_rrect(x, y, w, 2, 1, c, a)
+    col = {"error": p.alert, "paused": p.waiting}.get(pst, p.working)
+    if pst == "indeterminate":
+        pt.fill_rrect(x, y, w, 2, 1, col, 0.45)
+        return
+    frac = 1.0 if pst == "error" else max(0.0, min(1.0, (pct or 0) / 100))
+    if frac > 0:
+        pt.fill_rrect(x, y, max(2.0, w * frac), 2, 1, col)
 
 
 RAIL_MAX = 130      # logical px: narrower than this the bar is the rail (tiles only, a state dot on each tile)
@@ -354,10 +376,7 @@ def render(groups, pal: th.Palette, width: int, height: int, *, host: str = "", 
                 mt = {"waiting": pal.muted, "alert": pal.alert, "working": pal.muted}.get(row.meta_tone, pal.faint)
                 pt.text(tx, y + 31, row.meta, T_META, mt, family=UI, width=max(10, right - tx))
             if row.progress:
-                pst, pct = row.progress
-                frac = 1.0 if pst in ("error", "indeterminate") else max(0.0, min(1.0, (pct or 0) / 100))
-                col = {"error": pal.alert, "paused": pal.waiting}.get(pst, pal.working)
-                pt.fill_rrect(tx, y + h - 3, (right - tx) * frac, 2, 1, col)
+                _progress(pt, tx, y + h - 4, right - tx, row, pal)
             hits.append(Hit("tab", y0, y1, tab_id=row.tab_id))
             y += h
     below = total - start - shown
