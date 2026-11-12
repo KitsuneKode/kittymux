@@ -1663,7 +1663,8 @@ def _px_row(tab, pal) -> "kittymux_groups.Row":
                 title = shell
             if facts:
                 path = "/".join(p for p in (facts.worktree, facts.inner) if p)
-    msg = kittymux_place.clean(_close_ask(tab.tab_id) or kittymux_agents.resolve_msg(entry or None, state) or "")
+    ask = kittymux_place.clean(_close_ask(tab.tab_id) or "")          # the close guard asking on this row comes first
+    msg = ask or kittymux_place.clean(kittymux_agents.resolve_msg(entry or None, state) or "")
     meta, tone = "", ""
     if state == "waiting":
         meta, tone = msg, "waiting"
@@ -1671,6 +1672,8 @@ def _px_row(tab, pal) -> "kittymux_groups.Row":
         meta, tone = msg or "Failed", "alert"
     elif state == "limited":
         meta, tone = msg or "Usage limit", "waiting"
+    elif state == "working" and ask:
+        meta, tone, age = ask, "waiting", ""
     elif state == "working":
         meta, tone, age = "Working" + (f" · {age}" if age else ""), "working", ""
     elif state == "done":
@@ -1714,17 +1717,24 @@ def _px_stack(tab_id: int, lead_mark: str) -> tuple:
 
 
 def _draw_px(draw_data, screen, tab, index, extra_data, pal) -> int:
+    osw = draw_data.os_window_id
+    if index == 1 and not extra_data.for_layout:
+        try:
+            tm = get_boss().os_window_map.get(osw)
+            rows = [_px_row(t, pal) for t in tm.tab_bar_data] if tm is not None else []
+            groups = kittymux_groups.group(rows, expanded=kittymux_pxbar.expanded())
+            kittymux_pxbar.prune_expanded(g.project for g in groups)
+            kittymux_pxbar.publish(osw, groups, pal, _host())
+        except Exception:
+            _log_exception(tab, index)
+            _MEMO[("px_failed", osw)] = True              # this pass draws the cell bar: never a blank bar behind a bug
+            kittymux_pxbar.clear(osw)
+    if _MEMO.get(("px_failed", osw)):
+        return _draw_vertical(draw_data, screen, tab, index, extra_data, pal)
     screen.cursor.bg = 0                                  # the default background: the picture shows through
     screen.cursor.fg = 0
     screen.cursor.x = 0
     screen.draw(" " * screen.columns)
-    if index == 1 and not extra_data.for_layout:
-        try:
-            tm = get_boss().os_window_map.get(draw_data.os_window_id)
-            rows = [_px_row(t, pal) for t in tm.tab_bar_data] if tm is not None else []
-            kittymux_pxbar.publish(draw_data.os_window_id, kittymux_groups.group(rows, expanded=kittymux_pxbar.expanded()), pal, _host())
-        except Exception:
-            _log_exception(tab, index)
     return screen.cursor.x
 
 
@@ -1802,12 +1812,14 @@ def _draw_tab(
             _new_pass()                          # a new redraw pass starts at tab 1: nothing memoised before it is reused
         _remember_progress(tab)                  # every tab, including the rail: the panel reads this file, the bar does not have to draw the fill
         pal = _palette(draw_data)
-        if index == 1 and not extra_data.for_layout and not _pxbar_on() and kittymux_pxbar.active(draw_data.os_window_id):
-            kittymux_pxbar.clear(draw_data.os_window_id)          # the switch went off: give the window its own background back
-        if draw_data.tab_bar_edge == "left" and _pxbar_on():
-            end = _draw_px(draw_data, screen, tab, index, extra_data, pal)
-        elif draw_data.tab_bar_edge in ("left", "right") and _attached():
+        attached = draw_data.tab_bar_edge in ("left", "right") and _attached()
+        px = draw_data.tab_bar_edge == "left" and _pxbar_on() and not attached      # the client covers the bar: one sidebar, not two
+        if index == 1 and not extra_data.for_layout and not px and kittymux_pxbar.active(draw_data.os_window_id):
+            kittymux_pxbar.clear(draw_data.os_window_id)          # switch off, client attached, or the bar left the left edge
+        if attached:
             end = _draw_attached(draw_data, screen, tab, index, extra_data, pal)
+        elif px:
+            end = _draw_px(draw_data, screen, tab, index, extra_data, pal)
         elif draw_data.tab_bar_edge in ("left", "right"):
             if _BAR_DUMP and not extra_data.for_layout:
                 _dump_row(tab.tab_id, attached=False)

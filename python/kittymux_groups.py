@@ -45,6 +45,11 @@ def settled(r: Row) -> bool:
     return r.state in SETTLED
 
 
+def reporting(r: Row) -> bool:
+    """The tab shows OSC 9;4 progress: something is running there even with no agent, so its group stays open."""
+    return r.progress is not None
+
+
 def group(rows, *, collapse_after: int = COLLAPSE_AFTER, expanded: frozenset = frozenset()) -> list[Group]:
     order: list[str] = []
     members: dict[str, list[Row]] = {}
@@ -61,7 +66,7 @@ def group(rows, *, collapse_after: int = COLLAPSE_AFTER, expanded: frozenset = f
         if branch in DEFAULT_BRANCHES:
             branch = ""
         fold = (len(rs) > collapse_after and project not in expanded
-                and all(settled(r) for r in rs) and not any(r.active for r in rs))
+                and all(settled(r) for r in rs) and not any(r.active or reporting(r) for r in rs))
         out.append(Group(project, branch, () if fold else tuple(rs), len(rs) if fold else 0))
     return out
 

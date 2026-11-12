@@ -28,7 +28,10 @@ ROW_H = 32
 ROW2_H = 46         # a row with a second line
 TILE = 20
 T_TITLE, T_META, T_LABEL = 13, 11, 11
-MAP_STEP = 6        # the row map's marker colours: the bar's red channel +6 and +12
+MAP_STEP = 6        # the row map's marker colours: the bar's red channel +6 and +12 (rows), +18 (the scale run)
+SCALE_RUN = 8       # column 0's last pixels: a run of round(8 × scale) device px in the scale marker, so the shader knows the scale
+BOTTOM = 12         # logical px kept clear at the bottom for the scale run
+MORE_H = 22         # the "↑ N above" / "↓ N below" bands when the tabs don't all fit
 BRAND_OF_MARK = {kittymux_agents.brand_of(n): a.brand for n, a in kittymux_agents.AGENTS.items() if kittymux_agents.brand_of(n)}
 
 
@@ -48,18 +51,43 @@ class Picture:
     hits: tuple
     width: int
     height: int
+    start: int = 0      # tab rows scrolled off the top
+    shown: int = 0      # tab rows drawn
+    total: int = 0      # tab rows in all (folded groups' rows not counted)
 
 
 def _rgb(c: int) -> tuple[float, float, float]:
     return ((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255
 
 
-def marker(bar: int, i: int) -> int:
-    """The row map colour of the i-th tab row: the bar with its red channel nudged up (down on a very light bar)."""
+def _nudge(bar: int, d: int) -> int:
     r = (bar >> 16) & 255
-    d = MAP_STEP * (1 + i % 2)
     r = r + d if r + d <= 255 else r - d
     return (r << 16) | (bar & 0xFFFF)
+
+
+def marker(bar: int, i: int) -> int:
+    """The row map colour of the i-th tab row: the bar with its red channel nudged up (down on a very light bar)."""
+    return _nudge(bar, MAP_STEP * (1 + i % 2))
+
+
+def scale_marker(bar: int) -> int:
+    """The colour of the scale run at the bottom of column 0 (never a row's)."""
+    return _nudge(bar, MAP_STEP * 3)
+
+
+def _scale_run(cr, bar: int, H: int, scale: float) -> None:
+    n = max(1, int(round(SCALE_RUN * scale)))
+    cr.set_source_rgb(*_rgb(scale_marker(bar)))
+    cr.rectangle(0, H - 2 - n, 1, n)
+    cr.fill()
+
+
+def _more(pt, cx, y, label, p, hits, kind, s, w=None):
+    """A faint band saying how many tabs are out of view; a click pages that way (kittymux_pxbar.page)."""
+    tw = pt.text_w(label, 10.5, family=UI)
+    pt.text(cx - tw / 2, y + MORE_H / 2, label, 10.5, p.faint, family=UI)
+    hits.append(Hit(kind, int(round(y * s)), int(round((y + MORE_H) * s))))
 
 
 def _tile(pt: dp.Painter, x, y, row: G.Row, p: th.Palette):
@@ -150,28 +178,50 @@ RAIL_ROW = 34
 PIP = {"waiting": "waiting", "done": "done", "error": "alert", "limited": "waiting", "working": "working"}
 
 
-def _render_rail(pt, cr, groups, pal, width, height, s, hits):
+def _render_rail(pt, cr, groups, pal, width, height, s, hits, start=0):
+    """Returns (start, shown, total)."""
     cx = width / 2
     _tile(pt, cx - TILE / 2, (HEADER_H - TILE) / 2, G.Row(0, "", "", mark="kittymux"), pal)
     n = G.needs_you(groups)
     if n:
         pt.dot(cx + TILE / 2 - 1, (HEADER_H - TILE) / 2 + 1, 4, pal.waiting)
     hits.append(Hit("header", 0, int(round(HEADER_H * s))))
-    y, tab_i = HEADER_H, 0
+    total = sum(len(g.rows) for g in groups)
+    start = max(0, min(start, max(0, total - 1)))
+    need = HEADER_H + sum((11 if gi else 0) + (20 if g.hidden else RAIL_ROW * len(g.rows)) for gi, g in enumerate(groups))
+    limit = height - BOTTOM
+    if start or need > limit:
+        limit -= MORE_H
+    y, tab_i, skip, shown, drew = HEADER_H, 0, start, 0, False
+    if start:
+        _more(pt, cx, y, f"↑{start}", pal, hits, "up", s)
+        y += MORE_H
     for gi, g in enumerate(groups):
-        if gi:
+        if skip and (not g.rows or skip >= len(g.rows)):
+            skip -= len(g.rows)
+            continue
+        if drew:
             c, a = pt.veil(0.10)
             pt.fill_rrect(cx - 8, y + 5, 16, 1, 0.5, c, a)         # a short rule between groups: the rail has no labels
             y += 11
+        drew = True
         if g.hidden:
+            if y + 20 > limit:
+                break
             label = f"+{g.hidden}"
             pt.text(cx - pt.text_w(label, 10, family=UI) / 2, y + 10, label, 10, pal.faint, family=UI)
             hits.append(Hit("group", int(round(y * s)), int(round((y + 20) * s)), project=g.project))
             y += 20
             continue
+        full = False
         for row in g.rows:
-            if y + RAIL_ROW > height:
-                return
+            if skip:
+                skip -= 1
+                continue
+            if y + RAIL_ROW > limit:
+                full = True
+                break
+            shown += 1
             y0, y1 = int(round(y * s)), int(round((y + RAIL_ROW) * s))
             if row.active:
                 c, a = pt.veil(0.085)
@@ -193,24 +243,32 @@ def _render_rail(pt, cr, groups, pal, width, height, s, hits):
                 pt.fill_rrect(cx - TILE / 2, y + RAIL_ROW - 3, TILE * frac, 2, 1, {"error": pal.alert, "paused": pal.waiting}.get(pst, pal.working))
             hits.append(Hit("tab", y0, y1, tab_id=row.tab_id))
             y += RAIL_ROW
+        if full:
+            break
+    below = total - start - shown
+    if below > 0:
+        _more(pt, cx, height - BOTTOM - MORE_H, f"↓{below}", pal, hits, "down", s)
+    return start, shown, total
 
 
 def render(groups, pal: th.Palette, width: int, height: int, *, host: str = "", scale: float = 1.0,
-           alpha: float = 1.0, resources=None) -> Picture:
-    """Draw the bar. `width`/`height` are logical px; the picture is width*scale × height*scale device px."""
+           alpha: float = 1.0, resources=None, start: int = 0) -> Picture:
+    """Draw the bar. `width`/`height` are logical px; the picture is width*scale × height*scale device px. `start` tab rows
+    are scrolled off the top when the tabs don't all fit (kittymux_pxbar keeps the active one in view)."""
     W, H = int(round(width * scale)), int(round(height * scale))
     surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, W, H)
     cr = cairo.Context(surf)
     cr.set_source_rgba(*_rgb(pal.bar), alpha)
     cr.paint()
+    _scale_run(cr, pal.bar, H, scale)
     pt = dp.Painter(cr, scale, pal, resources)
     s = scale
     hits: list[Hit] = []
     narrow = width < 200
     right = width - PAD - INSET
     if width < RAIL_MAX:
-        _render_rail(pt, cr, groups, pal, width, height, s, hits)
-        return Picture(_png(surf), tuple(hits), W, H)
+        st, shown, total = _render_rail(pt, cr, groups, pal, width, height, s, hits, start)
+        return Picture(_png(surf), tuple(hits), W, H, st, shown, total)
 
     # the header: the mascot on a neutral tile, the machine, the needs-you count
     y = 0
@@ -227,12 +285,29 @@ def render(groups, pal: th.Palette, width: int, height: int, *, host: str = "", 
     hits.append(Hit("header", 0, int(round(HEADER_H * s))))
     y = HEADER_H
 
-    tab_i = 0
+    total = sum(len(g.rows) for g in groups)
+    start = max(0, min(start, max(0, total - 1)))
+    need = HEADER_H + sum((GAP if gi else 0) + LABEL_H + sum(ROW2_H if r.meta else ROW_H for r in g.rows)
+                          for gi, g in enumerate(groups))
+    limit = height - BOTTOM
+    if start or need > limit:
+        limit -= MORE_H                       # room for the "↓ N below" band
+    if start:
+        _more(pt, width / 2, y, f"↑ {start} above", pal, hits, "up", s)
+        y += MORE_H
+    tab_i, skip, shown, drew, full = 0, start, 0, False, False
     for gi, g in enumerate(groups):
-        if y >= height:
+        if full:
             break
-        if gi:
+        if skip and (not g.rows or skip >= len(g.rows)):
+            skip -= len(g.rows)               # the whole group is above the view (a folded one before it too)
+            continue
+        first_h = (ROW2_H if g.rows[skip].meta else ROW_H) if g.rows else 0
+        if y + (GAP if drew else 0) + LABEL_H + first_h > limit:
+            break                             # never a label without its first row
+        if drew:
             y += GAP
+        drew = True
         # the group label: the project, faint; its branch at the right when it isn't the default; a fold count
         pt.text(PAD + 2, y + LABEL_H / 2 + 2, g.project, T_LABEL, pal.faint, weight=dp.Pango.Weight.SEMIBOLD, family=UI,
                 width=right - PAD - 60)
@@ -244,9 +319,14 @@ def render(groups, pal: th.Palette, width: int, height: int, *, host: str = "", 
         hits.append(Hit("group", int(round(y * s)), int(round((y + LABEL_H) * s)), project=g.project))
         y += LABEL_H
         for row in g.rows:
+            if skip:
+                skip -= 1
+                continue
             h = ROW2_H if row.meta else ROW_H
-            if y + h > height:
+            if y + h > limit:
+                full = True
                 break
+            shown += 1
             y0, y1 = int(round(y * s)), int(round((y + h) * s))
             if row.active:
                 c, a = pt.veil(0.085)
@@ -280,8 +360,11 @@ def render(groups, pal: th.Palette, width: int, height: int, *, host: str = "", 
                 pt.fill_rrect(tx, y + h - 3, (right - tx) * frac, 2, 1, col)
             hits.append(Hit("tab", y0, y1, tab_id=row.tab_id))
             y += h
+    below = total - start - shown
+    if below > 0:
+        _more(pt, width / 2, height - BOTTOM - MORE_H, f"↓ {below} below", pal, hits, "down", s)
     buf = _png(surf)
-    return Picture(buf, tuple(hits), W, H)
+    return Picture(buf, tuple(hits), W, H, start, shown, total)
 
 
 def _png(surf) -> bytes:

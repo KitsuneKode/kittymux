@@ -330,6 +330,18 @@ def _open_peek(tm, tab_id: int) -> None:
         _debug(traceback.format_exc())
 
 
+def _in_divider(tm, x: float) -> bool:
+    """x is in the bar's resize grab zone (the same test the drag uses)."""
+    try:
+        geo = _bar_geometry(tm)
+        if geo is None:
+            return False
+        _, _edge, inner, cell_w, _window_px = geo
+        return bool(L.in_grab_zone(x, inner, cell_w, native=native_edge_active(tm.os_window_id)))
+    except Exception:
+        return False
+
+
 def _pxbar_click(tm, x: float, y: float, action: int) -> bool:
     """The pixel tab bar's own targets (kittymux_pxbar): a press then a release on the same close cross closes that tab
     (busy agents ask first); a click on a folded group's label opens it. True when the event was ours."""
@@ -339,6 +351,8 @@ def _pxbar_click(tm, x: float, y: float, action: int) -> bool:
     if not PX.active(osw):
         return False
     if action == GLFW_PRESS:
+        if _in_divider(tm, x):                     # the resize grab zone overlaps the row ends: the divider comes first
+            return False
         tid = PX.close_hit(osw, x, y)
         band = PX.band_at(osw, x, y)
         if tid:
@@ -346,6 +360,9 @@ def _pxbar_click(tm, x: float, y: float, action: int) -> bool:
             return True
         if band is not None and band.kind == "group":
             _S.px_down = ("group", band.project)
+            return True
+        if band is not None and band.kind in ("up", "down"):
+            _S.px_down = ("page", band.kind)
             return True
         return False
     if action == GLFW_RELEASE and getattr(_S, "px_down", None):
@@ -357,6 +374,11 @@ def _pxbar_click(tm, x: float, y: float, action: int) -> bool:
             band = PX.band_at(osw, x, y)
             if band is not None and band.kind == "group" and band.project == what:
                 PX.toggle_group(what)
+                tm.mark_tab_bar_dirty()
+        elif kind == "page":
+            band = PX.band_at(osw, x, y)
+            if band is not None and band.kind == what:
+                PX.page(osw, -1 if what == "up" else 1)
                 tm.mark_tab_bar_dirty()
         return True
     return False

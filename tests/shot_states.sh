@@ -9,18 +9,24 @@ set -u
 HOME_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 OUT=${1:-state-shots}
 mkdir -p "$OUT"
+RUN=$(mktemp -d "$OUT/.run.XXXXXX")              # this run's shots only: old PNGs in OUT never count as captured
+trap 'rm -rf "$RUN"' EXIT
+# tripwire: every OTHER kitty's window count before and after (each shot_bar.sh also keeps KITTYMUX_SOCKET_DIRS to its own dir)
+others() { for s in /tmp/mykitty-* "${XDG_RUNTIME_DIR:-/nonexistent}"/mykitty*; do [ -S "$s" ] && kitty @ --to "unix:$s" ls 2>/dev/null | python3 -c 'import sys,json;print(sum(len(t["windows"]) for o in json.load(sys.stdin) for t in o["tabs"]))'; done | tr '\n' ' '; }
+OTHERS_BEFORE=$(others)
 shots=()
+shoot() {   # shoot NAME SCENE THEME WIDTH_STEP MODE
+  KMX_SHOT_SCENE=$2 bash "$HOME_DIR/tests/shot_bar.sh" "$3" "$RUN/$1.png" "$4" "$5" >/dev/null || exit 1
+  [ -s "$RUN/$1.png" ] && { mv "$RUN/$1.png" "$OUT/$1.png"; shots+=("$OUT/$1.png"); }
+}
 for theme in dark light; do
   for size in "22 full wide" "8 full narrow" "22 compact rail"; do
     set -- $size
-    f="$OUT/states-$theme-$3.png"
-    KMX_SHOT_SCENE=states bash "$HOME_DIR/tests/shot_bar.sh" "$theme" "$f" "$1" "$2" >/dev/null || exit 1
-    [ -s "$f" ] && shots+=("$f")
+    shoot "states-$theme-$3" states "$theme" "$1" "$2"
   done
-  f="$OUT/many-$theme-wide.png"
-  KMX_SHOT_SCENE=many bash "$HOME_DIR/tests/shot_bar.sh" "$theme" "$f" 22 full >/dev/null || exit 1
-  [ -s "$f" ] && shots+=("$f")
+  shoot "many-$theme-wide" many "$theme" 22 full
 done
+[ "$(others)" = "$OTHERS_BEFORE" ] || { echo "FAIL: another kitty on this machine changed (before: $OTHERS_BEFORE after: $(others))"; exit 1; }
 if [ ${#shots[@]} -eq 0 ]; then echo "SKIP: no shots (see tests/shot_bar.sh)"; exit 0; fi
 command -v montage >/dev/null 2>&1 && montage "${shots[@]}" -tile "${#shots[@]}x1" -geometry +6+6 -background '#777' "$OUT/sheet.png"
 echo "wrote ${#shots[@]} shots to $OUT"

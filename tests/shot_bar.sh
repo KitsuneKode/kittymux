@@ -168,7 +168,7 @@ if [ "${KMX_SHOT_SCENE:-}" = many ]; then
   printf 'focus_tab 0\n' >> "$T/session"
 fi
 env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_DATA_HOME=$T/data \
-  KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
+  KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_SOCKET_DIRS=$T KITTYMUX_NOTIFY=0 \
   kitty -o linux_display_server=x11 --class kmx-shot --listen-on "$SOCK" --session "$T/session" >"$T/k.log" 2>&1 & KPID=$!
 for _ in $(seq 240); do [ -S "$T/sock" ] && break; sleep 0.25; done; sleep 3
 X() { DISPLAY=$DISP xdotool "$@"; }

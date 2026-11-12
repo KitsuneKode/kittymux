@@ -55,6 +55,10 @@ class ClickMappingTest(unittest.TestCase):
 
 class CloseCrossTest(unittest.TestCase):
     def setUp(self):
+        from unittest.mock import patch
+        self._cross = patch.object(PX, "cross_shown", return_value=True)
+        self._cross.start()
+        self.addCleanup(self._cross.stop)
         self._saved = dict(PX._S.windows)
         PX._S.windows.clear()
         sig = ((), None, 300, 900, 1.0, "")
@@ -74,6 +78,22 @@ class CloseCrossTest(unittest.TestCase):
 
     def test_a_label_has_no_cross(self):
         self.assertEqual(PX.close_hit(7, 290, 120), 0)
+
+    def test_without_the_shader_there_is_no_cross_to_click(self):
+        from unittest.mock import patch
+        with patch.object(PX, "cross_shown", return_value=False):
+            self.assertEqual(PX.close_hit(7, 290, 70), 0)
+
+    def test_opened_groups_are_forgotten_once_their_tabs_are_gone(self):
+        saved = set(PX._S.expanded)
+        try:
+            PX._S.expanded.clear()
+            PX._S.expanded.update({"dots", "gone", "rice"})
+            PX.prune_expanded(["rice", "dots", "kittymux"])
+            self.assertEqual(PX.expanded(), frozenset({"rice", "dots"}))
+        finally:
+            PX._S.expanded.clear()
+            PX._S.expanded.update(saved)
 
     def test_a_group_label_click_opens_and_closes_it(self):
         saved = set(PX._S.expanded)
@@ -100,3 +120,107 @@ class ToolMarksTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CrossShownTest(unittest.TestCase):
+    def test_the_cross_follows_the_running_shaders(self):
+        on = types.SimpleNamespace(custom_shaders=("/x/assets/shaders/kittymux-pxbar.pipeline",))
+        off = types.SimpleNamespace(custom_shaders=("/x/kittymux-cards.pipeline",))
+        self.assertTrue(PX.cross_shown(on))
+        self.assertFalse(PX.cross_shown(off))
+        self.assertFalse(PX.cross_shown(types.SimpleNamespace()))
+
+
+class BackgroundTest(unittest.TestCase):
+    def test_turning_the_picture_off_brings_back_the_configured_image(self):
+        opts = types.SimpleNamespace(background_image="/home/u/wall.png", background_image_layout="scaled")
+        self.assertEqual(PX.configured_background(opts), ("/home/u/wall.png", "scaled"))
+
+    def test_no_configured_image_clears(self):
+        for v in (None, "", "none"):
+            self.assertEqual(PX.configured_background(types.SimpleNamespace(background_image=v)), (None, None))
+
+    def test_a_bar_that_left_the_left_edge_drops_its_picture_and_hit_bands(self):
+        from unittest.mock import patch
+        saved = dict(PX._S.windows)
+        try:
+            PX._S.windows[9] = {"sig": None, "right": 300, "hits": ()}
+            with patch.object(PX, "metrics", return_value=None), patch.object(PX, "clear", wraps=PX.clear) as cl, \
+                    patch.dict(sys.modules, {"kitty.fast_data_types": types.SimpleNamespace(
+                        get_boss=lambda: types.SimpleNamespace(set_background_image=lambda *a, **k: None),
+                        get_options=lambda: types.SimpleNamespace(), mark_os_window_dirty=lambda *_: None, wakeup_main_loop=lambda: None)}):
+                self.assertFalse(PX.publish(9, (), None))
+            cl.assert_called_once_with(9)
+            self.assertFalse(PX.active(9))
+        finally:
+            PX._S.windows.clear()
+            PX._S.windows.update(saved)
+
+
+class DividerFirstTest(unittest.TestCase):
+    def _press(self, in_divider):
+        from unittest.mock import patch
+        fdt = types.SimpleNamespace(GLFW_PRESS=1, GLFW_RELEASE=0, get_boss=lambda: None)
+        tm = types.SimpleNamespace(os_window_id=7)
+        BS._S.px_down = None
+        with patch.dict(sys.modules, {"kitty.fast_data_types": fdt}), patch.object(PX, "active", return_value=True), \
+                patch.object(PX, "close_hit", return_value=11), patch.object(PX, "band_at", return_value=None), \
+                patch.object(BS, "_in_divider", return_value=in_divider):
+            return BS._pxbar_click(tm, 298, 70, 1), BS._S.px_down
+
+    def test_a_press_in_the_resize_zone_is_the_divider_not_the_cross(self):
+        self.assertEqual(self._press(True), (False, None))
+
+    def test_a_press_on_the_cross_outside_the_zone_arms_the_close(self):
+        self.assertEqual(self._press(False), (True, ("close", 11)))
+
+
+class ViewportFollowTest(unittest.TestCase):
+    """The picture shows 10 rows here (a fake renderer): the active tab is always in view, a page click scrolls, and the
+    view follows the active tab again once you change tab."""
+    def setUp(self):
+        from unittest.mock import patch
+        import kittymux_groups as G
+        self.G = G
+        self.saved = (dict(PX._S.windows), dict(PX._S.view))
+        PX._S.windows.clear()
+        PX._S.view.clear()
+
+        def fake_render(groups, pal, width, height, scale, host, resources, start):
+            total = sum(len(g.rows) for g in groups)
+            start = max(0, min(start, total - 1))
+            shown = min(10, total - start)
+            return types.SimpleNamespace(png=b"", hits=(), start=start, shown=shown, total=total)
+        fdt = types.SimpleNamespace(get_boss=lambda: types.SimpleNamespace(set_background_image=lambda *a, **k: None),
+                                    mark_os_window_dirty=lambda *_: None, wakeup_main_loop=lambda: None)
+        bp = types.SimpleNamespace(render=fake_render)
+        for p in (patch.object(PX, "metrics", return_value=(300, 900, 1.0)), patch.object(PX, "_resources", return_value=None),
+                  patch.dict(sys.modules, {"kitty.fast_data_types": fdt, "kittymux_barpx": bp})):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def tearDown(self):
+        PX._S.windows.clear(); PX._S.windows.update(self.saved[0])
+        PX._S.view.clear(); PX._S.view.update(self.saved[1])
+
+    def groups(self, active):
+        return self.G.group([self.G.Row(tab_id=i, title="t", project="p", active=(i == active)) for i in range(1, 41)],
+                            collapse_after=99)
+
+    def test_the_active_tab_is_scrolled_into_view(self):
+        PX.publish(3, self.groups(35), None)
+        self.assertEqual(PX._S.view[3]["start"], 25)          # rows 26..35: the active 35th is the last one shown
+
+    def test_a_page_click_scrolls_and_stays_until_you_change_tab(self):
+        PX.publish(3, self.groups(5), None)
+        self.assertEqual(PX._S.view[3]["start"], 0)
+        PX.page(3, 1)
+        PX.publish(3, self.groups(5), None)
+        self.assertEqual(PX._S.view[3]["start"], 9)           # a page is the rows shown less one, so one row carries over
+        PX.publish(3, self.groups(2), None)
+        self.assertEqual(PX._S.view[3]["start"], 1)           # you went to tab 2 (row index 1): the view starts on it
+
+    def test_clearing_the_picture_forgets_the_view(self):
+        PX.publish(3, self.groups(35), None)
+        PX.clear(3)
+        self.assertNotIn(3, PX._S.view)

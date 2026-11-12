@@ -47,6 +47,10 @@ class GroupingTest(unittest.TestCase):
         rows = [row(i, "dots") for i in range(1, 9)]
         self.assertEqual(G.group(rows, expanded=frozenset({"dots"}))[0].hidden, 0)
 
+    def test_a_group_with_a_tab_reporting_progress_stays_open(self):
+        rows = [row(i, "dots") for i in range(1, 9)] + [row(9, "dots", progress=("set", 40))]
+        self.assertEqual(G.group(rows)[0].hidden, 0)
+
     def test_needs_you_counts_waiting_rows_but_not_muted_ones(self):
         groups = G.group([row(1, "a", state="waiting"), row(2, "a", state="waiting", muted=True), row(3, "b", state="working")])
         self.assertEqual(G.needs_you(groups), 1)

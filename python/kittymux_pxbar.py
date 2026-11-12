@@ -20,6 +20,8 @@ PLACEHOLDER = "/kittymux/pxbar"          # any non-empty path: kitty takes the P
 _S = sys.modules.setdefault("_kittymux_pxbar_rt", types.SimpleNamespace(windows={}, resources=None, last_ms=0.0, expanded=set()))
 if not hasattr(_S, "expanded"):
     _S.expanded = set()
+if not hasattr(_S, "view"):
+    _S.view = {}                          # os window id → {"start", "user", "active"}: where the picture is scrolled to; dropped by clear()
 
 
 def _resources():
@@ -47,32 +49,69 @@ def metrics(os_window_id: int):
 def publish(os_window_id: int, groups, pal, host: str = "") -> bool:
     """Render and show the picture when what it shows changed. Returns True when it swapped."""
     m = metrics(os_window_id)
-    if m is None:
+    if m is None:                             # no bar on the left (moved to the right edge): no picture, no hit bands
+        clear(os_window_id)
         return False
     right, fb_h, scale = m
-    sig = (tuple(groups), pal, right, fb_h, scale, host)
+    rows = [r for g in groups for r in g.rows]
+    active = next((r.tab_id for r in rows if r.active), 0)
+    view = _S.view.setdefault(os_window_id, {"start": 0, "user": False, "active": active})
+    if view["active"] != active:                 # you moved to another tab: the view follows it again
+        view.update(user=False, active=active)
+    sig = (tuple(groups), pal, right, fb_h, scale, host, view["start"], view["user"])
     w = _S.windows.get(os_window_id)
     if w is not None and w.get("sig") == sig:
         return False
     import kittymux_barpx as bp
     t0 = time.perf_counter()
-    pic = bp.render(groups, pal, width=right / scale, height=fb_h / scale, scale=scale, host=host, resources=_resources())
+    pic = None
+    for _ in range(4):                           # at most a few renders: the "↑ above" band changes how many fit
+        pic = bp.render(groups, pal, width=right / scale, height=fb_h / scale, scale=scale, host=host,
+                        resources=_resources(), start=view["start"])
+        i = next((k for k, r in enumerate(rows) if r.tab_id == active), None)
+        if view["user"] or i is None or pic.start <= i < pic.start + max(1, pic.shown):
+            break
+        view["start"] = i if i < pic.start else max(0, i - max(1, pic.shown) + 1)
+    view["start"] = pic.start
+    sig = (tuple(groups), pal, right, fb_h, scale, host, view["start"], view["user"])
     from kitty.fast_data_types import get_boss, mark_os_window_dirty, wakeup_main_loop
     get_boss().set_background_image(PLACEHOLDER, (os_window_id,), False, "clamped", png_data=pic.png)
     mark_os_window_dirty(os_window_id)
     wakeup_main_loop()
     _S.last_ms = (time.perf_counter() - t0) * 1000
-    _S.windows[os_window_id] = {"sig": sig, "hits": pic.hits, "right": right}
+    _S.windows[os_window_id] = {"sig": sig, "hits": pic.hits, "right": right, "shown": pic.shown, "total": pic.total}
     return True
 
 
+def page(os_window_id: int, direction: int) -> None:
+    """A click on "↑ N above" (-1) or "↓ N below" (+1): scroll a page that way. The view stays there until you change tab."""
+    w = _S.windows.get(os_window_id)
+    view = _S.view.get(os_window_id)
+    if w is None or view is None:
+        return
+    step = max(1, int(w.get("shown") or 1) - 1)
+    view["start"] = max(0, min(int(w.get("total") or 0) - 1, view["start"] + direction * step))
+    view["user"] = True
+
+
+def configured_background(opts) -> tuple:
+    """(path, layout) of the background_image in kitty.conf, or (None, None): what the window shows without the picture."""
+    path = getattr(opts, "background_image", None)
+    if not path or str(path).lower() == "none":
+        return None, None
+    return str(path), getattr(opts, "background_image_layout", None)
+
+
 def clear(os_window_id: int) -> None:
-    """Take the picture away (the switch went off): the window's own background comes back."""
+    """Take the picture away (the switch went off, the bar moved, the client attached): the window's own background, the
+    one kitty.conf configures if any, comes back."""
+    _S.view.pop(os_window_id, None)
     if _S.windows.pop(os_window_id, None) is None:
         return
     try:
-        from kitty.fast_data_types import get_boss, mark_os_window_dirty, wakeup_main_loop
-        get_boss().set_background_image(None, (os_window_id,), False, None)
+        from kitty.fast_data_types import get_boss, get_options, mark_os_window_dirty, wakeup_main_loop
+        path, layout = configured_background(get_options())
+        get_boss().set_background_image(path, (os_window_id,), False, layout)
         mark_os_window_dirty(os_window_id)
         wakeup_main_loop()
     except Exception:
@@ -98,8 +137,22 @@ CLOSE_W = 34            # logical px at a row's right end that are the close cro
 TITLE_LINE = 32         # logical px: the cross sits in a row's first line
 
 
+def cross_shown(opts=None) -> bool:
+    """The close cross is drawn by kittymux-pxbar.slang: without that shader running there is no cross, so no click may
+    close a tab (the geninclude loads it only with kitty >= 0.49, slangc and the switch on)."""
+    try:
+        if opts is None:
+            from kitty.fast_data_types import get_options
+            opts = get_options()
+        return "kittymux-pxbar" in str(getattr(opts, "custom_shaders", "") or "")
+    except Exception:
+        return False
+
+
 def close_hit(os_window_id: int, x_px: float, y_px: float) -> int:
-    """The tab whose close cross is under a window-pixel point, else 0."""
+    """The tab whose close cross is under a window-pixel point, else 0 (also when the cross is not drawn)."""
+    if not cross_shown():
+        return 0
     w = _S.windows.get(os_window_id)
     band = band_at(os_window_id, x_px, y_px)
     if w is None or band is None or band.kind != "tab":
@@ -120,6 +173,11 @@ def toggle_group(project: str) -> None:
 
 def expanded() -> frozenset:
     return frozenset(_S.expanded)
+
+
+def prune_expanded(live_projects) -> None:
+    """Forget opened groups whose tabs are all gone, so the set never outgrows the projects on screen."""
+    _S.expanded &= set(live_projects)
 
 
 def close_tab(boss, tab_id: int) -> None:

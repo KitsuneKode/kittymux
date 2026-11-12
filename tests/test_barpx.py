@@ -133,5 +133,54 @@ class BarImageTest(unittest.TestCase):
         self.assertEqual(again.png, self.out.png)
 
 
+
+@unittest.skipIf(B is None, "cairo/pango/rsvg not installed")
+class ViewportTest(unittest.TestCase):
+    """More tabs than fit: every drawn tab keeps its band, the rest are counted in a band you can click, and `start` scrolls."""
+    @staticmethod
+    def many(n=40):
+        return G.group([G.Row(tab_id=i, title=f"tab {i}", project="dots") for i in range(1, n + 1)], collapse_after=99)
+
+    def test_tabs_that_do_not_fit_are_counted_below(self):
+        out = B.render(self.many(), pal(), width=268, height=400)
+        tabs = [h for h in out.hits if h.kind == "tab"]
+        self.assertEqual((out.start, out.shown, out.total), (0, len(tabs), 40))
+        self.assertLess(out.shown, 40)
+        self.assertEqual([h.tab_id for h in tabs], list(range(1, out.shown + 1)))
+        self.assertEqual([h.kind for h in out.hits if h.kind in ("up", "down")], ["down"])
+        down = next(h for h in out.hits if h.kind == "down")
+        self.assertGreaterEqual(down.y0, tabs[-1].y1)
+
+    def test_start_scrolls_the_tabs_and_shows_what_is_above(self):
+        out = B.render(self.many(), pal(), width=268, height=400, start=30)
+        tabs = [h.tab_id for h in out.hits if h.kind == "tab"]
+        self.assertEqual(tabs[0], 31)
+        self.assertEqual(out.start, 30)
+        self.assertIn("up", [h.kind for h in out.hits])
+
+    def test_everything_that_fits_has_no_more_bands(self):
+        out = B.render(self.many(5), pal(), width=268, height=400)
+        self.assertEqual((out.shown, out.total), (5, 5))
+        self.assertFalse([h for h in out.hits if h.kind in ("up", "down")])
+
+    def test_the_rail_scrolls_too(self):
+        out = B.render(self.many(), pal(), width=90, height=400, start=10)
+        tabs = [h.tab_id for h in out.hits if h.kind == "tab"]
+        self.assertEqual(tabs[0], 11)
+        self.assertEqual({h.kind for h in out.hits} & {"up", "down"}, {"up", "down"})
+
+    def test_column_zero_ends_in_a_scale_run_of_eight_device_px_per_unit(self):
+        for scale in (1, 2):
+            out = B.render(self.many(3), pal(), width=268, height=200, scale=scale)
+            w, h, px = decode_png(out.png)
+            col = [px[y][0][:3] for y in range(h)]
+            run = col[h - 3]
+            n = 0
+            while col[h - 3 - n] == run:
+                n += 1
+            self.assertEqual(n, 8 * scale)
+            self.assertNotEqual(run, col[h - 1])
+
+
 if __name__ == "__main__":
     unittest.main()
