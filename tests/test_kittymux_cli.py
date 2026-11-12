@@ -67,6 +67,13 @@ class ConflictTests(unittest.TestCase):
         binds[0]["submap_universal"] = True                   # a JSON boolean, should a later Hyprland send one
         self.assertEqual(self.m.conflicts_from_binds(binds, tpl), ["shift+left"])
 
+    def test_a_taken_chord_names_the_twin_that_still_works(self):
+        # the owner's Hyprland takes ctrl+alt+e and ctrl+alt+shift+w; both jobs have a chord that reaches kitty
+        hints = self.m.twin_hints(["ctrl+alt+e", "ctrl+alt+shift+w", "ctrl+alt+z"])
+        self.assertEqual(hints, ["ctrl+alt+e → ctrl+shift+f7 (kitty's own: number the panes)",
+                                 "ctrl+alt+shift+w → ctrl+shift+q (close the tab)"])
+        self.assertEqual(self.m.twin_hints([]), [])
+
     def test_named_keys(self):
         self.assertEqual(self.m.conflicts_from_binds([{"modmask": 12, "key": ","}], TPL), ["ctrl+alt+comma"])
 

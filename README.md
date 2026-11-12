@@ -144,7 +144,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+shift+space` | **command palette**: one searchable list of what needs you, every tab, conversations to reopen, a new agent (with its provider's quota headroom) and a few actions — `⏎` does it, a click does it, `esc` clears the filter then closes (`kittymux palette` from a shell) |
 | `ctrl+alt+shift+j` | **join**: move this tab's panes into another tab as splits, keeping their shape — you pick the tab in a list (its keys are in its footer; `kittymux join` from a shell) |
 | `ctrl+alt+shift+semicolon` | pane controls: `h/j/k/l` swap neighbours · `r` rotate · `s` swap split sides · `e` equalize · `a` choose a pane; Escape cancels |
-| `ctrl+alt+e` · `ctrl+alt+shift+y` | number every pane on screen, press its digit to **focus** it · to **swap** with it (tmux's display-panes) |
+| `ctrl+alt+e` · `ctrl+alt+shift+y` | number every pane on screen, press its digit to **focus** it · to **swap** with it (tmux's display-panes); kitty's own `ctrl+shift+f7` numbers them too |
 | `ctrl+alt+v` | **pick**: what needs you (longest-waiting first), every running agent, conversations you closed, a new agent — one searchable list (`kittymux pick --menu rofi` from your window manager) |
 | `ctrl+alt+shift+o` then `c` `x` `d` `u` `o` `a` `g` | **spawn** claude · codex · devin · cursor · opencode · agy · grok in a new tab (`shift` + letter: split right) in the current directory |
 | `ctrl+alt+shift+u` | reopen the agent conversation you closed last (it asks before resuming) |

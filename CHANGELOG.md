@@ -5,6 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 ## [Unreleased]
 
 ### Added
+- **`kittymux doctor` names a working key for a job whose chord the window manager takes**: `ctrl+alt+e` → kitty's own `ctrl+shift+f7` (number the panes), `ctrl+alt+shift+w` → `ctrl+shift+q` (close the tab).
 - **Brand tiles in the pixel tab bar are lit:** each agent's tile is a gradient between two of its own colours (Gemini's blue into purple, Claude's clay, Codex's green…), with a faint light on its top edge; the split badge too.
 - **T3 Code** (`t3`) is a known program: its tab shows T3 Code's own mark (traced from the app's icon by `tools/trace-t3code.py`) on its night-sky gradient.
 

@@ -286,6 +286,15 @@ def _universal(bind: dict) -> bool:
     return v is True or (isinstance(v, str) and v.strip().lower() == "true")
 
 
+# A kittymux chord the window manager may take, and a chord for the same job that reaches kitty anyway (kitty's own
+# default, or a second kittymux key). doctor names it beside the conflict, so a taken key is not a dead job.
+TWINS = {"ctrl+alt+e": "ctrl+shift+f7 (kitty's own: number the panes)", "ctrl+alt+shift+w": "ctrl+shift+q (close the tab)"}
+
+
+def twin_hints(conflicts) -> list[str]:
+    return [f"{c} → {TWINS[c]}" for c in conflicts if c in TWINS]
+
+
 def _hypr_conflicts() -> list[str]:
     rc, out = _run(["hyprctl", "binds", "-j"])
     if rc != 0:
@@ -516,8 +525,10 @@ def doctor() -> int:
     conflicts = _hypr_conflicts()
     if shutil.which("hyprctl"):
         if conflicts:
+            hints = twin_hints(conflicts)
             r.warning("Hyprland already binds: " + ", ".join(conflicts),
-                      "those kittymux keys will never reach kitty — remap them in kittymux-keys.conf.tpl, or use leader mode (install.sh --leader)")
+                      "those kittymux keys will never reach kitty — remap them in kittymux-keys.conf.tpl, or use leader mode (install.sh --leader)"
+                      + ("; these jobs still have a key: " + "; ".join(hints) if hints else ""))
         else:
             r.ok("no ctrl+alt key conflicts with Hyprland")
     else:
