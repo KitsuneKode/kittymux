@@ -141,7 +141,7 @@ if [ "${KMX_SHOT_SCENE:-}" = states ]; then
     printf "launch bash -c 'printf \" Bash command\\\\n   rm -rf node_modules\\\\n Do you want to proceed?\\\\n ❯ 1. Yes\\\\n   2. No\\\\n\"; exec -a claude sleep 86400'\n"   # needs you
     printf 'new_tab\ncd %s\n' "$W/web"; ST done codex                                                           # done, unseen
     printf 'new_tab\ncd %s\n' "$W/docs"
-    printf "launch bash -c 'printf \"Usage limit reached · resets 2pm\\\\n\"; exec -a claude sleep 86400'\n"   # limited
+    printf "launch bash -c 'printf \"Usage limit reached · resets in 2h\\\\n\"; exec -a claude sleep 86400'\n"   # limited (a RELATIVE reset: a clock time like "2pm" reads as already lifted after 2pm, by design)
     printf 'new_tab\ncd %s\n' "$W/api"; ST error goose                                                          # error (an agent whose screen is not read)
     printf 'new_tab\ncd %s\nlaunch sh\nfocus\n' "$W/kittymux/python"                                             # needs you in a background split
     printf "launch --location=hsplit bash -c 'printf \" Edit file\\\\n Do you want to make this edit?\\\\n ❯ 1. Yes\\\\n\"; exec -a claude sleep 86400'\n"
