@@ -58,7 +58,10 @@ WAITING_RE = re.compile(
     # first run in a folder: Antigravity's and Cursor Agent's trust prompts block until answered (captured live, 2026-11-12)
     r"|do\s+you\s+trust\s+the\s+contents\s+of\s+this"
     r"|[↑↓]+\s*/\s*[↑↓]+\s+navigate\s*[·•|]\s*enter\s+(?:to\s+)?(?:confirm|select)"
-    r"|use\s+arrow\s+keys\s+to\s+navigate,?\s+enter\s+to\s+select",
+    r"|use\s+arrow\s+keys\s+to\s+navigate,?\s+enter\s+to\s+select"
+    # the agents' own question tools (captured live): OpenCode's Questions panel, Cursor Agent's Clarifying Questions
+    r"|[↑↓]+\s*select\s+enter\s+submit"
+    r"|space\s+select\s*[·•|]\s*enter",
     _I)
 WORKING_RE = re.compile(
     r"\besc(?:ape)?(?:\s+twice)?\s+to\s+(?:interrupt|cancel|stop)\b"
@@ -89,8 +92,9 @@ _DIALOG_CHROME_RE = re.compile(
 # shown as the reason they read "Enter to select · ↑/↓ to navigate · Esc to cancel" (seen as a notification body).
 _HINT_RE = re.compile(
     r"enter\s+to\s+(?:select|confirm|submit)|esc\s+to\s+(?:cancel|go\s+back|exit)|tab\s+to\s+amend|to\s+navigate|↑\s*/?\s*↓"
-    r"|press\s+enter\s+to", _I)
-_OPTION_RE = re.compile(r"^[❯›>]?\s*\d+[.)]\s")
+    r"|press\s+enter\s+to|select\s+enter\s+submit|space\s+select|esc\s+(?:to\s+)?(?:skip|dismiss)|next/submit", _I)
+_OPTION_RE = re.compile(r"^[❯›>▶]?\s*(?:\d+[.)]\s|\[[ x✓]?\]\s)")                  # "1. Yes", "› [ ] alpha.txt"
+_QUESTION_LABEL_RE = re.compile(r"^(?:question\s+\d+\s*(?:/|of)\s*\d+\s*:?\s*|\?\s+|\d+[.)]\s+)", _I)
 _BOX = "│┃|╭╮╰╯─━┌┐└┘├┤▌▍▎▏▐ \t"           # box borders and quote bars (Claude Code draws ▌ before a question)
 
 
@@ -99,10 +103,19 @@ def _question_above(lines: list, i: int, reach: int = 14) -> str:
     the menu's chrome (hints, numbered options, box borders). '' when there is none: better no reason than chrome."""
     for j in range(i - 1, max(-1, i - 1 - reach), -1):
         q = lines[j].strip(_BOX)
-        if not q or _HINT_RE.search(q) or _OPTION_RE.match(q):
+        if not q or _HINT_RE.search(q):
+            continue
+        if _OPTION_RE.match(q) and not q.endswith("?"):      # an option; a NUMBERED question ("1. Should…?") is the question
             continue
         if q.endswith("?") or WAITING_RE.search(q) or re.search(r"\b(?:allow|approve|confirm|choose|select|pick|which)\b", q, _I):
-            return q
+            # a question that wrapped: "Question 1/1: Should … or" / "beta.txt?" — join the lines it ran over
+            k = j
+            while k > 0 and q[:1].islower():
+                prev = lines[k - 1].strip(_BOX)
+                if not prev or prev.endswith((".", "?", "!", ":")) or _HINT_RE.search(prev) or _OPTION_RE.match(prev):
+                    break
+                q, k = prev + " " + q, k - 1
+            return _QUESTION_LABEL_RE.sub("", q).strip()
     return ""
 
 
