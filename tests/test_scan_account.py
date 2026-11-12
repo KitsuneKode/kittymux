@@ -2,6 +2,7 @@
 import os
 import subprocess
 import sys
+import time
 import types
 import unittest
 from pathlib import Path
@@ -16,6 +17,18 @@ class AccountFromProcessTests(unittest.TestCase):
         env.update(env_extra)
         p = subprocess.Popen(["sleep", "30"], env=env)
         self.addCleanup(lambda: (p.kill(), p.wait()))
+        want = [k.encode() + b"=" for k in env_extra]
+        for _ in range(40):                       # the child's environment as /proc shows it (a CI runner can hide it)
+            try:
+                with open(f"/proc/{p.pid}/environ", "rb") as f:
+                    items = f.read().split(b"\0")
+            except OSError:
+                items = []
+            if all(any(i.startswith(w) for i in items) for w in want):
+                break
+            time.sleep(0.05)
+        else:
+            self.skipTest("this machine's /proc does not show a child's environment")
         return types.SimpleNamespace(foreground_processes=[{"pid": p.pid, "cmdline": ["sleep", "30"]}])
 
     def test_a_pane_started_with_another_config_dir_names_its_account(self):
