@@ -58,6 +58,15 @@ class ConflictTests(unittest.TestCase):
         binds = [{"modmask": 1, "key": "left", "submap": "resize"}, {"modmask": 12, "key": "e", "submap": ""}]
         self.assertEqual(self.m.conflicts_from_binds(binds, TPL + "\nmap shift+left x\nmap ctrl+alt+e y\n"), ["ctrl+alt+e"])
 
+    def test_a_universal_bind_inside_a_submap_is_a_conflict(self):
+        # a bind with the `u` flag acts in every submap; Hyprland reports the flag as the STRING "true"/"false"
+        binds = [{"modmask": 1, "key": "left", "submap": "resize", "submap_universal": "true"},
+                 {"modmask": 1, "key": "right", "submap": "resize", "submap_universal": "false"}]
+        tpl = TPL + "\nmap shift+left x\nmap shift+right y\n"
+        self.assertEqual(self.m.conflicts_from_binds(binds, tpl), ["shift+left"])
+        binds[0]["submap_universal"] = True                   # a JSON boolean, should a later Hyprland send one
+        self.assertEqual(self.m.conflicts_from_binds(binds, tpl), ["shift+left"])
+
     def test_named_keys(self):
         self.assertEqual(self.m.conflicts_from_binds([{"modmask": 12, "key": ","}], TPL), ["ctrl+alt+comma"])
 
