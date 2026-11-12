@@ -82,6 +82,9 @@ WORKING_RE = re.compile(
 # when idle, "Guide Devin while it works" while busy), so a busy marker printed ABOVE the idle placeholder is old output (a quoted
 # Codex log, a pasted screen), never live work: what is drawn below it says the turn is over.
 _IDLE_COMPOSER_RE = re.compile(r"\bask\s+devin\s+to\s+build\s+features\b", _I)
+# Composers drawn ONLY while the agent is idle (captured live 2026-11-12: a question menu or panel replaces them), so a
+# question-looking line above one is old text in a finished reply, not a prompt: Antigravity's footer, OpenCode's model line.
+_IDLE_ONLY_RE = re.compile(r"^\?\s+for\s+shortcuts\b|\bBuild\s+·\s+.+\bOpenCode\s+·", _I)
 
 # chrome only a real dialog draws: if one of these sits at or below a question, it IS the dialog even with a spinner nearby
 _DIALOG_CHROME_RE = re.compile(
@@ -140,6 +143,7 @@ def classify_screen(text: str) -> tuple[str, str]:
     lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()][-_TAIL_LINES:]
     working_at = next((i for i in range(len(lines) - 1, -1, -1) if WORKING_RE.search(lines[i])), -1)
     idle_at = next((i for i in range(len(lines) - 1, -1, -1) if _IDLE_COMPOSER_RE.search(lines[i])), -1)
+    idle_only_at = next((i for i in range(len(lines) - 1, -1, -1) if _IDLE_ONLY_RE.search(lines[i].strip("┃│ \t"))), -1)
     if idle_at > working_at:
         working_at = -1                            # the busy marker is stale: the idle composer is drawn below it
     for marker, rx in (("limited", LIMITED_RE), ("waiting", WAITING_RE), ("working", WORKING_RE)):
@@ -151,6 +155,8 @@ def classify_screen(text: str) -> tuple[str, str]:
                     break                          # stale: an idle composer is drawn below this busy marker
                 if marker != "working" and working_at > i and not any(_DIALOG_CHROME_RE.search(x) for x in lines[i:]):
                     break                          # activity below it: that text is stale output, not a prompt
+                if marker == "waiting" and idle_only_at > i:
+                    break                          # the idle composer is drawn below it: old text in a finished reply
                 return marker, (_reason(lines, i) if marker == "waiting" else lines[i])[:160]
     return "", ""
 

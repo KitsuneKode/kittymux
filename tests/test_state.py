@@ -379,6 +379,28 @@ class WhyTests(unittest.TestCase):
         self.assertEqual(a["why"], b["why"])
 
 
+
+
+class IdleComposerTest(unittest.TestCase):
+    """An agent without hooks is judged by its screen alone, so a finished reply that merely QUOTES a dialog's words
+    ("use arrow keys to navigate, enter to select") read as "needs you". Antigravity's and OpenCode's idle composer is drawn
+    only while they are idle (captured live 2026-11-12: a question menu replaces it), so a prompt above it is old text."""
+    AGY_IDLE = ("● I added the picker. It says use arrow keys to navigate, enter to select.\n"
+                "──────────────────────────────────────────────\n> \n──────────────────────────────────────────────\n"
+                "? for shortcuts                 auto · Gemini 3.8 Flash · high\n")
+    OPENCODE_IDLE = ("  The menu reads: ↑↓ select enter submit esc dismiss\n  ┃\n  ┃  Build · GLM-5.3-Flash Free OpenCode · max\n"
+                     "  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n  /…/work-calm-otter:main   23.0K (12%)\n ✓ Server  ○ UI  Theme  Tools  Experiments\n")
+
+    def test_a_quoted_prompt_above_the_idle_composer_is_not_waiting(self):
+        self.assertNotEqual(S.classify_screen(self.AGY_IDLE)[0], "waiting")
+        self.assertNotEqual(S.classify_screen(self.OPENCODE_IDLE)[0], "waiting")
+
+    def test_their_real_question_menus_still_wait(self):
+        self.assertEqual(S.classify_screen(AGY_QUESTION)[0], "waiting")
+        self.assertEqual(S.classify_screen(OPENCODE_QUESTION)[0], "waiting")
+        self.assertEqual(S.classify_screen(AGY_TRUST)[0], "waiting")
+
+
 if __name__ == "__main__":
     unittest.main()
 
