@@ -95,7 +95,7 @@ def publish(os_window_id: int, groups, pal, host: str = "", animate: bool = True
         clear(os_window_id)
         return False
     right, fb_h, scale = m
-    scale = scale * ui_scale(font_points())          # device px per drawn px: the type follows the terminal font
+    scale = round(scale * ui_scale(font_points()) * 8) / 8   # device px per drawn px, in eighths: the scale run the shaders read encodes it exactly
     alpha = material_alpha()
     rows = [r for g in groups for r in g.rows]
     active = next((r.tab_id for r in rows if r.active), 0)

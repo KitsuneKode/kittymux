@@ -252,8 +252,9 @@ class UiScaleTest(unittest.TestCase):
                 patch.object(PX, "font_points", return_value=14.5), \
                 patch.dict(sys.modules, {"kitty.fast_data_types": fdt, "kittymux_barpx": types.SimpleNamespace(render=fake_render)}):
             PX.publish(9, G.group([G.Row(tab_id=1, title="t", project="p", active=True)]), None)
-        k = PX.ui_scale(14.5)
-        self.assertAlmostEqual(seen["scale"], k)                  # device px per logical px: the shaders read it from the picture
+        k = round(PX.ui_scale(14.5) * 8) / 8                      # eighths: the picture's scale run (8 x scale px) encodes it exactly,
+        self.assertEqual(seen["scale"] * 8, int(seen["scale"] * 8))   # so the shaders decode the same scale (CodeRabbit on #29)
+        self.assertAlmostEqual(seen["scale"], k)
         self.assertAlmostEqual(seen["width"], 320 / k)
         self.assertAlmostEqual(seen["height"], 900 / k)
 
