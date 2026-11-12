@@ -45,7 +45,9 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
   pixels, drawn by kitty's GPU border renderer in the pane padding next to the bar — and (b) one invisible hit rect (`border_type` < 0 = left edge, > 0 = right) over them. kitty hit-tests it IN C
   (`mouse_region`): hover → native `sb_h_double_arrow`, press → `Boss.drag_resize_start` (we answer for our rect), then `drag_resize_update/_end` until release, cursor restored by C. C only runs
   border hit-tests when the tab has 2+ visible windows, and the cursor over the tab bar rect is ALWAYS a hand (`in_tab_bar` → `POINTER_POINTER`) and the bar gets no motion events ("expensive and useless"
-  in `handle_tab_bar_mouse`). So: split tabs get the arrow, single-pane tabs the bar-side grab zone. Wrappers must delegate to module-level functions by name (a reload re-executes this module in place);
+  in `handle_tab_bar_mouse`). So: split tabs get the arrow, single-pane tabs the bar-side grab zone. Every hook into a kitty method goes through `kittymux_barsize._hook`, which rebuilds it on EACH load around kitty's own method
+  (an "already wrapped, skip" guard kept the first load's CODE for days: its globals were current, its body was not, and pixel-bar clicks hit the old
+  cell layout; `tests/test_rewrap.py`, `smoke_upgrade`); the wrappers
   they never raise; the hook costs ~35 µs per border refresh and retains nothing. `L.edge_geometry` is the pure geometry; `tests/smoke_native.sh` reads the real X cursor and pixels.
 - The divider (cell fallback: padding < 10 px, or a kitty we have not verified) is two hairlines in the bar's last two columns (`tab_bar.SEP_COLS`, `SEP_EIGHTS`); content stays left of them. The resize hit area is `kittymux_layout.in_grab_zone`: centred on
   the seam between them (`DIVIDER_CELLS`), ±`GRAB_CELLS` — exactly those two columns — so it never steals a click meant for a tab; the collapse button stops where it starts.
