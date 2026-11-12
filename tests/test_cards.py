@@ -77,6 +77,21 @@ class GatedCardsTests(unittest.TestCase):
             self.assertIn("var bool GLASS = true", body)
             self.assertIn("shaders kittymux-hover-probe", body)
 
+    def test_the_pixel_bar_takes_the_cards_place(self):
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, L.CARDS_FLAG), "w").close()
+            open(os.path.join(d, "pxbar-on"), "w").close()
+            out = L.gated_conf((0, 49, 2), d, True)
+            line = [x for x in out.splitlines() if x.startswith("custom_shaders ")]
+            self.assertEqual(len(line), 1)
+            self.assertEqual(line[0], "custom_shaders " + L.PXBAR_PIPELINE)
+            self.assertIn("shaders kittymux-pxbar", open(L.PXBAR_PIPELINE, encoding="utf-8").read())
+
+    def test_the_pixel_bar_needs_the_shader_compiler(self):
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "pxbar-on"), "w").close()
+            self.assertNotIn("custom_shaders", L.gated_conf((0, 49, 2), d, False))
+
     @unittest.skipUnless(os.path.exists("/usr/lib/kitty/kitty/shaders/slang.py"),
                          "needs an installed kitty with shader-slang (CI's unit job has none; the smoke job does)")
     def test_the_pipeline_parses(self):

@@ -24,17 +24,8 @@ def _paths() -> None:
 
 
 def _states(windows) -> dict:
-    import kittymux_agents
-    rt = sys.modules.get("_kittymux_scan_rt")
-    hooks = (getattr(rt, "panes", (None, {}))[1] or {}) if rt is not None else {}
-    verdicts = getattr(rt, "verdicts", {}) if rt is not None else {}
-    now = time.monotonic()
-    out = {}
-    for w in windows:
-        key = str(w.id)
-        entry = kittymux_agents.merge_scan({key: hooks.get(key) or {}}, {key: verdicts.get(key) or {}}).get(key) or {}
-        out[key] = (kittymux_agents.fresh_verdict(entry, now), entry.get("agent") or "")
-    return out
+    import kittymux_closeguard
+    return kittymux_closeguard.window_states(windows)
 
 
 def _can_ask_inline(boss, ids) -> bool:

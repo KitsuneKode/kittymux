@@ -51,6 +51,9 @@ import kittymux_scan  # noqa: E402
 import kittymux_state  # noqa: E402
 import kittymux_bartext  # noqa: E402
 import kittymux_theme  # noqa: E402
+import kittymux_groups  # noqa: E402
+import kittymux_pxbar  # noqa: E402
+import kittymux_switches  # noqa: E402
 import kittymux_titles  # noqa: E402
 
 # kitty re-runs this file on every config reload, but Python keeps imported modules
@@ -1620,6 +1623,80 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     return screen.cursor.x
 
 
+# ── the pixel tab bar (the pxbar switch, plan 015) ───────────────────────────
+# The bar is a picture (kittymux_barpx) kitty shows as the OS window's background image; these cells stay blank in the
+# default background so it shows through. Every row comes from the same helpers the cell bar uses.
+
+
+@_per_pass
+def _pxbar_on() -> bool:
+    try:
+        return kittymux_switches.enabled("pxbar")
+    except Exception:
+        return False
+
+
+def _px_row(tab, pal) -> "kittymux_groups.Row":
+    cwd, foreground, _last_cmd = _active_window_info(tab.tab_id)
+    info = _agent_from_fg(foreground)
+    state = _tab_state(tab)
+    entry = _tab_verdict(tab.tab_id)[1] or {}
+    age = kittymux_agents.state_age(state, entry.get("ts_state"), time.monotonic(),
+                                    reset_at=entry.get("reset_at"), wall=time.time())
+    title = kittymux_bartext.display_title(_shown_title(tab, 80, info, cwd))
+    facts = _facts(cwd) if cwd else None
+    mark, tint, path = "", None, ""
+    if info:
+        _glyph_, brand, name = info
+        mark, tint = kittymux_agents.brand_of(name), brand
+        if not title or (facts and title.lower() == facts.project.lower()) or (cwd and title == os.path.basename(os.path.realpath(cwd))):
+            title = _APP_LABELS.get(name, name.capitalize())       # no task title yet: the agent, not the folder the label already names
+    else:
+        tool = kittymux_agents.tool_in(foreground)
+        mark = kittymux_agents.TOOL_MARKS.get(tool or "", "")
+        if not tool:
+            # a plain shell says what it runs, and only where it is INSIDE its project: the group label already names it
+            shell = next((_basename(c[0]).lstrip("-") for c in foreground or () if c), "") or "shell"
+            home = os.path.realpath(os.path.expanduser("~"))
+            if not title or title in ("~", "Home") or (facts and title.lower() == facts.project.lower()) \
+                    or (cwd and title == os.path.basename(os.path.realpath(cwd))) or (cwd and os.path.realpath(cwd) == home):
+                title = shell
+            if facts:
+                path = "/".join(p for p in (facts.worktree, facts.inner) if p)
+    msg = kittymux_place.clean(_close_ask(tab.tab_id) or kittymux_agents.resolve_msg(entry or None, state) or "")
+    meta, tone = "", ""
+    if state == "waiting":
+        meta, tone = msg, "waiting"
+    elif state == "error":
+        meta, tone = msg or "Failed", "alert"
+    elif state == "limited":
+        meta, tone = msg or "Usage limit", "waiting"
+    elif state == "working":
+        meta, tone, age = "Working" + (f" · {age}" if age else ""), "working", ""
+    elif state == "done":
+        summary = _changes_summary(str(entry.get("wid", "")))
+        meta = summary if summary and summary != "no changes" else ""
+    return kittymux_groups.Row(
+        tab_id=tab.tab_id, title=title, project=facts.project if facts else "other", branch=facts.branch if facts else "",
+        state=state, active=bool(tab.is_active), mark=mark, tint=tint, meta=meta, meta_tone=tone,
+        age=age if state in ("waiting", "limited", "done") else "", path=path, progress=_tab_progress(tab))
+
+
+def _draw_px(draw_data, screen, tab, index, extra_data, pal) -> int:
+    screen.cursor.bg = 0                                  # the default background: the picture shows through
+    screen.cursor.fg = 0
+    screen.cursor.x = 0
+    screen.draw(" " * screen.columns)
+    if index == 1 and not extra_data.for_layout:
+        try:
+            tm = get_boss().os_window_map.get(draw_data.os_window_id)
+            rows = [_px_row(t, pal) for t in tm.tab_bar_data] if tm is not None else []
+            kittymux_pxbar.publish(draw_data.os_window_id, kittymux_groups.group(rows, expanded=kittymux_pxbar.expanded()), pal, _host())
+        except Exception:
+            _log_exception(tab, index)
+    return screen.cursor.x
+
+
 # ── tabs.json ────────────────────────────────────────────────────────────────
 # The scanner writes it (kittymux_scan → kittymux_tabsnap), for every kitty whether or not its bar is
 # drawing; the bar no longer does. A trailing timer armed by the old writer before a hot reload can
@@ -1694,7 +1771,11 @@ def _draw_tab(
             _new_pass()                          # a new redraw pass starts at tab 1: nothing memoised before it is reused
         _remember_progress(tab)                  # every tab, including the rail: the panel reads this file, the bar does not have to draw the fill
         pal = _palette(draw_data)
-        if draw_data.tab_bar_edge in ("left", "right") and _attached():
+        if index == 1 and not extra_data.for_layout and not _pxbar_on() and kittymux_pxbar.active(draw_data.os_window_id):
+            kittymux_pxbar.clear(draw_data.os_window_id)          # the switch went off: give the window its own background back
+        if draw_data.tab_bar_edge == "left" and _pxbar_on():
+            end = _draw_px(draw_data, screen, tab, index, extra_data, pal)
+        elif draw_data.tab_bar_edge in ("left", "right") and _attached():
             end = _draw_attached(draw_data, screen, tab, index, extra_data, pal)
         elif draw_data.tab_bar_edge in ("left", "right"):
             if _BAR_DUMP and not extra_data.for_layout:

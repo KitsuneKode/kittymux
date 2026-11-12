@@ -1,0 +1,6 @@
+# kittymux pxbar: hover and the close cross for the pixel tab bar (kittymux_barpx). Emitted by the geninclude when the pxbar switch is on.
+startgroup
+    # static: kitty redraws it when the pointer moves, and not while the pointer is still
+    animation_step 0
+    shaders kittymux-pxbar
+endgroup

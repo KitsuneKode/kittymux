@@ -410,6 +410,28 @@ for _glyph, _names in (
     for _n in _names:
         TOOLS[_n] = _glyph
 _TOOL_RANK = {name: i for i, name in enumerate(TOOLS)}
+
+# The same tools' marks as assets/icons basenames, for the pixel tab bar (kittymux_barpx). A tool missing here (ssh, btop,
+# man…) gets the drawn shell prompt rather than a made-up logo.
+TOOL_MARKS: dict[str, str] = {}
+for _mark, _names in (
+    ("neovim", ("nvim", "vim", "vi", "hx", "helix", "micro", "nano", "emacs")),
+    ("git", ("git", "lazygit", "tig", "gitui")),
+    ("docker", ("docker", "podman", "lazydocker")),
+    ("kubernetes", ("kubectl", "k9s", "helm")),
+    ("postgresql", ("psql", "pgcli")),
+    ("rust", ("cargo", "rustc")),
+    ("go", ("go",)),
+    ("python", ("python", "python3", "ipython", "uv")),
+    ("nodedotjs", ("node", "npx")),
+    ("bun", ("bun",)),
+    ("deno", ("deno",)),
+    ("npm", ("npm",)),
+    ("pnpm", ("pnpm",)),
+    ("yarn", ("yarn",)),
+):
+    for _n in _names:
+        TOOL_MARKS[_n] = _mark
 _WRAPPERS = {"env", "sudo", "doas", "command", "exec", "nohup", "time"}
 
 

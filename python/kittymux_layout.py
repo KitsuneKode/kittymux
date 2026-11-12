@@ -90,6 +90,7 @@ GLASS_FLAG = "bar-cards-glass"       # $KITTYMUX_STATE/bar-cards-glass → the b
 # the shipped pipeline, by absolute path (kitty resolves its shaders next to it); realpath: the config dir links here.
 # when cards are on, the geninclude writes a copy into the state dir with this kitty's cell height and fill colours.
 CARDS_PIPELINE = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "assets", "shaders", "kittymux-cards.pipeline")
+PXBAR_PIPELINE = os.path.join(os.path.dirname(CARDS_PIPELINE), "kittymux-pxbar.pipeline")   # the pixel tab bar's hover (pxbar switch)
 
 
 # POSIX-ERE for `path/to/file.py:42[:7]`; kittymux_openref.DETECT_REGEX must stay identical (a unit test pins it —
@@ -185,6 +186,13 @@ def cards_pipeline(sdir: str) -> str:
         return CARDS_PIPELINE
 
 
+def _pxbar_on(sdir: str) -> bool:
+    try:
+        return bool(_import_here("kittymux_switches").enabled("pxbar", sdir))
+    except Exception:
+        return False
+
+
 def gated_conf(version: tuple, sdir: str, slangc: bool = False) -> str:
     """Config lines for features the asking kitty supports. `version` is that kitty's (major, minor, patch);
     `slangc` says the shader compiler is installed (custom shaders cannot build without it)."""
@@ -196,7 +204,9 @@ def gated_conf(version: tuple, sdir: str, slangc: bool = False) -> str:
     shaders = []                                     # ONE custom_shaders line: a second one would replace the first
     if version >= DIM_SHADER_MIN and slangc and os.path.exists(os.path.join(sdir, DIM_FLAG)):
         shaders.append("dim-inactive-windows")
-    if version >= CARDS_SHADER_MIN and slangc and os.path.exists(os.path.join(sdir, CARDS_FLAG)) and os.path.exists(CARDS_PIPELINE):
+    if version >= CARDS_SHADER_MIN and slangc and _pxbar_on(sdir) and os.path.exists(PXBAR_PIPELINE):
+        shaders.append(PXBAR_PIPELINE)               # the pixel tab bar draws its own cards: its shader replaces the cards one
+    elif version >= CARDS_SHADER_MIN and slangc and os.path.exists(os.path.join(sdir, CARDS_FLAG)) and os.path.exists(CARDS_PIPELINE):
         shaders.append(cards_pipeline(sdir))
     if shaders:
         lines.append("custom_shaders " + " ".join(shaders))

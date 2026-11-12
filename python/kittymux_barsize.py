@@ -35,6 +35,7 @@ _DEFAULTS = dict(
     last_cost=0.0,          # how long the last width change took (s): the next one waits at least this long
     installed=False,
     toggle_down=False,      # a press landed on the collapse/expand button; the release decides
+    px_down=None,           # the pixel tab bar: ("close", tab id) or ("group", project) pressed; the release decides
     peek_down=0,            # tab id under a right-button press; the release opens its peek card
     watchdog=None,          # timer id
     trail=None,             # timer id of the pending "apply the latest pointer position" (see _drag_to)
@@ -329,6 +330,38 @@ def _open_peek(tm, tab_id: int) -> None:
         _debug(traceback.format_exc())
 
 
+def _pxbar_click(tm, x: float, y: float, action: int) -> bool:
+    """The pixel tab bar's own targets (kittymux_pxbar): a press then a release on the same close cross closes that tab
+    (busy agents ask first); a click on a folded group's label opens it. True when the event was ours."""
+    import kittymux_pxbar as PX
+    from kitty.fast_data_types import GLFW_PRESS, GLFW_RELEASE, get_boss
+    osw = tm.os_window_id
+    if not PX.active(osw):
+        return False
+    if action == GLFW_PRESS:
+        tid = PX.close_hit(osw, x, y)
+        band = PX.band_at(osw, x, y)
+        if tid:
+            _S.px_down = ("close", tid)
+            return True
+        if band is not None and band.kind == "group":
+            _S.px_down = ("group", band.project)
+            return True
+        return False
+    if action == GLFW_RELEASE and getattr(_S, "px_down", None):
+        kind, what = _S.px_down
+        _S.px_down = None
+        if kind == "close" and PX.close_hit(osw, x, y) == what:
+            PX.close_tab(get_boss(), what)
+        elif kind == "group":
+            band = PX.band_at(osw, x, y)
+            if band is not None and band.kind == "group" and band.project == what:
+                PX.toggle_group(what)
+                tm.mark_tab_bar_dirty()
+        return True
+    return False
+
+
 def _handle(tm, x: float, y: float, button: int, action: int) -> bool:
     """True when the event was ours: the collapse/expand button (acts on release, like a button),
     or a left press on the bar's inner edge, which starts a resize drag."""
@@ -345,6 +378,8 @@ def _handle(tm, x: float, y: float, button: int, action: int) -> bool:
             if tm.tab_bar.tab_id_at(int(x), int(y)) == tid:      # released on the same tab
                 _open_peek(tm, tid)
             return True
+    if button == GLFW_MOUSE_BUTTON_LEFT and _S.drag is None and tm.tab_bar.is_vertical and _pxbar_click(tm, x, y, action):
+        return True
     if button == GLFW_MOUSE_BUTTON_LEFT and _S.drag is None and tm.tab_bar.is_vertical:
         if action == GLFW_PRESS and _toggle_zone(tm, x, y):
             _S.toggle_down = True
@@ -398,6 +433,12 @@ def make_tab_id_at(original):
     past its midpoint (kittymux_layout.drag_target), so reordering does not cascade. Anything unexpected
     falls back to kitty's own answer."""
     def tab_id_at(self, x, y):
+        try:
+            px = pxbar_tab_at(self, x, y)
+            if px is not None:
+                return px
+        except Exception:
+            pass
         tid = original(self, x, y)
         try:
             if not (getattr(self, "is_vertical", False) and self.laid_out_once):
@@ -422,6 +463,23 @@ def make_tab_id_at(original):
             return tid
     tab_id_at._kittymux_wrapped = True                          # type: ignore[attr-defined]
     return tab_id_at
+
+
+def pxbar_tab_at(tab_bar, x, y):
+    """With the pixel tab bar showing (kittymux_pxbar), the tab drawn under a window-pixel point: its id, 0 for a header,
+    a label or the empty space under the rows (a click there activates nothing), None when no picture is up (kitty's own
+    cell extents answer). The picture's rows need not line up with cells, so the cells must not decide."""
+    if not getattr(tab_bar, "is_vertical", False):
+        return None
+    import kittymux_pxbar as PX
+    osw = getattr(tab_bar, "os_window_id", None)
+    if osw is None or not PX.active(osw):
+        return None
+    g = tab_bar.window_geometry
+    if not (g.left <= x < g.right and g.top <= y < g.bottom):
+        return 0
+    band = PX.band_at(osw, x, y)
+    return band.tab_id if band is not None and band.kind == "tab" else 0
 
 
 def native_insert_drag() -> bool:

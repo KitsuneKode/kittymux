@@ -4,6 +4,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 
 ## [Unreleased]
 
+### Added
+- **The pixel tab bar (`kittymux settings on pxbar`, opt-in).** The vertical tab bar drawn as a picture inside the kitty window, as Rex's sidebar looks: tabs grouped under their project (in kitty's order, so nothing moves under the pointer), one row per tab with the agent's or program's real mark on a tile, the title, and one end mark (a working loader, a done dot, a failure cross, the needs-you chip); a second line only when it has something to say (the question, what failed, "Working · 3m"). Under the pointer a row lifts and its end turns into a close cross; clicking it closes the tab, and a working or waiting agent asks on its row first (a second click closes). Large groups of settled tabs fold to their label; clicking the label opens them. Needs cairo, pango and rsvg; the hover and the cross need kitty's custom shaders (kitty 0.49 or newer with `slangc`). Your own `background_image` is replaced while it is on. Off, the cell bar is exactly as before.
+- **`tests/shot_states.sh`**: every agent state and edge case on one screen, dark and light, at three widths, plus 40 tabs.
+
 ### Changed
 - **The working mark is a quarter-turning circle (`◐◓◑◒`), not braille dots.** At the end of a row the dots sat tiny and grey and read as a `⋮` menu button that does nothing; the circle reads as work turning over. It still steps once every 3 s and never spins.
 - **Tab progress is a hairline, not a tinted block.** An OSC 9;4 report filled the card from the left with a tint that, in a light theme especially, read as a second selection. It is now a coloured underline under the tab's last line (kitty's own underline colour, so it stays crisp in cells), the percent beside it, in the accent while it runs, yellow when paused and the alert colour across the whole tab on an error. The selection is the only filled card again.

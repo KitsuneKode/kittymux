@@ -155,7 +155,7 @@ if [ "${KMX_SHOT_SCENE:-}" = states ]; then
     printf 'new_tab\ncd %s\nlaunch bash -c %s\n' "$W/docs" "'exec -a btop sleep 86400'"
     printf 'new_tab\ncd %s\nlaunch bash -c %s\n' "$W/web" "'exec -a ssh sleep 86400'"
     printf 'new_tab\ncd %s\nlaunch sh\n' "$T/plain/notes"                                                       # no git
-    printf 'focus_tab 1\n'
+    printf 'focus_tab 0\n'                      # kitty's session index starts at 0: the plain shell in tab 1 is active
   } > "$T/session"
 fi
 # KMX_SHOT_SCENE=many: 40 plain tabs in five repos, for collapsing and the bar's overflow
@@ -165,7 +165,7 @@ if [ "${KMX_SHOT_SCENE:-}" = many ]; then
     case $((i % 5)) in 0) d=$W/kittymux ;; 1) d=$W/web ;; 2) d=$W/api ;; 3) d=$W/docs ;; *) d=$T/plain/notes ;; esac
     printf 'new_tab\ncd %s\nlaunch sh\n' "$d" >> "$T/session"
   done
-  printf 'focus_tab 1\n' >> "$T/session"
+  printf 'focus_tab 0\n' >> "$T/session"
 fi
 env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP XDG_DATA_HOME=$T/data \
   KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 \
