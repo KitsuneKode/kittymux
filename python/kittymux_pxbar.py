@@ -95,6 +95,7 @@ def publish(os_window_id: int, groups, pal, host: str = "", animate: bool = True
         clear(os_window_id)
         return False
     right, fb_h, scale = m
+    scale = scale * ui_scale(font_points())          # device px per drawn px: the type follows the terminal font
     alpha = material_alpha()
     rows = [r for g in groups for r in g.rows]
     active = next((r.tab_id for r in rows if r.active), 0)
@@ -138,6 +139,32 @@ def page(os_window_id: int, direction: int) -> None:
     step = max(1, int(w.get("shown") or 1) - 1)
     view["start"] = max(0, min(int(w.get("total") or 0) - 1, view["start"] + direction * step))
     view["user"] = True
+
+
+UI_TITLE_PX = 13.0          # kittymux_barpx.T_TITLE: the size every other dimension of the picture is designed around
+UI_PER_FONT_PX = 0.82       # the title against the terminal's font size (the mockup: 13 px beside 14 px Inter-ish; a monospace
+                            # font reads a little larger at the same px, so a little under the mockup's 0.93)
+UI_SCALE_MAX = 1.5
+
+
+def ui_scale(font_pt) -> float:
+    """How much larger than designed the picture is drawn so it sits with the terminal's text: the title follows the font
+    (14.5 pt -> ~16 px). Never smaller than designed, never more than UI_SCALE_MAX; 1.0 when the size is unknown."""
+    try:
+        px = float(font_pt) * 4.0 / 3.0                        # points -> logical px (1/96 in)
+    except (TypeError, ValueError):
+        return 1.0
+    if px <= 0:
+        return 1.0
+    return round(min(UI_SCALE_MAX, max(1.0, px * UI_PER_FONT_PX / UI_TITLE_PX)), 3)
+
+
+def font_points():
+    try:
+        from kitty.fast_data_types import get_options
+        return getattr(get_options(), "font_size", None)
+    except Exception:
+        return None
 
 
 def glass_alpha(opacity) -> float:
