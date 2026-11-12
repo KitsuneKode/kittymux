@@ -64,7 +64,7 @@ class PublishTests(unittest.TestCase):
             seen.append(self.doc()["agents"][0]["state"])
         self.assertEqual(seen, ["working", "waiting", "done", "error"])
         with mock.patch("kittymux_agentsnap.os.replace") as replace:
-            self.assertFalse(self.pub([spec("error", reason="build failed")], now=1793780800.0))
+            self.assertFalse(self.pub([spec("error", reason="build failed")], now=1793780703.0 + S.HEARTBEAT_S - 1))      # within the heartbeat: nothing to write
         replace.assert_not_called()
         row = self.doc()["agents"][0]
         self.assertEqual(list(row), list(S._FIELDS))
@@ -188,6 +188,39 @@ class AccountTests(PublishTests):
         self.assertEqual(by[19]["account"], "personal")
         self.assertEqual(by[20]["account"], "")
         self.assertEqual(self.doc()["version"], 1)                # additive, like `muted`
+
+
+class HeartbeatTests(PublishTests):
+    """A kitty that stays alive but stops publishing must not keep its rows (2026-11-12: a closed drop-down kitty's agy kept
+    reading 'working' in the rice notch for 40 minutes, because rows were kept while the kitty's PID lived)."""
+
+    def test_own_rows_carry_when_they_were_published(self):
+        self.pub([spec("working")], now=1000.0)
+        self.assertEqual(self.doc()["agents"][0]["published_at"], 1000.0)
+
+    def test_a_silent_kittys_rows_are_dropped_even_while_it_lives(self):
+        self.pub([spec("working")], pid=111, now=1000.0)
+        self.pub([spec("waiting", window_id=20, reason="Allow this?")], pid=222, now=1000.0 + S.STALE_S - 1)
+        self.assertEqual(sorted(r["kitty_pid"] for r in self.doc()["agents"]), [111, 222])    # not yet stale
+        self.pub([spec("waiting", window_id=20, reason="Allow this?")], pid=222, now=1000.0 + S.STALE_S + 1)
+        self.assertEqual([r["kitty_pid"] for r in self.doc()["agents"]], [222])               # 111 said nothing for too long
+
+    def test_rows_from_an_older_kittymux_keep_the_pid_rule(self):
+        self.pub([spec("working")], pid=111, now=1000.0)
+        doc = self.doc()
+        for r in doc["agents"]:
+            r.pop("published_at")
+        with open(S.path_for(self.dir), "w", encoding="utf-8") as f:
+            json.dump(doc, f)
+        self.pub([spec("working", window_id=20)], pid=222, now=5000.0)
+        self.assertEqual(sorted(r["kitty_pid"] for r in self.doc()["agents"]), [111, 222])
+
+    def test_the_heartbeat_rewrites_only_every_few_seconds(self):
+        self.assertTrue(self.pub([spec("working")], now=1000.0))
+        self.assertFalse(self.pub([spec("working")], now=1000.0 + S.HEARTBEAT_S - 1))         # nothing changed, still fresh
+        self.assertTrue(self.pub([spec("working")], now=1000.0 + S.HEARTBEAT_S + 1))          # the heartbeat
+        self.assertEqual(self.doc()["agents"][0]["published_at"], 1000.0 + S.HEARTBEAT_S + 1)
+        self.assertLess(S.HEARTBEAT_S * 2, S.STALE_S)                                         # a live kitty is never stale
 
 
 if __name__ == "__main__":
