@@ -3201,6 +3201,31 @@ def opencode_plugin_path() -> str:
     return os.path.join(base, "opencode", "plugins", OPENCODE_PLUGIN)
 
 
+def _opencode_major_from(out) -> int | None:
+    """The major version in `opencode --version` output ("2.3.0", "opencode v2.3.0"), or None."""
+    m = re.search(r"(?<![\d.])v?(\d+)\.\d+", out or "")
+    return int(m.group(1)) if m else None
+
+
+def _opencode_major() -> int | None:
+    """The installed OpenCode's major version, or None when it is missing or does not answer in time."""
+    exe = shutil.which("opencode")
+    if not exe:
+        return None
+    try:
+        r = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return _opencode_major_from(r.stdout + r.stderr)
+
+
+def opencode_plugin_source(major: int | None) -> str:
+    """OpenCode 2 loads only `export default { id, setup }`; OpenCode 1 calls each named export (and 2 rejects that file).
+    An unknown version gets the current API."""
+    name = "kittymux-agent-state.v1.js" if major == 1 else OPENCODE_PLUGIN
+    return os.path.join(HOME_DIR, "integrations", "opencode", name)
+
+
 def opencode_hooks(argv: list[str]) -> int:
     """`kittymux hooks --opencode --install|--remove`: OpenCode reports its own state (a plugin beside your others in
     ~/.config/opencode/plugins). Only kittymux's own file is written or removed."""
@@ -3227,14 +3252,15 @@ def opencode_hooks(argv: list[str]) -> int:
     if os.path.exists(path) and not ours:
         print(f"{BAD} {path} exists and is not kittymux's — not overwriting it", file=sys.stderr)
         return 1
-    with open(os.path.join(HOME_DIR, "integrations", "opencode", OPENCODE_PLUGIN), encoding="utf-8") as f:
+    major = _opencode_major()
+    with open(opencode_plugin_source(major), encoding="utf-8") as f:
         text = f.read().replace("@KITTYMUX_HOME@", HOME_DIR)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(text)
     os.replace(tmp, path)
-    print(f"{OK} installed {path}")
+    print(f"{OK} installed {path} (for OpenCode {major if major is not None else 2}.x; after an OpenCode major upgrade, install again)")
     print("  new OpenCode sessions report their state themselves; the tab follows working / waiting / done.")
     return 0
 

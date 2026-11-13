@@ -868,17 +868,18 @@ class OpenCodePluginTests(unittest.TestCase):
         self.path = os.path.join(self.cfg, "opencode", "plugins", "kittymux-agent-state.js")
 
     def test_install_renders_the_plugin_and_remove_takes_only_ours(self):
-        with redirect_stdout(io.StringIO()):
-            self.assertEqual(self.m.hooks(["--opencode", "--install"]), 0)
-        text = open(self.path, encoding="utf-8").read()
-        self.assertNotIn("@KITTYMUX_HOME@", text)
-        self.assertIn(os.path.join(self.m.HOME_DIR, "bin", "mux-status"), text)
-        for event, state in (("permission.asked", "waiting"), ("question.asked", "waiting"), ("session.idle", "done")):
-            self.assertIn(event, text)
-        with redirect_stdout(io.StringIO()):
-            self.assertEqual(self.m.hooks(["--opencode", "--install"]), 0)          # idempotent
-            self.assertEqual(self.m.hooks(["--opencode", "--remove"]), 0)
-        self.assertFalse(os.path.exists(self.path))
+        for major, events in ((2, ("permission.asked", "form.created", "session.execution.succeeded")),
+                              (1, ("permission.asked", "question.asked", "session.idle"))):
+            with patch.object(self.m, "_opencode_major", return_value=major), redirect_stdout(io.StringIO()):
+                self.assertEqual(self.m.hooks(["--opencode", "--install"]), 0)
+                text = open(self.path, encoding="utf-8").read()
+                self.assertNotIn("@KITTYMUX_HOME@", text)
+                self.assertIn(os.path.join(self.m.HOME_DIR, "bin", "mux-status"), text)
+                for event in events:
+                    self.assertIn(event, text)
+                self.assertEqual(self.m.hooks(["--opencode", "--install"]), 0)          # idempotent, and ours: replaced in place
+                self.assertEqual(self.m.hooks(["--opencode", "--remove"]), 0)
+            self.assertFalse(os.path.exists(self.path))
 
     def test_someone_elses_plugin_of_that_name_is_never_touched(self):
         os.makedirs(os.path.dirname(self.path))
@@ -891,8 +892,100 @@ class OpenCodePluginTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_the_plugin_is_valid_javascript(self):
+        for name in ("kittymux-agent-state.js", "kittymux-agent-state.v1.js"):
+            src = os.path.join(self.m.HOME_DIR, "integrations", "opencode", name)
+            r = subprocess.run(["node", "--check", src], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, name + ": " + r.stderr)
+
+    def _install_for(self, version_output):
+        with patch.object(self.m, "_opencode_major", return_value=self.m._opencode_major_from(version_output)), redirect_stdout(io.StringIO()):
+            self.assertEqual(self.m.hooks(["--opencode", "--install"]), 0)
+        return open(self.path, encoding="utf-8").read()
+
+    def test_install_picks_the_plugin_for_the_installed_opencode(self):
+        # OpenCode 2 only loads `export default { id, setup }`; OpenCode 1 calls every named export. 2.3.0 rejected the 1.x file
+        # ("Plugin must export a default definition with an id and an effect or setup function"), so it reported nothing.
+        self.assertIn("export default", self._install_for("2.3.0\n"))
+        self.assertIn("session.execution.succeeded", self._install_for("opencode v2.3.0"))
+        v1 = self._install_for("1.4.7")
+        self.assertNotIn("export default", v1)
+        self.assertIn("session.idle", v1)
+        self.assertIn("export default", self._install_for(None))       # not installed or unreadable: the current API
+        self.assertEqual(self.m._opencode_major_from("opencode v2.3.0"), 2)
+        self.assertEqual(self.m._opencode_major_from("garbage"), None)
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_the_v2_plugin_reports_what_opencode_2_does(self):
+        """Replays the event sequence a live OpenCode 2.3.0 sent (captured 2026-11-13; ids are synthetic) through the rendered
+        plugin with a stub mux-status, and checks what the pane is told."""
+        d = tempfile.mkdtemp()
+        log, stub = os.path.join(d, "calls.log"), os.path.join(d, "mux-status")
+        with open(stub, "w") as f:
+            f.write(f"#!/bin/sh\nprintf '%s\\n' \"$*\" >> {log}\n")
+        os.chmod(stub, 0o755)
         src = os.path.join(self.m.HOME_DIR, "integrations", "opencode", "kittymux-agent-state.js")
-        r = subprocess.run(["node", "--check", src], capture_output=True, text=True)
+        with open(src, encoding="utf-8") as f:
+            plugin = f.read().replace("@KITTYMUX_HOME@/bin/mux-status", stub)
+        with open(os.path.join(d, "plugin.mjs"), "w", encoding="utf-8") as f:
+            f.write(plugin)
+        s, child = "ses_0a1b2c3d0000calmotter0001", "ses_0a1b2c3d0000calmotter0002"
+        events = [
+            {"type": "session.created", "properties": {"sessionID": s, "agent": "build"}},
+            {"type": "session.execution.started", "properties": {"sessionID": s}},
+            {"type": "permission.asked", "properties": {"id": "per_1", "sessionID": s, "action": "shell", "resources": ["touch probe.txt"]}},
+            {"type": "permission.replied", "properties": {"sessionID": s, "requestID": "per_1", "reply": "once"}},
+            {"type": "session.created", "properties": {"sessionID": child, "parentID": s}},
+            {"type": "session.execution.succeeded", "properties": {"sessionID": child}},          # a subagent finishing is not the turn
+            {"type": "session.execution.succeeded", "properties": {"sessionID": s}},
+            {"type": "session.execution.started", "properties": {"sessionID": s}},
+            {"type": "form.created", "properties": {"form": {"id": "frm_1", "sessionID": s, "title": "Questions", "metadata": {"kind": "question"},
+                "fields": [{"key": "q0", "title": "File name", "description": "What should the new file be called?", "options": [{"value": "a"}]}]}}},
+            {"type": "form.cancelled", "properties": {"id": "frm_1", "sessionID": s}},
+            {"type": "session.execution.interrupted", "properties": {"sessionID": s, "reason": "user"}},
+            {"type": "session.execution.started", "properties": {"sessionID": s}},
+            {"type": "session.execution.failed", "properties": {"sessionID": s}},
+        ]
+        harness = os.path.join(d, "run.mjs")
+        with open(harness, "w", encoding="utf-8") as f:
+            f.write(
+                "import plugin from './plugin.mjs';\n"
+                f"const events = {json.dumps(events)};\n"
+                "const sleep = (ms) => new Promise((r) => setTimeout(r, ms));\n"
+                "if (!plugin || typeof plugin.id !== 'string' || typeof plugin.setup !== 'function') { console.error('no v2 definition'); process.exit(3); }\n"
+                "const ctx = { event: { subscribe: ({ signal } = {}) => (async function* () { for (const e of events) { if (signal?.aborted) return; yield e; await sleep(120); } })() } };\n"
+                "const stop = await plugin.setup(ctx);\n"
+                "await sleep(events.length * 120 + 600);\n"
+                "if (typeof stop === 'function') stop();\n")
+        r = subprocess.run(["node", harness], capture_output=True, text=True, timeout=30, env={**os.environ, "KITTY_WINDOW_ID": "7"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        calls = open(log).read().splitlines() if os.path.exists(log) else []
+        self.assertEqual(calls, [
+            "working",
+            "--msg Allow shell: touch probe.txt? waiting",
+            "working",
+            "done",
+            "working",
+            "--msg What should the new file be called? waiting",
+            "working",
+            "idle",                    # an interrupted turn is never "finished"
+            "working",
+            "idle",                    # nor is a failed one
+        ])
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_outside_kitty_the_v2_plugin_reports_nothing(self):
+        d = tempfile.mkdtemp()
+        src = os.path.join(self.m.HOME_DIR, "integrations", "opencode", "kittymux-agent-state.js")
+        with open(src, encoding="utf-8") as f:
+            plugin = f.read().replace("@KITTYMUX_HOME@/bin/mux-status", os.path.join(d, "never"))
+        with open(os.path.join(d, "plugin.mjs"), "w", encoding="utf-8") as f:
+            f.write(plugin)
+        with open(os.path.join(d, "run.mjs"), "w", encoding="utf-8") as f:
+            f.write("import plugin from './plugin.mjs';\nlet subscribed = false;\n"
+                    "await plugin.setup({ event: { subscribe: () => { subscribed = true; return (async function* () {})(); } } });\n"
+                    "if (subscribed) process.exit(4);\n")
+        env = {k: v for k, v in os.environ.items() if k != "KITTY_WINDOW_ID"}
+        r = subprocess.run(["node", os.path.join(d, "run.mjs")], capture_output=True, text=True, timeout=30, env=env)
         self.assertEqual(r.returncode, 0, r.stderr)
 
 
