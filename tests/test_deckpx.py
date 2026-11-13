@@ -17,6 +17,14 @@ import kittymux_theme as th
 
 
 @unittest.skipIf(dp is None, "cairo/Pango/rsvg not installed")
+class EllipsisTests(unittest.TestCase):
+    def test_a_branch_is_cut_in_the_middle_so_its_end_stays(self):
+        surface = dp.cairo.ImageSurface(dp.cairo.FORMAT_ARGB32, 200, 40)
+        pt = dp.Painter(dp.cairo.Context(surface), 1, th.from_colors({}), resources=dp.Resources())
+        self.assertEqual(pt.layout("feat/assistant-agent-long", 11, width=60, mid=True).get_ellipsize(), dp.Pango.EllipsizeMode.MIDDLE)
+        self.assertEqual(pt.layout("A long title", 11, width=60).get_ellipsize(), dp.Pango.EllipsizeMode.END)
+
+
 class RendererTests(unittest.TestCase):
     def test_native_spinner_slots_leave_the_base_stable(self):
         pal = th.from_colors({})

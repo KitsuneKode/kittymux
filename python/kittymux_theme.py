@@ -55,6 +55,17 @@ def contrast(a: int, b: int) -> float:
     return (hi + 0.05) / (lo + 0.05)
 
 
+FAINT_MIN, MUTED_MIN = 3.6, 4.6     # the text tiers' floors on the theme's own background (WCAG: 3:1 for large/tertiary, 4.5:1 body)
+
+
+def tier(fg: int, bg: int, weight: float, minimum: float) -> int:
+    """A text tier: fg mixed over bg at `weight`, raised toward fg (the theme's own hue) until it reaches `minimum` on bg."""
+    w = weight
+    while w < 1.0 and contrast(blend(fg, bg, w), bg) < minimum:
+        w = round(w + 0.01, 2)
+    return blend(fg, bg, min(w, 1.0))
+
+
 def ensure_contrast(fg: int, bg: int, minimum: float = 3.0) -> int:
     """Nudge fg away from bg (toward white on dark, black on light) until the
     WCAG contrast ratio reaches `minimum`. Unchanged if already sufficient."""
@@ -207,8 +218,8 @@ def from_colors(c: dict[str, int]) -> Palette:
     accent = _accent_of(c, fg)
     return Palette(
         bg=bg, fg=fg, text=fg,
-        muted=blend(fg, bg, 0.62),
-        faint=blend(fg, bg, 0.40),
+        muted=tier(fg, bg, 0.62, MUTED_MIN),
+        faint=tier(fg, bg, 0.40, FAINT_MIN),
         bar=blend(fg, bg, 0.05),
         line=blend(fg, bg, 0.24),
         surface=blend(fg, bg, 0.07),
