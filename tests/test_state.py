@@ -400,6 +400,11 @@ class IdleComposerTest(unittest.TestCase):
         self.assertEqual(S.classify_screen(OPENCODE_QUESTION)[0], "waiting")
         self.assertEqual(S.classify_screen(AGY_TRUST)[0], "waiting")
 
+    def test_a_real_dialog_over_a_shared_footer_still_waits(self):
+        # Claude's and Codex's idle footer is also "? for shortcuts": a real approval has its chrome under the question
+        self.assertEqual(S.classify_screen(CODEX_APPROVAL + "? for shortcuts\n")[0], "waiting")
+        self.assertEqual(S.classify_screen(CLAUDE_PERMISSION + "? for shortcuts\n")[0], "waiting")
+
 
 if __name__ == "__main__":
     unittest.main()

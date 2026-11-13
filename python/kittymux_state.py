@@ -155,8 +155,8 @@ def classify_screen(text: str) -> tuple[str, str]:
                     break                          # stale: an idle composer is drawn below this busy marker
                 if marker != "working" and working_at > i and not any(_DIALOG_CHROME_RE.search(x) for x in lines[i:]):
                     break                          # activity below it: that text is stale output, not a prompt
-                if marker == "waiting" and idle_only_at > i:
-                    break                          # the idle composer is drawn below it: old text in a finished reply
+                if marker == "waiting" and idle_only_at > i and not any(_DIALOG_CHROME_RE.search(x) for x in lines[i + 1:]):
+                    break                          # the idle composer below it, no dialog chrome under it: old text in a reply
                 return marker, (_reason(lines, i) if marker == "waiting" else lines[i])[:160]
     return "", ""
 
