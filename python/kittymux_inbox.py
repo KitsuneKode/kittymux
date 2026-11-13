@@ -341,6 +341,35 @@ def ack(state_dir: str, now: float, *, ids: list | None = None, window: str | in
             pass
 
 
+NEEDS_YOU_KINDS = tuple(k for k, sev in SEVERITY.items() if sev == "needs-you")
+
+
+def settle(state_dir: str, now: float, *, window: str | int, pid: int | None = None) -> int:
+    """The agent in this window stopped asking (its prompt was answered, or it exited): its unread prompts are read.
+    Only the "needs you" kinds; a completion or an error it reported stays news. Returns how many were settled."""
+    try:
+        ids = [e["id"] for e in load(state_dir) if e.get("status") == "unread" and e.get("kind") in NEEDS_YOU_KINDS
+               and str(e.get("w")) == str(window) and (pid is None or e.get("pid") == pid) and e.get("id")]
+    except Exception:
+        return 0
+    if ids:
+        ack(state_dir, now, ids=ids)
+    return len(ids)
+
+
+def retire_gone(state_dir: str, now: float, alive) -> int:
+    """Unread events from a kitty that no longer runs are read: their windows are gone, nobody can look at them, and a
+    shell must not show them as news forever. Returns how many (0 writes nothing)."""
+    try:
+        ids = [e["id"] for e in load(state_dir) if e.get("status") == "unread" and e.get("id")
+               and isinstance(e.get("pid"), int) and e.get("pid") > 0 and not alive(e["pid"])]
+    except Exception:
+        return 0
+    if ids:
+        ack(state_dir, now, ids=ids)
+    return len(ids)
+
+
 def restore(state_dir: str, now: float, ids: list) -> None:
     """Undo a dismissal (only events that are still dismissed come back; anything else is left alone)."""
     try:

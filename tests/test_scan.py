@@ -235,6 +235,24 @@ class NotifyTests(ScanBase):
             KS.scan_window(w, 107.0)
             self.assertEqual(KS._RT.verdicts["1"]["state"], "idle")
 
+    def test_a_prompt_that_is_over_leaves_the_inbox(self):
+        """2026-11-12: an Antigravity permission event stayed unread for hours after the prompt was gone."""
+        import kittymux_inbox as I
+        for wid in (1, 2):
+            w = FakeWindow(wid, "claude", PERMISSION)
+            self.add(w)
+            KS.scan_window(w, 100.0)
+            I.add(self.state, I.make_event("permission", "claude", wid, "screen", 100.0, pid=os.getpid()))
+            I.add(self.state, I.make_event("done", "claude", wid, "agent", 99.0, pid=os.getpid()))
+        unread = lambda: sorted((e["w"], e["kind"]) for e in I.load(self.state) if e["status"] == "unread")
+        w1, w2 = self.k.boss.all_windows
+        w1.screen = DEVIN_THINKING                         # answered: it works again
+        KS.scan_window(w1, 101.0)
+        self.assertEqual(unread(), [("1", "done"), ("2", "done"), ("2", "permission")])
+        w2.agent = None                                    # the agent exited
+        KS.scan_window(w2, 102.0)
+        self.assertEqual(unread(), [("1", "done"), ("2", "done")])
+
     def test_working_does_not_notify(self):
         self.add(FakeWindow(1, "claude", DEVIN_THINKING))
         with mock.patch.object(KS, "_notify") as notify:

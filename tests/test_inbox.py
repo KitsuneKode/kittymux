@@ -159,6 +159,33 @@ class FoldTests(unittest.TestCase):
         self.assertEqual([e["kind"] for e in s["events"]], ["done", "permission"])   # newest first
 
 
+class SettleTests(unittest.TestCase):
+    """A prompt that no longer needs you leaves the inbox's "needs you" (2026-11-12: an Antigravity permission event stayed
+    unread for hours after agy had exited, and one from a kitty that no longer ran; the notch kept showing Antigravity)."""
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+
+    def unread(self):
+        return sorted((e["kind"], e["pid"], e["w"]) for e in I.load(self.d) if e["status"] == "unread")
+
+    def test_a_windows_prompts_settle_but_its_other_news_stays(self):
+        I.add(self.d, ev("permission", w=97, pid=4301, t=10.0))
+        I.add(self.d, ev("question", w=97, pid=4301, t=12.0, src="agent"))
+        I.add(self.d, ev("done", w=97, pid=4301, t=14.0))
+        I.add(self.d, ev("permission", w=98, pid=4301, t=15.0))
+        I.settle(self.d, 20.0, window=97, pid=4301)
+        self.assertEqual(self.unread(), [("done", 4301, "97"), ("permission", 4301, "98")])
+        self.assertEqual(jload(I.snapshot_path(self.d))["needs_you"], 1)
+
+    def test_events_of_a_kitty_that_no_longer_runs_are_retired(self):
+        I.add(self.d, ev("permission", w=1, pid=1967425, t=10.0))
+        I.add(self.d, ev("done", w=2, pid=1967425, t=11.0))
+        I.add(self.d, ev("permission", w=3, pid=4301, t=12.0))
+        self.assertEqual(I.retire_gone(self.d, 20.0, alive=lambda pid: pid == 4301), 2)
+        self.assertEqual(self.unread(), [("permission", 4301, "3")])
+        self.assertEqual(I.retire_gone(self.d, 21.0, alive=lambda pid: pid == 4301), 0)     # nothing left: no write
+
+
 class StoreTests(unittest.TestCase):
     def setUp(self):
         self.d = tempfile.mkdtemp()
