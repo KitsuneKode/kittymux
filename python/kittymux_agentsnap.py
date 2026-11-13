@@ -25,7 +25,29 @@ COUNTS = ("working", "waiting", "done", "idle", "limited", "error")
 _AGENT = re.compile(r"[a-z][a-z0-9-]{0,30}")
 _FIELDS = ("key", "kitty_pid", "window_id", "agent", "brand", "source", "state", "since",
            "title", "tab_title", "cwd", "project", "session", "question", "progress",
-           "limit_reset", "error", "action", "muted")
+           "limit_reset", "error", "action", "muted", "account", "published_at")
+HEARTBEAT_S = 10.0     # a kitty with rows rewrites at least this often, so its rows' published_at stays fresh
+STALE_S = 30.0         # another kitty's rows this long unpublished are dropped, even while its PID lives (a frozen scanner)
+# The variable that picks an agent's config dir, and that dir's default (relative to home): another dir is another account.
+_ACCOUNT_VARS = {"claude": ("CLAUDE_CONFIG_DIR", ".claude"), "codex": ("CODEX_HOME", ".codex")}
+_LABEL_CHARS = re.compile(r"[^A-Za-z0-9_-]")
+
+
+def account_label(agent: str, env: dict, home: str) -> str:
+    """The account an agent runs under: "" for its default config dir (or none set), else a short label from the dir's
+    name ("~/.claude_personal" -> "personal"). Only the agent's own variable counts; the value itself is never kept."""
+    var, default = _ACCOUNT_VARS.get(agent, ("", ""))
+    raw = str((env or {}).get(var) or "").strip() if var else ""
+    if not raw:
+        return ""
+    path = os.path.normpath(raw)
+    if path == os.path.normpath(os.path.join(home, default)):
+        return ""
+    name = _LABEL_CHARS.sub("", os.path.basename(path)).lstrip("._-")
+    for prefix in (agent + "_", agent + "-"):
+        if name.lower().startswith(prefix):
+            name = name[len(prefix):]
+    return name[:32]
 
 
 def path_for(state_dir: str) -> str:
@@ -137,13 +159,28 @@ def _row(kitty_pid: int, spec: dict, home: str) -> dict | None:
         "error": reason if failed else None,
         "action": action,
         "muted": bool(spec.get("muted")),     # `kittymux mute`: still listed, never "needs you", no popup or bell
+        "account": _LABEL_CHARS.sub("", str(spec.get("account") or ""))[:32],   # account_label: "" is the default config dir
+        "published_at": None,                 # set by publish: when this kitty last wrote its rows (readers drop stale ones)
     }
     return {k: row[k] for k in _FIELDS}
 
 
 def _signature(doc: dict) -> str:
+    """What the file says, minus the clocks (t and each row's published_at): an equal signature needs no rewrite."""
     body = {k: v for k, v in doc.items() if k != "t"}
+    if isinstance(body.get("agents"), list):
+        body["agents"] = [{k: v for k, v in r.items() if k != "published_at"} if isinstance(r, dict) else r for r in body["agents"]]
     return json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+def _beat_due(current: dict, kitty_pid: int, now: float) -> bool:
+    """This kitty has rows in the file whose published_at is older than HEARTBEAT_S (or missing)."""
+    for r in current.get("agents") or []:
+        if isinstance(r, dict) and r.get("kitty_pid") == kitty_pid:
+            t = r.get("published_at")
+            if not isinstance(t, (int, float)) or isinstance(t, bool) or now - t >= HEARTBEAT_S:
+                return True
+    return False
 
 
 def _read(path: str) -> list:
@@ -156,10 +193,13 @@ def _read(path: str) -> list:
     return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
 
 
-def _keep(row: dict, kitty_pid: int, alive) -> bool:
+def _keep(row: dict, kitty_pid: int, alive, now: float | None = None) -> bool:
     other = _pid(row.get("kitty_pid"))
     if other is None or other == kitty_pid:
         return False
+    t = row.get("published_at")
+    if now is not None and isinstance(t, (int, float)) and not isinstance(t, bool) and now - t > STALE_S:
+        return False                         # that kitty lives but has said nothing for too long: its rows are not news
     try:
         return bool(alive(other))
     except Exception:
@@ -224,7 +264,8 @@ def publish(state_dir: str, kitty_pid: int, specs, now: float, alive=None, home:
             previous = {r.get("key"): r for r in old if r.get("kitty_pid") == pid}
             for row in fresh:
                 _apply_since(row, previous, now)
-            rows = [r for r in old if _keep(r, pid, check)] + fresh
+                row["published_at"] = round(float(now), 1)
+            rows = [r for r in old if _keep(r, pid, check, now)] + fresh
             rows.sort(key=lambda r: (RANK.index(r["state"]) if r.get("state") in RANK else len(RANK), str(r.get("key") or "")))
             doc = {"version": VERSION, "t": round(float(now), 1), "agents": rows, "counts": _counts(rows),
                    "needs_you": sum(1 for r in rows if r.get("state") in kittymux_agents.NEEDS_YOU and not r.get("muted"))}
@@ -232,7 +273,7 @@ def publish(state_dir: str, kitty_pid: int, specs, now: float, alive=None, home:
                 try:
                     with open(dest, encoding="utf-8") as handle:
                         current = json.load(handle)
-                    if isinstance(current, dict) and _signature(current) == _signature(doc):
+                    if isinstance(current, dict) and _signature(current) == _signature(doc) and not _beat_due(current, pid, now):
                         return False
                 except (OSError, ValueError, UnicodeError):
                     pass

@@ -26,6 +26,18 @@ if command -v jq >/dev/null 2>&1; then
         "$("$bin" --print done '{"type":"agent-turn-complete","last-assistant-message":"all done"}' </dev/null)"
     check "stdin JSON without message" "$(esc kittymux_msg '')$(esc kittymux_status waiting)" \
         "$(printf '%s' '{"hook_event_name":"Notification"}' | "$bin" --print waiting)"
+    # A turn that ENDS by asking you something needs you (the owner, 2026-11-12): the agent's own last reply is the
+    # evidence (Claude's Stop hook sends last_assistant_message; Codex's notify last-assistant-message), never silence.
+    check "Stop ending in a question waits" "$(esc kittymux_msg 'Should I also update the docs?')$(esc kittymux_status waiting)" \
+        "$(printf '%s' '{"hook_event_name":"Stop","last_assistant_message":"I made the change.\n\nShould I also update the docs?"}' | "$bin" --print done)"
+    check "Stop not ending in a question is done" "$(esc kittymux_msg '')$(esc kittymux_status done)" \
+        "$(printf '%s' '{"hook_event_name":"Stop","last_assistant_message":"Is it fixed? Yes.\n\nAll tests pass."}' | "$bin" --print done)"
+    check "the question loses its markdown" "$(esc kittymux_msg 'Want me to merge it?')$(esc kittymux_status waiting)" \
+        "$(printf '%s' '{"hook_event_name":"Stop","last_assistant_message":"Done.\n\n- **Want me to merge it?**  \n"}' | "$bin" --print done)"
+    check "a reply ending in a code block is not a question" "$(esc kittymux_msg '')$(esc kittymux_status done)" \
+        "$(printf '%s' '{"hook_event_name":"Stop","last_assistant_message":"Run:\n```\nls -la?\n```"}' | "$bin" --print done)"
+    check "codex ending in a question waits" "$(esc kittymux_msg 'Which branch should I use?')$(esc kittymux_status waiting)" \
+        "$("$bin" --print done '{"type":"agent-turn-complete","last-assistant-message":"Two branches match. Which branch should I use?"}' </dev/null)"
 fi
 
 long="$(printf 'x%.0s' $(seq 1 200))"
