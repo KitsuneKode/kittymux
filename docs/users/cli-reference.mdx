@@ -30,6 +30,8 @@ kittymux hooks --install    # merge it into ~/.claude/settings.json, after a bac
 kittymux hooks --remove     # remove exactly those entries, after a backup
 ```
 
+
+`kittymux hooks --opencode --install` adds a plugin to OpenCode (`~/.config/opencode/plugins/kittymux-agent-state.js`) so it reports its own state from its events: working, waiting with the permission or question it asked, and done. `--opencode --remove` takes it out again; a file of that name you wrote yourself is never touched.
 ## `kittymux layout`
 
 Switches this kitty's bar on the fly. See [The tab bar](/docs/users/the-tab-bar#modes-edges-and-presets).

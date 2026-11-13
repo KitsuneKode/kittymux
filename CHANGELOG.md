@@ -5,6 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 ## [Unreleased]
 
 ### Added
+- **OpenCode can report its own state** (`kittymux hooks --opencode --install`): a plugin turns its events into working / waiting (with the permission or question it asked) / done, instead of kittymux reading its screen.
 - **`kittymux doctor` names a working key for a job whose chord the window manager takes**: `ctrl+alt+e` → kitty's own `ctrl+shift+f7` (number the panes), `ctrl+alt+shift+w` → `ctrl+shift+q` (close the tab).
 - **An agent that ends its turn by asking you something needs you.** When Claude Code's reply (its Stop hook) or Codex's (its notify) ends with a question, the tab reads "needs you" with that question, instead of "done"; the question you'd otherwise miss is in the bar, the inbox and the notch. Only the agent's own last sentence counts (a reply ending in a statement or a code block is done). Agents without hooks are unchanged.
 - **`agents.json` rows say when they were published** (`published_at`), and a kitty that has said nothing for 30 s loses its rows even while it keeps running. A drop-down kitty whose window had closed kept an agent reading "working" in the notch for 40 minutes.
