@@ -249,6 +249,11 @@ class NotifyTests(ScanBase):
         w1.screen = DEVIN_THINKING                         # answered: it works again
         KS.scan_window(w1, 101.0)
         self.assertEqual(unread(), [("1", "done"), ("2", "done"), ("2", "permission")])
+        self.agent.stop()                                  # detection fails (it raised): that is not "the agent exited"
+        with mock.patch.object(KS, "agent_of", side_effect=OSError("tty gone")):
+            KS.scan_window(w2, 101.5)
+        self.agent.start()
+        self.assertIn(("2", "permission"), unread())
         w2.agent = None                                    # the agent exited
         KS.scan_window(w2, 102.0)
         self.assertEqual(unread(), [("1", "done"), ("2", "done")])

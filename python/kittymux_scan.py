@@ -296,8 +296,7 @@ def _settle_prompts(wid: str, why: str) -> None:
     """The agent in this window stopped asking: its unread prompts leave the inbox's "needs you" (kittymux_inbox.settle)."""
     try:
         n = _inbox().settle(state_dir(), time.time(), window=wid, pid=os.getpid())
-        if n:
-            vars(_RT).get("unread", set()).discard(wid)
+        if n:                                      # the unread marker stays: a done or error of this window may still be unread
             _record("inbox", wid, "", outcome=f"settled {n} prompt(s): {why}")
     except Exception:
         _debug()
@@ -320,7 +319,7 @@ def scan_window(window, now: float) -> bool:
     try:
         agent = agent_of(window)
     except Exception:
-        agent = None
+        return False                               # we could not tell (the tty went away mid-read): keep the last verdict
     wid = str(window.id)
     prev = _RT.verdicts.get(wid) or {}
     if agent is None:

@@ -277,11 +277,16 @@ def _write_atomic(path: str, data: str) -> None:
     os.replace(tmp, path)
 
 
-def _locked(state_dir: str):
+def _locked(state_dir: str, wait: bool = True):
+    """The inbox lock's fd. wait=False: None when another process holds it (never block kitty's main thread on it)."""
     import fcntl
     os.makedirs(state_dir, mode=0o700, exist_ok=True)
     fd = os.open(os.path.join(state_dir, "inbox.lock"), os.O_WRONLY | os.O_CREAT, 0o600)
-    fcntl.flock(fd, fcntl.LOCK_EX)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        return None
     return fd
 
 
@@ -317,8 +322,9 @@ def add(state_dir: str, ev: dict) -> tuple[bool, dict]:
 
 
 def ack(state_dir: str, now: float, *, ids: list | None = None, window: str | int | None = None, pid: int | None = None,
-        status: str = "read") -> None:
-    """Mark events read (or dismissed): by id, or everything of one window (when you focus it)."""
+        status: str = "read", wait: bool = True) -> bool:
+    """Mark events read (or dismissed): by id, or everything of one window (when you focus it). wait=False skips (False)
+    when the inbox is busy instead of blocking."""
     try:
         op = {"op": "ack", "t": round(now, 1), "status": status}
         if ids:
@@ -327,18 +333,22 @@ def ack(state_dir: str, now: float, *, ids: list | None = None, window: str | in
             op["w"] = str(window)
             if pid is not None:
                 op["pid"] = pid
-        fd = _locked(state_dir)
+        fd = _locked(state_dir, wait)
+        if fd is None:
+            return False
         try:
             _append(store_path(state_dir), op)
             _refresh(state_dir, now)
         finally:
             os.close(fd)
+        return True
     except Exception as e:
         try:
             import kittymux_diag
             kittymux_diag.log_failure(state_dir, "inbox ack", f"{type(e).__name__}: {e}")   # `kittymux doctor` shows it
         except Exception:
             pass
+        return False
 
 
 NEEDS_YOU_KINDS = tuple(k for k, sev in SEVERITY.items() if sev == "needs-you")
@@ -359,14 +369,15 @@ def settle(state_dir: str, now: float, *, window: str | int, pid: int | None = N
 
 def retire_gone(state_dir: str, now: float, alive) -> int:
     """Unread events from a kitty that no longer runs are read: their windows are gone, nobody can look at them, and a
-    shell must not show them as news forever. Returns how many (0 writes nothing)."""
+    shell must not show them as news forever. Returns how many (0 writes nothing). It runs on kitty's main thread, so a
+    busy inbox is skipped (0), never waited for: the next round retires them."""
     try:
         ids = [e["id"] for e in load(state_dir) if e.get("status") == "unread" and e.get("id")
                and isinstance(e.get("pid"), int) and e.get("pid") > 0 and not alive(e["pid"])]
     except Exception:
         return 0
-    if ids:
-        ack(state_dir, now, ids=ids)
+    if ids and not ack(state_dir, now, ids=ids, wait=False):
+        return 0
     return len(ids)
 
 

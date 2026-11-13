@@ -185,6 +185,20 @@ class SettleTests(unittest.TestCase):
         self.assertEqual(self.unread(), [("permission", 4301, "3")])
         self.assertEqual(I.retire_gone(self.d, 21.0, alive=lambda pid: pid == 4301), 0)     # nothing left: no write
 
+    def test_retiring_never_waits_for_a_busy_inbox(self):
+        """It runs on kitty's main thread: with the inbox locked elsewhere it skips this round instead of blocking."""
+        import fcntl
+        I.add(self.d, ev("permission", w=1, pid=1967425, t=10.0))
+        fd = os.open(os.path.join(self.d, "inbox.lock"), os.O_WRONLY | os.O_CREAT, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            self.assertEqual(I.retire_gone(self.d, 20.0, alive=lambda pid: False), 0)
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+        self.assertEqual(self.unread(), [("permission", 1967425, "1")])                 # untouched: next round
+        self.assertEqual(I.retire_gone(self.d, 21.0, alive=lambda pid: False), 1)
+
 
 class StoreTests(unittest.TestCase):
     def setUp(self):
