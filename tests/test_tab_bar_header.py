@@ -170,5 +170,20 @@ class HeaderSessionTests(unittest.TestCase):
         self.assertIsNone(self.tb._group_label(2, other, other))
 
 
+class AgentNameTests(unittest.TestCase):
+    """A row whose agent has not named its task shows the product's own name (2026-11-13: Antigravity read "Agy")."""
+    @classmethod
+    def setUpClass(cls):
+        cls.tb, _ = load_tab_bar()
+
+    def test_agents_are_called_by_their_product_names(self):
+        n = self.tb._agent_label
+        self.assertEqual(n("agy"), "Antigravity")
+        self.assertEqual(n("cursor-agent"), "Cursor Agent")
+        self.assertEqual(n("opencode"), "OpenCode")
+        self.assertEqual(n("claude"), "Claude")                # the bar's short name stays where it has one
+        self.assertEqual(n("codex"), "Codex")
+
+
 if __name__ == "__main__":
     unittest.main()

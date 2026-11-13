@@ -5,6 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 ## [Unreleased]
 
 ### Added
+- **`tools/record-demo.sh`** records the launch demo reproducibly: `kittymux demo` with the pixel bar on a private Xvfb display, driven by real input, with a neutral shell; writes an MP4 and a GIF.
 - **`kittymux doctor` names a working key for a job whose chord the window manager takes**: `ctrl+alt+e` → kitty's own `ctrl+shift+f7` (number the panes), `ctrl+alt+shift+w` → `ctrl+shift+q` (close the tab).
 - **An agent that ends its turn by asking you something needs you.** When Claude Code's reply (its Stop hook) or Codex's (its notify) ends with a question, the tab reads "needs you" with that question, instead of "done"; the question you'd otherwise miss is in the bar, the inbox and the notch. Only the agent's own last sentence counts (a reply ending in a statement or a code block is done). Agents without hooks are unchanged.
 - **`agents.json` rows say when they were published** (`published_at`), and a kitty that has said nothing for 30 s loses its rows even while it keeps running. A drop-down kitty whose window had closed kept an agent reading "working" in the notch for 40 minutes.
@@ -14,6 +15,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 - **T3 Code** (`t3`) is a known program: its tab shows T3 Code's own mark (traced from the app's icon by `tools/trace-t3code.py`) on its night-sky gradient.
 
 ### Fixed
+- **Agents are called by their product names in the pixel bar** before they name their task: Antigravity read "Agy", Cursor Agent "Cursor-agent" (the bar's short names, such as "Claude", stay).
 - **Clicks and drags on the pixel tab bar land on the tab drawn there in a kitty that has run since before an upgrade.** kittymux's hooks into kitty (the tab hit test, the bar's mouse handling, tab drag and drop, the divider) were installed once per kitty and kept that first version's code across every reload, so in a kitty started before the pixel bar a click on a row activated the tab whose old text row sat under the pointer. Each reload now rebuilds them around kitty's own methods; no restart needed.
 - **Cursor Agent and Antigravity's trust prompt reads as "needs you".** Their first run in a folder stops at "Do you trust the contents of this directory?" until you answer; kittymux saw nothing there, so the bar, popups and the notch stayed quiet while the agent was blocked. Captured from both agents live.
 - **The agents' own question tools read as "needs you", with the whole question.** Cursor Agent's Clarifying Questions and OpenCode's Questions panel were not seen at all; Antigravity's was, but a wrapped question showed only its last line ("beta.txt?"). A numbered question ("1. Should…?") is the question, not an option. Captured live from all three.

@@ -1,44 +1,32 @@
 #!/usr/bin/env bash
-# Re-record assets/demo.gif (the README hero) from the real thing: `kittymux demo` in a virtual X display,
-# driven with real key and mouse events. Needs Xvfb, xdotool, ffmpeg, kitty.
-#   tools/record-demo.sh [out.gif]            record
-#   STILLS=dir tools/record-demo.sh           only save a PNG per scene (to check coordinates)
+# Record the launch demo: `kittymux demo` (isolated config, state and fake agents) with the pixel tab bar, on a private Xvfb
+# display, driven by real input (hover a row, jump to the agent that needs you, walk the bar); ffmpeg captures it.
+# Touches nothing outside that display, and runs a neutral shell (bash --norc, a plain prompt): nothing of yours is shown.
+#   tools/record-demo.sh OUT_DIR            # writes OUT_DIR/demo-raw.mp4 (H.264, 1600x900) and OUT_DIR/demo.gif (1200 wide)
 set -u
-HOME_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-OUT=${1:-$HOME_DIR/assets/demo.gif}
-for dep in Xvfb xdotool ffmpeg kitty; do command -v "$dep" >/dev/null || { echo "need $dep"; exit 1; }; done
-for n in $(seq 170 199); do [ -e "/tmp/.X$n-lock" ] || { D=:$n; break; }; done
-W=1200 H=700
-Xvfb "$D" -screen 0 ${W}x${H}x24 >/dev/null 2>&1 & XP=$!
-KP= FP=
-TMP=$(mktemp -d); trap '[ -n "$KP" ] && pkill -P $KP 2>/dev/null; kill $KP $XP $FP 2>/dev/null; rm -rf "$TMP"' EXIT   # (pkill -P: the demo launcher'"'"'s kitty child)
-sleep 1
-export DISPLAY=$D __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1
-unset WAYLAND_DISPLAY
-"$HOME_DIR/bin/kittymux" demo --own-icon-font >/dev/null 2>&1 & KP=$!
-for _ in $(seq 80); do xdotool search --onlyvisible --class kittymux-demo >/dev/null 2>&1 && break; sleep 0.25; done
-sleep 2
-for WIN in $(xdotool search --onlyvisible --class kittymux-demo); do          # every visible kitty window of the demo
-  xdotool windowmove "$WIN" 0 0 windowsize "$WIN" $((W-10)) $((H-10)) 2>/dev/null
-  sleep 0.5; xdotool windowsize "$WIN" $W $H 2>/dev/null
-done
-sleep 3
-X() { xdotool "$@"; }
-still() { [ -n "${STILLS:-}" ] && { mkdir -p "$STILLS"; ffmpeg -loglevel error -y -f x11grab -video_size ${W}x${H} -i "$D" -frames:v 1 "$STILLS/$1.png"; }; return 0; }
-PAUSE() { sleep "$1"; }
-scene() {
-  X mousemove 700 400; PAUSE 2.2; still bar
-  X key ctrl+alt+b; PAUSE 2.0; still deck
-  X key j; PAUSE 0.7; X key j; PAUSE 0.7; X key j; PAUSE 0.7; X key j; PAUSE 0.7; X key j; PAUSE 1.0; still deck2
-  X key q; PAUSE 1.0
-  X mousemove 120 396 click 3; PAUSE 2.2; still peek
-  X key Escape; PAUSE 0.8
-  X mousemove 235 24 click 1; PAUSE 1.8; still rail
-  X mousemove 40 24 click 1; PAUSE 1.8
-  X mousemove 700 400; PAUSE 1.0
-}
-if [ -n "${STILLS:-}" ]; then scene; exit 0; fi
-ffmpeg -loglevel error -y -f x11grab -framerate 8 -video_size ${W}x${H} -i "$D" -t 22 "$TMP/raw.mkv" & FP=$!
-sleep 0.5; scene; wait $FP 2>/dev/null
-ffmpeg -loglevel error -y -i "$TMP/raw.mkv" -vf "fps=8,scale=760:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4" "$OUT"
+HOME_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd); OUT=${1:?output dir}; mkdir -p "$OUT"
+NEUTRAL=$(mktemp -d "${TMPDIR:-/tmp}/kmx-rec.XXXXXX")
+printf '#!/bin/sh\nexport PS1="\\[\\e[2m\\]~/project\\[\\e[0m\\] ❯ "\nexec bash --norc --noprofile -i\n' > "$NEUTRAL/shell"; chmod +x "$NEUTRAL/shell"
+for dep in Xvfb xdotool ffmpeg kitty; do command -v "$dep" >/dev/null || { echo "missing $dep"; exit 1; }; done
+W=1600 H=900
+for n in $(seq 401 439); do [ -e "/tmp/.X$n-lock" ] || { D=:$n; break; }; done
+Xvfb "$D" -screen 0 ${W}x${H}x24 >/dev/null 2>&1 & XP=$!; sleep 1
+cleanup() { rm -rf "$NEUTRAL"; [ -n "${FP:-}" ] && kill -INT "$FP" 2>/dev/null; sleep 1; [ -n "${DP:-}" ] && kill "$DP" 2>/dev/null; pkill -f "kitty --class kittymux-demo" -P $$ 2>/dev/null; kill "$XP" 2>/dev/null; }
+trap cleanup EXIT
+X() { DISPLAY=$D xdotool "$@"; }
+env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID DISPLAY=$D LIBGL_ALWAYS_SOFTWARE=1 KITTYMUX_PXBAR=on SHELL="$NEUTRAL/shell" \
+  KITTY_ENABLE_WAYLAND=0 "$HOME_DIR/bin/kittymux" demo >/dev/null 2>&1 & DP=$!
+WIN=""; for _ in $(seq 120); do WIN=$(X search --onlyvisible --class kittymux-demo 2>/dev/null | head -1); [ -n "$WIN" ] && break; sleep 0.25; done
+[ -n "$WIN" ] || { echo "the demo window never appeared"; exit 1; }
+sleep 1; X windowmove "$WIN" 0 0; X windowsize "$WIN" $((W-10)) $((H-10)); sleep 0.6; X windowsize "$WIN" $W $H; sleep 6   # visible first, then twice (shot_bar.sh)
+X getwindowgeometry "$WIN"
+ffmpeg -loglevel error -y -f x11grab -framerate 30 -video_size ${W}x${H} -i "$D" -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p "$OUT/demo-raw.mp4" & FP=$!
+sleep 2.5                                                              # the bar at rest: who is working, who needs you
+X mousemove --window "$WIN" 150 200; sleep 0.6; X mousemove --window "$WIN" 150 250; sleep 1.2     # a row lifts under the pointer
+X mousemove --window "$WIN" 800 500; sleep 0.8
+X key --clearmodifiers ctrl+alt+y; sleep 2.2                          # one key: the agent that needs you
+X key --clearmodifiers ctrl+Tab; sleep 1.0; X key --clearmodifiers ctrl+Tab; sleep 1.2   # walk the bar
+X key --clearmodifiers ctrl+alt+y; sleep 1.5
+kill -INT "$FP"; wait "$FP" 2>/dev/null; FP=""
+ffmpeg -loglevel error -y -i "$OUT/demo-raw.mp4" -vf "fps=20,scale=1200:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=192[p];[b][p]paletteuse=dither=sierra2_4a" "$OUT/demo.gif"
 ls -la "$OUT"

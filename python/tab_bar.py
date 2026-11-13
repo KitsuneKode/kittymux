@@ -1642,6 +1642,11 @@ def _pxbar_on() -> bool:
         return False
 
 
+def _agent_label(name: str) -> str:
+    """An agent's name on a row: the bar's short label where it has one ("Claude"), else the product's own ("Antigravity")."""
+    return _APP_LABELS.get(name) or kittymux_agents.product_label(name)
+
+
 def _px_row(tab, pal) -> "kittymux_groups.Row":
     cwd, foreground, _last_cmd = _active_window_info(tab.tab_id)
     info = _agent_from_fg(foreground)
@@ -1656,7 +1661,7 @@ def _px_row(tab, pal) -> "kittymux_groups.Row":
         _glyph_, brand, name = info
         mark, tint = kittymux_agents.brand_of(name), brand
         if not title or (facts and title.lower() == facts.project.lower()) or (cwd and title == os.path.basename(os.path.realpath(cwd))):
-            title = _APP_LABELS.get(name, name.capitalize())       # no task title yet: the agent, not the folder the label already names
+            title = _agent_label(name)                             # no task title yet: the agent, not the folder the label already names
     else:
         tool = kittymux_agents.tool_in(foreground)
         mark = kittymux_agents.TOOL_MARKS.get(tool or "", "")
@@ -1693,7 +1698,7 @@ def _px_row(tab, pal) -> "kittymux_groups.Row":
         who = next((n for n in kittymux_agents.AGENTS if kittymux_agents.brand_of(n) == lead), "")
         tint = kittymux_agents.AGENTS[who].brand if who else None
         if who and path is not None and not kittymux_agents.tool_in(foreground):
-            title = _APP_LABELS.get(who, who.capitalize())           # the shell in front said "sh": name the agent that leads
+            title = _agent_label(who)                                # the shell in front said "sh": name the agent that leads
     return kittymux_groups.Row(
         tab_id=tab.tab_id, title=title, project=_px_project(facts), branch=facts.branch if facts else "",
         state=state, active=bool(tab.is_active), mark=mark, tint=tint, meta=meta, meta_tone=tone,
