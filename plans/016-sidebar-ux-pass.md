@@ -1,6 +1,18 @@
 # 016: The pixel sidebar, made to work like a product — clicks, keys, readability
 
 Status: proposed 2026-11-12, from the owner's live use of the pixel tab bar (pxbar on, Hyprland, DP-3 at 1×, eDP-1 at 1.33×).
+Progress (2026-11-13; check `git log main` before trusting this line):
+- DONE, merged and live: §0 clicks/drag (#26), §1 tab navigation follows the bar (#27), §3 the × in the end mark's slot and the
+  rail expand button and tiles (#30, part of §5), §4 type scales with the terminal font (#30), §8 the 14 duplicate chords retired
+  with leader mode and doctor naming working twins (#34, #38), §9 answer / plain-text questions / account (#31, #32, #33), the
+  hook-less quoted-prompt false alarm for Antigravity and OpenCode (#35). Seen on the real compositor at 1.33× on 2026-11-13
+  (private test kitty on eDP-1): rows, groups, needs-you with its question, progress and the wave all draw cleanly.
+- OPEN: §2 a working row says what it is doing (still "Working"); §4 pixel snapping at 1× (not yet looked at on DP-3); §5 a
+  narrower rail; §6 glass (the bar is near opaque); §7 the wheel over the bar; §8 the keys sheet by families.
+- §9 left: Cursor's quoted-prompt false alarm is real (a finished reply quoting "Do you want to proceed? (y/n)" reads as
+  waiting). Its idle line is "→ Add a follow-up" (working: the same line plus "ctrl+c to stop", captured 2026-11-13), but it
+  can only become an idle-only marker once Cursor's approval prompt is captured: the owner's Cursor CLI is in Run Everything,
+  so it never asks. The OpenCode 2 plugin is draft #43 (OpenCode 2 runs plugins in one shared server; needs per-pane routing).
 Continues plan 015. Rules: `.claude/skills/kittymux-ui/SKILL.md`. Reference look: the owner's mockup artifact
 ("kittymux sidebar", claude.ai/artifact/WQjhjqXKGCic6GALD4aHXu; a copy is `~/Downloads/kittymux sidebar.html`).
 
