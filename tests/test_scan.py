@@ -70,7 +70,11 @@ class FakeWindow:
 
     @property
     def screen(self):
-        return types.SimpleNamespace(bell=self._bell)
+        live = getattr(self, "screen_live", None)
+        ns = types.SimpleNamespace(bell=self._bell)
+        if live is not None:                       # a real kitty Screen: the live lines, whatever the scroll position
+            ns.as_text_non_visual = lambda cb, as_ansi=False, wrap=False: [cb(l + "\n") for l in live.splitlines()]
+        return ns
 
     @screen.setter
     def screen(self, text):
@@ -257,6 +261,17 @@ class NotifyTests(ScanBase):
         w2.agent = None                                    # the agent exited
         KS.scan_window(w2, 102.0)
         self.assertEqual(unread(), [("1", "done"), ("2", "done")])
+
+    def test_a_scrolled_pane_is_judged_by_its_live_screen(self):
+        """2026-11-13, measured in a real kitty: scrolled up 100 lines, window.as_text() returns the old output the user is
+        reading, so a waiting agent's prompt vanished (and old prompt text in history could read as live)."""
+        w = FakeWindow(1, "claude", "old output line 202\nold output line 203\n")     # what as_text() shows, scrolled
+        live = PERMISSION
+        w.screen_live = live
+        self.add(w)
+        KS.scan_window(w, 100.0)
+        self.assertEqual(KS._RT.verdicts["1"]["state"], "waiting")
+        self.assertEqual(KS._screen_text(w), live)
 
     def test_working_does_not_notify(self):
         self.add(FakeWindow(1, "claude", DEVIN_THINKING))
