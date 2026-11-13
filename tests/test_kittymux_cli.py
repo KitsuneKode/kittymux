@@ -1,4 +1,9 @@
+import io
 import json
+import shutil
+import subprocess
+from contextlib import redirect_stderr, redirect_stdout
+from unittest.mock import patch
 import importlib.machinery
 import importlib.util
 import os
@@ -847,6 +852,48 @@ class DimAndScreenshotTests(unittest.TestCase):
         with mock.patch("sys.stderr"):
             self.assertEqual(self.m.screenshot(["--bogus"]), 2)
             self.assertEqual(self.m.screenshot([]), 1)               # no socket
+
+
+class OpenCodePluginTests(unittest.TestCase):
+    """OpenCode reports its own state (its events, not its screen): `kittymux hooks --opencode --install|--remove`."""
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def setUp(self):
+        self.cfg = tempfile.mkdtemp()
+        p = patch.dict(os.environ, {"XDG_CONFIG_HOME": self.cfg})
+        p.start()
+        self.addCleanup(p.stop)
+        self.path = os.path.join(self.cfg, "opencode", "plugins", "kittymux-agent-state.js")
+
+    def test_install_renders_the_plugin_and_remove_takes_only_ours(self):
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(self.m.hooks(["--opencode", "--install"]), 0)
+        text = open(self.path, encoding="utf-8").read()
+        self.assertNotIn("@KITTYMUX_HOME@", text)
+        self.assertIn(os.path.join(self.m.HOME_DIR, "bin", "mux-status"), text)
+        for event, state in (("permission.asked", "waiting"), ("question.asked", "waiting"), ("session.idle", "done")):
+            self.assertIn(event, text)
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(self.m.hooks(["--opencode", "--install"]), 0)          # idempotent
+            self.assertEqual(self.m.hooks(["--opencode", "--remove"]), 0)
+        self.assertFalse(os.path.exists(self.path))
+
+    def test_someone_elses_plugin_of_that_name_is_never_touched(self):
+        os.makedirs(os.path.dirname(self.path))
+        with open(self.path, "w") as f:
+            f.write("// my own plugin\n")
+        with redirect_stderr(io.StringIO()):
+            self.assertEqual(self.m.hooks(["--opencode", "--install"]), 1)
+            self.assertEqual(self.m.hooks(["--opencode", "--remove"]), 1)
+        self.assertEqual(open(self.path).read(), "// my own plugin\n")
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_the_plugin_is_valid_javascript(self):
+        src = os.path.join(self.m.HOME_DIR, "integrations", "opencode", "kittymux-agent-state.js")
+        r = subprocess.run(["node", "--check", src], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
 
 
 class HooksTests(unittest.TestCase):

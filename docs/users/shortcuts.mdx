@@ -107,6 +107,8 @@ When tmux has focus, only the keys tmux really binds pass through: `shift+←`, 
 
 Leader mode is optional. Install with `install.sh --leader`, or `--leader=ctrl+a` for another prefix. Tap the leader, then one key. An unmapped key or two seconds of silence cancels it, and the bar shows a LEADER badge while it is armed. The default leader is `ctrl+space`.
 
+With leader mode installed, the direct chords it covers are left out of your keys, so there are fewer to remember and fewer to collide with your window manager: `ctrl+alt+h` `j` `k` `l`, `ctrl+alt+o`, `ctrl+alt+d`, `ctrl+alt+r`, `ctrl+alt+v`, `ctrl+alt+space`, `ctrl+alt+\`, `ctrl+alt+shift+b`, `ctrl+alt+shift+u` and `ctrl+alt+shift+[` `]`. The leader does each with one key (`h` `j` `k` `l`, `o`, `d`, `r`, `v`, `space`, `t`, `shift+b`, `y`, `[` `]`), and your rendered keys file says which. Without leader mode every chord stays.
+
 | After the leader        | Action                                                                  |
 | ----------------------- | ----------------------------------------------------------------------- |
 | `h` `j` `k` `l`, `o`    | Focus a pane, last pane.                                                |

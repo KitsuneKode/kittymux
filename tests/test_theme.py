@@ -196,5 +196,24 @@ class SeparatorShadeTests(unittest.TestCase):
         self.assertLess(self.lum(p.sep_950), self.lum(p.bg))                        # the outer line is a shadow edge
 
 
+class TextTierTests(unittest.TestCase):
+    """The third text tier (faint) must stay readable: Kanagawa's 40 % mix measured 2.97:1 on its own background, so the
+    owner's branch names were hard to read (2026-11-13). Tiers rise toward the theme's OWN foreground (its hue is kept)."""
+    THEMES = {"kanagawa": (0xDCD7BA, 0x1F1F28), "light": (0x4C4F69, 0xEFF1F5), "gruvbox": (0xEBDBB2, 0x282828), "low-fg": (0x9A9A9A, 0x1E1E1E)}
+
+    def test_faint_and_muted_meet_their_floors_in_every_theme(self):
+        for name, (fg, bg) in self.THEMES.items():
+            p = T.from_colors({"foreground": fg, "background": bg})
+            self.assertGreaterEqual(T.contrast(p.faint, bg), T.FAINT_MIN - 0.01, name)
+            self.assertGreaterEqual(T.contrast(p.muted, bg), T.MUTED_MIN - 0.01, name)
+            self.assertGreater(T.contrast(p.muted, bg), T.contrast(p.faint, bg), name)       # three steps, still in order
+            self.assertGreater(T.contrast(p.text, bg), T.contrast(p.muted, bg), name)
+
+    def test_a_tier_is_a_mix_of_the_themes_own_colours(self):
+        fg, bg = self.THEMES["kanagawa"]
+        p = T.from_colors({"foreground": fg, "background": bg})
+        self.assertIn(p.faint, {T.blend(fg, bg, w / 100) for w in range(0, 101)})
+
+
 if __name__ == "__main__":
     unittest.main()

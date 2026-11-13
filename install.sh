@@ -63,9 +63,16 @@ ok "deps: jq, python3, fzf, git, kitty ${kitty_ver:-?}"
 # ── render keys conf ────────────────────────────────────────────────────────
 mkdir -p "$KITTY_CONF_DIR"
 case "$KITTYMUX_HOME" in *$'\n'*) die "install path contains a newline" ;; esac
-sed "s|@KITTYMUX_HOME@|$(sed_esc "$KITTYMUX_HOME")|g" \
-    "$KITTYMUX_HOME/kittymux-keys.conf.tpl" > "$KEYS_OUT"
-ok "rendered keys → $KEYS_OUT"
+# With leader mode (asked for now, or installed earlier: `kittymux upgrade` runs this without --leader), a chord the leader
+# covers is left out, commented with the leader key that does the job (a `# kittymux:leader-covers KEY` line marks it).
+LEADER_ON=$LEADER
+grep -q '^# kittymux-leader.conf — GENERATED' "$KITTY_CONF_DIR/kittymux-leader.conf" 2>/dev/null && LEADER_ON=1
+sed "s|@KITTYMUX_HOME@|$(sed_esc "$KITTYMUX_HOME")|g" "$KITTYMUX_HOME/kittymux-keys.conf.tpl" \
+  | awk -v leader="$LEADER_ON" '
+      /^# kittymux:leader-covers / { cover = $3; next }
+      cover != "" && /^map[ \t]/ { if (leader == 1) { print "# off with leader mode (leader then " cover "): " $0 } else { print }; cover = ""; next }
+      { print }' > "$KEYS_OUT"
+ok "rendered keys → $KEYS_OUT$( (( LEADER_ON )) && echo ' (leader mode: the chords it covers are off)')"
 
 # ── leader mode (opt-in) ─────────────────────────────────────────────────────
 LEADER_OUT="$KITTY_CONF_DIR/kittymux-leader.conf"

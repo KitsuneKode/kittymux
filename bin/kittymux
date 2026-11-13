@@ -3192,7 +3192,56 @@ def _write_settings(path: str, data: dict) -> None:
     os.replace(tmp, path)
 
 
+OPENCODE_PLUGIN = "kittymux-agent-state.js"
+_OPENCODE_MARK = "GENERATED from kittymux's integrations/opencode/kittymux-agent-state.js"
+
+
+def opencode_plugin_path() -> str:
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return os.path.join(base, "opencode", "plugins", OPENCODE_PLUGIN)
+
+
+def opencode_hooks(argv: list[str]) -> int:
+    """`kittymux hooks --opencode --install|--remove`: OpenCode reports its own state (a plugin beside your others in
+    ~/.config/opencode/plugins). Only kittymux's own file is written or removed."""
+    path = opencode_plugin_path()
+    ours = False
+    try:
+        with open(path, encoding="utf-8") as f:
+            ours = _OPENCODE_MARK in f.read(4096)
+    except OSError:
+        pass
+    if "--remove" in argv:
+        if not os.path.exists(path):
+            print(f"{OK} no kittymux OpenCode plugin at {path} — nothing to remove")
+            return 0
+        if not ours:
+            print(f"{BAD} {path} is not kittymux's — not touching it", file=sys.stderr)
+            return 1
+        os.remove(path)
+        print(f"{OK} removed {path}")
+        return 0
+    if "--install" not in argv:
+        print(f"kittymux hooks --opencode --install   writes {path}: OpenCode reports working / waiting (with its question) / done")
+        return 0
+    if os.path.exists(path) and not ours:
+        print(f"{BAD} {path} exists and is not kittymux's — not overwriting it", file=sys.stderr)
+        return 1
+    with open(os.path.join(HOME_DIR, "integrations", "opencode", OPENCODE_PLUGIN), encoding="utf-8") as f:
+        text = f.read().replace("@KITTYMUX_HOME@", HOME_DIR)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.replace(tmp, path)
+    print(f"{OK} installed {path}")
+    print("  new OpenCode sessions report their state themselves; the tab follows working / waiting / done.")
+    return 0
+
+
 def hooks(argv: list[str]) -> int:
+    if "--opencode" in argv:
+        return opencode_hooks([a for a in argv if a != "--opencode"])
     path = os.path.expanduser("~/.claude/settings.json")
     if "--settings" in argv:
         it = iter(argv[argv.index("--settings"):])

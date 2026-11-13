@@ -70,7 +70,11 @@ class FakeWindow:
 
     @property
     def screen(self):
-        return types.SimpleNamespace(bell=self._bell)
+        live = getattr(self, "screen_live", None)
+        ns = types.SimpleNamespace(bell=self._bell)
+        if live is not None:                       # a real kitty Screen: the live lines, whatever the scroll position
+            ns.as_text_non_visual = lambda cb, as_ansi=False, wrap=False: [cb(l + "\n") for l in live.splitlines()]
+        return ns
 
     @screen.setter
     def screen(self, text):
@@ -234,6 +238,40 @@ class NotifyTests(ScanBase):
             w.is_focused = False
             KS.scan_window(w, 107.0)
             self.assertEqual(KS._RT.verdicts["1"]["state"], "idle")
+
+    def test_a_prompt_that_is_over_leaves_the_inbox(self):
+        """2026-11-12: an Antigravity permission event stayed unread for hours after the prompt was gone."""
+        import kittymux_inbox as I
+        for wid in (1, 2):
+            w = FakeWindow(wid, "claude", PERMISSION)
+            self.add(w)
+            KS.scan_window(w, 100.0)
+            I.add(self.state, I.make_event("permission", "claude", wid, "screen", 100.0, pid=os.getpid()))
+            I.add(self.state, I.make_event("done", "claude", wid, "agent", 99.0, pid=os.getpid()))
+        unread = lambda: sorted((e["w"], e["kind"]) for e in I.load(self.state) if e["status"] == "unread")
+        w1, w2 = self.k.boss.all_windows
+        w1.screen = DEVIN_THINKING                         # answered: it works again
+        KS.scan_window(w1, 101.0)
+        self.assertEqual(unread(), [("1", "done"), ("2", "done"), ("2", "permission")])
+        self.agent.stop()                                  # detection fails (it raised): that is not "the agent exited"
+        with mock.patch.object(KS, "agent_of", side_effect=OSError("tty gone")):
+            KS.scan_window(w2, 101.5)
+        self.agent.start()
+        self.assertIn(("2", "permission"), unread())
+        w2.agent = None                                    # the agent exited
+        KS.scan_window(w2, 102.0)
+        self.assertEqual(unread(), [("1", "done"), ("2", "done")])
+
+    def test_a_scrolled_pane_is_judged_by_its_live_screen(self):
+        """2026-11-13, measured in a real kitty: scrolled up 100 lines, window.as_text() returns the old output the user is
+        reading, so a waiting agent's prompt vanished (and old prompt text in history could read as live)."""
+        w = FakeWindow(1, "claude", "old output line 202\nold output line 203\n")     # what as_text() shows, scrolled
+        live = PERMISSION
+        w.screen_live = live
+        self.add(w)
+        KS.scan_window(w, 100.0)
+        self.assertEqual(KS._RT.verdicts["1"]["state"], "waiting")
+        self.assertEqual(KS._screen_text(w), live)
 
     def test_working_does_not_notify(self):
         self.add(FakeWindow(1, "claude", DEVIN_THINKING))

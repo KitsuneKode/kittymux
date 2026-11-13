@@ -189,6 +189,24 @@ def _wave(pt: dp.Painter, right, cy, color, phase=0):
         pt.fill_rrect(x, cy - h / 2, 2, h, 1, color)
 
 
+def _branch_icon(pt: dp.Painter, cx, cy, color):
+    """A git branch: two commits on a line and a third joined by a curve (the mockup's branch mark), 9 px tall."""
+    s, cr = pt.s, pt.cr
+    cr.set_source_rgba(*dp.rgb(color))
+    cr.set_line_width(1.1 * s)
+    cr.set_line_cap(cairo.LINE_CAP_ROUND)
+    x0, x1 = cx - 2.2, cx + 2.4
+    cr.move_to(x0 * s, (cy - 3.2) * s)
+    cr.line_to(x0 * s, (cy + 3.2) * s)
+    cr.move_to(x1 * s, (cy - 2.0) * s)
+    cr.curve_to(x1 * s, (cy + 0.6) * s, x0 * s, (cy + 0.2) * s, x0 * s, (cy + 2.0) * s)
+    cr.stroke()
+    for px, py in ((x0, cy - 3.6), (x0, cy + 3.6), (x1, cy - 2.4)):
+        cr.new_sub_path()
+        cr.arc(px * s, py * s, 1.15 * s, 0, 6.2832)
+        cr.fill()
+
+
 def _search_icon(pt: dp.Painter, cx, cy, color):
     s, cr = pt.s, pt.cr
     cr.set_source_rgba(*dp.rgb(color))
@@ -504,14 +522,21 @@ def render(groups, pal: th.Palette, width: int, height: int, *, host: str = "", 
         if drew:
             y += GAP
         drew = True
-        # the group label: the project, faint; its branch at the right when it isn't the default; a fold count
-        pt.text(PAD + 2, y + LABEL_H / 2 + 2, g.project, T_LABEL, pal.faint, weight=dp.Pango.Weight.SEMIBOLD, family=UI,
-                width=right - PAD - 60)
+        # the group label: the project (muted, semibold: the anchor you scan by); at the right its branch when it isn't the default
+        # (one typeface, faint, a branch mark, cut in the MIDDLE so its distinctive end stays) or how many rows are folded
+        cy = y + LABEL_H / 2 + 2
         tail = f"+{g.hidden}" if g.hidden else g.branch
+        bw = 0.0
         if tail and not narrow:
-            fam = UI if g.hidden else MONO
-            tw = min(pt.text_w(tail, 10.5, family=fam), 120)
-            pt.text(right - tw, y + LABEL_H / 2 + 2, tail, 10.5, pal.faint, family=fam, width=tw if not g.hidden else None)
+            room = max(40.0, (right - PAD) * 0.48)
+            tw = min(pt.text_w(tail, T_LABEL, family=UI), room)
+            pt.text(right - tw, cy, tail, T_LABEL, pal.faint, family=UI, width=None if g.hidden else tw, mid=True)
+            bw = tw
+            if not g.hidden:
+                _branch_icon(pt, right - tw - 7, cy, pal.faint)
+                bw += 13
+        pt.text(PAD + 2, cy, g.project, T_LABEL, pal.muted, weight=dp.Pango.Weight.SEMIBOLD, family=UI, track=0.2,
+                width=max(20.0, right - PAD - 2 - bw - 10))
         hits.append(Hit("group", int(round(y * s)), int(round((y + LABEL_H) * s)), project=g.project))
         y += LABEL_H
         for row in g.rows:

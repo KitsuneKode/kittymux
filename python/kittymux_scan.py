@@ -174,6 +174,22 @@ def _clean(text, limit: int = 100) -> str:
     return " ".join(str(text).translate(_CTRL).split())[:limit]
 
 
+def _screen_text(window) -> str:
+    """The pane's LIVE screen, whatever the scroll position. window.as_text() is the visual view: scrolled up, it is the
+    old output you are reading, so a prompt vanished from the scan (measured in kitty 0.50, 2026-11-13). Screen's
+    as_text_non_visual without history is the screen's own lines; an older kitty without it gets as_text()."""
+    screen = getattr(window, "screen", None)
+    reader = getattr(screen, "as_text_non_visual", None)
+    if reader is not None:
+        try:
+            parts: list[str] = []
+            reader(parts.append, False, False)
+            return "".join(parts)
+        except Exception:
+            pass
+    return window.as_text()
+
+
 def agent_of(window):
     """Agent CLI in the pty's foreground process group (two cheap syscalls), else None."""
     agents, _ = _mods()
@@ -238,7 +254,7 @@ def scan_prompt(window, now: float) -> None:
         if enabled:
             argv, job = fg_job(window)
             if job:
-                rule = P.classify(argv, window.as_text(), enabled)
+                rule = P.classify(argv, _screen_text(window), enabled)
         cur = table.get(wid)
         if rule is None:
             if cur:
@@ -286,19 +302,48 @@ def _same_limit_episode(book: dict, reset, wall: float) -> bool:
     return reset is None and last.get("reset") is None and wall - last.get("t", 0) < LIMIT_UNKNOWN_S
 
 
+# The states that say a prompt is over: it was answered (the agent works again) or the turn ended. Not "idle": looking at a
+# pane reads as idle, and focusing acknowledges by itself; a flicker must not settle a prompt that is still up.
+SETTLES_PROMPT = ("working", "done", "error", "limited")
+RETIRE_EVERY = 60.0
+
+
+def _settle_prompts(wid: str, why: str) -> None:
+    """The agent in this window stopped asking: its unread prompts leave the inbox's "needs you" (kittymux_inbox.settle)."""
+    try:
+        n = _inbox().settle(state_dir(), time.time(), window=wid, pid=os.getpid())
+        if n:                                      # the unread marker stays: a done or error of this window may still be unread
+            _record("inbox", wid, "", outcome=f"settled {n} prompt(s): {why}")
+    except Exception:
+        _debug()
+
+
+def _retire_gone(now: float) -> None:
+    """At most once a minute: unread events from kitties that no longer run are read (kittymux_inbox.retire_gone)."""
+    if now - vars(_RT).get("last_retire", 0.0) < RETIRE_EVERY:
+        return
+    _RT.last_retire = now
+    try:
+        _inbox().retire_gone(state_dir(), time.time(), alive=lambda pid: os.path.exists(f"/proc/{int(pid)}"))
+    except Exception:
+        _debug()
+
+
 def scan_window(window, now: float) -> bool:
     """Re-resolve one window. True if its verdict changed (so its tab bar needs a redraw)."""
     agents, st = _mods()
     try:
         agent = agent_of(window)
     except Exception:
-        agent = None
+        return False                               # we could not tell (the tty went away mid-read): keep the last verdict
     wid = str(window.id)
     prev = _RT.verdicts.get(wid) or {}
     if agent is None:
         if prev.get("state"):
             _RT.verdicts[wid] = {"state": "", "reason": "", "ts_state": now, "ts_scan": now}
             _RT.book.pop(wid, None)
+            if prev.get("state") == "waiting":
+                _settle_prompts(wid, "the agent exited")
             return True
         _RT.verdicts.pop(wid, None)
         return False
@@ -306,7 +351,7 @@ def scan_window(window, now: float) -> bool:
     marker, line, text = "", "", ""
     if agent in st.SCREEN_AGENTS:
         try:
-            text = window.as_text()
+            text = _screen_text(window)
             marker, line = st.classify_screen(text)
         except Exception:
             marker, line, text = "", "", ""
@@ -356,6 +401,8 @@ def scan_window(window, now: float) -> bool:
         _RT.verdicts[wid]["reset_at"] = int(reset_at)
     if new != old_state:
         _record("state", wid, agent, frm=old_state, to=new, why=why)
+        if old_state == "waiting" and new in SETTLES_PROMPT:
+            _settle_prompts(wid, f"it moved on ({new})")
         if new == "working" and old_state in ("idle", "done", "error"):
             _checkpoint(window, "start", now)
         elif old_state == "working" and new in ("waiting", "limited", "error", "done", "idle"):
@@ -723,6 +770,7 @@ def scan_all(timer_id=None) -> None:
                 pass
         _flush(now, force=bool(bars), dirty=dirty)
         _publish_agents(boss)
+        _retire_gone(now)
         _sync_spinner()
         _retime(SCAN_FAST if n_agents else SCAN_IDLE)
     except Exception:
