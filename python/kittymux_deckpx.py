@@ -206,14 +206,14 @@ class Painter:
         self.spin_clip = (None, None)
 
     # text ------------------------------------------------------------------------------------------------------------
-    def layout(self, text, size, weight=Pango.Weight.NORMAL, family=UI_FONT, width=None, tnum=False, track=0.0):
-        key = (text, size, weight, family, width, tnum, track, self.s)
+    def layout(self, text, size, weight=Pango.Weight.NORMAL, family=UI_FONT, width=None, tnum=False, track=0.0, mid=False):
+        key = (text, size, weight, family, width, tnum, track, mid, self.s)
         lo = self.resources.get(self.resources.layouts, key,
-                                lambda: self._layout(text, size, weight, family, width, tnum, track))
+                                lambda: self._layout(text, size, weight, family, width, tnum, track, mid))
         PangoCairo.update_layout(self.cr, lo)
         return lo
 
-    def _layout(self, text, size, weight, family, width, tnum, track):
+    def _layout(self, text, size, weight, family, width, tnum, track, mid=False):
         lo = PangoCairo.create_layout(self.cr)
         def font():
             fd = Pango.FontDescription.from_string(family)
@@ -231,7 +231,7 @@ class Painter:
         lo.set_text(text, -1)
         if width is not None:
             lo.set_width(int(max(1, width) * self.s * Pango.SCALE))
-            lo.set_ellipsize(Pango.EllipsizeMode.END)
+            lo.set_ellipsize(Pango.EllipsizeMode.MIDDLE if mid else Pango.EllipsizeMode.END)   # middle: a branch keeps its end
         return lo
 
     def text(self, x, cy, text, size, color, alpha=1.0, **kw):
