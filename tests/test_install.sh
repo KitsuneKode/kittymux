@@ -43,6 +43,21 @@ ok "re-install leaves an identical icon font untouched (running kitties keep dra
 [ "$before" = "$(cat "$CONF/kitty.conf")" ] || fail "a second install changed kitty.conf (it must be idempotent)"
 ok "second install is a no-op for kitty.conf"
 
+# With leader mode, the chords it covers are off in the rendered keys (the owner, 2026-11-13: 70 ctrl+alt chords were
+# too many to keep; leader + one letter does those jobs). Without it, every chord stays.
+RETIRED="ctrl+alt+shift+b ctrl+alt+shift+bracketleft ctrl+alt+shift+bracketright ctrl+alt+shift+u ctrl+alt+d ctrl+alt+backslash ctrl+alt+space ctrl+alt+r ctrl+alt+h ctrl+alt+j ctrl+alt+k ctrl+alt+l ctrl+alt+o ctrl+alt+v"
+live() { grep -E "^map[[:space:]]+$(printf '%s' "$1" | sed 's/[+]/[+]/g')[[:space:]]" "$CONF/kittymux-keys.conf"; }
+for k in $RETIRED; do live "$k" >/dev/null && fail "with leader mode, $k is still bound"; done
+grep -q "^# off with leader mode (leader then " "$CONF/kittymux-keys.conf" || fail "a retired chord does not say which leader key replaces it"
+live ctrl+tab >/dev/null && live ctrl+alt+z >/dev/null || fail "a daily chord was dropped with the leader's duplicates"
+"$HOME_DIR/install.sh" >/dev/null 2>&1 || fail "install without --leader failed"
+live ctrl+alt+r >/dev/null && fail "kittymux upgrade (install.sh without --leader) brought a retired chord back"
+ok "with leader mode the 14 chords it covers are off (and stay off on upgrade); each names its leader key"
+rm -f "$CONF/kittymux-leader.conf"; "$HOME_DIR/install.sh" >/dev/null 2>&1 || fail "install without leader failed"
+for k in $RETIRED; do live "$k" >/dev/null || fail "without leader mode, $k must stay bound"; done
+ok "without leader mode every chord stays"
+"$HOME_DIR/install.sh" --leader >/dev/null 2>&1 || fail "re-installing leader mode failed"      # kitty.conf includes it: the checks below load it
+
 # kitty must accept the generated config without a single complaint. (`kitty --debug-config` reports
 # none of these, so ask kitty's own loader: bad lines are returned, warnings go to stderr.)
 check_config() {

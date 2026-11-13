@@ -25,6 +25,7 @@ map ctrl+shift+enter     launch --location=vsplit --cwd=current
 map ctrl+alt+t           launch --type=background @KITTYMUX_HOME@/bin/mux-newtab.sh --next
 map ctrl+alt+shift+t     launch --type=background @KITTYMUX_HOME@/bin/mux-newtab.sh
 map ctrl+shift+t         launch --type=background @KITTYMUX_HOME@/bin/mux-newtab.sh --home
+# kittymux:leader-covers r
 map ctrl+alt+r           set_tab_title
 map ctrl+alt+n           new_os_window_with_cwd
 
@@ -63,9 +64,13 @@ map ctrl+alt+shift+down  move_tab_forward
 # ============================================
 # PANES — vim-style nav, detach, zoom
 # ============================================
+# kittymux:leader-covers h
 map ctrl+alt+h           neighboring_window left
+# kittymux:leader-covers j
 map ctrl+alt+j           neighboring_window down
+# kittymux:leader-covers k
 map ctrl+alt+k           neighboring_window up
+# kittymux:leader-covers l
 map ctrl+alt+l           neighboring_window right
 # NOTE: ctrl+alt+arrows is claimed by some WMs (e.g. Hyprland's scrolling
 # layout uses it for layoutmsg focus). Pane arrows live on shift+alt.
@@ -73,7 +78,9 @@ map shift+alt+left       neighboring_window left
 map shift+alt+down       neighboring_window down
 map shift+alt+up         neighboring_window up
 map shift+alt+right      neighboring_window right
+# kittymux:leader-covers o
 map ctrl+alt+o           nth_window -1
+# kittymux:leader-covers d
 map ctrl+alt+d           detach_window new-tab-right
 map ctrl+alt+shift+d     detach_window ask
 # ctrl+alt+e — number every pane on screen, then press its digit to focus it (tmux's display-panes; two panes: jumps straight over)
@@ -123,6 +130,7 @@ map --when-focus-on title:kittymux-agents ctrl+alt+g close_window
 # ctrl+alt+b — sidebar command deck (hover/click, live preview, jump to tab)
 map ctrl+alt+b           kitten @KITTYMUX_HOME@/python/sidebar-kit.py
 # ctrl+alt+shift+b — toggle the sidebar deck as a persistent docked panel (Wayland)
+# kittymux:leader-covers shift+b
 map ctrl+alt+shift+b     launch --type=background @KITTYMUX_HOME@/bin/mux-panel toggle
 # ctrl+alt+y — jump to the next agent waiting on you (round-robin, longest-waiting first)
 map ctrl+alt+y           launch --type=background @KITTYMUX_HOME@/bin/mux-agents.sh --next-waiting
@@ -133,9 +141,11 @@ map --when-focus-on title:kittymux-agent-new ctrl+alt+shift+g close_window
 map ctrl+alt+semicolon   launch --type=overlay --title kittymux-send @KITTYMUX_HOME@/bin/mux-send.sh
 map --when-focus-on title:kittymux-send ctrl+alt+semicolon close_window
 # ctrl+alt+v — pick: what needs you, every agent, closed conversations and a new agent in ONE searchable list (rofi/fuzzel from your WM: `kittymux pick --menu rofi`)
+# kittymux:leader-covers v
 map ctrl+alt+v           launch --type=overlay --title kittymux-pick @KITTYMUX_HOME@/bin/kittymux pick
 map --when-focus-on title:kittymux-pick ctrl+alt+v close_window
 # ctrl+alt+shift+u — reopen the agent conversation you closed last (it asks before resuming)
+# kittymux:leader-covers y
 map ctrl+alt+shift+u     launch --type=background @KITTYMUX_HOME@/bin/kittymux reopen
 # ctrl+alt+shift+o — spawn mode: then a letter starts that agent in a new tab (shift+letter: split right) — c claude · x codex · d devin · u cursor · o opencode · a agy · g grok
 map --new-mode spawn --on-action end --on-unknown end --timeout 3.0 ctrl+alt+shift+o
@@ -165,10 +175,13 @@ watcher @KITTYMUX_HOME@/python/pane-state.py
 # ctrl+alt+shift+e — move this window's bar: left → bottom → top → right
 map ctrl+alt+shift+e     launch --type=background @KITTYMUX_HOME@/bin/mux-edge.sh
 # ctrl+alt+backslash — this window's bar: sidebar → slim rail → hidden (zen), like a browser sidebar
+# kittymux:leader-covers t
 map ctrl+alt+backslash   launch --type=background @KITTYMUX_HOME@/bin/kittymux layout mode cycle
 # ctrl+alt+shift+[ — narrower sidebar
+# kittymux:leader-covers [
 map ctrl+alt+shift+bracketleft  launch --type=background @KITTYMUX_HOME@/bin/kittymux layout width -2
 # ctrl+alt+shift+] — wider sidebar
+# kittymux:leader-covers ]
 map ctrl+alt+shift+bracketright launch --type=background @KITTYMUX_HOME@/bin/kittymux layout width +2
 # ctrl+alt+shift+l — pick a bar layout preset (sidebar, rail, right, bottom, top, zen)
 map ctrl+alt+shift+l     launch --type=overlay --title kittymux-layout @KITTYMUX_HOME@/bin/kittymux layout pick
@@ -209,6 +222,7 @@ map alt+shift+equal       layout_action equalize
 # LAYOUTS
 # ============================================
 # ctrl+alt+space — cycle layout: splits, then stack
+# kittymux:leader-covers space
 map ctrl+alt+space       next_layout
 # ctrl+alt+z — zoom the focused pane so it fills the tab; press again to restore. On stack the pane already fills the tab, so this does nothing
 map ctrl+alt+z           launch --type=background @KITTYMUX_HOME@/bin/mux-zoom.sh
