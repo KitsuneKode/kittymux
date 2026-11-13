@@ -68,7 +68,8 @@ If `kittymux` is "not found", `~/.local/bin` is not on your `PATH`: add `export 
 - **Sessions that survive.** Tabs belong to named sessions; switching *parks* the current one
   (processes stay alive) and auto-checkpoints it. `ctrl+shift+space` is Kitty Home.
 - **Leader mode** (opt-in). Tap `ctrl+space`, then one key — no modifier chords fighting your
-  window manager. The bar shows a LEADER badge while armed; `?` shows the card.
+  window manager. The bar shows a LEADER badge while armed; `?` shows the card. With it on, the 14
+  direct chords it duplicates (`ctrl+alt+h/j/k/l`, `ctrl+alt+r`, `ctrl+alt+shift+b`, …) are left out of your keys.
 - **Honest usage HUDs.** Real local numbers or "unavailable" — never fabricated. Network is opt-in.
   The overlay paints instantly — skeletons first, then each provider fills in as its collector
   lands; slow live quota fetches merge last. Errors and timeouts surface per-row, not as a hang.
