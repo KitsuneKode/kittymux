@@ -174,6 +174,22 @@ def _clean(text, limit: int = 100) -> str:
     return " ".join(str(text).translate(_CTRL).split())[:limit]
 
 
+def _screen_text(window) -> str:
+    """The pane's LIVE screen, whatever the scroll position. window.as_text() is the visual view: scrolled up, it is the
+    old output you are reading, so a prompt vanished from the scan (measured in kitty 0.50, 2026-11-13). Screen's
+    as_text_non_visual without history is the screen's own lines; an older kitty without it gets as_text()."""
+    screen = getattr(window, "screen", None)
+    reader = getattr(screen, "as_text_non_visual", None)
+    if reader is not None:
+        try:
+            parts: list[str] = []
+            reader(parts.append, False, False)
+            return "".join(parts)
+        except Exception:
+            pass
+    return window.as_text()
+
+
 def agent_of(window):
     """Agent CLI in the pty's foreground process group (two cheap syscalls), else None."""
     agents, _ = _mods()
@@ -238,7 +254,7 @@ def scan_prompt(window, now: float) -> None:
         if enabled:
             argv, job = fg_job(window)
             if job:
-                rule = P.classify(argv, window.as_text(), enabled)
+                rule = P.classify(argv, _screen_text(window), enabled)
         cur = table.get(wid)
         if rule is None:
             if cur:
@@ -306,7 +322,7 @@ def scan_window(window, now: float) -> bool:
     marker, line, text = "", "", ""
     if agent in st.SCREEN_AGENTS:
         try:
-            text = window.as_text()
+            text = _screen_text(window)
             marker, line = st.classify_screen(text)
         except Exception:
             marker, line, text = "", "", ""
