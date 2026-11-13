@@ -854,6 +854,20 @@ class DimAndScreenshotTests(unittest.TestCase):
             self.assertEqual(self.m.screenshot([]), 1)               # no socket
 
 
+class DemoSessionTests(unittest.TestCase):
+    """`kittymux demo`'s panes, as a recording sees them."""
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def test_demo_panes_hand_back_to_your_shell_not_a_bare_bash(self):
+        # a bare `exec bash` loads the system profile: a recording showed "[user@host ~]$" (the machine's user and host). $SHELL is
+        # your own shell for a real user and the recorder's neutral one in tools/record-demo.sh.
+        text = self.m.DEMO_SESSION.format(home="/home/demo", project="/home/demo/project", twins="")
+        self.assertNotIn("exec bash'", text)
+        self.assertIn('exec "${SHELL:-bash}"', text)
+
+
 class OpenCodePluginTests(unittest.TestCase):
     """OpenCode reports its own state (its events, not its screen): `kittymux hooks --opencode --install|--remove`."""
     @classmethod

@@ -57,6 +57,14 @@ class HeaderSessionTests(unittest.TestCase):
     def setUpClass(cls):
         cls.tb, cls.boss = load_tab_bar()
 
+    def test_the_host_line_can_be_named_for_a_recording(self):
+        # the header shows this machine's name; a launch recording must not show the author's
+        saved = self.tb._HOST
+        self.addCleanup(setattr, self.tb, "_HOST", saved)
+        self.tb._HOST = ""
+        with patch.dict(os.environ, {"KITTYMUX_HOST": "devbox"}):
+            self.assertEqual(self.tb._host(), "devbox")
+
     def test_the_header_names_the_focused_session_not_tab_one(self):
         tab = types.SimpleNamespace(
             tab_id=1,

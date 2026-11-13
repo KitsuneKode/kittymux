@@ -1326,7 +1326,8 @@ def _host() -> str:
     global _HOST
     if not _HOST:
         import socket
-        _HOST = (socket.gethostname() or "this machine").split(".")[0]
+        # KITTYMUX_HOST names it instead (a recording: tools/record-demo.sh must not show the author's machine)
+        _HOST = (os.environ.get("KITTYMUX_HOST") or socket.gethostname() or "this machine").split(".")[0]
     return _HOST
 
 

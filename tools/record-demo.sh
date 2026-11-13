@@ -14,7 +14,7 @@ Xvfb "$D" -screen 0 ${W}x${H}x24 >/dev/null 2>&1 & XP=$!; sleep 1
 cleanup() { rm -rf "$NEUTRAL"; [ -n "${FP:-}" ] && kill -INT "$FP" 2>/dev/null; sleep 1; [ -n "${DP:-}" ] && kill "$DP" 2>/dev/null; pkill -f "kitty --class kittymux-demo" -P $$ 2>/dev/null; kill "$XP" 2>/dev/null; }
 trap cleanup EXIT
 X() { DISPLAY=$D xdotool "$@"; }
-env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID DISPLAY=$D LIBGL_ALWAYS_SOFTWARE=1 KITTYMUX_PXBAR=on SHELL="$NEUTRAL/shell" \
+env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID __GLX_VENDOR_LIBRARY_NAME=mesa DISPLAY=$D LIBGL_ALWAYS_SOFTWARE=1 KITTYMUX_HOST=devbox KITTYMUX_PXBAR=on SHELL="$NEUTRAL/shell" \
   KITTY_ENABLE_WAYLAND=0 "$HOME_DIR/bin/kittymux" demo >/dev/null 2>&1 & DP=$!
 WIN=""; for _ in $(seq 120); do WIN=$(X search --onlyvisible --class kittymux-demo 2>/dev/null | head -1); [ -n "$WIN" ] && break; sleep 0.25; done
 [ -n "$WIN" ] || { echo "the demo window never appeared"; exit 1; }

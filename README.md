@@ -13,7 +13,7 @@ blocked on you. A *config layer*, not a daemon — Linux, Wayland, Hyprland-frie
 no always-on background daemon.
 
 <p align="center">
-  <img src="assets/demo.gif" alt="kittymux: a vertical tab bar with agent states, the deck with a split tab's pane tree and live preview, a right-click peek card, and the collapse button" width="720">
+  <img src="assets/demo.gif" alt="kittymux demo: the pixel tab bar shows which agents are working and which need you, with their questions; one key jumps to the agent that is asking, and ctrl+tab walks the rows in the order the bar draws them" width="720">
 </p>
 
 ## Try it in 30 seconds

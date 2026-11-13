@@ -599,10 +599,10 @@ launch --location=hsplit bash -c 'printf "\\n   PANE THREE\\n"; exec sleep 86400
 launch --location=vsplit bash -c 'printf "\\n   PANE FOUR\\n"; exec sleep 86400'
 new_tab file-refs
 cd {project}
-launch bash -c 'printf "\\n  error[E0308]: mismatched types\\n    --> src/app.py:42:7\\n  see also README.md:3 and src/util.py:12\\n\\n  ctrl+shift+click a file:line to open it in your editor\\n"; exec bash'
+launch bash -c 'printf "\\n  error[E0308]: mismatched types\\n    --> src/app.py:42:7\\n  see also README.md:3 and src/util.py:12\\n\\n  ctrl+shift+click a file:line to open it in your editor\\n"; exec "${{SHELL:-bash}}"'
 new_tab scrollback
 cd {home}
-launch bash -c 'seq 1 500; exec bash'
+launch bash -c 'seq 1 500; exec "${{SHELL:-bash}}"'
 new_tab app
 cd {twins}/web/app
 launch

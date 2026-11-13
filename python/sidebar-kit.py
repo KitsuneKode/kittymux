@@ -1428,7 +1428,7 @@ class Sidebar(Handler):
         host = getattr(self, "_px_host_name", "")
         if not host:
             import socket
-            host = (socket.gethostname().split(".")[0] or "this machine")
+            host = ((os.environ.get("KITTYMUX_HOST") or socket.gethostname()).split(".")[0] or "this machine")   # KITTYMUX_HOST: a recording
             self._px_host_name = host
         return host
 
