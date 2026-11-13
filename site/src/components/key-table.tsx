@@ -23,7 +23,7 @@ export function KeyTable({ keys }: { keys: Facts['keys'] }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filter: type a key, a word, a section"
-          className="min-h-12 w-full max-w-xl rounded-full border border-line bg-card px-5 text-base text-ink  placeholder:text-mute focus-visible:border-ink"
+          className="well min-h-12 w-full max-w-xl rounded-full px-5 text-base text-ink placeholder:text-mute"
         />
       </label>
       <p className="mt-3 text-sm text-mute" aria-live="polite">
@@ -37,13 +37,13 @@ export function KeyTable({ keys }: { keys: Facts['keys'] }) {
             <h2 id={id} className="text-sm font-semibold uppercase tracking-[0.08em] text-link">
               {s.section}
             </h2>
-            <div tabIndex={0} className="mt-3 overflow-x-auto rounded-xl border border-line">
+            <div tabIndex={0} className="tactile mt-3 overflow-x-auto rounded-xl">
               <table className="w-full min-w-[28rem] border-collapse">
                 <tbody>
                   {s.rows.map((r) => (
                     <tr key={r.key + r.desc} className="border-t border-line first:border-t-0">
                       <th scope="row" className="w-[16rem] px-4 py-3 text-start align-top">
-                        <kbd className="rounded-md border border-line bg-card px-2 py-1 font-mono text-sm">{r.key}</kbd>
+                        <kbd className="raised rounded-md px-2 py-1 font-mono text-sm">{r.key}</kbd>
                       </th>
                       <td className="px-4 py-3 text-mute">{r.desc}</td>
                     </tr>

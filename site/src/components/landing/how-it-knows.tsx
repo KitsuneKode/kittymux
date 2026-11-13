@@ -8,7 +8,7 @@ export function HowItKnows() {
         <p className="t-lead mt-4 max-w-[58ch] text-mute">
           kittymux reads the bottom of each agent’s screen twice a second and combines it with the agent’s own hooks. A state needs <strong className="font-semibold text-ink">evidence</strong>. A quiet screen is never “waiting”, and an interrupted turn is never “finished”.
         </p>
-        <div tabIndex={0} className="mt-10 overflow-x-auto rounded-xl border border-line">
+        <div tabIndex={0} className="tactile mt-10 overflow-x-auto rounded-xl">
           <table className="w-full min-w-[34rem] border-collapse text-start">
             <thead className="bg-card-hi text-sm">
               <tr>
