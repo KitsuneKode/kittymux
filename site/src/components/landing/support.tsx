@@ -46,7 +46,7 @@ export function Support() {
         </li>
         <li className="flex flex-col items-start gap-4">
           <p className="t-small max-w-[34ch] text-mute">If an agent shows the wrong state, open an issue with what was on its screen. That is how the markers get verified.</p>
-          <a href={ISSUES_URL} target="_blank" rel="noopener" className={cn(buttonVariants({ variant: 'outline', size: 'lg' }), 'min-h-11 gap-2 rounded-full border-line px-4 sm:min-h-10')}>
+          <a href={ISSUES_URL} target="_blank" rel="noopener" className={cn(buttonVariants({ variant: 'outline', size: 'lg' }), 'raised min-h-11 gap-2 rounded-full px-4 sm:min-h-10')}>
             <IconBug aria-hidden="true" data-icon="inline-start" stroke={1.9} />
             Open an issue
           </a>

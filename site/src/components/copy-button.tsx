@@ -24,12 +24,16 @@ async function copy(text: string) {
   }
 }
 
-/** Copies `text`; the label changes to say so (a cue that does not depend on motion or colour). */
+/** Copies `text`; the label changes to say so (a cue that does not depend on motion or colour). The tick shows on the click itself,
+ *  before the clipboard answers (it nearly always agrees); if it refuses, the label says how to copy by hand instead. */
 export function CopyButton({ text, label = 'Copy', context, className }: { text: string; label?: string; context?: string; className?: string }) {
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const onClick = async () => {
-    setState((await copy(text)) ? 'copied' : 'failed');
+    clearTimeout(timer.current);
+    setState('copied');
+    const ok = await copy(text);
+    if (!ok) setState('failed');
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setState('idle'), 1800);
   };

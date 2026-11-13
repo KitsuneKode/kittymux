@@ -136,7 +136,35 @@ figure.shiki :focus-visible { outline-color: var(--code-fg); outline-offset: -2p
 /* Motion: one easing, a press scale of 0.96, a clip-path wipe on the primary action; all of it off under reduced motion. */
 /* Interaction, after the "good CSS" entries: hover only where hover exists, press feedback on everything pressable, motion only for people who allow it
    (fades of colour stay outside the query: they are not motion), named properties, never ease-in. */
-[data-press]:active { transform: scale(0.97); }
+/* Tactile surfaces (the tactile-design rules): a thing takes its fill, edge and drop from the surface beneath it (--ground, set per
+   surface below). Light: raised = the warm white + a 1px ring + a crisp 1px drop. Dark: raised = a step or two lighter than its
+   ground + one solid 0.5px outline + a tight black drop, so elevation never rests on the shadow alone. Fields are wells. */
+.bg-card { --ground: var(--surface); }
+/* a card of rows (tables): ring, 1px drop, one short drop */
+.tactile { background: var(--card-fill); box-shadow: var(--shadow-card); }
+.tactile :where(tr) { transition: background-color 150ms var(--ease-out); }
+.tactile tr { border-top-width: 0.5px; }
+/* a docs table: the prose styles give the table its own margin, frame and radius; inside a card that is a second border and a gap, so the card is the frame */
+.tactile > table { margin: 0; border: 0; border-radius: 0; }
+.tactile > table :where(th, td) { border-width: 0.5px; }
+.tactile > table :where(tr > :first-child) { border-inline-start-width: 0; }
+.tactile > table :where(tr > :last-child) { border-inline-end-width: 0; }
+.tactile > table :where(thead tr:first-child > *) { border-top-width: 0; }
+.tactile > table :where(tbody tr:last-child > *) { border-bottom-width: 0; }
+@media (hover: hover) and (pointer: fine) {
+  .tactile :where(tbody tr:hover) { background: var(--card-hover); }
+}
+/* a secondary control or a key chip: raised one step, no border */
+.raised { background: var(--raised); box-shadow: var(--shadow-button); border-color: transparent; transition: background-color 150ms var(--ease-out); }
+@media (hover: hover) and (pointer: fine) {
+  :where(a, button).raised:hover { background: var(--raised-hover); }
+}
+/* a field (or a button that opens one): a well, no border; focus deepens it, the focus outline still marks the keyboard */
+.well { background: var(--surface-hi); border-color: transparent; transition: background-color 150ms var(--ease-out); }
+@media (hover: hover) and (pointer: fine) {
+  .well:hover { background: var(--well-deep); }
+}
+.well:focus-visible { background: var(--well-deep); }
 [data-cta] { position: relative; isolation: isolate; overflow: clip; background: var(--on-brand); color: var(--brand); }
 [data-cta]::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--fg); clip-path: inset(0 100% 0 0); }
 @media (hover: hover) and (pointer: fine) {
@@ -145,7 +173,8 @@ figure.shiki :focus-visible { outline-color: var(--code-fg); outline-offset: -2p
 }
 @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: no-preference) {
-  [data-press] { transition: transform 160ms var(--ease-out), background-color 160ms var(--ease-out), color 160ms var(--ease-out), border-color 160ms var(--ease-out); }
+  [data-press] { transition: transform 150ms var(--ease-out), background-color 150ms var(--ease-out), color 150ms var(--ease-out), border-color 150ms var(--ease-out), box-shadow 150ms var(--ease-out); }
+  [data-press]:active { transform: scale(0.97); }
   [data-cta]::before { transition: clip-path 220ms var(--ease-out); }
   [data-rise] { animation: rise 600ms var(--ease-out) both; }
 

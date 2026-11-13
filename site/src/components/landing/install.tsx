@@ -27,7 +27,7 @@ export function Install() {
             </div>
             <div className="flex min-w-0 flex-col items-start gap-3 lg:col-span-8">
               <pre className="t-mono w-full whitespace-pre-wrap rounded-xl bg-[var(--code-bg)] p-4 text-[var(--code-fg)] [overflow-wrap:anywhere]"><code>{r.cmd}</code></pre>
-              <CopyButton text={r.cmd} label="Copy command" context={r.title} className="border border-line hover:bg-card-hi" />
+              <CopyButton text={r.cmd} label="Copy command" context={r.title} className="raised" />
             </div>
           </li>
         ))}

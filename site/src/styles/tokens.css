@@ -19,6 +19,15 @@
   --line: rgb(23 32 46 / 0.13);
   --ease: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-out: var(--ease);
+  /* Tactile elevation (app.css: .tactile, .raised, .well). --ground is the surface a thing sits on: the page here, --surface on a .bg-card section. */
+  --ground: var(--bg);
+  --raised: var(--surface);
+  --raised-hover: color-mix(in oklch, var(--fg) 3%, var(--surface));
+  --card-fill: var(--surface);
+  --card-hover: var(--surface-hi);
+  --well-deep: color-mix(in oklch, var(--fg) 5%, var(--surface-hi));
+  --shadow-button: 0 0 0 1px color-mix(in oklch, var(--fg) 8%, transparent), 0 1px 2px 0 color-mix(in oklch, var(--fg) 12%, transparent);
+  --shadow-card: 0 0 0 1px color-mix(in oklch, var(--fg) 7%, transparent), 0 1px 2px 0 color-mix(in oklch, var(--fg) 12%, transparent), 0 3px 4px -2px color-mix(in oklch, var(--fg) 10%, transparent);
   color-scheme: light;
 }
 
@@ -38,4 +47,14 @@
   --code-fg: #F4EFE6;
   --line: rgb(244 239 230 / 0.14);
   color-scheme: dark;
+}
+/* Dark elevation is a step of lightness from the ground plus one solid 0.5px outline (a fixed colour all round, never a lit top edge) and a black drop.
+   Declared again on every surface that sets --ground: custom properties inherit as resolved values, so a token built from --ground on the page would not follow a card. */
+.dark, .dark .bg-card {
+  --raised: color-mix(in oklch, var(--fg) 10%, var(--ground));
+  --raised-hover: color-mix(in oklch, var(--fg) 14%, var(--ground));
+  --card-fill: color-mix(in oklch, var(--fg) 5%, var(--ground));
+  --card-hover: color-mix(in oklch, var(--fg) 9%, var(--ground));
+  --shadow-button: 0 0 0 0.5px color-mix(in oklch, var(--fg) 30%, var(--ground)), 0 1px 2px 0 rgb(0 0 0 / 0.5);
+  --shadow-card: 0 0 0 0.5px color-mix(in oklch, var(--fg) 20%, var(--ground)), 0 1px 2px 0 rgb(0 0 0 / 0.5), 0 3px 4px -2px rgb(0 0 0 / 0.45);
 }

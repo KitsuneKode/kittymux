@@ -14,7 +14,7 @@ export type GitHubStarsProps = {
 
 const TONES = {
   brand: "border-onbrand/55 text-onbrand hover:bg-onbrand/12",
-  page: "border-line bg-card text-ink hover:bg-card-hi",
+  page: "raised text-ink",
 } as const
 
 /**

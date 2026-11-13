@@ -26,7 +26,7 @@ export function ThemeToggle({ className }: { className?: string }) {
     refs.current[to]?.focus()
   }
   return (
-    <div role="radiogroup" aria-label="Colour theme" className={cn('inline-flex rounded-full border border-line p-0.5', className)}>
+    <div role="radiogroup" aria-label="Colour theme" className={cn('inline-flex rounded-full bg-card-hi p-1', className)}>
       {CHOICES.map(({ value, label, Icon }, i) => {
         const on = mounted && current === value
         return (
@@ -41,9 +41,12 @@ export function ThemeToggle({ className }: { className?: string }) {
             aria-label={label}
             title={label}
             onClick={() => setTheme(value)}
+            data-press=""
             className={cn(
-              'grid size-9 place-items-center rounded-full text-mute transition-colors duration-150 [transition-timing-function:var(--ease)] sm:size-8',
-              on ? 'bg-ink text-page' : 'hover:text-ink',
+              'grid size-9 place-items-center rounded-full text-mute sm:size-8',
+              on
+                ? 'bg-card text-ink shadow-[0_0_0_1px_color-mix(in_oklch,var(--fg)_8%,transparent),0_1px_2px_color-mix(in_oklch,var(--fg)_12%,transparent)] dark:bg-[color-mix(in_oklch,var(--fg)_16%,var(--surface-hi))] dark:shadow-[0_0_0_0.5px_color-mix(in_oklch,var(--fg)_30%,transparent),0_1px_2px_rgb(0_0_0/0.5)]'
+                : 'hover:text-ink',
             )}
           >
             <Icon aria-hidden="true" className="size-4" stroke={1.75} />
