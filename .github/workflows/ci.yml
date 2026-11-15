@@ -78,6 +78,13 @@ jobs:
         with:
           go-version-file: ${{ runner.temp }}/kitty-src/kitty-${{ matrix.kitty }}/go.mod
           cache: false
+      - name: Slang shader compiler
+        run: |
+          mkdir -p "$RUNNER_TEMP/slang"
+          curl -fsSL https://github.com/shader-slang/slang/releases/download/v2026.18.2/slang-2026.18.2-linux-x86_64-glibc-2.27.tar.gz -o "$RUNNER_TEMP/slang/slang.tar.gz"
+          tar -xf "$RUNNER_TEMP/slang/slang.tar.gz" -C "$RUNNER_TEMP/slang"
+          "$RUNNER_TEMP/slang/bin/slangc" -version
+          echo "$RUNNER_TEMP/slang/bin" >> "$GITHUB_PATH"
       - name: build kitty ${{ matrix.kitty }} with renderer-compatible Python
         working-directory: ${{ runner.temp }}/kitty-src/kitty-${{ matrix.kitty }}
         env:
