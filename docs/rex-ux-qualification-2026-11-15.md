@@ -1,46 +1,35 @@
 # Rex-inspired UI qualification — 2026-11-15
 
-Status: implemented on `rex-ux-20261115`; independent review and hosted CI pending. Main and live terminals have not been changed.
+Status: implementation and review complete. All ten hosted checks passed on functional-code commit `317c675`; all twelve CodeRabbit review threads were resolved. This dated report records validation before integration. [PR #45](https://github.com/KitsuneKode/kittymux/pull/45) tracks the current checks, merge and live-integration status.
 
-The existing opt-in pixel panel now draws Usage and Inbox as well as Agents. Usage keeps each T3/rice account separate, labels quota remaining and reset/pace, and reports unknown sample ages. Inbox expands without acknowledging or focusing, preserves selection by ID, and retains unread attention ahead of read history. The optional Kitty 0.50 pane dock uses an explicit parent, guarded close and existing native actions.
+The existing opt-in pixel panel draws Usage and Inbox as well as Agents. Usage keeps each T3/rice account separate, labels remaining quota and reset/pace, and reports unknown sample ages. Inbox expands without acknowledging or focusing, preserves selection by ID, and retains unread attention ahead of read history. The optional Kitty 0.50 pane dock uses an explicit parent, guarded close and existing native actions.
 
-## Verified locally
+## Verified
 
-- All 1,983 unit tests passed, including regression tests for canonical notification IDs, unread retention, selection changes, full error bodies, expansion, footer reachability, unknown/future sample timestamps and native dock initialization.
-- `smoke_panelpx` passed in dark/light at 26/38 columns, with real pointer expansion/dismissal, Undo, native dock idempotence and pointer splitting. Its disabled-graphics control failed at the first graphics assertion as intended. Other-Kitty window counts were unchanged. Before/after PNGs were read. Cell `shot_panel` checks covered both themes and widths, including narrow help and footer fixes.
-- Required private rigs passed: inbox, prompts, spawn, state, sidebar, peek, palette, resize, reload, keys, panes, native divider, clicks, drag and panel focus. `stress_panel` passed 150 cycles without unbounded memory/descriptor/thread growth; idle CPU was 1% under software Xvfb.
-- Python compilation, shell syntax, ShellCheck and diff whitespace checks passed. Docs/site checks passed: `test_docs`, agent guide/secret checks, `bun run check`, `axe`, `budget` and `cls` (zero measured layout shift).
-- Warm pure rendering at 342×720 over 100 samples: Usage median 0.59 ms / p95 0.79 ms; 60-event Inbox median 2.30 ms / p95 3.06 ms. This measures local CPU rendering, not terminal transport or live GPU performance.
+- All 1,983 unit tests passed, including canonical notification IDs, delayed-event replay through compaction, unread retention, full error bodies, selection aging out, unknown/future sample timestamps, owning-Kitty scope, OS-window movement and two-pane Zoom restoration.
+- Hosted `smoke (0.49.1)`, `smoke (0.49.2)` and `smoke (0.50.0)` each logged a real `PASS` for pixel Usage/Inbox. The step requires graphics and cannot silently skip missing dependencies.
+- Private real-pointer graphics runs passed in dark/light at 26/38 columns. Expansion, dismissal, visible restoration, Undo and scrolling were exercised. The dock was idempotent, split by pointer, restored Zoom on both two-pane orientations, and moved to a new tab in its original OS window after another OS window received focus. Other-Kitty window counts were unchanged. Before/after PNGs were read. Cell `shot_panel` checks passed all four theme/width combinations.
+- Controls rejected disabled graphics, missing renderer dependencies, disabled PageDown and a stale dismissed frame despite restored stored counts. The scroll baseline requires the card to disappear after Dismiss and visibly reappear after Undo. Text masks exclude selection colors, clocks and footer timers.
+- Private inbox, prompts, spawn, state, sidebar, peek, palette, resize, reload, keys, panes, native divider, clicks, drag and panel-focus checks passed. Panel stress passed 150 cycles without unbounded resource growth; idle CPU was 0.9% under software Xvfb.
+- Compilation, shell syntax, ShellCheck, docs, secret checks and whitespace checks passed. Site check/build/crawl, axe, budget and CLS passed, with zero measured layout shift. Hosted unit, security, site and compatibility checks passed on `317c675`.
+
+Warm pure rendering at 342×720 over 100 samples measured Usage median 0.59 ms / p95 0.79 ms and a 60-event Inbox median 2.30 ms / p95 3.06 ms. This measures local CPU rendering, not terminal transport or live GPU performance.
 
 ## Screenshots
 
-All examples use synthetic accounts and messages.
+Representative examples use synthetic accounts and messages.
 
 ![Usage, dark](screenshots/rex-ux/usage-dark.png)
 ![Usage, light](screenshots/rex-ux/usage-light.png)
 ![Expanded Inbox, narrow](screenshots/rex-ux/inbox-narrow.png)
 ![Pane controls, narrow](screenshots/rex-ux/pane-controls-narrow.png)
 
-## Boundaries
+## Runtime and qualification boundaries
 
-Native docks were exercised on Kitty 0.50. Older running processes are rejected by the controller's version gate; their actual runtime is left unchanged. Pixel views remain opt-in and preserve cell fallback. No daemon, new provider connection or global chord was added.
+The hosted matrix builds exact Kitty release sources against system Python so Cairo/GI extensions match that interpreter. It supplies pinned Symbols Nerd Font and Slang build inputs, then checks renderer imports inside Kitty before running the strict graphics test. Upstream self-contained binaries use their own Python and may legitimately fall back to cells despite system packages being present; this was reproduced with the official 0.49.2 binary.
 
-Live providers, Hyprland/layer-shell placement and real GPU behavior were not qualified by these private-Xvfb runs. No live focus change, restart or reload was performed. Unread storage remains bounded: compaction keeps at most 200 events, prioritizing attention while reserving the current event's canonical ID; at capacity an older unread event can be evicted.
+Native docks were exercised on Kitty 0.50. Older running processes are rejected by the controller's version gate. Pixel views remain opt-in with cell fallback. No daemon, new provider connection or global chord was added.
 
-## PR review fixes
+Live providers, Hyprland/layer-shell placement and real GPU behavior were not qualified by private-Xvfb runs. No live restart was performed during qualification. Unread storage remains bounded: compaction keeps at most 200 events, prioritizing attention while reserving the current event's canonical ID; at capacity an older unread event can be evicted. The internal folded-occurrence marker prevents re-merging distinct retained events and is omitted from public snapshots.
 
-All eleven CodeRabbit inline findings were confirmed and addressed. Regression tests cover absent window-ID ownership, shared CLI errors, delayed report IDs through compaction (including discarded intervening history), OS-window movement scope, applicable-axis Zoom, local source cache age/live status and selection aging out. Compacted adds carry an internal folded-occurrence marker; public snapshots omit it. CI now installs the renderer libraries and treats missing graphics dependencies as a failure. The rig uses observable-state and stable-frame waits with deadlines; disabled-graphics and missing-library controls both fail as intended.
-
-Hosted CI was green on the original feature commit, but its graphics step could skip. Results for the stricter revised commit remain pending.
-
-## Hosted-runtime follow-up
-
-The strict graphics check exposed that upstream self-contained Kitty binaries cannot import the runner's system Cairo/GI extensions. The smoke matrix now builds pinned Kitty release sources against the runner's system Python and asserts renderer imports before tests. A temporary source build of 0.49.2 passed the actual pixel/scroll rig locally; the original bundled 0.49.2 reproduced the missing-GI fallback and passed the existing sidebar rig. The intermittent hosted absorb failure has not reproduced locally; its exact-pane-count assertion remains, with a longer completion deadline and private window diagnostics on failure.
-
-The scroll test now uses enough cards to overflow the viewport and captures its baseline after Undo. A disabled-PageDown control passed before the fix and now fails specifically at the scroll assertion, comparing a fixed top-card text region that excludes clocks and footer timers. Updated hosted results remain pending.
-
-The remaining post-Undo repaint race is guarded in the UI: Dismiss must visibly replace the top card and Undo must visibly restore its text before the baseline is accepted. Text-mask matching tolerates selection colors while excluding clocks/timers. Both a stale dismissed-frame control (despite restored stored counts) and a disabled-PageDown control are rejected. No product code changes are needed for this test correction.
-
-The first hosted source build stopped at its required Symbols Nerd Font input before compilation. CI now supplies the pinned v3.4.0 Mono font in each source tree. The upstream build helper was checked with host font lookup forced empty: missing font failed, then the pinned file passed. The next hosted matrix remains pending.
-
-Source builds also require `slangc`; the local machine had it while the runner did not. CI now fetches the pinned portable Slang v2026.18.2 compiler before building Kitty and checks its version. Fresh shader generation was exercised with an explicitly missing compiler and the pinned compiler to verify the dependency boundary. Updated hosted results remain pending.
+The earlier intermittent hosted absorb count mismatch did not reproduce locally with bundled or source-built Kitty 0.49.2. Its exact pane-count assertion remains, with a completion deadline, private window diagnostics, isolated home/usage/socket directories and an other-Kitty tripwire. All three final hosted compatibility jobs passed.

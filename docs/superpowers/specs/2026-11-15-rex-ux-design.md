@@ -1,6 +1,6 @@
 # Rex-inspired kittymux UI
 
-Status: approved direction (user: “okay go ahead do those”), implemented on the feature branch; qualification and review in progress.
+Status: implementation and review complete. Qualification is recorded in `docs/rex-ux-qualification-2026-11-15.md`; PR #45 tracks integration.
 
 Make the existing native pixel panel a consistent home for Agents, Usage and Inbox. Keep Kitty as the terminal and preserve the scanner, meter and inbox contracts. No new daemon, provider polling loop, automatic agent input, or live restart.
 
