@@ -101,7 +101,7 @@ CATALOG: tuple[Switch, ...] = (
     Switch("usage-live", "Opt-in", "Live usage requests", "Ask each provider for your quota, with your own login.", False, risk=NETWORK,
            consequence="kittymux will contact each provider's API with your own login to read your quotas, about every 5 minutes.",
            **_legacy_on("KITTYMUX_USAGE_LIVE", ("1", "on", "true", "yes"), "usage-live-on")),
-    Switch("deckpx", "Opt-in", "Pixel Agents list", "Draw the panel's Agents list in pixels. Off keeps the cell list.", False),
+    Switch("deckpx", "Opt-in", "Pixel panel views", "Draw Agents, Usage and Inbox in pixels. Off keeps the cell views.", False),
     Switch("pxcover", "Opt-in", "Pixel panel hides the bar", "While the pixel Agents list shows, hide the cell tab bar it repeats.", True,
            flag_off="pxcover-off"),
     Switch("pxbar", "Opt-in", "Pixel tab bar", "Draw the tab bar as a picture: real logos and fonts, hover from the shader.", False),

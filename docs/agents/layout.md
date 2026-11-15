@@ -1,5 +1,8 @@
 # Module map
 
+- `python/kittymux_panelpx.py` draws graphical Usage and expandable Inbox with the deck's painter/resources/transport; `sidebar-kit.py` owns input, ID-stable selection, scrolling and fallback. `python/kittymux_usagebridge.py` reads only the sibling rice T3 cache on the existing worker, normalizing presentation fields and keeping sample ages; no token/RPC/provider fetch.
+- `python/kittymux_panecontrols.py` owns explicit-parent pane dock lifecycle/actions; `python/pane-controls-kit.py` is its no-UI controller and strip UI. `kittymux pane-controls` resolves its own socket, verifies the running process's version inside Kitty and never selects a different Kitty on failure. Close delegates to `close-kit.py`.
+
 Which file owns what. Read it before adding, moving or duplicating code: most bugs in this repository were a second copy of a rule that one module should own.
 
 Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and the "read before you change" table); this page is the reference for one area.

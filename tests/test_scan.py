@@ -1354,9 +1354,13 @@ class PspErrorTests(ScanBase):
             quiet = KS._announce(w, "error", "claude", "agent", "mentioned in the log")
             self.assertEqual(quiet, "inbox only")
             popen.assert_not_called()
+            original_id = KS._inbox().load(self.state)[0]["id"]
             outcome = KS._announce(w, "error", "claude", "agent", "build failed", tag="psp")
         self.assertNotIn("merged", outcome)
         self.assertEqual(popen.call_count, 1)
+        event = KS._inbox().load(self.state)[0]
+        self.assertEqual((event["id"], event["body"], event["count"]), (original_id, "build failed", 2))
+        self.assertEqual(popen.call_args.args[0][9], original_id)  # the notification hint must resolve to the stored event
 
 
 class QuietTests(ScanBase):

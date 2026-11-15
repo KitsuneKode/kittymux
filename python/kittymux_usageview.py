@@ -200,6 +200,8 @@ def _live_chips(kit: U.Kit, data, provider: dict, name: str, now: float, bg: int
     live = data.get("live") if isinstance(data, dict) else None
     entry = live.get(name) if isinstance(live, dict) else None
     chips = []
+    if provider.get('sample_age_unknown'):
+        chips.append(kit.chip('sample age unknown', 'warm', on=bg))
     if isinstance(entry, dict) and entry.get("rows"):
         ts = M.num(entry.get("ts"))
         if ts and ts > 0:

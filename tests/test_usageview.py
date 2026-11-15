@@ -337,6 +337,11 @@ class PortedFromTheTextDashboardTests(unittest.TestCase):
         self.assertNotIn("sample", fresh)
         self.assertIn("sample 3h", old)
 
+    def test_unknown_account_sample_age_is_visible_in_the_cell_fallback(self):
+        provider = {'name': 'codex', 'rows': [{'label': '5h', 'pct': 40}], 'sample_age_unknown': True}
+        body = text(V.view({'ts': NOW, 'providers': [provider]}, None, 38, 0, kit(), NOW, TODAY))
+        self.assertIn('sample age unknown', body)
+
     def test_trend_input_is_validated(self):
         junk = [None, 5, {"provider": "x"}, {"provider": "claude", "row": True, "at": NOW, "pct": 1}, {"provider": "claude", "row": 0, "at": float("nan"), "pct": 1},
                 {"provider": "claude", "row": 0, "at": NOW, "pct": 500}, {"provider": "other", "row": 0, "at": NOW, "pct": 1}]

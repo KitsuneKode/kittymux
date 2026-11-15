@@ -21,6 +21,7 @@ KEYS = {
     ],
     "inbox": [
         ("j k", "move down / up"), ("⏎", "go to the agent"), ("x X", "dismiss this / all in the filter"), ("z", "undo the last dismissal"),
+        ("d space", "expand / collapse the message"), ("pgup pgdn", "scroll the message"),
         ("tab 1-4", "change the filter"), ("g G", "first / last"), ("r", "reload"), ("a u s", "Agents / Usage / Settings"), ("q", "quit the panel"),
     ],
     "settings": [
@@ -31,7 +32,7 @@ KEYS = {
 MOUSE = {
     "agents": [("hover", "preview a tab or pane"), ("click", "go to it"), ("right-click", "mute / unmute it"), ("▸ ▾", "open / close a split's panes"), ("drag edge", "resize the panel")],
     "usage": [("click a tile", "pick that provider")],
-    "inbox": [("click a card", "pick it"), ("Jump / Dismiss", "act on the picked card"), ("a chip", "filter")],
+    "inbox": [("click a card", "pick it"), ("click a summary", "expand the pixel card"), ("Jump / Dismiss", "act on the picked card"), ("a chip", "filter")],
     "settings": [("a row", "pick it"), ("a state", "turn it on or off"), ("a preset", "apply it"), ("a button", "answer the question")],
 }
 TITLES = {"agents": "Agents", "usage": "Usage", "inbox": "Inbox", "settings": "Settings"}
@@ -44,7 +45,8 @@ def view(name: str, cols: int, kit: U.Kit) -> list:
     cols = max(8, int(cols))
     inner = kit.inner_width(cols)
     bg = p.card
-    rows: list = [kit.fit_line([U.S(f"{TITLES[name]} keys", kit.ink(p.text, bg), bg, bold=True)], inner, bg), kit.blank(inner, bg)]
+    hint = kit.fit_line([U.S("? or esc closes this", kit.ink(p.faint, bg, 3.0), bg)], inner, bg)
+    rows: list = [kit.fit_line([U.S(f"{TITLES[name]} keys", kit.ink(p.text, bg), bg, bold=True)], inner, bg), hint, kit.blank(inner, bg)]
     for group in (KEYS[name], MOUSE[name]):
         keyw = max(U.line_cells([U.S(kittymux_place.clean(k))], kit.cells) for k, _ in group)       # one cap width per group: the descriptions line up
         capw = keyw + 2
@@ -57,5 +59,4 @@ def view(name: str, cols: int, kit: U.Kit) -> list:
                 lead = [cap] if i == 0 else [U.S(" " * capw, None, bg)]
                 rows.append(kit.fit_line(lead + [U.S(" " + chunk, kit.ink(p.muted, bg), bg)], inner, bg))
         rows.append(kit.blank(inner, bg))
-    rows.append(kit.fit_line([U.S("? or esc closes this", kit.ink(p.faint, bg, 3.0), bg)], inner, bg))
     return [kit.blank(cols, p.bar)] + kit.card(rows, cols)

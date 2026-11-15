@@ -54,6 +54,7 @@ import kittymux_switches  # noqa: E402
 import kittymux_meters  # noqa: E402
 import kittymux_ui  # noqa: E402
 import kittymux_usageview  # noqa: E402
+import kittymux_usagebridge  # noqa: E402
 import kittymux_place  # noqa: E402
 import kittymux_titles  # noqa: E402
 import kittymux_files  # noqa: E402
@@ -455,6 +456,11 @@ class Sidebar(Handler):
         self._inbox, self._inbox_mtime, self._inbox_sel, self._inbox_filter, self._inbox_scroll = [], -1.0, 0, "all", 0
         self._inbox_regions = ([], [], [])        # (filter chips, cards, buttons) in BODY line coordinates, rebuilt on every draw
         self._inbox_undo = None                   # (ids, expires on the monotonic clock) of the last dismissal, while `z` can still take it back
+        self._inbox_expanded = None               # event ID; expansion never acknowledges or focuses the agent
+        self._inbox_follow = None
+        self._panelpx_scroll = {"usage": 0.0, "inbox": 0.0}
+        self._panelpx_follow = None
+        self._panelpx_hover = None
         self._settings_sel, self._settings_scroll, self._settings_asking, self._settings_notice = 0, 0, None, None
         self._settings_regions = ([], [], [], [])   # (rows, state pills, presets, confirm buttons) in BODY line coordinates, rebuilt on every draw
         self._settings_apply_handle = None          # the coalesced reload of the running kitties after a change
@@ -517,6 +523,7 @@ class Sidebar(Handler):
                 if getattr(self, "_view", "agents") == "agents":
                     snap = self._collector.collect()
                 usage = kittymux_files.read_json(_STATE_DIR / "agent-usage.json", {})
+                usage = kittymux_usagebridge.shared(_STATE_DIR, usage)
                 trends = kittymux_files.read_json(_STATE_DIR / "agent-usage-trends.json", {})
                 self._post(self._apply_usage, usage, trends)
                 self._post(self._apply_side, *self._load_side())
@@ -551,6 +558,7 @@ class Sidebar(Handler):
         else:
             self._usage_sel = (self._usage_sel + (-1 if k in ("LEFT", "H") else 1)) % count
         self._usage_scroll = 0
+        self._panelpx_scroll["usage"] = 0.0
         self.draw_screen()
 
     def _inbox_items(self) -> list:
@@ -578,6 +586,17 @@ class Sidebar(Handler):
             self._inbox_sel = 0
         elif len(k) == 1 and k in "1234":
             self._inbox_filter, self._inbox_sel = keys[int(k) - 1], 0
+        elif k in ("D", "SPACE", " "):
+            items = self._inbox_items()
+            if items:
+                eid = items[min(self._inbox_sel, len(items) - 1)].get("id")
+                self._inbox_expanded = None if self._inbox_expanded == eid else eid
+        elif k in ("PAGE_UP", "PAGE_DOWN"):
+            delta = max(1, self.screen_size.rows - 3) * (-1 if k == "PAGE_UP" else 1)
+            if self._deckpx_on():
+                self._panelpx_scroll["inbox"] = max(0.0, self._panelpx_scroll["inbox"] + delta * getattr(self.screen_size, "cell_height", 18))
+            else:
+                self._inbox_scroll = max(0, self._inbox_scroll + delta)
         elif k == "ENTER":
             self._inbox_act("jump")
             return
@@ -627,11 +646,22 @@ class Sidebar(Handler):
         self.draw_screen()
 
     def _inbox_reload(self) -> None:
-        self._inbox = kittymux_inbox.load(str(_STATE_DIR))
+        self._replace_inbox(kittymux_inbox.load(str(_STATE_DIR)))
         try:
             self._inbox_mtime = os.stat(kittymux_inbox.store_path(str(_STATE_DIR))).st_mtime
         except OSError:
             self._inbox_mtime = 0.0
+
+    def _replace_inbox(self, events) -> None:
+        """Retain identity while time/severity sorting moves rows under the selected event."""
+        before = self._inbox_items()
+        picked = before[self._inbox_sel].get("id") if 0 <= self._inbox_sel < len(before) else None
+        self._inbox = events
+        after = self._inbox_items()
+        self._inbox_sel = next((i for i, e in enumerate(after) if e.get("id") == picked),
+                               min(self._inbox_sel, max(0, len(after) - 1)))
+        if self._inbox_expanded not in {e.get("id") for e in after}:
+            self._inbox_expanded = None
 
     def _undo_live(self) -> bool:
         return bool(self._inbox_undo) and time.monotonic() < self._inbox_undo[1]
@@ -679,7 +709,8 @@ class Sidebar(Handler):
             self._usage_history, changed = history, True
         if events is not None:
             badge_moved = kittymux_inboxview.unread(events) != kittymux_inboxview.unread(self._inbox)
-            self._inbox, self._inbox_mtime = events, mtime
+            self._replace_inbox(events)
+            self._inbox_mtime = mtime
             changed = changed or badge_moved or getattr(self, "_view", "agents") == "inbox"     # the deck only redraws when the badge moved
         if changed:
             self.draw_screen()
@@ -702,6 +733,9 @@ class Sidebar(Handler):
             pass
 
     def _set_view(self, view):
+        if view != self._view:
+            self._px_clear()
+            self._panelpx_hover = None
         self._view = view
         self._help = False
         self._foot_hot = None
@@ -800,13 +834,17 @@ class Sidebar(Handler):
         self._usage_regions = list(v.tiles)
 
     def _draw_inbox(self, cols, height):
-        v = kittymux_inboxview.view(self._inbox, self._inbox_filter, self._inbox_sel, self._body_width(cols), self.kit)
+        v = kittymux_inboxview.view(self._inbox, self._inbox_filter, self._inbox_sel, self._body_width(cols), self.kit,
+                                   expanded=self._inbox_expanded)
         self._inbox_sel = v.sel
         page, top = max(1, height - 3), self._inbox_scroll
-        if v.cards:                                                       # keep the picked card on screen
+        items = self._inbox_items()
+        follow = (items[v.sel].get("id") if items else None, self._inbox_expanded)
+        if v.cards and follow != self._inbox_follow:                       # manual scrolling survives redraws and fresh events
             y0, y1, _ = v.cards[v.sel]
-            top = 0 if v.sel == 0 else len(v.lines) if v.sel == v.count - 1 else y0 if y0 < top else y1 - page if y1 > top + page else top      # the last card reveals what is under it (the ledger)
-        footer = [("⏎", "jump", "ENTER"), ("x", "dismiss", "X"), ("j k", "move"), ("tab", "filter", "TAB")]       # buttons first: a narrow panel drops from the right
+            top = y0 if y1 - y0 > page else 0 if v.sel == 0 else len(v.lines) if v.sel == v.count - 1 else y0 if y0 < top else y1 - page if y1 > top + page else top
+        self._inbox_follow = follow
+        footer = [("⏎", "jump", "ENTER", "go"), ("x", "dismiss", "X"), ("d", "hide" if self._inbox_expanded else "details", "D"), ("j k", "move"), ("tab", "filter", "TAB")]
         if self._undo_live():                                             # the way back is offered where the hand just was, replacing what it does not need
             footer = [("z", "undo " + (f"{len(self._inbox_undo[0])} dismissed" if len(self._inbox_undo[0]) > 1 else "dismiss"), "Z")] + footer[:2]
         self._inbox_scroll = self._draw_body(cols, height, v.header, v.lines, top, footer)
@@ -1366,7 +1404,111 @@ class Sidebar(Handler):
         return on
 
     def _deckpx_on(self) -> bool:
-        return bool(getattr(self, "_px_active", False)) and getattr(self, "_view", "agents") == "agents" and not self._help
+        return bool(getattr(self, "_px_active", False)) and getattr(self, "_view", "agents") in ("agents", "usage", "inbox") and not self._help
+
+    def _draw_panel_px(self) -> bool:
+        """Usage and Inbox share Agents' probe, resource cache, transport and teardown."""
+        if not self._deckpx_enabled():
+            return False
+        mods = self._pxmods()
+        if not mods:
+            return False
+        if self._gfx is None:
+            self._gfx_probe()
+            return False
+        if self._gfx != "ok":
+            return False
+        import kittymux_panelpx as panelpx
+        deckpx, _adapt, transport = mods
+        cols, rows_n, _bar_w = self._geom()
+        cw, ch = self.screen_size.cell_width or 1, self.screen_size.cell_height or 1
+        width, height = self._body_width(cols) * cw, max(0, (rows_n - 1) * ch)
+        self._px_fits = width >= 140 and height >= panelpx.HEADER_END + panelpx.FOOTER_H + 40
+        if not self._px_fits:
+            return False
+        self._px_w, self._px_h = width, height
+        view = self._view
+        resources = getattr(self, "_px_res", None) or deckpx.Resources()
+        self._px_res = resources
+        scroll = self._panelpx_scroll[view]
+        room = height - panelpx.HEADER_END - panelpx.FOOTER_H
+        items = self._inbox_items() if view == "inbox" else []
+        selected = items[self._inbox_sel].get("id") if items else None
+        now = time.time()
+        def render(offset):
+            if view == "usage":
+                return panelpx.usage(self._usage_data, self._usage_history, self._usage_sel, self.pal, width, height,
+                                     now=now, details=self._usage_details, scroll=offset,
+                                     hover=self._panelpx_hover, resources=resources)
+            return panelpx.inbox(self._inbox, self._inbox_filter, selected, self.pal, width, height,
+                                 now=now, expanded=self._inbox_expanded, scroll=offset,
+                                 hover=self._panelpx_hover, undo=self._undo_live(), resources=resources)
+        # Snapshot signatures retain values, not mutable dictionaries owned by the collector.
+        sig = (view, width, height, repr(self.pal), repr(self._usage_data if view == "usage" else self._inbox),
+               repr(self._usage_history) if view == "usage" else self._inbox_filter,
+               self._usage_sel if view == "usage" else selected, self._usage_details if view == "usage" else self._inbox_expanded,
+               self._panelpx_hover, self._undo_live(), int(now // 60), scroll)
+        result = None
+        if sig != self._px_sig or self._px is None:
+            result = render(scroll)
+            follow = (view, selected, self._inbox_expanded, width, height)
+            if view == "inbox" and follow != self._panelpx_follow and result.selected_bounds:
+                top, bottom = result.selected_bounds
+                scroll = top if bottom - top > room or top < scroll else bottom - room if bottom > scroll + room else scroll
+            self._panelpx_follow = follow
+            scroll = max(0.0, min(scroll, max(0, result.content_height - room)))
+            if scroll != self._panelpx_scroll[view]:
+                result = render(scroll)
+            self._panelpx_scroll[view] = scroll
+            self._px_cancel_fade()
+            self._px_step_stop()
+            self._px_last = None
+        self._foot_y, self._foot_regions = -1, []
+        self.write(set_cursor_position(0, 0) + self._tabs_line(self._body_width(cols)))
+        blank = self._seg(" " * self._body_width(cols), bg=self.pal.bar)
+        for y in range(1, rows_n):
+            self.write(set_cursor_position(0, y) + blank)
+        self._draw_handle(cols, rows_n)
+        if result is not None:
+            if self._px is None:
+                self._px = transport.Graphics(_PxOut(self), "auto")
+            self._px.clear_spinner()
+            surf = result.surface
+            self._px.show(transport.rgba_of(surf), surf.get_width(), surf.get_height(), col=1, row=2, z=1)
+            self._px_hits = result.hits
+            self._px_sig = sig
+        self._px_active = True
+        self.flush()
+        return True
+
+    def _panelpx_click(self, mouse_event) -> None:
+        hit = self._px_hit(mouse_event)
+        if not hit:
+            return
+        kind, value = hit
+        if kind == "key":
+            self._press(value)
+        elif kind == "provider" and self._view == "usage":
+            self._usage_sel, self._usage_scroll = int(value), 0
+            self._panelpx_scroll["usage"] = 0.0
+            self.draw_screen()
+        elif self._view == "inbox":
+            if kind == "filter":
+                self._inbox_filter, self._inbox_sel = value, 0
+                self._panelpx_scroll["inbox"] = 0.0
+                self.draw_screen()
+                return
+            items = self._inbox_items()
+            index = next((i for i, e in enumerate(items) if e.get("id") == value), None)
+            if index is None:
+                return                                      # an event removed after drawing is not a different row
+            self._inbox_sel = index
+            if kind in ("jump", "dismiss"):
+                self._inbox_act(kind, index)
+            elif kind == "expand":
+                self._inbox_key("D", False)
+            else:
+                self.draw_screen()
 
     def _px_clear(self) -> None:
         gfx = getattr(self, "_px", None)
@@ -1710,9 +1852,9 @@ class Sidebar(Handler):
     def draw_screen(self) -> None:
         view = getattr(self, "_view", "agents")
         pixel = False
-        if view == "agents" and not self._help:
+        if view in ("agents", "usage", "inbox") and not self._help:
             try:
-                pixel = bool(self._draw_agents_px())
+                pixel = bool(self._draw_agents_px() if view == "agents" else self._draw_panel_px())
             except Exception:
                 _log_error()
                 self._gfx = "no"
@@ -1901,7 +2043,10 @@ class Sidebar(Handler):
                 self._usage_pick(k)
             elif k in ("J", "K", "UP", "DOWN", "PAGE_UP", "PAGE_DOWN"):
                 delta = (-1 if k in ("K", "UP", "PAGE_UP") else 1) * (max(1, self.screen_size.rows - 3) if k.startswith("PAGE") else 1)
-                self._usage_scroll = max(0, self._usage_scroll + delta)
+                if self._deckpx_on():
+                    self._panelpx_scroll["usage"] = max(0.0, self._panelpx_scroll["usage"] + delta * self.screen_size.cell_height)
+                else:
+                    self._usage_scroll = max(0, self._usage_scroll + delta)
                 self.draw_screen()
             return
         if view == "inbox":
@@ -2006,7 +2151,10 @@ class Sidebar(Handler):
             over = self._can_drag() and deck.in_grab_zone(mouse_event.pixel_x // max(1, self.screen_size.cell_width), cols)
             if not over:
                 step = -48 if mouse_event.buttons == MouseButton.WHEEL_UP else 48
-                self._px_scroll = getattr(self, "_px_scroll", 0.0) + step
+                if self._view in ("usage", "inbox"):
+                    self._panelpx_scroll[self._view] = max(0.0, self._panelpx_scroll[self._view] + step)
+                else:
+                    self._px_scroll = getattr(self, "_px_scroll", 0.0) + step
                 self.draw_screen()
                 return
         super().on_mouse_event(mouse_event)
@@ -2061,6 +2209,13 @@ class Sidebar(Handler):
         return None
 
     def on_mouse_move(self, mouse_event) -> None:
+        if self._view in ("usage", "inbox") and self._deckpx_on():
+            hot = self._px_hit(mouse_event) if self._px_inside(mouse_event) else None
+            if hot != self._panelpx_hover:
+                self._panelpx_hover = hot
+                self._pointer("pointer" if hot else "")
+                self.draw_screen()
+            return
         hit = self._foot_hit(mouse_event)
         hot = hit[0] if hit else None
         if hot != getattr(self, "_foot_hot", None):
@@ -2121,6 +2276,10 @@ class Sidebar(Handler):
                     if name != view:
                         self._set_view(name)
                     return
+            return
+        if view in ("usage", "inbox") and self._deckpx_on():
+            if self._px_inside(mouse_event):
+                self._panelpx_click(mouse_event)
             return
         if view == "usage":
             scroll = self._usage_scroll

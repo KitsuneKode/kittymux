@@ -37,6 +37,11 @@ ROWS = [{"kind": "event", "agent": "claude", "tone": "urgent", "text": "◆  cla
 
 
 class BuildTests(unittest.TestCase):
+    def test_pane_controls_are_discoverable_as_a_fixed_scoped_command(self):
+        self.assertEqual(P.ACTIONS['pane-controls'][2], ['pane-controls', 'toggle'])
+        items = P.build([], [])
+        self.assertTrue(any(it['action'] == {'op': 'run', 'id': 'pane-controls'} for it in items))
+
     def test_groups_come_in_order_and_each_keeps_its_own_order(self):
         items = P.build(TABS, ROWS)
         groups = [it["group"] for it in items]
@@ -236,7 +241,7 @@ class ValidateTests(unittest.TestCase):
         self.assertNotIn("ack", P.validate_action({"op": "jump", "pid": 1, "w": 2, "ack": "no spaces; allowed"}))
 
     def test_every_fixed_action_has_a_kittymux_argv_that_is_a_known_verb(self):
-        verbs = {"join", "peek", "panel", "notify", "sessions"}
+        verbs = {"join", "peek", "panel", "pane-controls", "notify", "sessions"}
         for key, (_title, _hint, argv) in P.ACTIONS.items():
             self.assertIn(argv[0], verbs, key)
             self.assertTrue(all(isinstance(a, str) and not a.startswith("-") or a == "--waiting" for a in argv), key)

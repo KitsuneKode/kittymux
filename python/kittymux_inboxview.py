@@ -105,7 +105,7 @@ def _wrap(kit: U.Kit, text: str, width: int, rows: int) -> list:
     return lines[:rows]
 
 
-def _event_rows(kit: U.Kit, ev: dict, inner: int, selected: bool, now: float) -> tuple:
+def _event_rows(kit: U.Kit, ev: dict, inner: int, selected: bool, now: float, expanded: bool = False) -> tuple:
     """Returns (rows, button_row_index or None, [(x0, x1, action)] for that row relative to the card's inner left edge)."""
     p = kit.p
     bg = p.card_hi if selected else p.card
@@ -126,10 +126,13 @@ def _event_rows(kit: U.Kit, ev: dict, inner: int, selected: bool, now: float) ->
     title = str(ev.get("title") or "")
     body = kittymux_place.clean(str(ev.get("body") or ""))
     text = title or body
-    for line in _wrap(kit, text, inner, TEXT_ROWS):
+    title_lines = kittymux_deck.wrap_words(kittymux_place.clean(text), inner, kit.cells) if expanded else _wrap(kit, text, inner, TEXT_ROWS)
+    for line in title_lines:
         rows.append(kit.fit_line([U.S(line, kit.ink(p.muted if dim else p.text, bg), bg)], inner, bg))
-    if body and title and ev["kind"] in ("permission", "question"):
-        rows.append(kit.fit_line([U.S(" " + body + " ", kit.ink(p.text, p.bar), p.bar)], inner, bg))
+    if body and title and body != title:
+        body_lines = kittymux_deck.wrap_words(body, inner, kit.cells) if expanded else _wrap(kit, body, inner, TEXT_ROWS)
+        for line in body_lines:
+            rows.append(kit.fit_line([U.S(line, kit.ink(p.text, bg), bg)], inner, bg))
     if ev["kind"] == "limit":
         reset = M.num(ev.get("reset_at"))
         rows.append(kit.gauge(100.0, inner, bg, tone="hot"))
@@ -209,7 +212,7 @@ def _ledger(kit: U.Kit, events, cols: int, now: float) -> list:
     return [kit.blank(cols, p.bar)] + kit.card(rows, cols)
 
 
-def view(events, filt: str, sel: int, cols: int, kit: U.Kit, now: float | None = None) -> InboxView:
+def view(events, filt: str, sel: int, cols: int, kit: U.Kit, now: float | None = None, *, expanded: str | None = None) -> InboxView:
     """Never raises. `sel` indexes the VISIBLE list (clamped); the caller keeps it in range across refreshes."""
     p = kit.p
     now = time.time() if now is None else now
@@ -235,7 +238,7 @@ def view(events, filt: str, sel: int, cols: int, kit: U.Kit, now: float | None =
         return InboxView(header, chips, lines, [], [], 0, 0)
     for i, ev in enumerate(items):
         selected = i == sel
-        rows, button_row, regions = _event_rows(kit, ev, inner, selected, now)
+        rows, button_row, regions = _event_rows(kit, ev, inner, selected, now, ev.get("id") == expanded)
         card = kit.card(rows, cols, selected=selected, accent=selected)
         y0 = len(lines)
         lines += card

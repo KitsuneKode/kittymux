@@ -45,7 +45,7 @@ set to the program name. An event written before this field has no `source`; tre
              {"kind": "limit", "reset_at": 1790009000, "…": "…"} ] }
 ```
 
-`events` is newest first (at most 60). `pid` + `w` identify the kitty process and window. In **private mode** (`notify-private`) `body` is empty.
+`events` is newest first among the included events (at most 60). Unread needs-you events are retained before other unread events, then read history; recency decides within each priority. Counts cover the retained store, not only this projection. Log compaction keeps up to 200 events using the same priority, always retaining the current added event. At capacity, one new event may therefore replace an older unread event. Notification actions use the retained canonical ID after merging. `pid` + `w` identify the kitty process and window. In **private mode** (`notify-private`) `body` is empty.
 `id` is stable. New fields may be added; consumers must ignore unknown ones (bumping `version` only for breaking changes). Two optional fields come from folding the log: `t0`, when the
 event first appeared (`t` moves to the newest report of a merged event), and `ack_t`, when it first stopped being unread (you focused its window, read or dismissed it). `kittymux inbox ledger`
 turns them into how long agents waited on you.
@@ -166,5 +166,5 @@ author's machine); the contract above is what is tested (`tests/test_inbox.py`, 
 
 ## Cost and bounds
 
-Events are rare (a state change, a notification): a few small appends a minute at most, nothing per scanner tick. The log is bounded by bytes (256 KB, compacted to the newest 200 events), the
+Events are rare (a state change, a notification): a few small appends a minute at most, nothing per scanner tick. The log is bounded by bytes (256 KB, compacted to 200 events), the
 snapshot by count (60), and the in-kitty "unread windows" set by the number of windows. Nothing here retains screen text.

@@ -61,6 +61,10 @@ class QueuedLoop:
 
 
 class SidebarTests(unittest.TestCase):
+    def test_usage_bridge_is_loaded_while_the_runner_source_path_is_available(self):
+        mod = load_sidebar()
+        self.assertTrue(callable(mod.kittymux_usagebridge.shared))
+
     def test_hover_waits_briefly_and_old_result_is_rejected_immediately(self):
         s = self.sidebar()
         with patch.object(s._preview_worker, "submit") as submit, patch.object(s._preview_worker, "invalidate") as invalidate:
@@ -760,6 +764,72 @@ class SidebarTests(unittest.TestCase):
         self.assertEqual(s._inbox_filter, "limits")
         s.finalize()
 
+    def test_new_inbox_events_preserve_the_selected_event_identity(self):
+        import kittymux_inbox as I
+        s = self.sidebar()
+        s._view = "inbox"
+        def event(w, ago):
+            e = I.make_event("question", "codex", w, "agent", time.time() - ago, pid=42, title="Which file?")
+            e.pop("op")
+            return e
+        a, b, arrived = event(7, 200), event(8, 100), event(9, 0)
+        s._inbox, s._inbox_sel = [a, b], 1
+        picked = s._inbox_items()[s._inbox_sel]["id"]
+        s._apply_side(None, [a, b, arrived], 5)
+        self.assertEqual(s._inbox_items()[s._inbox_sel]["id"], picked)
+        s.finalize()
+
+    def test_inbox_detail_key_expands_without_jump_or_acknowledgment(self):
+        s = self.sidebar()
+        s._view, s._inbox = "inbox", self.inbox_events()
+        picked = s._inbox_items()[0]["id"]
+        with patch.object(s, "_inbox_act") as act, patch.object(self.m.kittymux_inbox, "ack") as ack:
+            s._inbox_key("D", False)
+            self.assertEqual(s._inbox_expanded, picked)
+            s._inbox_key("D", False)
+            self.assertIsNone(s._inbox_expanded)
+            act.assert_not_called()
+            ack.assert_not_called()
+        s.finalize()
+
+    def test_pixel_inbox_pointer_actions_keep_event_ids_and_expansion_is_not_jump(self):
+        s = self.sidebar()
+        s._view, s._inbox = "inbox", self.inbox_events()
+        picked = s._inbox_items()[1]["id"]
+        with patch.object(s, "_px_hit", return_value=("expand", picked)), patch.object(s, "_inbox_act") as act:
+            s._panelpx_click(types.SimpleNamespace())
+            self.assertEqual(s._inbox_items()[s._inbox_sel]["id"], picked)
+            self.assertEqual(s._inbox_expanded, picked)
+            act.assert_not_called()
+        with patch.object(s, "_px_hit", return_value=("dismiss", picked)), patch.object(s, "_inbox_act") as act:
+            s._panelpx_click(types.SimpleNamespace())
+            act.assert_called_once_with("dismiss", 1)
+        s.finalize()
+
+    def test_pixel_body_keys_scroll_without_changing_the_selected_event(self):
+        s = self.sidebar()
+        s._view, s._inbox = "inbox", self.inbox_events()
+        s._px_active = True
+        s._inbox_expanded = s._inbox_items()[0]["id"]
+        s._panelpx_scroll = {"usage": 0.0, "inbox": 0.0}
+        s._inbox_key("PAGE_DOWN", False)
+        self.assertGreater(s._panelpx_scroll["inbox"], 0)
+        self.assertEqual(s._inbox_sel, 0)
+        s.finalize()
+
+    def test_pixel_views_dispatch_through_the_same_graphics_fallback(self):
+        s = self.sidebar()
+        s.draw_screen = type(s).draw_screen.__get__(s)
+        for view in ("usage", "inbox"):
+            s._view = view
+            with patch.object(s, "_draw_panel_px", return_value=True) as draw, patch.object(s, "_sync_cover"), \
+                    patch.object(s, "_draw_usage") as cells, patch.object(s, "_draw_inbox") as inbox_cells:
+                s.draw_screen()
+                draw.assert_called_once()
+                cells.assert_not_called()
+                inbox_cells.assert_not_called()
+        s.finalize()
+
     def test_g_and_shift_g_and_home_end_jump_to_the_ends_of_the_inbox(self):
         s = self.sidebar()
         s._view, s._inbox = "inbox", self.inbox_events()
@@ -928,6 +998,19 @@ class SidebarTests(unittest.TestCase):
         self.assertIn("Jump", out)
         chips, cards, buttons = s._inbox_regions
         self.assertEqual((len(chips), len(cards), len(buttons)), (4, 3, 2))        # all four filters even in a 32 column panel
+        s.finalize()
+
+    def test_cell_inbox_keeps_jump_and_dismiss_in_a_narrow_footer(self):
+        s = self.sidebar()
+        s.draw_screen = type(s).draw_screen.__get__(s)
+        self.draw_ready(s)
+        s._view, s._inbox = 'inbox', self.inbox_events()
+        for width in (26, 38):
+            s.screen_size.cols = width
+            with patch.object(self.m, 'set_cursor_position', lambda x, y: f'@{x},{y}:'):
+                s.draw_screen()
+            tokens = {region[2] for region in s._foot_regions}
+            self.assertTrue({'ENTER', 'X'} <= tokens, (width, tokens))
         s.finalize()
 
     def test_an_empty_inbox_and_empty_usage_draw_without_error(self):

@@ -1,5 +1,7 @@
 # Verification: every test and rig
 
+- `bash tests/smoke_panelpx.sh` drives graphical Usage/Inbox, details, dismiss/undo and a Kitty 0.50 pane dock in a private Xvfb Kitty with synthetic local/shared-cache data. `THEME=light COLS=26 OUT=/tmp/shots` covers narrow/light; `KMX_PANELPX_CONTROL=1` must fail at the graphics assertion. It compares other Kitty window counts. This qualifies X11 transport/input, not Wayland placement or real-provider data.
+
 What each check proves and when to run it. A failing rig is information about the rig AND the code: read the rule about rigs in AGENTS.md before trusting or changing one.
 
 Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and the "read before you change" table); this page is the reference for one area.

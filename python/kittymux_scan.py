@@ -1284,15 +1284,15 @@ def _announce(window, kind: str, agent: str, source: str, detail: str, *, confid
         # A text-only error is inbox-only. If the agent's own OSC 7501 error then merges into it, the
         # popup was never sent. A different message is a different report even inside the merge window.
         prior = inbox.matching_unread(state_dir(), ev) if kind == "error" and tag == "psp" else None
-        is_new, _ = inbox.add(state_dir(), ev)
+        is_new, canonical = inbox.add(state_dir(), ev)
         if is_new:
             vars(_RT).setdefault("unread", set()).add(wid)
         if not is_new:
             same = prior is not None and prior.get("tag") == "psp" and (prior.get("body") or "") == (ev.get("body") or "")
             if kind == "error" and tag == "psp" and not same:
-                return _notify(window, "error", detail, agent, ev.get("id") or "", origin)
+                return _notify(window, "error", detail, agent, canonical.get("id") or "", origin)
             return "merged into an earlier report of the same thing: no second popup"
-        told = (ev.get("id") or "", origin)
+        told = (canonical.get("id") or "", origin)
         if kind in ("permission", "question"):
             return _notify(window, "waiting", detail, agent, *told)
         if kind == "limit":

@@ -82,6 +82,8 @@ jobs:
         run: bash tests/smoke_fanout.sh
       - name: inbox from real OSC 99 agent notifications
         run: bash tests/smoke_inbox.sh
+      - name: pixel Usage and Inbox, stable details, and optional pane controls
+        run: bash tests/smoke_panelpx.sh
       - name: the panel's Settings view (open, toggle, lock, confirm, click, presets, one reload for a burst)
         run: bash tests/smoke_settings.sh
       - name: tab clicks survive wobble; agent tabs survive a stray middle-click

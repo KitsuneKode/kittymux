@@ -5,6 +5,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 ## [Unreleased]
 
 ### Added
+- **Graphical Usage and Inbox** share the pixel Agents panel (`kittymux features on deckpx`): remaining quota, reset and pace markers, provider cards, expandable messages and keyboard/pointer actions. A recent rice T3 cache supplies separate account segments without another provider connection; absent providers keep local collectors.
+- **Narrow panel controls** keep the help exit hint at the top and retain Jump and Dismiss in the cell footer.
+- **`kittymux pane-controls`** optionally docks Split right, Split down, Zoom, Move to tab, Close and Hide beside a pane on a running Kitty 0.50 or newer. Commands target that pane and Close uses the existing busy-agent guard.
 - **`tools/record-demo.sh`** records the launch demo reproducibly: `kittymux demo` with the pixel bar on a private Xvfb display, driven by real input, with a neutral shell; writes an MP4 and a GIF.
 - **OpenCode can report its own state** (`kittymux hooks --opencode --install`): a plugin turns its events into working / waiting (with the permission or question it asked) / done, instead of kittymux reading its screen.
 - **`kittymux doctor` names a working key for a job whose chord the window manager takes**: `ctrl+alt+e` → kitty's own `ctrl+shift+f7` (number the panes), `ctrl+alt+shift+w` → `ctrl+shift+q` (close the tab).
@@ -16,6 +19,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 - **T3 Code** (`t3`) is a known program: its tab shows T3 Code's own mark (traced from the app's icon by `tools/trace-t3code.py`) on its night-sky gradient.
 
 ### Fixed
+- **Inbox refresh keeps the selected event**, error cards retain their body, and `d` or Space expands details without acknowledging or jumping. Page Up/Down scrolls long messages.
+- **Merged notifications use their stored event ID.** Unread attention outranks read history in the bounded snapshot and compaction, so routine history cannot displace an older prompt.
 - **`kittymux demo` panes hand back to your own shell** (`$SHELL`) instead of a bare `bash`, which loaded the system profile and showed its `user@host` prompt. **`KITTYMUX_HOST`** names the machine in the bar's header and the panel instead of the real hostname; `tools/record-demo.sh` sets it, and now also starts kitty with the Mesa OpenGL vendor so it records on machines whose default GLX is NVIDIA's. The README demo GIF is re-recorded with the pixel bar.
 - **Agents are called by their product names in the pixel bar** before they name their task: Antigravity read "Agy", Cursor Agent "Cursor-agent" (the bar's short names, such as "Claude", stay).
 - **Antigravity and OpenCode no longer read as "needs you" when a finished reply quotes a prompt's words.** An agent without hooks is judged by its screen, so a reply mentioning "use arrow keys to navigate, enter to select" looked like a menu; their idle composer, drawn only while idle, now marks such text as old.

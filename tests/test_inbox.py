@@ -6,6 +6,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
 import kittymux_inbox as I  # noqa: E402
@@ -158,6 +159,34 @@ class FoldTests(unittest.TestCase):
         self.assertEqual((s["version"], s["unread"], s["needs_you"]), (1, 2, 1))
         self.assertEqual([e["kind"] for e in s["events"]], ["done", "permission"])   # newest first
 
+    def test_snapshot_keeps_old_unread_attention_before_new_read_history(self):
+        events = I.fold([ev("permission", w=1, t=1.0), ev("error", w=2, t=2.0),
+                         ev("done", w=3, t=3.0), ev("info", w=4, t=4.0),
+                         {"op": "ack", "ids": [], "w": "3", "pid": 42, "t": 5.0},
+                         {"op": "ack", "ids": [], "w": "4", "pid": 42, "t": 5.0}])
+        snap = I.snapshot(events, 6.0, limit=3)
+        self.assertEqual([e["w"] for e in snap["events"]], ["4", "2", "1"])
+        self.assertEqual((snap["unread"], snap["needs_you"]), (2, 1))
+
+    def test_snapshot_caps_attention_but_counts_every_unread_event(self):
+        events = I.fold([ev("permission", w=1, t=1.0), ev("question", w=2, t=2.0),
+                         ev("permission", w=3, t=3.0), ev("error", w=4, t=4.0)])
+        snap = I.snapshot(events, 5.0, limit=2)
+        self.assertEqual([e["w"] for e in snap["events"]], ["3", "2"])
+        self.assertEqual((snap["unread"], snap["needs_you"]), (4, 3))
+
+    def test_snapshot_orders_merged_events_by_their_latest_report(self):
+        events = I.fold([ev("permission", w=1, t=1.0), ev("done", w=2, t=2.0),
+                         ev("permission", w=1, t=3.0)])
+        self.assertEqual([e["w"] for e in I.snapshot(events, 4.0)["events"]], ["1", "2"])
+
+    def test_snapshot_zero_or_negative_capacity_keeps_counts_without_rows(self):
+        events = I.fold([ev("permission", w=1, t=1.0), ev("done", w=2, t=2.0)])
+        for limit in (0, -1):
+            snap = I.snapshot(events, 3.0, limit=limit)
+            self.assertEqual(snap["events"], [])
+            self.assertEqual((snap["unread"], snap["needs_you"]), (2, 1))
+
 
 class SettleTests(unittest.TestCase):
     """A prompt that no longer needs you leaves the inbox's "needs you" (2026-11-12: an Antigravity permission event stayed
@@ -222,6 +251,63 @@ class StoreTests(unittest.TestCase):
         self.assertFalse(I.add(self.d, ev("permission", src="screen", t=102.0))[0])
         I.ack(self.d, 103.0, window=7, pid=42)                                     # you looked: a new occurrence is new again
         self.assertTrue(I.add(self.d, ev("permission", src="screen", t=104.0))[0])
+
+    def test_add_returns_the_canonical_merged_event_and_its_authoritative_body(self):
+        first = ev("error", src="screen", t=100.0, body="mentioned in the log", confidence="low")
+        I.add(self.d, first)
+        incoming = ev("error", src="agent", t=102.0, body="build failed", tag="psp")
+        new, canonical = I.add(self.d, incoming)
+        self.assertFalse(new)
+        self.assertEqual(canonical["id"], first["id"])
+        self.assertNotEqual(canonical["id"], incoming["id"])
+        self.assertEqual((canonical["body"], canonical["confidence"], canonical["tag"]), ("build failed", "high", "psp"))
+        self.assertEqual((canonical["sources"], canonical["count"], canonical["t0"], canonical["t"]),
+                         (["agent", "screen"], 2, 100.0, 102.0))
+        self.assertEqual(canonical, I.load(self.d)[0])
+
+    def test_compaction_keeps_old_unread_prompts_and_the_canonical_merge(self):
+        first = ev("permission", w=1, t=1.0, body="Allow the edit?")
+        ops = [first]
+        for i in range(I.KEEP_EVENTS + 5):
+            history = ev("info", w=i + 10, t=100.0 + i)
+            history["status"] = "read"
+            ops.append(history)
+        with open(I.store_path(self.d), "w") as f:
+            f.write("".join(json.dumps(op) + "\n" for op in ops))
+        with mock.patch.object(I, "STORE_MAX_BYTES", 1):
+            new, canonical = I.add(self.d, ev("permission", w=1, t=2.0, src="agent", body="Allow the edit?"))
+        self.assertFalse(new)
+        retained = I.load(self.d)
+        self.assertEqual(len(retained), I.KEEP_EVENTS)
+        self.assertEqual(canonical["id"], first["id"])
+        self.assertEqual(canonical, retained[0])
+        self.assertEqual(retained[-1]["w"], str(I.KEEP_EVENTS + 14))
+        snap = jload(I.snapshot_path(self.d))
+        self.assertIn(first["id"], [e["id"] for e in snap["events"]])
+        self.assertEqual((snap["unread"], snap["needs_you"]), (1, 1))
+
+    def test_compaction_bounds_unread_attention_and_keeps_the_newest_in_each_priority(self):
+        events = I.fold([ev("permission", w=i, t=float(i)) for i in range(I.KEEP_EVENTS + 1)]
+                        + [ev("error", w=900, t=900.0)])
+        retained = I.fold(I.compact(events))
+        self.assertEqual(len(retained), I.KEEP_EVENTS)
+        self.assertEqual([e["w"] for e in retained], [str(i) for i in range(1, I.KEEP_EVENTS + 1)])
+
+    def test_add_keeps_its_canonical_event_when_compaction_is_full_of_unread_attention(self):
+        first = ev("info", w=900, t=1.0)
+        ops = [first] + [ev("permission", w=i, t=100.0 + i) for i in range(I.KEEP_EVENTS + 1)]
+        with open(I.store_path(self.d), "w") as f:
+            f.write("".join(json.dumps(op) + "\n" for op in ops))
+        with mock.patch.object(I, "STORE_MAX_BYTES", 1):
+            new, canonical = I.add(self.d, ev("info", w=900, t=2.0))
+        self.assertFalse(new)
+        retained = I.load(self.d)
+        self.assertEqual(len(retained), I.KEEP_EVENTS)
+        self.assertEqual(canonical["id"], first["id"])
+        self.assertEqual(canonical, retained[0])
+        self.assertEqual([e["w"] for e in retained[1:]], [str(i) for i in range(2, I.KEEP_EVENTS + 1)])
+        snap = jload(I.snapshot_path(self.d))
+        self.assertEqual((len(snap["events"]), snap["unread"], snap["needs_you"]), (I.SNAPSHOT_EVENTS, I.KEEP_EVENTS, I.KEEP_EVENTS - 1))
 
     def test_the_store_is_bounded_by_compaction(self):
         for i in range(1200):

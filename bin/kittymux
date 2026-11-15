@@ -34,6 +34,7 @@
                          features [list] | on NAME | off NAME | preset minimal|default|full     (kittymux features -h)
   kittymux settings    every on/off setting in one list (bar, notifications, safety, opt-in), what each does and why it is on or off:
                          settings [list] | on NAME [--yes] | off NAME | reset NAME|GROUP|all | apply | open     (the panel's Settings view is the same list: press s)
+  kittymux pane-controls optional top pane dock (running Kitty >= 0.50): pane-controls [show|hide|toggle] | split-right|split-down|zoom|move-to-tab|close
   kittymux panel       persistent agent-and-usage panel: panel [toggle|start|stop|status|summon|dock|wider|narrower|width N]
   kittymux client      the Quickshell sidebar beside kitty (Wayland): client [start|stop|toggle|status]
   kittymux usage       provider quotas, resets and local usage: usage [--window] (Mod+N → Usage opens a separate window from any app)
@@ -3418,6 +3419,51 @@ def uninstall(argv: list[str]) -> int:
     return 0
 
 
+def pane_controls_cmd(argv: list[str]) -> int:
+    """Optional native dock; keyboard equivalents never give the dock focus."""
+    import kittymux_panecontrols as controls
+    usage = ("usage: kittymux pane-controls [show|hide|toggle|split-right|split-down|zoom|move-to-tab|close] [--window ID]\n"
+             "Inside Kitty: acts on your own pane. Outside: set KITTYMUX_TARGET=unix:/owned/socket and --window ID.\n"
+             "Requires running Kitty >= 0.50. The dock keeps typing in your pane; use these commands for keyboard actions.\n"
+             "Close uses the existing busy-agent guard; repeat close to confirm. Zoom selects the parent pane.")
+    if argv in (["--help"], ["-h"]):
+        print(usage)
+        return 0
+    action, explicit = 'toggle', None
+    args = list(argv)
+    if args and not args[0].startswith('--'):
+        action = args.pop(0)
+    if args:
+        if len(args) != 2 or args[0] != '--window':
+            print(usage, file=sys.stderr)
+            return 2
+        explicit = args[1]
+    if action not in (*controls.ACTIONS, 'show', 'toggle'):
+        print(usage, file=sys.stderr)
+        return 2
+    own_id = os.environ.get('KITTY_WINDOW_ID', '')
+    wid = explicit if explicit is not None else own_id
+    if not wid or not wid.isdecimal() or int(wid) <= 0:
+        print(usage, file=sys.stderr)
+        return 2
+    if own_id:
+        # Do not let a panel's target override redirect a command from a pane.
+        sock = _own_kitty_socket()
+    else:
+        target = os.environ.get('KITTYMUX_TARGET', '')
+        sock = target if target.startswith('unix:') and _owned_socket(target[5:]) and explicit else None
+    if not sock:
+        print('pane-controls: no owned target socket; use allow_remote_control socket-only and listen_on unix:${XDG_RUNTIME_DIR}/mykitty', file=sys.stderr)
+        return 2
+    code, result = _run(['kitten', '@', '--to', sock, 'kitten', '--match', f'id:{int(wid)}',
+                         os.path.join(HOME_DIR, 'python', 'pane-controls-kit.py'), action, str(int(wid))])
+    if code or not result.strip() or result.startswith('ERROR:'):
+        print(result.strip() or 'pane-controls: parent unavailable or action failed; no other kitty was selected', file=sys.stderr)
+        return 1
+    print(result.strip())
+    return 0
+
+
 def workflow_cmd(argv: list[str]) -> int:
     """Internal shared entry point for nav/newtab/scratch and session shell shims."""
     if not argv or argv == ["--help"]:
@@ -3493,6 +3539,8 @@ def _dispatch(argv: list[str]) -> int:
         return keys_cmd(argv[1:])
     if cmd == "join":
         return join_cmd(argv[1:])
+    if cmd == "pane-controls":
+        return pane_controls_cmd(argv[1:])
     if cmd == "panel":
         return panel_cmd(argv[1:])
     if cmd == "client":

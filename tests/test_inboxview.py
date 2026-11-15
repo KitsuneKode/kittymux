@@ -92,6 +92,22 @@ class OrderTests(unittest.TestCase):
 
 
 class LayoutTests(unittest.TestCase):
+    def test_error_cards_keep_the_failure_and_recovery_text(self):
+        events = [ev("error", title="Codex reported an error", body="Compiler missing. Install cc and retry.")]
+        for colors in (TOKYO, LATTE):
+            body = text(IV.view(events, "all", 0, 52, kit(colors), NOW))
+            self.assertIn("Compiler missing", body)
+            self.assertIn("Install cc", body)
+
+    def test_expanding_reveals_the_end_of_a_long_message_without_changing_status(self):
+        event = ev("error", title="Codex reported an error", body="A long compiler diagnostic " * 8 + "RECOVERY_END")
+        event["body"] = "A long compiler diagnostic " * 8 + "RECOVERY_END"
+        collapsed = text(IV.view([event], "all", 0, 26, kit(), NOW))
+        expanded = text(IV.view([event], "all", 0, 26, kit(), NOW, expanded=event["id"]))
+        self.assertNotIn("RECOVERY_END", collapsed)
+        self.assertIn("RECOVERY_END", expanded)
+        self.assertEqual(event["status"], "unread")
+
     def test_every_line_is_exactly_the_panel_width(self):
         for colors in (TOKYO, LATTE):
             for kw in ({}, {"cells": wide, "rounded": False}):

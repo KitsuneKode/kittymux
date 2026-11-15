@@ -47,6 +47,12 @@ class CardTests(unittest.TestCase):
         for want in ("find a tab", "open / close a split", "pull this tab", "quit the panel"):
             self.assertIn(want.split()[0], body)
 
+    def test_close_hint_survives_a_short_narrow_viewport(self):
+        k = next(kits())
+        for name in H.KEYS:
+            text = '\n'.join(U.plain(line) for line in H.view(name, 24, k)[:7])
+            self.assertIn('esc closes', text)
+
     def test_no_description_is_split_in_the_middle_of_a_word(self):
         k = next(kits())
         for name in H.KEYS:

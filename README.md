@@ -160,6 +160,7 @@ OS window ──┬── session: work      (visible — bar shows these tabs o
 | `ctrl+alt+shift+q` | **quick look**: the peek card of the agent that has waited longest, without leaving this tab (`⏎` goes there, `esc` stays; `kittymux peek [TAB_ID]` for any tab) |
 | `ctrl+alt+shift+g` | new agent in its own git worktree + tab |
 | `ctrl+alt+b` | sidebar deck — tabs grouped by session, hover/click, live pane preview (`J`/`K` jump sessions · `/` search by title, branch, folder, agent, state or message · `a` pulls the selected tab's panes into this tab · `t` turns the hovered/focused pane into its own tab) |
+| Panel Inbox: `d` / Space · Page Up/Down | expand/collapse details · scroll; Enter jumps, `x` dismisses, `z` undoes |
 | `ctrl+alt+shift+b` | **docked sidebar panel** — the deck as an always-visible left column that reserves screen space (Wayland/Hyprland) |
 | `ctrl+alt+;` | send a prompt to a background agent pane |
 | `ctrl+alt+shift+e` | move the tab bar: left → bottom → top → right (this kitty only) |
@@ -404,6 +405,10 @@ switches. Set `KITTYMUX_ACCENT=#rrggbb` to pin the accent (default: your
 theme's `active_border_color`).
 
 ## Agent usage collectors
+
+The panel's **Pixel panel views** setting (`kittymux features on deckpx`) gives Agents, Usage and Inbox a consistent graphical view. Usage shows quota remaining, resets, pace and freshness. A recent rice T3 cache supplies separate account segments without another provider connection. In Inbox, `d` or Space expands a message without marking it read; Page Up/Down scrolls, Enter jumps, `x` dismisses and `z` undoes.
+
+For controls beside a pane, run `kittymux pane-controls` on a running Kitty 0.50 or newer. Its optional top strip offers split, zoom, move-to-tab and guarded close; `kittymux pane-controls --help` lists the keyboard-equivalent commands. No new global chord is installed.
 
 `python/collectors/*.py` — one file per provider, auto-discovered:
 

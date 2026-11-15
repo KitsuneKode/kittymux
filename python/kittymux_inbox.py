@@ -217,18 +217,35 @@ def is_duplicate(existing: list[dict], ev: dict) -> bool:
     return False
 
 
+def _retained(events: list[dict], limit: int, keep_id: str | None = None) -> list[dict]:
+    """Bound the view by attention, then recency; return included events oldest first."""
+    limit = max(0, limit)
+    indexed = list(enumerate(events))
+
+    def priority(item):
+        index, event = item
+        unread = event.get("status") == "unread"
+        rank = 0 if unread and event.get("severity") == "needs-you" else 1 if unread else 2
+        return rank, -event.get("t", 0), -index
+
+    kept = [item for item in indexed if keep_id is not None and item[1].get("id") == keep_id][:limit]
+    remaining = [item for item in indexed if keep_id is None or item[1].get("id") != keep_id]
+    kept.extend(sorted(remaining, key=priority)[:limit - len(kept)])
+    return [event for _, event in sorted(kept, key=lambda item: (item[1].get("t", 0), item[0]))]
+
+
 def snapshot(events: list[dict], now: float, limit: int = SNAPSHOT_EVENTS) -> dict:
-    """What a shell widget reads: counts plus the newest events first. Schema version 1."""
-    newest = list(reversed(events))[:limit]
+    """Schema v1: full retained-store counts, attention before history, included events newest first."""
+    newest = list(reversed(_retained(events, min(SNAPSHOT_EVENTS, limit))))
     unread = [e for e in events if e.get("status") == "unread"]
     return {"version": 1, "updated": round(now, 1), "unread": len(unread),
             "needs_you": sum(1 for e in unread if e.get("severity") == "needs-you"), "events": newest}
 
 
-def compact(events: list[dict]) -> list[dict]:
-    """The operations that rebuild `events` (newest KEEP_EVENTS) as a fresh log: adds with their current status, nothing else."""
+def compact(events: list[dict], keep_id: str | None = None) -> list[dict]:
+    """Rebuild at most KEEP_EVENTS by attention then recency, preserving this write's canonical event if supplied."""
     out = []
-    for ev in events[-KEEP_EVENTS:]:
+    for ev in _retained(events, KEEP_EVENTS, keep_id):
         op = dict(ev)
         op["op"] = "add"
         out.append(op)
@@ -290,13 +307,13 @@ def _locked(state_dir: str, wait: bool = True):
     return fd
 
 
-def _refresh(state_dir: str, now: float) -> list[dict]:
+def _refresh(state_dir: str, now: float, keep_id: str | None = None) -> list[dict]:
     """Fold the log, compact it if it grew past STORE_MAX_BYTES, rewrite the snapshot. Caller holds the lock."""
     path = store_path(state_dir)
     events = fold(read_ops(path))
     try:
         if os.path.getsize(path) > STORE_MAX_BYTES:
-            _write_atomic(path, "".join(json.dumps(op, separators=(",", ":")) + "\n" for op in compact(events)))
+            _write_atomic(path, "".join(json.dumps(op, separators=(",", ":")) + "\n" for op in compact(events, keep_id)))
             events = fold(read_ops(path))
     except OSError:
         pass
@@ -305,16 +322,19 @@ def _refresh(state_dir: str, now: float) -> list[dict]:
 
 
 def add(state_dir: str, ev: dict) -> tuple[bool, dict]:
-    """Record an event. Returns (is_new, event): is_new is False when it merged into an unread event from the last MERGE_WINDOW_S (nothing to
-    announce again). Never raises."""
+    """Record an event. Return (is_new, canonical folded event), whose ID survives a merge and this write's compaction.
+    is_new is False for a merge into an unread event inside MERGE_WINDOW_S. On failure, return the input event; never raise."""
     try:
         fd = _locked(state_dir)
         try:
             existing = fold(read_ops(store_path(state_dir)))
-            dup = is_duplicate(existing, ev)
+            previous = next((old for old in reversed(existing) if merge_key(old) == merge_key(ev)), None)
+            dup = previous is not None and previous.get("status") == "unread" and abs(ev.get("t", 0) - previous.get("t", 0)) <= MERGE_WINDOW_S
+            canonical_id = previous["id"] if dup else ev["id"]
             _append(store_path(state_dir), ev)
-            _refresh(state_dir, ev["t"])
-            return (not dup), ev
+            events = _refresh(state_dir, ev["t"], keep_id=canonical_id)
+            canonical = next(event for event in events if event["id"] == canonical_id)
+            return (not dup), canonical
         finally:
             os.close(fd)
     except Exception:

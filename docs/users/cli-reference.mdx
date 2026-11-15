@@ -203,6 +203,23 @@ kittymux settings open
 
 A setting that changes what leaves your machine, what moves your focus or whether agents resume without asking (`usage-live`, `attention`, `resume-auto`) needs `--yes` to turn on, and the command prints what it will do first. Turning any setting off never asks. `apply` reloads the running kitties once; the other commands do it for you. `open` shows the Settings view in a running panel.
 
+## `kittymux pane-controls`
+
+Show an action strip above this pane, on a running Kitty 0.50 or newer. It keeps typing in the pane and follows the pane when you move it to another tab. Close uses the same busy-agent confirmation as your close key.
+
+```sh
+kittymux pane-controls           # toggle the strip
+kittymux pane-controls show
+kittymux pane-controls hide
+kittymux pane-controls split-right
+kittymux pane-controls split-down
+kittymux pane-controls zoom
+kittymux pane-controls move-to-tab
+kittymux pane-controls close
+```
+
+The action commands are keyboard equivalents of the buttons. From outside Kitty, set `KITTYMUX_TARGET` to an owned Unix control socket and pass `--window ID`; an ambiguous target is refused. Older running Kitty processes are refused before creating a dock. No new global shortcut is installed.
+
 ## `kittymux panel`
 
 A persistent native kitty Wayland panel with Agents and Usage views. It stays open after actions. Bind its toggle in your window manager to reach it from any app.

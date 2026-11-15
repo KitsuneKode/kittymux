@@ -29,6 +29,7 @@ ACTIONS = {
     "join": ("Join this tab into another", "ctrl+alt+shift+j", ["join"]),
     "peek": ("Quick look at the agent that has waited longest", "ctrl+alt+shift+q", ["peek", "--waiting"]),
     "panel": ("Show or hide the docked panel", "ctrl+alt+shift+b", ["panel", "toggle"]),
+    "pane-controls": ("Show or hide this pane's controls (Kitty 0.50+)", "", ["pane-controls", "toggle"]),
     "mute": ("Quiet popups and bells for an hour (the inbox keeps everything)", "", ["notify", "mute", "1h"]),
     "unmute": ("Bring popups and bells back", "", ["notify", "unmute"]),
     "save": ("Save this session with its agent conversations", "", ["sessions", "save"]),
