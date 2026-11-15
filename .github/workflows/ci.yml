@@ -68,6 +68,10 @@ jobs:
           mkdir -p "$RUNNER_TEMP/kitty-src"
           curl -fsSL "https://github.com/kovidgoyal/kitty/releases/download/v${{ matrix.kitty }}/kitty-${{ matrix.kitty }}.tar.xz" -o "$RUNNER_TEMP/kitty-src/kitty.tar.xz"
           tar -xf "$RUNNER_TEMP/kitty-src/kitty.tar.xz" -C "$RUNNER_TEMP/kitty-src"
+          # A required upstream build input; never depend on host user fonts.
+          curl -fsSL https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/NerdFontsSymbolsOnly.tar.xz -o "$RUNNER_TEMP/kitty-src/symbols.tar.xz"
+          mkdir -p "$RUNNER_TEMP/kitty-src/kitty-${{ matrix.kitty }}/fonts"
+          tar -xf "$RUNNER_TEMP/kitty-src/symbols.tar.xz" -C "$RUNNER_TEMP/kitty-src/kitty-${{ matrix.kitty }}/fonts" SymbolsNerdFontMono-Regular.ttf
           curl -fsSL https://github.com/simd-everywhere/simde/archive/refs/tags/v0.8.2.tar.gz -o "$RUNNER_TEMP/kitty-src/simde.tar.gz"
           tar -xf "$RUNNER_TEMP/kitty-src/simde.tar.gz" -C "$RUNNER_TEMP/kitty-src"
       - uses: actions/setup-go@v5

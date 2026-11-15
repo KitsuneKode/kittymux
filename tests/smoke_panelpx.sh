@@ -93,18 +93,32 @@ shot() {
     rm -f "$RUN/candidate.png"
     while [ "$SECONDS" -lt "$deadline" ]; do
         kitty @ --to "$SOCK" screenshot "$RUN/frame.png" >/dev/null 2>&1 || continue
+        if [ "$label" = inbox-restored ] && [ "${KMX_PANELPX_UNDO_UI_CONTROL:-0}" = 1 ]; then
+            cp "$OUT/inbox-dismissed.png" "$RUN/frame.png"   # simulate a delayed restored UI despite the restored log count
+        fi
         if [ -n "$previous" ] && cmp -s "$RUN/frame.png" "$OUT/$previous.png"; then sleep .1; continue; fi
         if [ -f "$RUN/candidate.png" ] && cmp -s "$RUN/frame.png" "$RUN/candidate.png"; then
-            if [ "$label" = inbox-scroll ]; then
-                # Only the top card's fixed text area: excludes age labels,
-                # countdowns and footer timers that can change without scroll.
-                if python3 - "$RUN/frame.png" "$OUT/$previous.png" <<'PYSCROLL'
-from PIL import Image, ImageChops
+            if [[ "$label" = inbox-scroll || "$label" = inbox-restored || "$label" = inbox-dismissed ]]; then
+                reference=inbox
+                [ "$label" != inbox-scroll ] || reference=$previous
+                # Match visible text, ignoring selection backgrounds, clocks
+                # and footer timers. A log-count change is not a UI repaint.
+                if python3 - "$RUN/frame.png" "$OUT/$reference.png" "$label" <<'PYFRAME'
+from PIL import Image, ImageChops, ImageStat
 import sys
-current, baseline = (Image.open(p).convert('RGB') for p in sys.argv[1:])
-box = (20, 170, min(current.width - 20, 160), 205)
-sys.exit(0 if ImageChops.difference(current.crop(box), baseline.crop(box)).getbbox() else 1)
-PYSCROLL
+def text_mask(path):
+    im = Image.open(path).convert('L')
+    im = im.crop((20, 172, min(im.width - 20, 160), 195))
+    bg = ImageStat.Stat(im).median[0]
+    return im.point(lambda value: 255 if (value > bg + 24 if bg < 128 else value < bg - 24) else 0)
+a, b = (text_mask(path) for path in sys.argv[1:3])
+intersection = ImageChops.darker(a, b).histogram()[255]
+union = ImageChops.lighter(a, b).histogram()[255]
+if not union:
+    sys.exit(1)
+same_card = intersection / union >= .85
+sys.exit(0 if same_card == (sys.argv[3] == 'inbox-restored') else 1)
+PYFRAME
                 then :; else sleep .1; continue; fi
             fi
             cp "$RUN/frame.png" "$OUT/$label.png"; return
@@ -144,6 +158,7 @@ click 160 "$((WIN_H - 16))"
 dismissed() { [ "$(unread)" = "$((BEFORE_UNREAD - 1))" ]; }
 wait_until "dismissed event" dismissed
 [ "$(unread)" = "$((BEFORE_UNREAD - 1))" ] || fail 'dismiss did not target the selected event'
+shot inbox-dismissed
 key z
 restored() { [ "$(unread)" = "$BEFORE_UNREAD" ]; }
 wait_until "restored event" restored
