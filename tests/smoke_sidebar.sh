@@ -15,9 +15,20 @@ done
 
 T=$(mktemp -d "${TMPDIR:-/tmp}/kmx-side.XXXXXX")
 CFG=$T/cfg STATE=$T/state SOCK=unix:$T/sock
-mkdir -p "$CFG" "$STATE" && chmod 700 "$STATE"
+mkdir -p "$CFG" "$STATE" "$T/home" && chmod 700 "$STATE"
+export KITTYMUX_SOCKET_DIRS=$T
 XPID="" KPID=""
-cleanup() { [ -n "$KPID" ] && kill "$KPID" 2>/dev/null; [ -n "$XPID" ] && kill "$XPID" 2>/dev/null; rm -rf "$T"; }
+REAL_RUNTIME=${XDG_RUNTIME_DIR:-/nonexistent}
+others() { for s in /tmp/mykitty-* "$REAL_RUNTIME"/mykitty-*; do [ -S "$s" ] && [ "$s" != "${SOCK#unix:}" ] && kitty @ --to "unix:$s" ls 2>/dev/null | python3 -c 'import sys,json;print(sum(len(t["windows"]) for o in json.load(sys.stdin) for t in o["tabs"]))'; done | tr '\n' ' '; }
+OTHERS_BEFORE=$(others)
+cleanup() {
+  rc=$?
+  [ "$(others)" = "$OTHERS_BEFORE" ] || { echo 'FAIL: another Kitty window count changed'; rc=1; }
+  [ -n "$KPID" ] && kill "$KPID" 2>/dev/null
+  [ -n "$XPID" ] && kill "$XPID" 2>/dev/null
+  rm -rf "$T"
+  exit "$rc"
+}
 trap cleanup EXIT
 fail() { echo "FAIL: $*"; cat "$STATE/barsize-debug.log" 2>/dev/null | tail -8; cat "$STATE"/layout-*.json 2>/dev/null; echo; [ -s "$STATE/tab_bar-error.log" ] && sed 's/^/  | /' "$STATE/tab_bar-error.log" | tail -12
          [ -s "$STATE/barsize-debug.log" ] && sed 's/^/  | /' "$STATE/barsize-debug.log" | tail -12; exit 1; }
@@ -42,8 +53,8 @@ geninclude $HOME_DIR/python/kittymux_layout.py
 CONF
 printf 'new_tab one\nlaunch sh\nnew_tab two\nlaunch sh\nnew_tab three\nlaunch sh\nfocus_tab 1\n' > "$T/session"
 
-env -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP \
-  KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 KITTYMUX_DEBUG=1 ${KMX_DECKPX:+KITTYMUX_DECKPX=1} \
+env -u ENV -u WAYLAND_DISPLAY -u KITTY_WINDOW_ID -u KITTY_LISTEN_ON -u KITTY_PID -u KITTYMUX_TARGET -u KITTYMUX_TARGET_PID __GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 DISPLAY=$DISP \
+  HOME=$T/home ZDOTDIR=$T/home KITTYMUX_USAGE_HOME=$T/home KITTY_CONFIG_DIRECTORY=$CFG KITTYMUX_STATE=$STATE KITTYMUX_NOTIFY=0 KITTYMUX_DEBUG=1 ${KMX_DECKPX:+KITTYMUX_DECKPX=1} \
   kitty ${SMOKE_KITTY_ARGS:-} -o linux_display_server=x11 --class kmx-side --listen-on "$SOCK" --session "$T/session" \
   >"$T/kitty.log" 2>&1 &
 KPID=$!
@@ -121,8 +132,17 @@ before=$(tabs_of)
 kitty @ --to "$SOCK" kitten "$HOME_DIR/python/sidebar-kit.py" >/dev/null 2>&1
 sleep 3
 X key j a                                   # select the next tab ("three"), absorb it into the current one ("two")
-for _ in $(seq 20); do [ "$(tabs_of)" = "one:1 two:2" ] && break; sleep 0.4; done   # (the deck overlay closes itself)
+deadline=$((SECONDS + 25))
+while [ "$(tabs_of)" != "one:1 two:2" ] && [ "$SECONDS" -lt "$deadline" ]; do sleep .2; done
 after=$(tabs_of)
+if [ "$after" != "one:1 two:2" ]; then
+  # Only private fixture window identities/titles/commands, never environments.
+  kitty @ --to "$SOCK" ls | python3 -c 'import json,sys
+for o in json.load(sys.stdin):
+ for t in o["tabs"]:
+  for w in t["windows"]: print("absorb diagnostic:",t["title"],w["id"],w.get("title"),w.get("cmdline"),"overlay",w.get("is_overlay"))'
+  [ ! -s "$STATE/sidebar-kit-err.log" ] || tail -20 "$STATE/sidebar-kit-err.log"
+fi
 [ "$after" = "one:1 two:2" ] || fail "absorb: expected 'one:1 two:2', got '$after' (before: '$before')"
 echo "  ok   deck 'a' absorbed the next tab's pane into the current tab ($before → $after)"
 sleep 1

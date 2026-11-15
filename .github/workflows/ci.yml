@@ -56,13 +56,33 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq xvfb xdotool imagemagick libxfixes3 bc jq fzf fontconfig dbus \
-            python3-gi python3-gi-cairo python3-cairo gir1.2-pango-1.0 gir1.2-rsvg-2.0 \
+            python3-gi python3-gi-cairo python3-cairo python3-pil gir1.2-pango-1.0 gir1.2-rsvg-2.0 \
+            build-essential pkg-config python3-dev libpng-dev liblcms2-dev libharfbuzz-dev libfontconfig-dev libssl-dev libxxhash-dev libcairo2-dev \
+            libdbus-1-dev libxcursor-dev libxrandr-dev libxi-dev libxinerama-dev libgl1-mesa-dev libxkbcommon-x11-dev libx11-xcb-dev \
             libgl1-mesa-dri libglx-mesa0 libegl1 libxkbcommon-x11-0 libxcb-xkb1 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 \
             libxcb-image0 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xfixes0 libxcb-xinerama0 libxcursor1 libxi6 libxrandr2
-      - name: kitty ${{ matrix.kitty }}
+      # Bundled Kitty cannot import the runner's Python extension modules.
+      # Build the exact release against system Python so graphics really run.
+      - name: kitty ${{ matrix.kitty }} source
         run: |
-          curl -fsSL https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin launch=n dest="$HOME/.local" installer="version-${{ matrix.kitty }}"
-          echo "$HOME/.local/kitty.app/bin" >> "$GITHUB_PATH"
+          mkdir -p "$RUNNER_TEMP/kitty-src"
+          curl -fsSL "https://github.com/kovidgoyal/kitty/releases/download/v${{ matrix.kitty }}/kitty-${{ matrix.kitty }}.tar.xz" -o "$RUNNER_TEMP/kitty-src/kitty.tar.xz"
+          tar -xf "$RUNNER_TEMP/kitty-src/kitty.tar.xz" -C "$RUNNER_TEMP/kitty-src"
+          curl -fsSL https://github.com/simd-everywhere/simde/archive/refs/tags/v0.8.2.tar.gz -o "$RUNNER_TEMP/kitty-src/simde.tar.gz"
+          tar -xf "$RUNNER_TEMP/kitty-src/simde.tar.gz" -C "$RUNNER_TEMP/kitty-src"
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ runner.temp }}/kitty-src/kitty-${{ matrix.kitty }}/go.mod
+          cache: false
+      - name: build kitty ${{ matrix.kitty }} with renderer-compatible Python
+        working-directory: ${{ runner.temp }}/kitty-src/kitty-${{ matrix.kitty }}
+        env:
+          CFLAGS: -I${{ runner.temp }}/kitty-src/simde-0.8.2
+        run: |
+          /usr/bin/python3 setup.py build --ignore-compiler-warnings
+          ./kitty/launcher/kitty --version
+          ./kitty/launcher/kitty +runpy 'import cairo, gi; gi.require_version("PangoCairo", "1.0"); gi.require_version("Rsvg", "2.0"); from gi.repository import PangoCairo, Rsvg'
+          echo "$PWD/kitty/launcher" >> "$GITHUB_PATH"
       - name: fresh-machine install / uninstall
         run: bash tests/test_install.sh
       - name: agent states, spinner, tab hit-testing (real kitty)

@@ -145,7 +145,7 @@ The preview drawer under the list shows the last lines of the hovered tab's scre
 
 ### Usage
 
-Turn on **Pixel panel views** in Settings, or run `kittymux features on deckpx`, to draw Usage and Inbox with the same proportional text and graphical surfaces as Agents. Unsupported graphics fall back to the cell views. The switch remains opt-in.
+Turn on **Pixel panel views** in Settings, or run `kittymux features on deckpx`, to draw Usage and Inbox with the same proportional text and graphical surfaces as Agents. Unsupported graphics fall back to the cell views. Cairo and GI must be available to Kitty's own Python interpreter; a self-contained Kitty binary may fall back even when system Python can import them. The switch remains opt-in.
 
 Graphical Usage says **remaining** beside the quota, with a reset time and pace marker when known. If rice has a recent T3 Code cache beside the kittymux state directory, each account has its own segment. This reads the existing cache, makes no provider connection, and shows its sample age. Missing or invalid account timestamps say the sample age is unknown. Expired windows await a new sample instead of claiming fresh capacity. Local collectors still supply providers absent from that cache. Missing quota data stays unknown; token totals are not quota percentages.
 

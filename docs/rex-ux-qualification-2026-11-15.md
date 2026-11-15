@@ -32,3 +32,9 @@ Live providers, Hyprland/layer-shell placement and real GPU behavior were not qu
 All eleven CodeRabbit inline findings were confirmed and addressed. Regression tests cover absent window-ID ownership, shared CLI errors, delayed report IDs through compaction (including discarded intervening history), OS-window movement scope, applicable-axis Zoom, local source cache age/live status and selection aging out. Compacted adds carry an internal folded-occurrence marker; public snapshots omit it. CI now installs the renderer libraries and treats missing graphics dependencies as a failure. The rig uses observable-state and stable-frame waits with deadlines; disabled-graphics and missing-library controls both fail as intended.
 
 Hosted CI was green on the original feature commit, but its graphics step could skip. Results for the stricter revised commit remain pending.
+
+## Hosted-runtime follow-up
+
+The strict graphics check exposed that upstream self-contained Kitty binaries cannot import the runner's system Cairo/GI extensions. The smoke matrix now builds pinned Kitty release sources against the runner's system Python and asserts renderer imports before tests. A temporary source build of 0.49.2 passed the actual pixel/scroll rig locally; the original bundled 0.49.2 reproduced the missing-GI fallback and passed the existing sidebar rig. The intermittent hosted absorb failure has not reproduced locally; its exact-pane-count assertion remains, with a longer completion deadline and private window diagnostics on failure.
+
+The scroll test now uses enough cards to overflow the viewport and captures its baseline after Undo. A disabled-PageDown control passed before the fix and now fails specifically at the scroll assertion, comparing a fixed top-card text region that excludes clocks and footer timers. Updated hosted results remain pending.

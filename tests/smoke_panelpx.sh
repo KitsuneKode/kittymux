@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Pixel Usage/Inbox and optional pane docks, synthetic data and a private Xvfb Kitty only.
-# KMX_PANELPX_CONTROL=1 disables graphics and must FAIL. THEME=light COLS=26 OUT=/tmp/shots bash tests/smoke_panelpx.sh
+# KMX_PANELPX_CONTROL=1 disables graphics; KMX_PANELPX_SCROLL_CONTROL=1 disables scrolling. Both must FAIL. THEME=light COLS=26 OUT=/tmp/shots bash tests/smoke_panelpx.sh
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 missing() { if [ "${KMX_REQUIRE_GRAPHICS:-0}" = 1 ]; then echo "FAIL: $*"; exit 1; fi; echo "SKIP: $*"; exit 0; }
 for dep in Xvfb xdotool kitty python3; do command -v "$dep" >/dev/null || missing "$dep missing"; done
-python3 -c 'import cairo, gi; gi.require_version("Pango", "1.0"); gi.require_version("Rsvg", "2.0")' 2>/dev/null || missing 'cairo/Pango/rsvg missing'
+python3 -c 'import cairo, gi; from PIL import Image; gi.require_version("Pango", "1.0"); gi.require_version("Rsvg", "2.0")' 2>/dev/null || missing 'cairo/Pango/rsvg missing'
 RUN=$(mktemp -d /tmp/kmx-panelpx.XXXXXX)
 OUT=${OUT:-$RUN/shots}; THEME=${THEME:-dark}; COLS=${COLS:-38}; LINES_N=36
 REAL_RUNTIME=${XDG_RUNTIME_DIR:-/nonexistent}; XPID='' KPID='' SOCK=''
@@ -61,6 +61,10 @@ state,root=Path(sys.argv[1]),sys.argv[2]
 sys.path.insert(0,root+'/python')
 import kittymux_inbox as I
 I.add(str(state),I.make_event('error','codex',1,'agent',time.time(),pid=42,tab='calm-otter',title='Build failed',body='Compiler missing. Install the compiler, then rerun the build.'))
+# Enough independent cards to require scrolling at both qualified widths.
+for index in range(12):
+    I.add(str(state),I.make_event('info','codex',100+index,'agent',time.time()-600-index,
+        pid=42,tab='calm-otter',title=f'Background update {index+1}',body='Synthetic history for the scroll check.'))
 now=time.time()*1000
 cache=state.parent/'rice'/'usage-t3.json';cache.parent.mkdir()
 cache.write_text(json.dumps({'cachedAt':now,'providers':[{'driver':'codex','accounts':[{'name':label,'checkedAt':now,'windows':[{'id':'session','label':'5 hour','used':used,'resetsAt':now+9000000,'durationMins':300},{'id':'week','label':'Weekly','used':45,'resetsAt':now+172800000,'durationMins':10080}]} for label,used in [('Personal',30),('Work',100)]]}]}))
@@ -91,6 +95,18 @@ shot() {
         kitty @ --to "$SOCK" screenshot "$RUN/frame.png" >/dev/null 2>&1 || continue
         if [ -n "$previous" ] && cmp -s "$RUN/frame.png" "$OUT/$previous.png"; then sleep .1; continue; fi
         if [ -f "$RUN/candidate.png" ] && cmp -s "$RUN/frame.png" "$RUN/candidate.png"; then
+            if [ "$label" = inbox-scroll ]; then
+                # Only the top card's fixed text area: excludes age labels,
+                # countdowns and footer timers that can change without scroll.
+                if python3 - "$RUN/frame.png" "$OUT/$previous.png" <<'PYSCROLL'
+from PIL import Image, ImageChops
+import sys
+current, baseline = (Image.open(p).convert('RGB') for p in sys.argv[1:])
+box = (20, 170, min(current.width - 20, 160), 205)
+sys.exit(0 if ImageChops.difference(current.crop(box), baseline.crop(box)).getbbox() else 1)
+PYSCROLL
+                then :; else sleep .1; continue; fi
+            fi
             cp "$RUN/frame.png" "$OUT/$label.png"; return
         fi
         cp "$RUN/frame.png" "$RUN/candidate.png"
@@ -132,7 +148,11 @@ key z
 restored() { [ "$(unread)" = "$BEFORE_UNREAD" ]; }
 wait_until "restored event" restored
 [ "$(unread)" = "$BEFORE_UNREAD" ] || fail 'undo did not restore the event'
-key Page_Down; shot inbox-scroll inbox-expanded
+shot inbox-restored
+# Discard hover as a cause of change; the keyboard scroll is the only input
+# between this post-Undo baseline and the required next image.
+if [ "${KMX_PANELPX_SCROLL_CONTROL:-0}" != 1 ]; then key Page_Down; fi
+shot inbox-scroll inbox-restored
 key q
 panel_closed() { ! screen | grep -q 'Inbox'; }
 wait_until "panel close" panel_closed
