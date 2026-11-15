@@ -71,19 +71,41 @@ def maximized_axes(tab, window_id: int | None) -> set[str]:
     return axes
 
 
-def zoom_actions(layout: str | None, maximized=()) -> tuple[tuple[str, str, str], ...]:
+def applicable_axes(tab: dict, window_id: int) -> set[str] | None:
+    """Axes on this group's split path; None when no split tree was reported."""
+    state = tab.get('layout_state') or {}
+    if 'pairs' not in state:
+        return None
+    group = next((g['id'] for g in tab.get('groups', []) if window_id in g.get('windows', [])), window_id)
+    def path(node):
+        if node == group:
+            return set()
+        if isinstance(node, dict):
+            for child in ('one', 'two'):
+                found = path(node.get(child))
+                if found is not None:
+                    if node.get('one') is not None and node.get('two') is not None:
+                        found.add('horizontal' if node.get('horizontal', True) else 'vertical')
+                    return found
+        return None
+    return path(state['pairs']) or set()
+
+
+def zoom_actions(layout: str | None, maximized=(), applicable=None) -> tuple[tuple[str, str, str], ...]:
     """Remote-control actions for this layout. Empty on stack (the pane already fills the tab).
 
     kitty toggles each axis on its own (`splits.py` `layout_action` maximize). An axis that is
     already maximized is left alone, so a half-zoomed pane reaches a full zoom instead of swapping
     which axis is maximized. Both axes already maximized: toggle both off (press again to restore)."""
+    # Native pane controls pass the axes on their parent's actual split path.
     name = (layout or "").split(":", 1)[0].strip().lower()
     if name == "stack":
         return ()
-    have = {a for a in maximized if a in ("horizontal", "vertical")}
-    if have == {"horizontal", "vertical"}:
-        return ZOOM
-    missing = tuple(a for a in ("horizontal", "vertical") if a not in have)
+    wanted = {'horizontal', 'vertical'} if applicable is None else set(applicable)
+    have = set(maximized) & wanted
+    if have == wanted:
+        return tuple(step for step in ZOOM if step[-1] in wanted)
+    missing = tuple(a for a in ("horizontal", "vertical") if a in wanted and a not in have)
     return tuple(("layout_action", "maximize", a) for a in missing)
 
 

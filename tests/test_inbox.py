@@ -230,6 +230,24 @@ class SettleTests(unittest.TestCase):
 
 
 class StoreTests(unittest.TestCase):
+    def test_compaction_preserves_delayed_event_ids_and_snapshot_time_order(self):
+        with mock.patch.object(I, 'STORE_MAX_BYTES', 1):
+            reports = [ev('error', t=t) for t in (100, 200, 110)]
+            for report in reports:
+                new, canonical = I.add(self.d, report)
+                self.assertTrue(new)
+                self.assertEqual(canonical['id'], report['id'])
+        self.assertEqual([e['id'] for e in I.load(self.d)], [e['id'] for e in reports])
+        self.assertEqual([e['t'] for e in jload(I.snapshot_path(self.d))['events']], [200, 110, 100])
+
+    def test_retention_does_not_merge_across_a_discarded_intervening_report(self):
+        reports = [ev('error', t=t) for t in (100, 200, 110)]
+        events = I.fold(reports)
+        events[1]['status'] = 'read'
+        with mock.patch.object(I, 'KEEP_EVENTS', 2):
+            retained = I.fold(I.compact(events, keep_id=reports[2]['id']))
+        self.assertEqual([e['id'] for e in retained], [reports[0]['id'], reports[2]['id']])
+
     def setUp(self):
         self.d = tempfile.mkdtemp()
 

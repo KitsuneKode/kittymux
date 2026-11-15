@@ -21,12 +21,12 @@ class ControlsTests(unittest.TestCase):
                               current_layout=SimpleNamespace(name='splits', layout_state=lambda: {}))
         group = SimpleNamespace(dock=None, docks=[])
         tab.windows = SimpleNamespace(group_for_window=lambda w: group)
-        return SimpleNamespace(id=7, user_vars={}, tabref=lambda: tab)
+        return SimpleNamespace(id=7, os_window_id=4, user_vars={}, tabref=lambda: tab)
 
     def boss(self):
         parent = self.parent()
         return SimpleNamespace(window_id_map={7: parent}, active_window=SimpleNamespace(id=99),
-                               call_remote_control=Mock(return_value='8'), run_kitten_with_metadata=Mock())
+                               call_remote_control=Mock(return_value='8'), run_kitten_with_metadata=Mock(), _move_window_to=Mock())
 
     def test_running_version_gate_fails_closed_before_mutation(self):
         for version in [(0, 49, 2), (), '0.50.0', None]:
@@ -89,6 +89,24 @@ class ControlsTests(unittest.TestCase):
         self.assertEqual(call.kwargs['window'].id, 7)
         self.assertEqual(call.kwargs['args'], ('window', 'pane-controls close'))
 
+    def test_move_to_tab_stays_in_original_os_window_after_focus_moves(self):
+        boss = self.boss()
+        parent = boss.window_id_map[7]
+        parent.os_window_id = 4
+        boss._move_window_to = Mock()
+        P.operate(boss, 7, 'move-to-tab', (0, 50, 0), '/synthetic/pane-controls-kit.py', 'kitty')
+        boss._move_window_to.assert_called_once_with(window=parent, target_tab_id='new', target_os_window_id=4)
+
+    def test_zoom_restores_both_two_pane_split_orientations(self):
+        for horizontal in (True, False):
+            boss = self.boss()
+            tab = boss.window_id_map[7].tabref()
+            tab.current_layout.layout_state = lambda: {'pairs': {'one': 7, 'two': 8, 'horizontal': horizontal},
+                'maximized': [{'window_id': 7, 'is_horizontal': horizontal}]}
+            P.operate(boss, 7, 'zoom', (0, 50, 0), '/synthetic/pane-controls-kit.py', 'kitty')
+            actions = [c.args[1] for c in boss.call_remote_control.call_args_list if c.args[1][0] == 'action']
+            self.assertEqual(actions, [('action', '--match=id:7', 'layout_action', 'maximize', 'horizontal' if horizontal else 'vertical')])
+
     def test_narrow_layout_keeps_every_action_reachable(self):
         for width in (1, 8, 18, 26, 80):
             lines, hits = P.strip(width)
@@ -103,6 +121,25 @@ class ControlsTests(unittest.TestCase):
 
 
 class CLITests(unittest.TestCase):
+    def test_own_listener_wins_even_without_window_id(self):
+        with patch.dict('os.environ', {'KITTY_LISTEN_ON': 'unix:/own', 'KITTYMUX_TARGET': 'unix:/other'}, clear=True), \
+             patch.object(self.cli, '_own_kitty_socket', return_value='unix:/own'), \
+             patch.object(self.cli, '_owned_socket', return_value=True), \
+             patch.object(self.cli, '_run', return_value=(0, 'shown')) as run:
+            self.assertEqual(self.cli.pane_controls_cmd(['show', '--window', '7']), 0)
+        self.assertIn('unix:/own', run.call_args.args[0])
+
+    def test_valid_arguments_without_a_socket_use_standard_execution_failure(self):
+        with patch.dict('os.environ', {'KITTY_WINDOW_ID': '7'}, clear=True), \
+             patch.object(self.cli, '_own_kitty_socket', return_value=None), \
+             patch.object(self.cli, '_no_socket', return_value=1) as error:
+            self.assertEqual(self.cli.pane_controls_cmd(['show']), 1)
+            error.assert_called_once_with('pane-controls')
+
+    def test_window_option_uses_shared_missing_value_error(self):
+        with self.assertRaisesRegex(self.cli.kittymux_cliargs.UsageError, '--window needs a value'):
+            self.cli.pane_controls_cmd(['show', '--window'])
+
     @unittest.skipUnless(shutil.which('kitty'), 'Kitty interpreter missing')
     def test_dock_ui_initializes_with_a_unix_listener_without_an_inherited_fd(self):
         code = "import runpy; m=runpy.run_path(" + repr(str(ROOT / 'python/pane-controls-kit.py')) + "); m['main'].initialize()"
@@ -130,6 +167,7 @@ class CLITests(unittest.TestCase):
             self.assertEqual(self.cli.pane_controls_cmd([]), 2)
             run.assert_not_called()
         with patch.dict('os.environ', {'KITTYMUX_TARGET': 'unix:/synthetic', 'KITTY_WINDOW_ID': ''}, clear=True), \
+             patch.object(self.cli, '_own_kitty_socket', return_value=None), \
              patch.object(self.cli, '_owned_socket', return_value=True), \
              patch.object(self.cli, '_run', return_value=(0, 'shown')) as run:
             self.assertEqual(self.cli.pane_controls_cmd(['show', '--window', '7']), 0)

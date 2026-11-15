@@ -85,7 +85,10 @@ def shared(state_dir, local, *, now=None):
         if result:
             names = {p['name'] for p in result['providers']}
             existing = local.get('providers') if isinstance(local, dict) else None
-            result['providers'] += [p for p in existing[:32] if isinstance(p, dict) and p.get('name') not in names] if isinstance(existing, list) else []
+            result['providers'] += [dict(p, cache_ts=local.get('ts')) for p in existing[:32]
+                                    if isinstance(p, dict) and p.get('name') not in names] if isinstance(existing, list) else []
+            if isinstance(local, dict) and isinstance(local.get('live'), dict):
+                result['live'] = dict(local['live'])
             return result
     except (OSError, ValueError, TypeError):
         pass

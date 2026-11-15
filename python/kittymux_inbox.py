@@ -140,7 +140,7 @@ def merge_key(ev: dict) -> tuple:
 
 
 def fold(ops: list[dict]) -> list[dict]:
-    """Replay the append-only log into the current events, oldest first. Unknown/damaged operations are ignored."""
+    """Replay the append-only log into the current events in append order. Unknown/damaged operations are ignored."""
     events: dict[str, dict] = {}
     order: list[str] = []
     recent: dict[tuple, str] = {}                 # merge key -> id of the newest event with it
@@ -152,7 +152,7 @@ def fold(ops: list[dict]) -> list[dict]:
             key = merge_key(op)
             prev = events.get(recent.get(key, ""))
             # the window is symmetric: a report appended out of order (two kitty processes, a skewed clock) must not merge into an event it is hours away from
-            if prev is not None and abs(op.get("t", 0) - prev.get("t", 0)) <= MERGE_WINDOW_S and prev.get("status") == "unread":
+            if not op.get('_folded') and prev is not None and abs(op.get("t", 0) - prev.get("t", 0)) <= MERGE_WINDOW_S and prev.get("status") == "unread":
                 prev["count"] = prev.get("count", 1) + 1
                 prev["t0"] = min(prev.get("t0", prev.get("t", 0)), op.get("t", 0))
                 prev["t"] = max(prev.get("t", 0), op.get("t", 0))             # the newest report; it never moves backwards
@@ -166,7 +166,7 @@ def fold(ops: list[dict]) -> list[dict]:
                             continue
                         prev[field] = op[field]
                 continue
-            ev = {k: v for k, v in op.items() if k != "op"}
+            ev = {k: v for k, v in op.items() if k not in ('op', '_folded')}
             ev.setdefault("t0", ev.get("t", 0))                      # when it FIRST appeared (`t` moves to the newest report of a merged event)
             events[ev["id"]] = ev
             order.append(ev["id"])
@@ -218,7 +218,7 @@ def is_duplicate(existing: list[dict], ev: dict) -> bool:
 
 
 def _retained(events: list[dict], limit: int, keep_id: str | None = None) -> list[dict]:
-    """Bound the view by attention, then recency; return included events oldest first."""
+    """Bound by attention, then recency; preserve folded replay order."""
     limit = max(0, limit)
     indexed = list(enumerate(events))
 
@@ -231,12 +231,12 @@ def _retained(events: list[dict], limit: int, keep_id: str | None = None) -> lis
     kept = [item for item in indexed if keep_id is not None and item[1].get("id") == keep_id][:limit]
     remaining = [item for item in indexed if keep_id is None or item[1].get("id") != keep_id]
     kept.extend(sorted(remaining, key=priority)[:limit - len(kept)])
-    return [event for _, event in sorted(kept, key=lambda item: (item[1].get("t", 0), item[0]))]
+    return [event for _, event in sorted(kept, key=lambda item: item[0])]
 
 
 def snapshot(events: list[dict], now: float, limit: int = SNAPSHOT_EVENTS) -> dict:
     """Schema v1: full retained-store counts, attention before history, included events newest first."""
-    newest = list(reversed(_retained(events, min(SNAPSHOT_EVENTS, limit))))
+    newest = sorted(_retained(events, min(SNAPSHOT_EVENTS, limit)), key=lambda event: event.get('t', 0), reverse=True)
     unread = [e for e in events if e.get("status") == "unread"]
     return {"version": 1, "updated": round(now, 1), "unread": len(unread),
             "needs_you": sum(1 for e in unread if e.get("severity") == "needs-you"), "events": newest}
@@ -248,6 +248,9 @@ def compact(events: list[dict], keep_id: str | None = None) -> list[dict]:
     for ev in _retained(events, KEEP_EVENTS, keep_id):
         op = dict(ev)
         op["op"] = "add"
+        # This is an already-folded occurrence, not a fresh report. Retention may
+        # remove an intervening event with the same key; do not merge across it.
+        op['_folded'] = True
         out.append(op)
     return out
 

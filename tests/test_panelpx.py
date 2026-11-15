@@ -104,6 +104,13 @@ class PanelTests(unittest.TestCase):
         self.assertIn('sample age unknown', text)
         self.assertNotIn('sample just now', text)
 
+    def test_provider_cache_age_overrides_the_shared_document_age(self):
+        provider = self.provider(cache_ts=self.now - 86400)
+        _, text = self.capture(px.usage, {'providers': [provider], 'ts': self.now}, {}, 0,
+                               self.pal, 260, 600, now=self.now)
+        self.assertIn('stale', text)
+        self.assertNotIn('cache just now', text)
+
     def test_expansion_shows_error_body_and_id_actions_without_mutation(self):
         events = [self.event()]
         before = repr(events)

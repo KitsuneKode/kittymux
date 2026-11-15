@@ -6,6 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 
 ### Added
 - **Graphical Usage and Inbox** share the pixel Agents panel (`kittymux features on deckpx`): remaining quota, reset and pace markers, provider cards, expandable messages and keyboard/pointer actions. A recent rice T3 cache supplies separate account segments without another provider connection; absent providers keep local collectors.
+- **Review hardening:** pane controls preserve owning-Kitty and OS-window scope even after focus changes, two-pane Zoom restores correctly, delayed Inbox reports retain IDs through compaction, and mixed usage sources preserve their own cache age and live errors.
 - **Narrow panel controls** keep the help exit hint at the top and retain Jump and Dismiss in the cell footer.
 - **`kittymux pane-controls`** optionally docks Split right, Split down, Zoom, Move to tab, Close and Hide beside a pane on a running Kitty 0.50 or newer. Commands target that pane and Close uses the existing busy-agent guard.
 - **`tools/record-demo.sh`** records the launch demo reproducibly: `kittymux demo` with the pixel bar on a private Xvfb display, driven by real input, with a neutral shell; writes an MP4 and a GIF.

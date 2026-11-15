@@ -145,7 +145,7 @@ def _freshness(data, provider, now):
     elif isinstance(entry, dict) and entry.get('error'):
         out.append(('live unavailable · R retry', True))
     if not out:
-        ts = M.num(data.get('ts'))
+        ts = M.num(provider.get('cache_ts') if 'cache_ts' in provider else data.get('ts'))
         age = max(0, now - ts) if ts is not None and ts > 0 else None
         out.append(('cache · age unknown', True) if age is None else
                    ('cache just now' if age < 60 else 'cache ' + ('stale ' if age > V.STALE_S else '') + V.fmt_span(age) + ' ago', age > V.STALE_S))

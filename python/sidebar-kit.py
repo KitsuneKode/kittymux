@@ -1433,6 +1433,8 @@ class Sidebar(Handler):
         scroll = self._panelpx_scroll[view]
         room = height - panelpx.HEADER_END - panelpx.FOOTER_H
         items = self._inbox_items() if view == "inbox" else []
+        if view == 'inbox':
+            self._inbox_sel = max(0, min(self._inbox_sel, len(items) - 1))
         selected = items[self._inbox_sel].get("id") if items else None
         now = time.time()
         def render(offset):

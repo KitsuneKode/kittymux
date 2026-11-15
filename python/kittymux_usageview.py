@@ -202,6 +202,11 @@ def _live_chips(kit: U.Kit, data, provider: dict, name: str, now: float, bg: int
     chips = []
     if provider.get('sample_age_unknown'):
         chips.append(kit.chip('sample age unknown', 'warm', on=bg))
+    if 'cache_ts' in provider:
+        ts = M.num(provider['cache_ts'])
+        age = max(0, now - ts) if ts is not None and ts > 0 else None
+        label = 'cache age unknown' if age is None else 'cache just now' if age < 60 else f"cache {'stale ' if age > STALE_S else ''}{fmt_span(age)} ago"
+        chips.append(kit.chip(label, 'warm' if age is None or age > STALE_S else 'muted', on=bg))
     if isinstance(entry, dict) and entry.get("rows"):
         ts = M.num(entry.get("ts"))
         if ts and ts > 0:

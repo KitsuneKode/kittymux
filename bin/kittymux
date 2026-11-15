@@ -3434,10 +3434,14 @@ def pane_controls_cmd(argv: list[str]) -> int:
     if args and not args[0].startswith('--'):
         action = args.pop(0)
     if args:
-        if len(args) != 2 or args[0] != '--window':
+        if args[0] != '--window':
             print(usage, file=sys.stderr)
             return 2
-        explicit = args[1]
+        it = iter(args[1:])
+        explicit = kittymux_cliargs.take(it, '--window')
+        if next(it, None) is not None:
+            print(usage, file=sys.stderr)
+            return 2
     if action not in (*controls.ACTIONS, 'show', 'toggle'):
         print(usage, file=sys.stderr)
         return 2
@@ -3446,15 +3450,13 @@ def pane_controls_cmd(argv: list[str]) -> int:
     if not wid or not wid.isdecimal() or int(wid) <= 0:
         print(usage, file=sys.stderr)
         return 2
-    if own_id:
-        # Do not let a panel's target override redirect a command from a pane.
-        sock = _own_kitty_socket()
-    else:
+    sock = _own_kitty_socket()
+    # Ownership still wins when only a listener/ancestor identifies this Kitty.
+    if not sock and not own_id:
         target = os.environ.get('KITTYMUX_TARGET', '')
         sock = target if target.startswith('unix:') and _owned_socket(target[5:]) and explicit else None
     if not sock:
-        print('pane-controls: no owned target socket; use allow_remote_control socket-only and listen_on unix:${XDG_RUNTIME_DIR}/mykitty', file=sys.stderr)
-        return 2
+        return _no_socket('pane-controls')
     code, result = _run(['kitten', '@', '--to', sock, 'kitten', '--match', f'id:{int(wid)}',
                          os.path.join(HOME_DIR, 'python', 'pane-controls-kit.py'), action, str(int(wid))])
     if code or not result.strip() or result.startswith('ERROR:'):

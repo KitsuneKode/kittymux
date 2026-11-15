@@ -817,6 +817,24 @@ class SidebarTests(unittest.TestCase):
         self.assertEqual(s._inbox_sel, 0)
         s.finalize()
 
+    def test_pixel_inbox_clamps_selection_when_read_history_ages_out(self):
+        try:
+            import kittymux_panelpx as px
+        except (ImportError, ValueError):
+            self.skipTest('cairo/Pango unavailable')
+        class ReachedRenderer(Exception):
+            pass
+        s = self.sidebar()
+        s.screen_size.cell_height = 20
+        s._view, s._inbox_sel, s._gfx = 'inbox', 2, 'ok'
+        with patch.object(s, '_inbox_items', return_value=[{'id': 'remaining'}]), \
+             patch.object(s, '_deckpx_enabled', return_value=True), \
+             patch.object(px, 'inbox', side_effect=ReachedRenderer):
+            with self.assertRaises(ReachedRenderer):
+                s._draw_panel_px()
+        self.assertEqual(s._inbox_sel, 0)
+        s.finalize()
+
     def test_pixel_views_dispatch_through_the_same_graphics_fallback(self):
         s = self.sidebar()
         s.draw_screen = type(s).draw_screen.__get__(s)

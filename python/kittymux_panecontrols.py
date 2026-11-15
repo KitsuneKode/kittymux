@@ -100,10 +100,11 @@ def operate(boss, parent_id, action, version, kit_path, kitty_exe):
            f'--next-to=id:{parent_id}', '--location=' + ('vsplit' if action == 'split-right' else 'hsplit'),
            '--cwd=current', '--keep-focus')
     elif action == 'move-to-tab':
-        rc('detach-window', match, '--target-tab=new')
+        boss._move_window_to(window=parent, target_tab_id='new', target_os_window_id=parent.os_window_id)
     elif action == 'zoom':
         state = {'groups': tab.list_groups(), 'layout_state': tab.current_layout.layout_state()}
-        steps = kittymux_zoom.zoom_actions(tab.current_layout.name, kittymux_zoom.maximized_axes(state, parent_id))
+        steps = kittymux_zoom.zoom_actions(tab.current_layout.name, kittymux_zoom.maximized_axes(state, parent_id),
+                                          kittymux_zoom.applicable_axes(state, parent_id))
         if steps:
             # layout_action operates on the tab's active group even when matched.
             # This deliberate user action selects its original parent first.

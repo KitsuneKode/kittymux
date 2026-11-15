@@ -12,6 +12,18 @@ except ImportError:
 
 
 class UsageBridgeTests(unittest.TestCase):
+    def test_retained_local_provider_keeps_its_cache_age_and_live_map(self):
+        local = {'ts': 100000 - 86400, 'providers': [{'name': 'claude', 'rows': [{'pct': 30}]}],
+                 'live': {'claude': {'error': 'unavailable', 'ts': 99900}}}
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / 'rice' / 'usage-t3.json'
+            cache.parent.mkdir()
+            cache.write_text(json.dumps(self.sample()))
+            result = B.shared(Path(tmp) / 'kittymux', local, now=100000)
+        self.assertEqual(result['live'], local['live'])
+        provider = next(p for p in result['providers'] if p['name'] == 'claude')
+        self.assertEqual(provider['cache_ts'], local['ts'])
+        self.assertNotIn('cache_ts', local['providers'][0])
     def sample(self):
         return {'cachedAt': 100000000, 'providers': [{'driver': 'codex', 'label': 'Codex', 'accounts': [
             {'name': 'Personal', 'email': 'never-display@example.invalid', 'checkedAt': 100000000, 'windows': [
