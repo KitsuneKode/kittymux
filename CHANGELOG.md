@@ -20,6 +20,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 - **T3 Code** (`t3`) is a known program: its tab shows T3 Code's own mark (traced from the app's icon by `tools/trace-t3code.py`) on its night-sky gradient.
 
 ### Fixed
+- **Graphics startup:** redrawing while the capability probe is pending no longer records a false failure or consumes the warning for a real timeout.
 - **Inbox refresh keeps the selected event**, error cards retain their body, and `d` or Space expands details without acknowledging or jumping. Page Up/Down scrolls long messages.
 - **Merged notifications use their stored event ID.** Unread attention outranks read history in the bounded snapshot and compaction, so routine history cannot displace an older prompt.
 - **`kittymux demo` panes hand back to your own shell** (`$SHELL`) instead of a bare `bash`, which loaded the system profile and showed its `user@host` prompt. **`KITTYMUX_HOST`** names the machine in the bar's header and the panel instead of the real hostname; `tools/record-demo.sh` sets it, and now also starts kitty with the Mesa OpenGL vendor so it records on machines whose default GLX is NVIDIA's. The README demo GIF is re-recorded with the pixel bar.

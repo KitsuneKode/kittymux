@@ -6,7 +6,7 @@ The existing opt-in pixel panel draws Usage and Inbox as well as Agents. Usage k
 
 ## Verified
 
-- All 1,983 unit tests passed, including canonical notification IDs, delayed-event replay through compaction, unread retention, full error bodies, selection aging out, unknown/future sample timestamps, owning-Kitty scope, OS-window movement and two-pane Zoom restoration.
+- All 1,984 unit tests passed, including canonical notification IDs, delayed-event replay through compaction, unread retention, full error bodies, selection aging out, unknown/future sample timestamps, owning-Kitty scope, OS-window movement and two-pane Zoom restoration.
 - Hosted `smoke (0.49.1)`, `smoke (0.49.2)` and `smoke (0.50.0)` each logged a real `PASS` for pixel Usage/Inbox. The step requires graphics and cannot silently skip missing dependencies.
 - Private real-pointer graphics runs passed in dark/light at 26/38 columns. Expansion, dismissal, visible restoration, Undo and scrolling were exercised. The dock was idempotent, split by pointer, restored Zoom on both two-pane orientations, and moved to a new tab in its original OS window after another OS window received focus. Other-Kitty window counts were unchanged. Before/after PNGs were read. Cell `shot_panel` checks passed all four theme/width combinations.
 - Controls rejected disabled graphics, missing renderer dependencies, disabled PageDown and a stale dismissed frame despite restored stored counts. The scroll baseline requires the card to disappear after Dismiss and visibly reappear after Undo. Text masks exclude selection colors, clocks and footer timers.
@@ -33,3 +33,5 @@ Native docks were exercised on Kitty 0.50. Older running processes are rejected 
 Live providers, Hyprland/layer-shell placement and real GPU behavior were not qualified by private-Xvfb runs. No live restart was performed during qualification. Unread storage remains bounded: compaction keeps at most 200 events, prioritizing attention while reserving the current event's canonical ID; at capacity an older unread event can be evicted. The internal folded-occurrence marker prevents re-merging distinct retained events and is omitted from public snapshots.
 
 The earlier intermittent hosted absorb count mismatch did not reproduce locally with bundled or source-built Kitty 0.49.2. Its exact pane-count assertion remains, with a completion deadline, private window diagnostics, isolated home/usage/socket directories and an other-Kitty tripwire. All three final hosted compatibility jobs passed.
+
+A later hosted 0.50.0 run completed all graphics/pane actions but failed the strict error-log check because a normal pending probe had been logged as a failure. Pending startup is now quiet and preserves the one-time warning slot for a genuine timeout. A deterministic regression failed before the fix and passes with both the quiet-pending and real-timeout assertions. Current hosted results remain on PR #45.

@@ -199,6 +199,20 @@ class SidebarTests(unittest.TestCase):
             self.assertFalse(s._want_cover())                                       # an overlay deck covers nothing
         s.finalize()
 
+    def test_pending_graphics_probe_is_quiet_but_a_real_timeout_is_reported(self):
+        s = self.sidebar()
+        s._gfx = 'wait'
+        with patch.object(s, '_deckpx_enabled', return_value=True), \
+             patch.object(s, '_pxmods', return_value=(Mock(), Mock(), Mock())), \
+             patch.object(self.m, '_log_line') as log:
+            self.assertFalse(s._draw_agents_px())
+            log.assert_not_called()
+            self.assertFalse(getattr(s, '_px_noted', False))
+            s._gfx_timeout()
+            log.assert_called_once_with('deckpx: graphics probe timed out')
+            self.assertEqual(s._gfx, 'no')
+        s.finalize()
+
     # ---- Rex adoption: group by priority (`g`), mute (`m`, right-click) ---------------------------------------------------------
     def state_rows(self):
         D = self.m.deck

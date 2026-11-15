@@ -1642,6 +1642,8 @@ class Sidebar(Handler):
         if getattr(self, "_gfx", None) is None:
             self._gfx_probe()
             return False
+        if self._gfx == 'wait':
+            return False                       # normal startup; leave the warning slot for an actual timeout/failure
         if self._gfx != "ok":
             self._px_note(f"graphics probe is {self._gfx}")
             return False
