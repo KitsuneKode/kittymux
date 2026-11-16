@@ -3124,12 +3124,33 @@ def hook_command(state: str) -> str:
     return f"{os.path.join(HOME_DIR, 'bin', 'mux-status')} {state}"
 
 
-def merge_hooks(settings: dict) -> tuple[dict, list[str]]:
-    """Add our three hooks to a Claude Code settings dict without disturbing anything
-    else. Idempotent. Returns (new settings, events added)."""
+# PermissionRequest → mux-ask: the agent's prompt can be answered from the desktop (a shell writes
+# asks/<pane>.answer); bin/mux-ask documents when it stays out of the way. Its timeout must exceed
+# mux-ask's own wait (45 s), or the agent kills the hook before the answer arrives.
+ASK_TIMEOUT = 60
+
+
+def ask_group(agent: str) -> dict:
+    return {"hooks": [{"type": "command", "command": f"{os.path.join(HOME_DIR, 'bin', 'mux-ask')} {agent}",
+                       "timeout": ASK_TIMEOUT}]}
+
+
+def _ours(cmd: str) -> bool:
+    return "mux-status" in cmd or "mux-ask" in cmd
+
+
+def merge_hooks(settings: dict, agent: str = "claude", status: bool = True) -> tuple[dict, list[str]]:
+    """Add our hooks to a Claude Code (or, status=False, Codex) settings dict without
+    disturbing anything else. Idempotent. Returns (new settings, events added)."""
     settings = json.loads(json.dumps(settings))            # deep copy
     hooks = settings.setdefault("hooks", {})
     added = []
+    groups = hooks.setdefault("PermissionRequest", [])
+    if not any("mux-ask" in h.get("command", "") for g in groups for h in g.get("hooks", [])):
+        groups.append(ask_group(agent))
+        added.append("PermissionRequest")
+    if not status:
+        return settings, added
     for event, state in HOOK_EVENTS.items():
         groups = hooks.setdefault(event, [])
         already = any("mux-status" in h.get("command", "")
@@ -3156,7 +3177,7 @@ def remove_hooks(settings: dict) -> tuple[dict, list[str]]:
         kept_groups = []
         for g in groups:
             inner = g.get("hooks", []) if isinstance(g, dict) else []
-            keep = [h for h in inner if "mux-status" not in str(h.get("command", ""))]
+            keep = [h for h in inner if not _ours(str(h.get("command", "")))]
             if len(keep) != len(inner):
                 if event not in removed:
                     removed.append(event)
@@ -3243,7 +3264,8 @@ def opencode_hooks(argv: list[str]) -> int:
 def hooks(argv: list[str]) -> int:
     if "--opencode" in argv:
         return opencode_hooks([a for a in argv if a != "--opencode"])
-    path = os.path.expanduser("~/.claude/settings.json")
+    codex = "--codex" in argv
+    path = os.path.expanduser("~/.codex/hooks.json" if codex else "~/.claude/settings.json")
     if "--settings" in argv:
         it = iter(argv[argv.index("--settings"):])
         next(it)
@@ -3267,7 +3289,7 @@ def hooks(argv: list[str]) -> int:
         _write_settings(path, pruned)
         print(f"{OK} removed {', '.join(gone)} from {path} (other hooks untouched)")
         return 0
-    merged, added = merge_hooks(current)
+    merged, added = merge_hooks(current, "codex" if codex else "claude", status=not codex)
     if not added:
         print(f"{OK} hooks already installed in {path}")
         return 0
