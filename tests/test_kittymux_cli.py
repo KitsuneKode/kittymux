@@ -919,7 +919,10 @@ class HooksTests(unittest.TestCase):
 
     def test_adds_every_event_to_empty(self):
         merged, added = self.m.merge_hooks({})
-        self.assertEqual(sorted(added), ["Notification", "PostToolUse", "SessionEnd", "Stop", "UserPromptSubmit"])
+        self.assertEqual(sorted(added), ["Notification", "PermissionRequest", "PostToolUse", "SessionEnd", "Stop", "UserPromptSubmit"])
+        ask = merged["hooks"]["PermissionRequest"][0]["hooks"][0]
+        self.assertTrue(ask["command"].endswith("bin/mux-ask claude"))
+        self.assertGreater(ask["timeout"], 45)        # longer than mux-ask's own wait
         self.assertTrue(merged["hooks"]["PostToolUse"][0]["hooks"][0]["command"].endswith("bin/mux-status working"))
         self.assertTrue(merged["hooks"]["SessionEnd"][0]["hooks"][0]["command"].endswith("bin/mux-status idle"))
         cmd = merged["hooks"]["Notification"][0]["hooks"][0]["command"]
@@ -979,8 +982,16 @@ class HooksTests(unittest.TestCase):
         cur = {"model": "opus", "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "echo mine"}]}]}}
         merged, _ = self.m.merge_hooks(cur)
         pruned, gone = self.m.remove_hooks(merged)
-        self.assertEqual(sorted(gone), ["Notification", "PostToolUse", "SessionEnd", "Stop", "UserPromptSubmit"])
+        self.assertEqual(sorted(gone), ["Notification", "PermissionRequest", "PostToolUse", "SessionEnd", "Stop", "UserPromptSubmit"])
         self.assertEqual(pruned, cur)
+
+    def test_codex_gets_only_the_ask_hook(self):
+        merged, added = self.m.merge_hooks({"hooks": {"SessionStart": [{"hooks": [{"command": "x"}]}]}}, "codex", status=False)
+        self.assertEqual(added, ["PermissionRequest"])
+        self.assertTrue(merged["hooks"]["PermissionRequest"][0]["hooks"][0]["command"].endswith("bin/mux-ask codex"))
+        self.assertEqual(merged["hooks"]["SessionStart"], [{"hooks": [{"command": "x"}]}])
+        again, added2 = self.m.merge_hooks(merged, "codex", status=False)
+        self.assertEqual((again, added2), (merged, []))
 
     def test_remove_from_empty_or_foreign_is_noop(self):
         for cur in ({}, {"hooks": {}}, {"hooks": {"Stop": [{"hooks": [{"command": "echo x"}]}]}}, {"hooks": "junk"}):
@@ -2131,3 +2142,53 @@ class LiveCheckoutTests(unittest.TestCase):
         root = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, root, True)
         self.assertIsNone(self.m.live_checkout(root))
         self.assertEqual(self._doctor(root), (0, ""))
+
+
+class MuxAskTests(unittest.TestCase):
+    """bin/mux-ask: a PermissionRequest hook answered by a desktop shell (asks/<pane>.answer)."""
+    BIN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "mux-ask")
+
+    def run_ask(self, payload, env_extra, answer=None, wait="3"):
+        import tempfile, threading, time
+        with tempfile.TemporaryDirectory() as state:
+            env = {k: v for k, v in os.environ.items() if k not in ("KITTY_WINDOW_ID", "KITTY_PID")}
+            env.update({"XDG_STATE_HOME": state, "MUX_ASK_WAIT": wait, "PATH": "/usr/bin:/bin"}, **env_extra)
+            asks = os.path.join(state, "kittymux", "asks")
+
+            def answer_it():
+                for _ in range(50):
+                    reqs = [f for f in os.listdir(asks)] if os.path.isdir(asks) else []
+                    reqs = [f for f in reqs if f.endswith(".json")]
+                    if reqs:
+                        with open(os.path.join(asks, reqs[0][:-5] + ".answer"), "w") as f:
+                            f.write(answer)
+                        return
+                    time.sleep(0.05)
+            t = threading.Thread(target=answer_it)
+            if answer:
+                t.start()
+            r = subprocess.run([self.BIN, "claude"], input=json.dumps(payload), capture_output=True, text=True, env=env, timeout=20)
+            if answer:
+                t.join()
+            left = os.listdir(asks) if os.path.isdir(asks) else []
+            return r, left
+
+    def test_outside_kitty_says_nothing(self):
+        r, _ = self.run_ask({"tool_name": "Bash", "tool_input": {"command": "ls"}}, {})
+        self.assertEqual((r.returncode, r.stdout), (0, ""))
+
+    def test_allow_and_deny_come_back_as_the_decision(self):
+        for choice in ("allow", "deny"):
+            r, left = self.run_ask({"tool_name": "Bash", "tool_input": {"command": "rm -rf node_modules"}},
+                                   {"KITTY_WINDOW_ID": "7", "KITTY_PID": "1"}, answer=choice)
+            self.assertEqual(json.loads(r.stdout)["hookSpecificOutput"]["decision"]["behavior"], choice)
+            self.assertEqual(left, [])                     # request and answer cleaned up
+
+    def test_what_cannot_be_read_whole_is_not_offered(self):
+        for cmd in ("echo " + "x" * 300, "echo a\necho b"):
+            r, left = self.run_ask({"tool_name": "Bash", "tool_input": {"command": cmd}}, {"KITTY_WINDOW_ID": "7", "KITTY_PID": "1"})
+            self.assertEqual((r.stdout, left), ("", []))
+
+    def test_no_answer_falls_back_to_the_agents_prompt(self):
+        r, left = self.run_ask({"tool_name": "Edit", "tool_input": {"file_path": "/tmp/x"}}, {"KITTY_WINDOW_ID": "7", "KITTY_PID": "1"}, wait="1")
+        self.assertEqual((r.returncode, r.stdout, left), (0, "", []))
