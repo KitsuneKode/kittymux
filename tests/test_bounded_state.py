@@ -12,6 +12,7 @@ SAFE = {
     ("kittymux_agents.py", "TOOL_MARKS"): "filled once at import from a constant table",
     ("kittymux_barsize.py", "_DEFAULTS"): "a fixed set of named fields; copied into sys.modules['_kittymux_barsize_rt'], never grown",
     ("kittymux_git.py", "_cache"): "capped at _CACHE_MAX, oldest dropped",
+    ("kittymux_psp.py", "_SEEN"): "capped at _SEEN_MAX with kittymux_bounded.cap_newest, oldest dropped; a window's entries go when it reports nothing",
     ("kittymux_keymap.py", "_MOD_NAME"): "a copy of a constant table",
     ("pane-state.py", "_state"): "one entry per live window; popped in on_close",
     ("tab_bar.py", "_MEMO"): "emptied at the start of every pass (_per_pass)",

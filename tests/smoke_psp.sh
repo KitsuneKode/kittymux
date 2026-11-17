@@ -41,12 +41,25 @@ for _ in $(seq 240); do
   sleep 0.25
 done
 grep -q '"kittymux_psp"' "$T/ls.json" || { echo "FAIL: kittymux_psp did not appear"; cat "$T/k.log" >&2; exit 1; }
-python3 - "$T/ls.json" <<'P'
+python3 - "$T/ls.json" "$(cd "$(dirname "$0")/.." && pwd)/python" <<'P'
 import json, sys
 wins = {w["title"]: w for o in json.load(open(sys.argv[1])) for t in o["tabs"] for w in t["windows"]}
 relayed = wins["relayed"]["user_vars"].get("kittymux_psp", "")
 control = wins["control"]["user_vars"].get("kittymux_psp", "")
 ok = '"state":"blocked"' in relayed and "Run the tests?" in relayed and control == ""
+# kitty 0.50+ keeps the records itself (kitty/program_status.py), relay or not: then the control window must carry
+# the same report in kitty's own `program_status`, the record kittymux_psp.read_native summarises.
+native = wins["control"].get("program_status")
+if native is not None:
+    sys.path.insert(0, sys.argv[2])
+    import kittymux_psp
+    class W:
+        id = wins["control"]["id"]
+        class program_status:
+            as_list = staticmethod(lambda: native)
+    rec = kittymux_psp.read_native(W, 1.0) or {}
+    ok = ok and rec.get("state") == "blocked" and rec.get("msg") == "Run the tests?"
+    print(f"native (kitty 0.50+): {native!r} -> {rec!r}")
 print(("PASS" if ok else "FAIL") + f": relayed={relayed!r} control={control!r}")
 sys.exit(0 if ok else 1)
 P
