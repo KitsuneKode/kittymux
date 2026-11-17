@@ -166,3 +166,51 @@ class BoundaryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class _Status:
+    def __init__(self, records):
+        self.records = records
+
+    def as_list(self):
+        return list(self.records)
+
+
+class _Window:
+    def __init__(self, wid, records):
+        self.id = wid
+        self.program_status = _Status(records)
+
+
+class NativeTests(unittest.TestCase):
+    """kitty 0.50 keeps the records itself (window.program_status.as_list()); read_native summarises them."""
+
+    def setUp(self):
+        P._SEEN.clear()
+
+    def test_most_urgent_record_speaks(self):
+        w = _Window(7, [
+            {"id": "", "state": "working", "kind": None, "progress": 40, "app": "claude", "title": "", "msg": ""},
+            {"id": "sub", "state": "blocked", "kind": "permission", "progress": None, "app": "claude",
+             "title": "", "msg": "Allow rm?"},
+        ])
+        rec = P.read_native(w, 100.0)
+        self.assertEqual((rec["state"], rec["kind"], rec["msg"]), ("blocked", "permission", "Allow rm?"))
+
+    def test_time_is_when_the_state_was_first_seen(self):
+        w = _Window(7, [{"id": "", "state": "working", "kind": None, "progress": None, "app": "", "title": "", "msg": ""}])
+        self.assertEqual(P.read_native(w, 100.0)["t"], 100.0)
+        self.assertEqual(P.read_native(w, 160.0)["t"], 100.0)              # still working: unchanged
+        w.program_status.records[0]["state"] = "done"
+        self.assertEqual(P.read_native(w, 200.0)["t"], 200.0)              # a new state: its own time
+
+    def test_nothing_reported_or_old_kitty(self):
+        self.assertIsNone(P.read_native(_Window(7, []), 1.0))
+        self.assertIsNone(P.read_native(object(), 1.0))                    # kitty 0.49: no program_status
+
+    def test_feeds_the_scanner_like_the_relay(self):
+        w = _Window(3, [{"id": "", "state": "blocked", "kind": "question", "progress": None, "app": "pi",
+                         "title": "", "msg": ""}])
+        view = {}
+        marker, line = P.apply_to_view(P.read_native(w, 5.0), view, "", "")
+        self.assertEqual((marker, line), ("waiting", "Has a question"))
