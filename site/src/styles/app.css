@@ -206,3 +206,10 @@ figure.shiki :focus-visible { outline-color: var(--code-fg); outline-offset: -2p
   from { transform: scaleX(0.06); }
   to { transform: scaleX(0.92); }
 }
+
+/* The hero's live panel (components/landing/activity.tsx): the working ring turns, and rows glide to their new group. */
+@media (prefers-reduced-motion: no-preference) {
+  .act-spin { animation: act-spin 900ms linear infinite; }
+  ::view-transition-group(*.act) { animation-duration: 420ms; animation-timing-function: var(--ease-out); }
+}
+@keyframes act-spin { to { transform: rotate(360deg); } }
