@@ -1,8 +1,10 @@
 """Program Status Protocol (OSC 7501) — what an agent says it is doing, read on its way to the terminal.
 
-kitty 0.49 drops OSC 7501, so `bin/mux-pty` sits between kitty and an agent kittymux started: it passes every byte
-through, answers the protocol's probe, keeps the records here, and hands the summary to kitty as a user variable
-(`kittymux_psp`, via OSC 1337 SetUserVar) that the scanner reads. Pure: no kitty imports, no I/O.
+kitty 0.50 implements the protocol itself (kitty/program_status.py, revision 0.4): it answers the probe and keeps
+each window's records, and `read_native` takes the summary from there, for every program in every window, whoever
+started it. kitty 0.49 drops OSC 7501, so there `bin/mux-pty` sits between kitty and an agent kittymux started: it
+passes every byte through, answers the probe, keeps the records here, and hands the summary to kitty as a user
+variable (`kittymux_psp`, via OSC 1337 SetUserVar) that the scanner reads. No kitty imports, no I/O.
 
 Spec (draft 0.4): ESC ] 7501 ; key=value[:key=value…] ST, ST = ESC \\ or BEL; probe ESC ] 7501 ; ? ST.
 """
@@ -183,6 +185,50 @@ def read_var(user_vars: dict) -> dict | None:
     except ValueError:
         return None
     return rec if isinstance(rec, dict) and rec.get("state") in STATES else None
+
+
+# kitty's records carry no time; the summary ranks the newest first among equals, so a record's time is when it was
+# first seen in its current state. Keyed by window and record id; pruned when the window has no records, and capped
+# (a closed window's entries are never pruned by it, so the oldest go past _SEEN_MAX).
+_SEEN: dict[tuple[int, str], tuple[str, float]] = {}
+_SEEN_MAX = 1024
+
+
+def read_native(window, now: float) -> dict | None:
+    """The summary from kitty's own records (kitty 0.50+: window.program_status), in read_var's shape, or None."""
+    ps = getattr(window, "program_status", None)
+    as_list = getattr(ps, "as_list", None)
+    if as_list is None:
+        return None
+    try:
+        records = as_list()
+    except Exception:
+        return None
+    wid = int(getattr(window, "id", 0) or 0)
+    if not records:
+        for k in [k for k in _SEEN if k[0] == wid]:
+            del _SEEN[k]
+        return None
+    recs = Records()
+    for r in records:
+        state = r.get("state")
+        if state not in STATES or state == "clear":
+            continue
+        rid = r.get("id") or ""
+        first = _SEEN.get((wid, rid))
+        t = first[1] if first and first[0] == state else now
+        _SEEN.pop((wid, rid), None)                     # re-inserted: the newest for the cap
+        _SEEN[(wid, rid)] = (state, t)
+        rec = {"state": state, "id": rid}
+        for key in ("kind", "app", "title", "msg"):
+            if r.get(key):
+                rec[key] = r[key]
+        if r.get("progress") is not None:
+            rec["progress"] = r["progress"]
+        recs.by_id[rid] = {**rec, "t": t}
+    import kittymux_bounded
+    kittymux_bounded.cap_newest(_SEEN, _SEEN_MAX)
+    return recs.summary()
 
 
 def apply_to_view(rec: dict | None, view: dict, marker: str, line: str) -> tuple[str, str]:
