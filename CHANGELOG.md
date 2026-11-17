@@ -5,6 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 ## [Unreleased]
 
 ### Added
+- **Agent status straight from kitty 0.50.** kitty 0.50 implements the Program Status Protocol (OSC 7501, revision 0.4) and keeps each window's reports; kittymux now reads them from there (`kittymux_psp.read_native`), so every agent that reports, in any window and however it was started, gets its own words in the bar, the panel and the inbox, with no relay. The `mux-pty` relay stays for kitty 0.49. `tests/smoke_psp.sh` checks it in a real kitty: the window without the relay carries the report too.
 - **Graphical Usage and Inbox** share the pixel Agents panel (`kittymux features on deckpx`): remaining quota, reset and pace markers, provider cards, expandable messages and keyboard/pointer actions. A recent rice T3 cache supplies separate account segments without another provider connection; absent providers keep local collectors.
 - **Review hardening:** pane controls preserve owning-Kitty and OS-window scope even after focus changes, two-pane Zoom restores correctly, delayed Inbox reports retain IDs through compaction, and mixed usage sources preserve their own cache age and live errors.
 - **Narrow panel controls** keep the help exit hint at the top and retain Jump and Dismiss in the cell footer.

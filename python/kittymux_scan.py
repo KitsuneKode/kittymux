@@ -359,10 +359,12 @@ def scan_window(window, now: float) -> bool:
     book = _RT.book.setdefault(wid, {})
     view = {**entry, **book}
     focused = bool(getattr(window, "is_focused", False))
-    # What the agent itself reported (OSC 7501, through bin/mux-pty): the strongest evidence, folded in like a hook.
+    # What the agent itself reported (OSC 7501: kitty's own records on 0.50+, else bin/mux-pty's user variable): the
+    # strongest evidence, folded in like a hook.
     try:
         import kittymux_psp
-        marker, line = kittymux_psp.apply_to_view(kittymux_psp.read_var(getattr(window, "user_vars", None) or {}), view, marker, line)
+        rec = kittymux_psp.read_var(getattr(window, "user_vars", None) or {}) or kittymux_psp.read_native(window, now)
+        marker, line = kittymux_psp.apply_to_view(rec, view, marker, line)
     except Exception:
         pass
     if view.get("status") != "error":                          # an error is not a completion; a stale done time must not turn it into one
