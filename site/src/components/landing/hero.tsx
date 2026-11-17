@@ -1,6 +1,8 @@
 import { Link } from '@tanstack/react-router';
 import { DocLink } from '../doc-link';
-import { Shot, TerminalWindow } from '../terminal-window';
+import { TerminalWindow } from '../terminal-window';
+import { ActivityDemo } from './activity';
+import { facts } from '@/lib/facts';
 import { WeaveBand } from '../weave-band';
 import { GitHubStars } from '../github-stars';
 import { SponsorButton } from '../sponsor-button';
@@ -43,6 +45,10 @@ export function Hero() {
               <p data-rise="" className="t-lead mt-6 max-w-[36ch] text-onbrand-soft [animation-delay:80ms]">
                 Turn kitty into a multiplexer for AI coding agents. See who is working, waiting or done, and jump straight there.
               </p>
+              {/* every agent it knows, said once and quietly (the stacked list in Rex's own headline, as a fact) */}
+              <p data-rise="" className="mt-5 max-w-[46ch] text-sm leading-relaxed text-onbrand-soft/90 [animation-delay:120ms]">
+                {facts.agents.slice(0, 8).map((a) => a.name).join(' · ')} and {facts.agents.length - 8} more, in one tab bar.
+              </p>
               <div data-rise="" className="mt-8 flex flex-col gap-3 [animation-delay:160ms] sm:flex-row sm:items-center">
                 <a href="#install" data-cta="" data-press="" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full px-6 text-base font-semibold">Try the demo</a>
                 <DocLink data-press="" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-onbrand px-6 text-base font-semibold hover:bg-onbrand hover:text-brand">Read the docs</DocLink>
@@ -52,12 +58,8 @@ export function Hero() {
             <div data-rise="" className="relative mx-auto mt-20 w-full max-w-[460px] [animation-delay:240ms] lg:col-span-6 lg:mt-24">
               {/* the kitten sits on the window's top edge: its cropped bottom is hidden behind the frame */}
               <Mascot priority width={160} className="absolute -inset-bs-[100px] inset-e-6 z-0 lg:inset-e-10" />
-              <TerminalWindow className="relative z-10" captionClassName="text-onbrand-soft" caption="The docked panel on made-up tabs: one needs you, one has a usage limit that resets in 42 minutes.">
-                <Shot
-                  name="panel-agents"
-                  alt="The kittymux panel listing seven made-up tabs: one needs you and says so, one is done, and one hit a usage limit and shows when it resets."
-                  priority
-                />
+              <TerminalWindow className="relative z-10" captionClassName="text-onbrand-soft" caption="A live sketch of the panel with made-up tabs, grouped by what they need from you. The real panel is further down.">
+                <ActivityDemo />
               </TerminalWindow>
             </div>
           </section>
