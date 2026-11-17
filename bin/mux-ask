@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# mux-ask — let a desktop shell answer an agent's permission prompt for this pane.
+#
+#   mux-ask claude|codex        (as a PermissionRequest hook; JSON on stdin)
+#
+# Claude Code and Codex run their PermissionRequest hook before they show the
+# prompt. This one publishes the request — which tool, the exact command or
+# file — as $XDG_STATE_HOME/kittymux/asks/<pane key>.json, marks the pane
+# `waiting` with that line (mux-status), and waits for an answer file beside
+# it (<pane key>.answer: "allow" or "deny"), written by the shell's Allow /
+# Deny (kuwai's notch). The answer goes back to the agent as the hook's
+# decision: nothing is typed into the pane.
+#
+# It stays out of the way (exit 0, no output: the agent shows its own prompt,
+# exactly as without the hook) when:
+#   - not in kitty (no KITTY_WINDOW_ID): another app runs the agent (T3 Code…)
+#   - the request can't be shown whole: a command over 240 characters or on
+#     more than one line, or a tool that isn't a command or a file edit
+#     (Panacea's rule: never approve what you couldn't read)
+#   - this pane's kitty is the focused window: you're looking at the prompt
+#   - nothing answers within MUX_ASK_WAIT seconds (45)
+# Any error ends the same way. The agent's hook timeout must exceed the wait
+# (kittymux hooks --install writes 60).
+set -u
+agent="${1:-agent}"
+dir="${XDG_STATE_HOME:-$HOME/.local/state}/kittymux/asks"
+wait_s="${MUX_ASK_WAIT:-45}"
+here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+
+[ -n "${KITTY_WINDOW_ID:-}" ] && [ -n "${KITTY_PID:-}" ] || exit 0
+command -v jq >/dev/null 2>&1 || exit 0
+payload="$(timeout 1 head -c 2000000 2>/dev/null)" || exit 0
+[ -n "$payload" ] || exit 0
+
+tool="$(printf '%s' "$payload" | jq -r '.tool_name // empty' 2>/dev/null)"
+# The command as one string (Codex may send an argv list), or the file an edit touches.
+cmd="$(printf '%s' "$payload" | jq -r '.tool_input.command // empty | if type == "array" then join(" ") else tostring end' 2>/dev/null)"
+file="$(printf '%s' "$payload" | jq -r '.tool_input.file_path // .tool_input.path // empty' 2>/dev/null)"
+case "$tool" in
+    Bash|shell|shell_command|exec_command|local_shell)
+        [ -n "$cmd" ] && [ "${#cmd}" -le 240 ] || exit 0
+        case "$cmd" in *$'\n'*) exit 0 ;; esac
+        what="Run: $cmd" ;;
+    Edit|Write|MultiEdit|NotebookEdit|apply_patch)
+        [ -n "$file" ] || exit 0
+        what="$tool: ${file/#$HOME/\~}" ;;
+    *) exit 0 ;;
+esac
+
+# Looking at it already: the focused window is this pane's kitty.
+if command -v hyprctl >/dev/null 2>&1; then
+    fpid="$(hyprctl -j activewindow 2>/dev/null | jq -r '.pid // 0' 2>/dev/null)"
+    [ "${fpid:-0}" = "$KITTY_PID" ] && exit 0
+fi
+
+key="w${KITTY_PID}.${KITTY_WINDOW_ID}"
+mkdir -p "$dir" 2>/dev/null && chmod 700 "$dir" 2>/dev/null || exit 0
+req="$dir/$key.json"
+ans="$dir/$key.answer"
+rm -f "$ans"
+now="$(date +%s)"
+jq -n --arg key "$key" --arg agent "$agent" --arg tool "$tool" --arg what "$what" \
+      --arg cwd "$PWD" --argjson at "$now" --argjson wait "$wait_s" \
+      '{version: 1, key: $key, agent: $agent, tool: $tool, what: $what, cwd: $cwd, at: $at, until: ($at + $wait)}' \
+      > "$req.tmp" 2>/dev/null && mv -f "$req.tmp" "$req" || exit 0
+cleanup() { rm -f "$req" "$req.tmp" "$ans"; }
+trap cleanup EXIT
+"$here/mux-status" --msg "Allow? ${what}" waiting </dev/null >/dev/null 2>&1 || true
+
+deadline=$(( now + wait_s ))
+while [ "$(date +%s)" -lt "$deadline" ]; do
+    if [ -s "$ans" ]; then
+        choice="$(head -c 16 "$ans" | tr -dc 'a-z')"
+        case "$choice" in
+            allow)
+                "$here/mux-status" working </dev/null >/dev/null 2>&1 || true
+                printf '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}\n'
+                exit 0 ;;
+            deny)
+                printf '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Denied from the desktop (kittymux)."}}}\n'
+                exit 0 ;;
+        esac
+        rm -f "$ans"
+    fi
+    [ -f "$req" ] || exit 0            # withdrawn
+    sleep 0.2
+done
+exit 0
