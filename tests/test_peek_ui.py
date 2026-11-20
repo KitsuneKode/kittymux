@@ -50,6 +50,22 @@ class PeekTests(unittest.TestCase):
         self.assertTrue(all(len(s) <= 40 for s in writes[1:]))
         self.assertIn("chosen pane", "".join(writes))
 
+    def test_the_action_row_runs_by_key_and_by_click(self):
+        # 2026-11-20: a right-click on a rail tab only peeked; mouse users had no rename, split, mute or close
+        m, p = self.peek()
+        p.quit_loop = Mock()
+        p.draw_screen()
+        self.assertIn("rename", "".join(a.args[0] for a in p.write.call_args_list))
+        self.assertEqual([h[2] for h in p._act_hits], ["rename", "split", "mute", "close"])
+        x0, x1, _ = p._act_hits[1]
+        p.on_click(types.SimpleNamespace(cell_x=x0 + 1, cell_y=p.screen_size.rows - 2))
+        self.assertEqual(m.kittymux_tabactions.answer(p.action, 2), "split:2")
+        m, p = self.peek()
+        p.quit_loop = Mock()
+        p.on_key_event(types.SimpleNamespace(type="press", key="x"))
+        self.assertEqual(p.action, "close")
+        p.quit_loop.assert_called_once()
+
     def test_a_long_title_shows_only_the_cut_off_tail(self):
         m, p = self.peek()
         p.card["title"] = "OPENMARK " + ("m" * 70) + " ENDMARK"

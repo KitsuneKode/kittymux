@@ -203,30 +203,135 @@ class ControlsTest(unittest.TestCase):
         self.assertEqual(B.hit_at(out.hits, (c.y0 + c.y1) // 2, (c.x0 + c.x1) // 2).project, "collapse")
         self.assertEqual(B.hit_at(out.hits, (c.y0 + c.y1) // 2, 5).kind, "header")
 
-    def test_the_rail_mascot_expands_the_bar(self):
+    def test_the_rail_header_expands_the_bar_and_its_footer_has_the_ways_in(self):
+        # mouse-only: the rail kept only the way back open; the palette, the inbox and the keys sheet were key-only there
         out = B.render(session(), pal(), width=90, height=400)
+        a = self.acts(out)
+        self.assertEqual(set(a), {"collapse", "palette", "inbox", "keys"})
+        last_tab = max(h.y1 for h in out.hits if h.kind == "tab")
+        for name in ("palette", "inbox", "keys"):
+            self.assertGreaterEqual(a[name].y0, last_tab)
+        self.assertLess(a["palette"].y1, a["inbox"].y1)
+        self.assertLess(a["inbox"].y1, a["keys"].y1)
+
+    def test_a_short_rail_keeps_its_rows_and_drops_the_footer(self):
+        out = B.render(session(), pal(), width=90, height=220)
         self.assertEqual(set(self.acts(out)), {"collapse"})
 
     def test_the_rail_uses_its_width(self):
-        # 2026-11-12, the owner: the rail had "too much margin" (20 px tiles in a 9-column bar) and no visible way back open
-        self.assertGreaterEqual(B.RAIL_TILE, 26)
-        self.assertGreaterEqual(B.RAIL_CARD_W, 40)
-        self.assertGreaterEqual(B.RAIL_ROW, B.RAIL_TILE + 10)
+        # 2026-11-12, the owner: the rail had "too much margin" (20 px tiles in a 9-column bar) and no visible way back open.
+        # 2026-11-20: kitty gives a custom-drawn left bar title + 8 cells at the least, so the rail is ~80 px wide; the tile
+        # is what fills it, and a row is the tile with 4 px above and below.
+        self.assertGreaterEqual(B.RAIL_TILE, 30)
+        self.assertEqual(B.RAIL_ROW, B.RAIL_TILE + 8)
         out = B.render(session(), pal(), width=90, height=400)
         tabs = [hb for hb in out.hits if hb.kind == "tab"]
         self.assertTrue(all(hb.y1 - hb.y0 == B.RAIL_ROW for hb in tabs))
 
-    def test_the_rail_card_is_one_card_in_the_picture_and_the_shader(self):
+    def test_the_rail_tile_is_one_shape_in_the_picture_and_the_shader(self):
         import os
         src = open(os.path.join(os.path.dirname(__file__), "..", "assets", "shaders", "kittymux-pxbar.slang"), encoding="utf-8").read()
-        half = B.RAIL_CARD_W / 2
-        self.assertIn(f"x0 = mid - {half:.1f} * sc; x1 = mid + {half:.1f} * sc;", src)
-        self.assertIn(f"float r0 = (rail ? {float(B.RAIL_CARD_R):.1f} : R) * sc;", src)
+        half = B.RAIL_TILE / 2
+        inset = (B.RAIL_ROW - B.RAIL_TILE) / 2
+        self.assertIn(f"x0 = mid - {half:.1f} * sc; x1 = mid + {half:.1f} * sc; y0 += {inset:.1f} * sc; y1 -= {inset:.1f} * sc;", src)
+        self.assertIn(f"float r0 = (rail ? {float(B.RAIL_TILE_R):.1f} : R) * sc;", src)
 
     def test_the_wave_steps_through_its_frames(self):
         row = lambda ph: G.group([G.Row(tab_id=1, title="t", project="p", state="working", phase=ph)])
         frames = {B.render(row(ph), pal(), width=268, height=200).png for ph in (0, 1, 2)}
         self.assertEqual(len(frames), 3)
+
+
+@unittest.skipIf(B is None, "cairo/pango/rsvg not installed")
+class RailTest(unittest.TestCase):
+    """The compact rail (2026-11-20, the owner: "gross"): one frame, colour only for state, nothing cut into a tile."""
+    W, H = 82, 400
+
+    def render(self, rows, **kw):
+        return B.render(G.group(rows, collapse_after=99), pal(), width=self.W, height=kw.pop("height", self.H), **kw)
+
+    def box(self, out, tab_id):
+        hb = next(h for h in out.hits if h.kind == "tab" and h.tab_id == tab_id)
+        ty = hb.y0 + (B.RAIL_ROW - B.RAIL_TILE) // 2
+        x0 = round(self.W / 2 - B.RAIL_TILE / 2)
+        return x0, ty, x0 + B.RAIL_TILE, ty + B.RAIL_TILE
+
+    def bar(self, px):
+        return px[2][self.W // 2][:3]
+
+    def test_a_working_row_is_marked_for_the_loader(self):
+        # the loader shader finds working rows by their row-map family; the rail drew every row in the still family
+        out = self.render([G.Row(1, "a", "p", state="working", mark="claude"), G.Row(2, "b", "p"),
+                           G.Row(3, "c", "p", state="working", mark="claude", muted=True)])
+        _, _, px = decode_png(out.png)
+        bar = pal().bar
+        want = [B.marker(bar, 0, True), B.marker(bar, 1), B.marker(bar, 2)]
+        for tab_id, m in zip((1, 2, 3), want):
+            hb = next(h for h in out.hits if h.kind == "tab" and h.tab_id == tab_id)
+            got = px[(hb.y0 + hb.y1) // 2][0][:3]
+            self.assertEqual(got, ((m >> 16) & 255, (m >> 8) & 255, m & 255), tab_id)
+
+    def test_only_the_active_row_has_a_tile(self):
+        out = self.render([G.Row(1, "a", "p", active=True), G.Row(2, "b", "p", mark="claude", tint=0xD97757)])
+        _, _, px = decode_png(out.png)
+        bar = self.bar(px)
+        for tab_id, filled in ((1, True), (2, False)):
+            x0, y0, x1, y1 = self.box(out, tab_id)
+            edge = px[(y0 + y1) // 2][x0 + 3][:3]            # inside the tile, left of the mark
+            self.assertEqual(edge != bar, filled, tab_id)
+
+    def test_marks_are_monochrome_colour_is_for_state(self):
+        a = self.render([G.Row(1, "a", "p", mark="claude", tint=0xD97757)])
+        b = self.render([G.Row(1, "a", "p", mark="claude", tint=None)])
+        self.assertEqual(a.png, b.png)
+
+    def test_the_state_dot_sits_inside_the_tile_without_a_notch(self):
+        # a dot drawn over a ring of the bar's colour cut a notch into the active (and hovered) card
+        for state in ("waiting", "done", "error", "working"):
+            out = self.render([G.Row(1, "a", "p", state=state, active=True, mark="claude")])
+            _, _, px = decode_png(out.png)
+            bar = self.bar(px)
+            x0, y0, x1, y1 = self.box(out, 1)
+            inside = [px[y][x][:3] for y in range(y0 + 4, y1 - 4) for x in range(x0 + 4, x1 - 4)]
+            self.assertNotIn(bar, inside, state)
+            tone = {"waiting": pal().waiting, "done": pal().done, "error": pal().alert, "working": pal().working}[state]
+            t = ((tone >> 16) & 255, (tone >> 8) & 255, tone & 255)
+            near = [p for p in inside if sum(abs(a - b) for a, b in zip(p, t)) < 40]
+            self.assertTrue(near, state)
+
+    def test_progress_stays_inside_the_tile(self):
+        out = self.render([G.Row(1, "a", "p", active=True, progress=("set", 50))])
+        _, _, px = decode_png(out.png)
+        w = pal().working
+        t = ((w >> 16) & 255, (w >> 8) & 255, w & 255)
+        x0, y0, x1, y1 = self.box(out, 1)
+        hits = [(x, y) for y in range(len(px)) for x in range(1, self.W) if sum(abs(a - b) for a, b in zip(px[y][x][:3], t)) < 40]
+        self.assertTrue(hits)
+        self.assertTrue(all(x0 + 4 <= x < x1 - 4 and y0 + 4 <= y < y1 - 2 for x, y in hits), hits[:5])
+
+    def test_the_shell_prompt_grows_with_the_tile(self):
+        # _prompt drew a fixed 20 px glyph whatever the tile
+        out = self.render([G.Row(1, "a", "p", active=True)])
+        _, _, px = decode_png(out.png)
+        x0, y0, x1, y1 = self.box(out, 1)
+        fill = px[(y0 + y1) // 2][x0 + 3][:3]
+        ink = [x for y in range(y0 + 2, y1 - 2) for x in range(x0 + 2, x1 - 2) if sum(abs(a - b) for a, b in zip(px[y][x][:3], fill)) > 60]
+        self.assertGreaterEqual(max(ink) - min(ink), 12)
+
+    def test_the_rail_meets_the_terminal_at_one_hairline(self):
+        out = self.render([G.Row(1, "a", "p")])
+        _, _, px = decode_png(out.png)
+        y = self.H // 2
+        self.assertNotEqual(px[y][self.W - 1][:3], px[y][self.W - 2][:3])
+        self.assertEqual(px[y][self.W - 2][:3], px[y][self.W - 6][:3])
+
+    def test_the_rail_material_is_denser_than_the_wide_bar(self):
+        rail = decode_png(self.render([G.Row(1, "a", "p")], alpha=0.85).png)[2]
+        wide = decode_png(B.render(G.group([G.Row(1, "a", "p")]), pal(), width=268, height=200, alpha=0.85).png)[2]
+        self.assertGreater(rail[self.H // 2][self.W // 2][3], wide[100][134][3])
+
+    def test_the_rail_uses_the_desktop_face_first(self):
+        self.assertTrue(B.UI.startswith("SF Pro Text,"))
 
 
 @unittest.skipIf(B is None, "cairo/pango/rsvg not installed")

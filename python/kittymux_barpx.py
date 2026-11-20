@@ -17,7 +17,7 @@ import kittymux_deckpx as dp
 import kittymux_groups as G
 import kittymux_theme as th
 
-UI = "Inter, SF Pro Text, Cantarell, sans-serif"
+UI = "SF Pro Text, Inter, Cantarell, sans-serif"     # kuwai's order: SF Pro when installed, else Inter
 MONO = "JetBrains Mono, SF Mono, monospace"
 PAD = 10            # the side gutter
 INSET = 5           # rows and the active card sit this far in from each edge
@@ -146,18 +146,19 @@ def _tile(pt: dp.Painter, x, y, row: G.Row, p: th.Palette, side=TILE):
     size = round(12 * side / TILE)
     if row.mark and pt.icon(row.mark, x + (side - size) / 2, y + (side - size) / 2, size, fg, alpha):
         return
-    _prompt(pt, x + (side - TILE) / 2, y + (side - TILE) / 2, fg)
+    _prompt(pt, x, y, fg, side)
 
 
-def _prompt(pt: dp.Painter, x, y, color):
-    """The shell's mark: a chevron and an underscore, drawn (no font needed)."""
-    s, cr = pt.s, pt.cr
+def _prompt(pt: dp.Painter, x, y, color, box=TILE):
+    """The shell's mark: a chevron and an underscore, drawn (no font needed), designed in a TILE box and scaled to `box`."""
+    s, cr, k = pt.s, pt.cr, box / TILE
     cr.set_source_rgba(*dp.rgb(color))
-    cr.set_line_width(1.6 * s)
+    cr.set_line_width(max(1.4, 1.6 * k ** 0.5) * s)
     cr.set_line_cap(cairo.LINE_CAP_ROUND)
     cr.set_line_join(cairo.LINE_JOIN_ROUND)
-    cr.move_to((x + 5.5) * s, (y + 6.5) * s); cr.line_to((x + 9) * s, (y + 10) * s); cr.line_to((x + 5.5) * s, (y + 13.5) * s)
-    cr.move_to((x + 10.5) * s, (y + 14) * s); cr.line_to((x + 15) * s, (y + 14) * s)
+    P = lambda px_, py_: ((x + px_ * k) * s, (y + py_ * k) * s)
+    cr.move_to(*P(5.5, 6.5)); cr.line_to(*P(9, 10)); cr.line_to(*P(5.5, 13.5))
+    cr.move_to(*P(10.5, 14)); cr.line_to(*P(15, 14))
     cr.stroke()
 
 
@@ -370,30 +371,107 @@ def _progress(pt: dp.Painter, x, y, w, row: G.Row, p):
         pt.fill_rrect(x, y, max(2.0, w * frac), 2, 1, col)
 
 
-RAIL_MAX = 130      # logical px: narrower than this the bar is the rail (tiles only, a state dot on each tile)
-RAIL_ROW = 38
-RAIL_TILE = 26      # the rail's tiles: the 9-column rail kitty allows is ~80 logical px wide, so tiles fill it (owner, 2026-11-12)
-RAIL_CARD_W, RAIL_CARD_R = 42, 10    # the active (and hovered) tile's card; the shader draws the hover at the same size
-RAIL_BTN = 28       # the expand button in the rail's header
+RAIL_MAX = 130      # logical px: narrower than this the bar is the rail (marks only, a state dot on each)
+# The rail (2026-11-20 redesign). kitty makes a custom-drawn left bar title + 8 cells wide at the least, so the rail is ~80 px:
+# one column of marks with no chrome; the active row alone gets a tile, and the hover (kittymux-pxbar.slang) is the same
+# square. State is a dot inside the tile's top-right corner, clear of the mark, so nothing is ever cut into a tile.
+RAIL_ROW = 40       # one tab: its tile and 4 px above and below
+RAIL_TILE = 32      # the active tile and the hover square
+RAIL_TILE_R = 9     # their corner radius
+RAIL_MARK = 17      # the mark inside a tile
+RAIL_PIP_IN = 5.0   # the state dot's centre, this far in from the tile's top and right edges
+RAIL_PIP_R = 3.0    # its radius (the working ring's too)
+RAIL_FOOT_ROW = 30  # the footer's controls, one per row
+RAIL_GAP = 12       # between groups: a short rule, the rail has no labels
+RAIL_DENSER = 0.5   # the rail keeps half the wide bar's see-through: small marks need a calm surface under them
 PIP = {"waiting": "waiting", "done": "done", "error": "alert", "limited": "waiting", "working": "working"}
+RAIL_FOOT = (("palette", _search_icon), ("inbox", _inbox_icon), ("keys", _keys_icon))
+
+
+def rail_alpha(alpha: float) -> float:
+    return round(1.0 - (1.0 - alpha) * RAIL_DENSER, 3)
+
+
+def _rule(pt, cx, y):
+    c, a = pt.veil(0.10)
+    pt.fill_rrect(cx - 7, y, 14, 1, 0.5, c, a)
+
+
+def _rail_pip(pt, x, y, row: G.Row, pal):
+    """The row's state, in the tile's top-right corner: a dot, or for a working row an open ring the loader turns."""
+    tone = PIP.get(row.state) if not row.muted else None
+    if not tone:
+        return
+    cx, cy, color = x + RAIL_TILE - RAIL_PIP_IN, y + RAIL_PIP_IN, getattr(pal, tone)
+    if row.state == "working":
+        s, cr = pt.s, pt.cr
+        cr.new_path()
+        cr.arc(cx * s, cy * s, (RAIL_PIP_R - 0.3) * s, -1.5708, 3.1416)     # from the top round to the left: ¾ of a turn
+        cr.set_source_rgba(*dp.rgb(color))
+        cr.set_line_width(1.5 * s)
+        cr.set_line_cap(cairo.LINE_CAP_ROUND)
+        cr.stroke()
+        return
+    pt.dot(cx, cy, RAIL_PIP_R, color, 0.6 if row.state == "limited" else 1.0)
+
+
+def _rail_mark(pt, x, y, row: G.Row, pal):
+    """The tab's mark, monochrome: bright on the active row and on one that needs you, faint when muted, muted otherwise."""
+    if row.active or (row.state == "waiting" and not row.muted):
+        tone = pal.text
+    else:
+        tone = pal.faint if row.muted else pal.muted
+    m = RAIL_MARK
+    if row.mark and pt.icon(row.mark, x + (RAIL_TILE - m) / 2, y + (RAIL_TILE - m) / 2, m, tone):
+        return
+    box = TILE * m / 12                       # the prompt is drawn in a TILE box at the weight of a 12 px mark
+    _prompt(pt, x + (RAIL_TILE - box) / 2, y + (RAIL_TILE - box) / 2, tone, box)
+
+
+def _rail_progress(pt, x, y, row: G.Row, pal):
+    """OSC 9;4 progress along the tile's foot, inside it (the old bar under the tile clipped the active card's corners)."""
+    pst, pct = row.progress
+    frac = 1.0 if pst in ("error", "indeterminate") else max(0.0, min(1.0, (pct or 0) / 100))
+    col = {"error": pal.alert, "paused": pal.waiting}.get(pst, pal.working)
+    w, x0, y0 = RAIL_TILE - 16, x + 8, y + RAIL_TILE - 5
+    c, a = pt.veil(0.10)
+    pt.fill_rrect(x0, y0, w, 2, 1, c, a)
+    if frac > 0:
+        pt.fill_rrect(x0, y0, max(2.0, w * frac), 2, 1, col, 0.5 if pst == "indeterminate" else 1.0)
+
+
+def _rail_footer(pt, width, height, p, hits, s) -> float:
+    """The mouse's ways in, as in the wide footer: the palette, the inbox, the keys sheet. Returns the footer's top."""
+    top = height - BOTTOM - (RAIL_GAP + len(RAIL_FOOT) * RAIL_FOOT_ROW)
+    cx = width / 2
+    _rule(pt, cx, top + RAIL_GAP / 2)
+    y = top + RAIL_GAP
+    for name, draw in RAIL_FOOT:
+        draw(pt, cx, y + RAIL_FOOT_ROW / 2, p.faint)
+        _action(hits, name, cx - RAIL_TILE / 2, y, RAIL_TILE, RAIL_FOOT_ROW, s)
+        y += RAIL_FOOT_ROW
+    return top
 
 
 def _render_rail(pt, cr, groups, pal, width, height, s, hits, start=0):
     """Returns (start, shown, total)."""
     cx = width / 2
-    by = (HEADER_H - RAIL_BTN) / 2                             # the way back open: the wide bar's sidebar icon, as a button
-    c, a = pt.veil(0.06)
-    pt.fill_rrect(cx - RAIL_BTN / 2, by, RAIL_BTN, RAIL_BTN, 8, c, a)
-    _sidebar_icon(pt, cx, HEADER_H / 2, pal.muted)
-    n = G.needs_you(groups)
-    if n:
-        pt.fill_rrect(cx + RAIL_BTN / 2 - 6.5, by - 2.5, 9, 9, 4.5, pal.bar)
-        pt.dot(cx + RAIL_BTN / 2 - 2, by + 2, 3.2, pal.waiting)
-    _action(hits, "collapse", 0, 0, width, HEADER_H, s)         # the whole header expands the sidebar again
+    _sidebar_icon(pt, cx, HEADER_H / 2, pal.muted)                 # the way back open: the wide bar's sidebar icon
+    if G.needs_you(groups):
+        pt.dot(cx + 11, HEADER_H / 2 - 8, RAIL_PIP_R, pal.waiting)     # clear of the icon, as a row's dot is of its mark
+    _action(hits, "collapse", 0, 0, width, HEADER_H, s)            # the whole header expands the sidebar again
+    c, a = pt.veil(0.07)                                           # one hairline where the rail meets the terminal
+    cr.rectangle(width * s - 1, 0, 1, height * s)
+    cr.set_source_rgba(*dp.rgb(c, a))
+    cr.fill()
     total = sum(len(g.rows) for g in groups)
     start = max(0, min(start, max(0, total - 1)))
-    need = HEADER_H + sum((11 if gi else 0) + (20 if g.hidden else RAIL_ROW * len(g.rows)) for gi, g in enumerate(groups))
-    limit = height - BOTTOM
+    foot_h = RAIL_GAP + len(RAIL_FOOT) * RAIL_FOOT_ROW
+    bottom = height - BOTTOM
+    if bottom - foot_h - HEADER_H >= 3 * RAIL_ROW + MORE_H:        # a short window keeps its rows and loses the footer
+        bottom = _rail_footer(pt, width, height, pal, hits, s)
+    need = HEADER_H + sum((RAIL_GAP if gi else 0) + (20 if g.hidden else RAIL_ROW * len(g.rows)) for gi, g in enumerate(groups))
+    limit = bottom
     if start or need > limit:
         limit -= MORE_H
     y, tab_i, skip, shown, drew = HEADER_H, 0, start, 0, False
@@ -405,15 +483,14 @@ def _render_rail(pt, cr, groups, pal, width, height, s, hits, start=0):
             skip -= len(g.rows)
             continue
         if drew:
-            c, a = pt.veil(0.10)
-            pt.fill_rrect(cx - 8, y + 5, 16, 1, 0.5, c, a)         # a short rule between groups: the rail has no labels
-            y += 11
+            _rule(pt, cx, y + RAIL_GAP / 2)
+            y += RAIL_GAP
         drew = True
         if g.hidden:
             if y + 20 > limit:
                 break
             label = f"+{g.hidden}"
-            pt.text(cx - pt.text_w(label, 10, family=UI) / 2, y + 10, label, 10, pal.faint, family=UI)
+            pt.text(cx - pt.text_w(label, 10, family=UI, tnum=True) / 2, y + 10, label, 10, pal.faint, family=UI, tnum=True)
             hits.append(Hit("group", int(round(y * s)), int(round((y + 20) * s)), project=g.project))
             y += 20
             continue
@@ -427,31 +504,25 @@ def _render_rail(pt, cr, groups, pal, width, height, s, hits, start=0):
                 break
             shown += 1
             y0, y1 = int(round(y * s)), int(round((y + RAIL_ROW) * s))
+            tx, ty = cx - RAIL_TILE / 2, y + (RAIL_ROW - RAIL_TILE) / 2
             if row.active:
-                c, a = pt.veil(0.085)
-                pt.fill_rrect(cx - RAIL_CARD_W / 2, y + 2, RAIL_CARD_W, RAIL_ROW - 4, RAIL_CARD_R, c, a)
-            cr.set_source_rgb(*_rgb(marker(pal.bar, tab_i)))
+                c, a = pt.veil(0.11)
+                pt.fill_rrect(tx, ty, RAIL_TILE, RAIL_TILE, RAIL_TILE_R, c, a)
+            cr.set_source_rgb(*_rgb(marker(pal.bar, tab_i, row.state == "working" and not row.muted)))
             cr.rectangle(0, y0, 1, y1 - y0)
             cr.fill()
             tab_i += 1
-            ty = y + (RAIL_ROW - RAIL_TILE) / 2
-            _tile(pt, cx - RAIL_TILE / 2, ty, row, pal, RAIL_TILE)
-            _stack(pt, cx - RAIL_TILE / 2, ty, row.stack, pal, RAIL_TILE)
-            tone = PIP.get(row.state) if not row.muted else None
-            if tone:
-                pt.fill_rrect(cx + RAIL_TILE / 2 - 6, ty - 3, 10, 10, 5, pal.bar)
-                pt.dot(cx + RAIL_TILE / 2 - 1, ty + 2, 3.4, getattr(pal, tone))
+            _rail_mark(pt, tx, ty, row, pal)
+            _rail_pip(pt, tx, ty, row, pal)
             if row.progress:
-                pst, pct = row.progress
-                frac = 1.0 if pst in ("error", "indeterminate") else max(0.0, min(1.0, (pct or 0) / 100))
-                pt.fill_rrect(cx - RAIL_TILE / 2, y + RAIL_ROW - 3, RAIL_TILE * frac, 2, 1, {"error": pal.alert, "paused": pal.waiting}.get(pst, pal.working))
+                _rail_progress(pt, tx, ty, row, pal)
             hits.append(Hit("tab", y0, y1, tab_id=row.tab_id))
             y += RAIL_ROW
         if full:
             break
     below = total - start - shown
     if below > 0:
-        _more(pt, cx, height - BOTTOM - MORE_H, f"↓{below}", pal, hits, "down", s)
+        _more(pt, cx, bottom - MORE_H, f"↓{below}", pal, hits, "down", s)
     return start, shown, total
 
 
@@ -462,6 +533,8 @@ def render(groups, pal: th.Palette, width: int, height: int, *, host: str = "", 
     W, H = int(round(width * scale)), int(round(height * scale))
     surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, W, H)
     cr = cairo.Context(surf)
+    if width < RAIL_MAX:
+        alpha = rail_alpha(alpha)
     cr.set_source_rgba(*_rgb(pal.bar), alpha)
     cr.paint()
     _scale_run(cr, pal.bar, H, scale)

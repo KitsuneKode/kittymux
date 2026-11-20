@@ -61,6 +61,12 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
 - `python/tabnav-kit.py` (a no-UI kitten on `ctrl+tab` / `ctrl+shift+tab`) — with the pixel bar up, the next/previous row it draws
   (`kittymux_groups.step` over `kittymux_pxbar.drawn_groups`: drawn order, wrapping, never into a folded group); otherwise kitty's own
   `next_tab` / `previous_tab`.
+- `python/barview-kit.py` (a no-UI kitten on leader `f` / `,` / `.`) — the pixel bar's mouse-only parts from the keyboard, for the OS window you are in:
+  `folds` = `kittymux_pxbar.toggle_folds` (open every folded group on screen, or fold back the opened ones), `up`/`down` = `kittymux_pxbar.page`; then `kittymux_scan.refresh_bar`.
+- The rail (`kittymux_barpx._render_rail`, below `RAIL_MAX`): kitty makes a custom-drawn left bar title + 8 cells wide at the least (measured: `tab_fade`
+  and `tab_separator` shrink the built-in styles, not `custom`), so the rail is ~80 px and cannot be narrower. Marks only, monochrome; the active row alone has a
+  tile (`RAIL_TILE`), and the hover in `kittymux-pxbar.slang` is the same square; state is a dot inside the tile's corner; a working row uses the working
+  marker family and `kittymux-pxwave.slang` turns its ring (`rail_ring`, constants pinned by `test_pxbar`). Beside the rail the shader draws no terminal card.
 - Mute (`kittymux_quiet`: `mutes-<kitty pid>.json`, `tab_windows` for `kittymux mute [TAB]`): `RowData.muted` / `PaneData.muted` from the collector; `kittymux_deck.asks` is the one "does this row need you" rule (muted never does); `agents.json` rows carry `muted`, the document `needs_you`. Group by state (`g`): `kittymux_deck.group_by_state` + `flatten(headed=True)`, remembered in `$STATE/panel-group`.
 - `python/kittymux_helpview.py` (pure) — the panel's `?` card (keys + mouse of the current view; the key list is data, `tests/test_helpview.py` checks every named key is one the panel handles). `kittymux_deck.wrap_words` wraps prose at spaces (`wrap_detail` splits characters: for paths).
   A split tab's panes are listed only for tab ids in `Snapshot.open_tabs` (`sidebar-kit._open`; `deck.flatten(…, open_tabs)`): toggled by `▸`/`▾` clicks, `→ ← o`; NEVER by hover or by a state change (the list must not move under the pointer).
@@ -120,7 +126,9 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
 - `bin/mux-ask` — the `PermissionRequest` hook: publishes a request it can show whole as `asks/<key>.json` (version 2, a random `id`), waits for `asks/<key>.answer` (`allow <id>` / `deny <id>`) and returns it as the hook's decision; out of the way when the pane's kitty is focused, outside kitty, or after 45 s (`docs/inbox.md#asks`)
 - `python/sidebar-kit.py` — `kitten` overlay: sidebar with real hover/click
   + live pane preview (bound `ctrl+alt+b`)
-- `python/peek-kit.py` — the right-click peek card for one tab (kitten over the active window, opened by
+- `python/peek-kit.py` — the right-click peek card for one tab, with an action row (rename, split, mute, close: keys `r s m x` or clicks); the card
+  returns `<action>:<tab id>` and its `handle_result` runs it in kitty through `python/kittymux_tabactions.py` (close = `kittymux_pxbar.close_tab`'s guard rule,
+  mute = `kittymux_quiet` for every window of the tab; rename/split activate THAT tab first). Opened as a kitten over the active window, opened by
   `kittymux_barsize._open_peek`; `kitty @ kitten --match id:W peek-kit.py <tab id>`). `kittymux peek [TAB_ID | --waiting]` (`ctrl+alt+shift+q`) opens it from the keyboard: the pane to show it over is `$KITTY_WINDOW_ID` when that is a real pane
   of this kitty, else the FOCUSED pane (a key-bound `launch --type=background` gets the id of its own hidden window, which no `--match id:` finds); `--waiting` = `kittymux_launcher.needs_you_target` over `build_rows` (the order `pick` uses), this kitty only
 - `python/collectors/` — per-provider usage collectors (claude/codex/cursor/devin)

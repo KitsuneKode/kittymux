@@ -2,7 +2,8 @@
 # of its screen. Opened by right-clicking a tab in the vertical bar (kitty gives its tab bar no hover
 # events, so a click is the nearest thing to a link-preview hover), or by hand:
 #   kitten python/peek-kit.py <tab id>
-# Enter jumps there (to the pane that is asking, if one is); Esc / q / a click closes the card.
+# Enter jumps there (to the pane that is asking, if one is); r renames it, s splits it, m mutes it, x closes it (the row of
+# actions above the footer, clickable too: kittymux_tabactions runs them in kitty); Esc / q / a click elsewhere closes the card.
 # All colours derive from the live kitty theme; data comes from a native tab snapshot on a bounded worker.
 
 import json
@@ -35,6 +36,7 @@ import kittymux_agents  # noqa: E402
 import kittymux_deck as deck  # noqa: E402
 import kittymux_features  # noqa: E402
 import kittymux_place
+import kittymux_tabactions  # noqa: E402
 import kittymux_git  # noqa: E402
 import kittymux_theme  # noqa: E402
 import kittymux_titles  # noqa: E402
@@ -139,6 +141,8 @@ class Peek(Handler):
         self._selected_id = 0
         self.scroll = 0
         self._pane_hits = {}
+        self._act_hits: list = []     # (x0, x1, action) on the action row
+        self.action = ""              # what the card asked kitty to do with the tab when it closed (kittymux_tabactions)
         self._inflight = False
         self.card: dict | None = None
         self.gone = False
@@ -254,7 +258,8 @@ class Peek(Handler):
             lines.append(self._line([("─" * width, p.line, False)], width, bg))
             for ln in card["tail"] or ["(empty screen)"]:
                 lines.append(self._line([(" " + ln, p.muted, False)], width, bg))
-        page = max(1, rows - 1)
+        acts = card is not None and rows >= 6
+        page = max(1, rows - (2 if acts else 1))
         self.scroll = max(0, min(self.scroll, max(0, len(lines) - page)))
         footer_text = " 1–9 preview · ⏎ go · esc close"
         if len(lines) > page:
@@ -262,8 +267,24 @@ class Peek(Handler):
         footer = self._line([(footer_text, p.faint, False)], width, bg)
         for y, ln in enumerate(lines[self.scroll:self.scroll + page]):
             w(set_cursor_position(0, y) + ln)
+        self._act_hits = []
+        if acts:                     # what a right-click offers besides a look: each a key and a click target
+            out, x = "", 0
+            for ch, name in kittymux_tabactions.ACTIONS:
+                chip = f" {ch} {name} "
+                if x + _cells(chip) > width:
+                    break
+                out += self._seg(f" {ch}", fg=p.text, bg=bg, bold=True) + self._seg(f" {name} ", fg=p.muted, bg=bg)
+                self._act_hits.append((x, x + _cells(chip), name))
+                x += _cells(chip)
+            out += self._seg(" " * max(0, width - x), bg=bg)
+            w(set_cursor_position(0, rows - 2) + out)
         w(set_cursor_position(0, rows - 1) + footer)
         self.flush()
+
+    def _act(self, name: str) -> None:
+        self.action = name
+        self.quit_loop()
 
     # ---- events -----------------------------------------------------------
     def on_key_event(self, key_event, in_bracketed_paste: bool = False) -> None:
@@ -282,6 +303,8 @@ class Peek(Handler):
             if int(k) <= len(panes):
                 self._selected_id = panes[int(k) - 1]["id"]
                 self._refresh(force=True)
+        elif kittymux_tabactions.key_action(k) and self.card is not None:
+            self._act(kittymux_tabactions.key_action(k))
         elif k == "ENTER" and self.card is not None:
             target = self._selected_id if any(p["id"] == self._selected_id for p in self.card["panes"]) else self.card["focus_id"]
             _rc("focus-tab", "--match", f"id:{self.card['tab_id']}")
@@ -289,6 +312,11 @@ class Peek(Handler):
             self.quit_loop()
 
     def on_click(self, mouse_event) -> None:
+        if mouse_event.cell_y == self.screen_size.rows - 2:
+            for x0, x1, name in self._act_hits:
+                if x0 <= mouse_event.cell_x < x1:
+                    self._act(name)
+                    return
         wid = self._pane_hits.get(mouse_event.cell_y + self.scroll)
         if wid is not None:
             self._selected_id = wid
@@ -308,10 +336,11 @@ def main(args: list[str]) -> str:
     except (IndexError, ValueError):
         print("usage: kitten peek-kit.py <tab id>", file=sys.stderr)
         return ""
-    Loop().loop(Peek(tab_id))
-    return ""
+    peek = Peek(tab_id)
+    Loop().loop(peek)
+    return kittymux_tabactions.answer(peek.action, tab_id)
 
 
 @result_handler()
 def handle_result(args: list[str], answer: str, target_window_id: int, boss: BossType) -> None:
-    pass
+    kittymux_tabactions.run(boss, answer)
