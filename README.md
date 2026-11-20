@@ -392,6 +392,7 @@ tab bar shows a LEADER badge while it is armed.
 | `s` `P` | Kitty Home · project picker |
 | `a` `w` `g` `;` | agent picker · **next waiting agent** · new worktree agent · send prompt |
 | `b` `B` `u` `i` `e` | sidebar deck · docked panel · usage HUD · location pill · bar edge |
+| `f` `,` `.` | pixel bar: open every folded group (again: fold back) · page the tab list up · down |
 | `?` | the full card, generated from your leader config |
 
 The default leader is `ctrl+space`. If you use nvim-cmp (which binds `<C-Space>`), pick another
@@ -470,7 +471,8 @@ saves the width for this kitty. Constraints:
 Tab titles show only what fits. kitty does not deliver hover events to its tab bar (tested), so the
 preview gesture is a **right-click on a tab**: a peek card opens over the active window with the tab's
 state and the question it is asking, branch, folder, its panes, and the tail of its screen. `⏎` jumps there
-(to the pane that is asking, if one is), `esc` or a click closes it. The deck (`ctrl+alt+b`) and the docked
+(to the pane that is asking, if one is), and the action row under it renames (`r`), splits (`s`), mutes (`m`) or closes (`x`)
+that tab, by key or by click (close asks first while an agent is busy); `esc` or a click elsewhere closes it. The deck (`ctrl+alt+b`) and the docked
 panel (`ctrl+alt+shift+b`, also drag-resizable) do get real hover: moving over a tab or pane previews its screen (beside the list in the wide deck, in a drawer under the list in the narrow panel). Set `KITTYMUX_DEBUG=1` to log drag errors to `barsize-debug.log`.
 
 ### Reordering tabs, and moving splits ↔ tabs

@@ -93,7 +93,7 @@ When tmux has focus, only the keys tmux really binds pass through: `shift+←`, 
 | Gesture                                          | Result                                                                         |
 | ------------------------------------------------ | ------------------------------------------------------------------------------ |
 | Click a tab                                      | Activate it. A click still counts if your hand drifts up to about 14 pixels or you hold the button up to 1.5 seconds. |
-| Right-click a tab                                | Open its peek card.                                                            |
+| Right-click a tab                                | Open its peek card, with rename, split, mute and close for that tab (`r` `s` `m` `x`, or click). |
 | Double-click a tab                               | Rename it (kitty's own).                                                       |
 | Middle-click a tab                               | Close a plain tab. A tab running an agent ignores it.                          |
 | Drag a tab                                       | Reorder.                                                                       |
@@ -118,6 +118,7 @@ With leader mode installed, the direct chords it covers are left out of your key
 | `s`, `P`                | Kitty Home, project picker.                                             |
 | `a` `w` `g` `;`         | Agent picker, next waiting agent, new worktree agent, send prompt.      |
 | `b` `B` `u` `i` `e`     | Deck, docked panel, usage HUD, location pill, bar edge.                 |
+| `f`, `,` `.`            | Pixel bar: open every folded group (again: fold them back), page the tab list up, down. |
 | `?`                     | The full card, generated from your leader configuration.                |
 
 ## The keymap overlay

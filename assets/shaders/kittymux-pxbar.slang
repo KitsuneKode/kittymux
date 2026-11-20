@@ -2,7 +2,9 @@
 // kittymux pxbar: hover for the pixel tab bar (python/kittymux_barpx.py), which kitty shows as the OS window's background
 // image through blank tab-bar cells. Column 0 of the picture is a row map: every tab row's pixels there share one marker
 // colour (alternating per row), the bar's own colour everywhere else. This shader paints column 0 back to its neighbour,
-// and gives the row under the pointer a rounded highlight with a close cross at its end (over a cover that hides the age).
+// and gives the row under the pointer a rounded highlight with a close cross at its end (over a cover that hides the age);
+// on the rail the highlight is the active tile's square and there is no cross. Beside the wide bar the terminal is a card
+// on the bar's material; beside the rail it is not (one frame: the window's own corners and the rail's hairline).
 // A press darkens the band a little. Static: kitty redraws it when the pointer moves, not while it is still.
 import kitty_custom_shader_types;
 
@@ -54,6 +56,7 @@ float4 card(float4 color, KittyTextures t, KittyCustomShaderData d, float2 span)
     if (edge > 40.0) return color;                                  // the card's inside: untouched, and cheap
     float sc = scale_of(t, px, px.x * 0.5);
     if (sc <= 0.0) return color;
+    if (span.y / px.x < RAIL_MAX * sc) return color;                // beside the rail: no card, one frame
     float m = CARD_M * sc, rad = CARD_R * sc;
     float2 lo = float2(l, b + m), hi = float2(r - m, tp - m);
     float2 c = clamp(p, lo + rad, hi - rad);
@@ -98,11 +101,11 @@ fragment_main(float4 color, KittyTextures t, KittyCustomShaderData d) {
     if (t.pos.y > top + px.y * 0.5 || t.pos.y < bot - px.y * 0.5) return color;
     float2 p = t.pos / px;
     bool rail = span.y / px.x < RAIL_MAX * sc;
-    float r0 = (rail ? 10.0 : R) * sc;
+    float r0 = (rail ? 9.0 : R) * sc;
     float x0 = INSET * sc, x1 = span.y / px.x - INSET * sc, y0 = bot / px.y, y1 = top / px.y;
-    if (rail) {                                                     // the rail's card: kittymux_barpx draws the active one RAIL_CARD_W (42) px wide
+    if (rail) {                                                     // the rail's tile: kittymux_barpx draws the active one the same square
         float mid = span.y / px.x * 0.5;
-        x0 = mid - 21.0 * sc; x1 = mid + 21.0 * sc; y0 += 2.0 * sc; y1 -= 2.0 * sc;
+        x0 = mid - 16.0 * sc; x1 = mid + 16.0 * sc; y0 += 4.0 * sc; y1 -= 4.0 * sc;
     }
     float2 q = float2(max(max(x0 + r0 - p.x, p.x - (x1 - r0)), 0.0), max(max(y0 + r0 - p.y, p.y - (y1 - r0)), 0.0));
     float inside = 1.0 - smoothstep(r0 - 0.75, r0 + 0.75, length(q));

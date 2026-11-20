@@ -467,6 +467,47 @@ class RailCrossTest(unittest.TestCase):
         self.assertIn(f"RAIL_MAX = {BP.RAIL_MAX}.0", shader)
 
 
+class KeyboardFoldsTest(unittest.TestCase):
+    """Folded groups and paging were click-only (2026-11-20): leader f opens every folded group, or folds them back."""
+    def test_open_all_then_fold_back(self):
+        import kittymux_groups as G
+        saved_w, saved_e = dict(PX._S.windows), set(PX._S.expanded)
+        try:
+            PX._S.expanded.clear()
+            groups = (G.Group("api", "", (), hidden=3), G.Group("web", "", (G.Row(1, "t", "web"),)), G.Group("docs", "", (), hidden=2))
+            PX._S.windows[5] = {"sig": (groups, None, 60, 900, 1.0, "")}
+            self.assertTrue(PX.toggle_folds(5))
+            self.assertEqual(PX.expanded(), {"api", "docs"})
+            PX._S.windows[5] = {"sig": (tuple(G.Group(g.project, "", g.rows) for g in groups), None, 60, 900, 1.0, "")}
+            self.assertTrue(PX.toggle_folds(5))                   # nothing folded on screen: fold back what was opened
+            self.assertEqual(PX.expanded(), frozenset())
+            self.assertFalse(PX.toggle_folds(5))
+            self.assertFalse(PX.toggle_folds(99))                 # a window with no picture
+        finally:
+            PX._S.windows.clear(); PX._S.windows.update(saved_w)
+            PX._S.expanded.clear(); PX._S.expanded.update(saved_e)
+
+
+class RailShaderTest(unittest.TestCase):
+    """The rail is one frame: no inset terminal card beside it, and its working loader is drawn where the picture puts it."""
+    def src(self, name):
+        with open(os.path.join(os.path.dirname(__file__), "..", "assets", "shaders", name), encoding="utf-8") as f:
+            return f.read()
+
+    def test_the_rail_has_no_terminal_card(self):
+        card = self.src("kittymux-pxbar.slang").split("float4 card(", 1)[1].split("public float4", 1)[0]
+        self.assertIn("if (span.y / px.x < RAIL_MAX * sc) return color;", card)
+
+    def test_the_loader_knows_the_rail_geometry(self):
+        try:
+            import kittymux_barpx as BP
+        except (ImportError, ValueError):
+            self.skipTest("cairo/pango/rsvg not installed")
+        wave = self.src("kittymux-pxwave.slang")
+        for name in ("RAIL_MAX", "RAIL_ROW", "RAIL_TILE", "RAIL_PIP_IN", "RAIL_PIP_R"):
+            self.assertIn(f"static const float {name} = {float(getattr(BP, name)):.1f};", wave)
+
+
 class ReviewFixesTest(unittest.TestCase):
     def test_a_failed_wave_event_is_not_recorded_so_the_next_pass_retries(self):
         saved = dict(PX._S.wave)

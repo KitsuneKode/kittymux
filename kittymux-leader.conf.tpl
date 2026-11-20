@@ -98,6 +98,12 @@ map --mode leader t launch --type=background @KITTYMUX_HOME@/bin/kittymux layout
 map --mode leader bracketleft launch --type=background @KITTYMUX_HOME@/bin/kittymux layout width -2
 # wider sidebar
 map --mode leader bracketright launch --type=background @KITTYMUX_HOME@/bin/kittymux layout width +2
+# bar: open every folded group (again: fold them back)
+map --mode leader f kitten @KITTYMUX_HOME@/python/barview-kit.py folds
+# bar: page the tab list up
+map --mode leader comma kitten @KITTYMUX_HOME@/python/barview-kit.py up
+# bar: page the tab list down
+map --mode leader period kitten @KITTYMUX_HOME@/python/barview-kit.py down
 # bar layout presets
 map --mode leader shift+l launch --type=overlay @KITTYMUX_HOME@/bin/kittymux layout pick
 # this card
