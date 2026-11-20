@@ -15,9 +15,9 @@ static const float FAMILY = 0.09;    // encoded red-channel distance from the ba
 static const float CY = 15.0;        // logical px from a row's top to its first line's centre (a working row always has a second line)
 static const float SPEED = 0.85;     // waves per second: calm, never a buzz
 static const float RAIL_MAX = 130.0; // kittymux_barpx.RAIL_MAX: a narrower bar is the rail
-static const float RAIL_ROW = 40.0;  // kittymux_barpx.RAIL_ROW
-static const float RAIL_TILE = 32.0; // kittymux_barpx.RAIL_TILE
-static const float RAIL_PIP_IN = 5.0;  // kittymux_barpx.RAIL_PIP_IN: the ring's centre, in from the tile's top and right
+static const float RAIL_ROW = 36.0;  // kittymux_barpx.RAIL_ROW
+static const float RAIL_TILE = 30.0; // kittymux_barpx.RAIL_TILE
+static const float RAIL_PIP_IN = 4.5;  // kittymux_barpx.RAIL_PIP_IN: the ring's centre, in from the tile's top and right
 static const float RAIL_PIP_R = 3.0;   // kittymux_barpx.RAIL_PIP_R
 static const float TURNS = 0.6;      // the rail ring's turns per second
 
