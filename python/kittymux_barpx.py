@@ -375,14 +375,14 @@ RAIL_MAX = 130      # logical px: narrower than this the bar is the rail (marks 
 # The rail (2026-11-20 redesign). kitty makes a custom-drawn left bar title + 8 cells wide at the least, so the rail is ~80 px:
 # one column of marks with no chrome; the active row alone gets a tile, and the hover (kittymux-pxbar.slang) is the same
 # square. State is a dot inside the tile's top-right corner, clear of the mark, so nothing is ever cut into a tile.
-RAIL_ROW = 40       # one tab: its tile and 4 px above and below
-RAIL_TILE = 32      # the active tile and the hover square
-RAIL_TILE_R = 9     # their corner radius
-RAIL_MARK = 17      # the mark inside a tile
-RAIL_PIP_IN = 5.0   # the state dot's centre, this far in from the tile's top and right edges
+RAIL_ROW = 36       # one tab: its tile and 3 px above and below (Rex's sidebar rhythm: rows ~2.5× the text, not 3×)
+RAIL_TILE = 30      # the active tile and the hover square
+RAIL_TILE_R = 8     # their corner radius (kuwai's r1)
+RAIL_MARK = 16      # the mark inside a tile
+RAIL_PIP_IN = 4.5   # the state dot's centre, this far in from the tile's top and right edges
 RAIL_PIP_R = 3.0    # its radius (the working ring's too)
 RAIL_FOOT_ROW = 30  # the footer's controls, one per row
-RAIL_GAP = 12       # between groups: a short rule, the rail has no labels
+RAIL_GAP = 10       # between groups: a short rule, the rail has no labels
 RAIL_DENSER = 0.5   # the rail keeps half the wide bar's see-through: small marks need a calm surface under them
 PIP = {"waiting": "waiting", "done": "done", "error": "alert", "limited": "waiting", "working": "working"}
 RAIL_FOOT = (("palette", _search_icon), ("inbox", _inbox_icon), ("keys", _keys_icon))

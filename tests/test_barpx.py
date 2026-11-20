@@ -221,9 +221,9 @@ class ControlsTest(unittest.TestCase):
     def test_the_rail_uses_its_width(self):
         # 2026-11-12, the owner: the rail had "too much margin" (20 px tiles in a 9-column bar) and no visible way back open.
         # 2026-11-20: kitty gives a custom-drawn left bar title + 8 cells at the least, so the rail is ~80 px wide; the tile
-        # is what fills it, and a row is the tile with 4 px above and below.
+        # is what fills it, and a row is the tile with 3 px above and below (Rex's rhythm, 2026-11-20: "too much spacing").
         self.assertGreaterEqual(B.RAIL_TILE, 30)
-        self.assertEqual(B.RAIL_ROW, B.RAIL_TILE + 8)
+        self.assertEqual(B.RAIL_ROW, B.RAIL_TILE + 6)
         out = B.render(session(), pal(), width=90, height=400)
         tabs = [hb for hb in out.hits if hb.kind == "tab"]
         self.assertTrue(all(hb.y1 - hb.y0 == B.RAIL_ROW for hb in tabs))
