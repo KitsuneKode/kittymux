@@ -950,7 +950,7 @@ def _install_native_edge() -> None:
 
 def bar_shown(tm) -> bool:
     """Whether kitty shows this TabManager's bar (not `tab_bar_style hidden`, and enough tabs for `tab_bar_min_tabs`)."""
-    return not getattr(tm, "tab_bar_hidden", False) and bool(tm.tab_bar_should_be_visible)
+    return not getattr(tm, "tab_bar_hidden", False) and bool(getattr(tm, "tab_bar_should_be_visible", True))
 
 
 def pxbar_after_layout(tm) -> None:

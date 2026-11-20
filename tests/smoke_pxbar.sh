@@ -148,6 +148,27 @@ for _ in $(seq 40); do [ "$(mode)" = full ] && break; sleep 0.25; done
 [ "$(mode)" = full ] || fail "the rail's mascot did not open the bar again (mode: $(mode))"
 echo "  ok   the header folds the bar to the rail and the rail's mascot opens it"
 
+# 6. one tab left under `tab_bar_min_tabs 2`: kitty hides the bar, and the picture must go with it and STAY gone. kitty still
+#    runs the bar's draw while it is hidden; the release before 2026-11-20 put the picture back on the next redraw, a ghost
+#    sidebar behind the terminal's text (the owner's screen). Run against that release, this step must FAIL.
+if command -v import >/dev/null 2>&1 && command -v magick >/dev/null 2>&1; then
+  sed -i 's/^tab_bar_min_tabs 1$/tab_bar_min_tabs 2/' "$CFG/kitty.conf"
+  kitty @ --to "$SOCK" load-config >/dev/null 2>&1
+  # a working agent in the tab that stays: the scanner redraws the bar on its own while it works (the owner's tab ran Devin)
+  kitty @ --to "$SOCK" launch --match title:alpha --location=vsplit bash -c 'printf "· Pondering… (12s · ↓ 1.2k tokens)\n"; exec -a claude sleep 86400' >/dev/null 2>&1
+  kitty @ --to "$SOCK" close-tab --match title:bravo >/dev/null 2>&1
+  kitty @ --to "$SOCK" close-tab --match title:echo >/dev/null 2>&1
+  until_true has_tabs alpha -- bravo echo || fail "could not get down to one tab (tabs: $(titles))"
+  sleep 9                                                       # several scanner passes: each one redraws the (hidden) bar
+  DISPLAY=$DISP import -window root "$T/ghost.png"
+  px() { magick "$T/ghost.png" -format "%[pixel:p{$1,$2}]" info:; }
+  side=$(px 40 600) mid=$(px 600 600)                            # the bar's old place; the left pane, past any picture
+  [ "$side" = "$mid" ] || fail "with the bar hidden its picture stayed behind the terminal (x=40: $side, x=600: $mid)"
+  echo "  ok   one tab left: the hidden bar's picture is gone and stays gone"
+else
+  echo "  skip the hidden-bar check (ImageMagick not installed)"
+fi
+
 tripwire || exit 1
 echo "  ok   no other kitty on this machine was touched"
 echo "PASS: the pixel tab bar maps clicks to the rows it draws, and its close cross closes (busy agents ask first)"

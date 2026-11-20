@@ -156,6 +156,53 @@ class BackgroundTest(unittest.TestCase):
             PX._S.windows.update(saved)
 
 
+class HiddenBarRedrawTest(unittest.TestCase):
+    """2026-11-20, the owner's screen: one tab left under `tab_bar_min_tabs 2`, kitty hid the bar, and the rail stayed behind
+    the terminal's text. kitty still runs the bar's draw while it is hidden, and its geometry is the last one laid out, so
+    every redraw put the picture back right after the visibility hook took it away."""
+    def fdt(self, tm):
+        return types.SimpleNamespace(
+            get_boss=lambda: types.SimpleNamespace(os_window_map={4: tm}),
+            get_os_window_size=lambda _osw: {"framebuffer_height": 900, "xscale": 1.0})
+
+    def tm(self, **kw):
+        bar = types.SimpleNamespace(window_geometry=types.SimpleNamespace(left=0, right=82, bottom=900))
+        return types.SimpleNamespace(tab_bar=bar, tab_bar_hidden=kw.get("hidden", False), tab_bar_should_be_visible=kw.get("visible", True))
+
+    def test_a_shown_bar_has_metrics(self):
+        from unittest.mock import patch
+        with patch.dict(sys.modules, {"kitty.fast_data_types": self.fdt(self.tm())}):
+            self.assertEqual(PX.metrics(4), (82, 900, 1.0))
+
+    def test_a_hidden_bar_has_none_so_publish_takes_the_picture_away(self):
+        from unittest.mock import patch
+        for kw in ({"visible": False}, {"hidden": True}):
+            with patch.dict(sys.modules, {"kitty.fast_data_types": self.fdt(self.tm(**kw))}):
+                self.assertIsNone(PX.metrics(4), kw)
+
+
+class HiddenBarWaveTest(unittest.TestCase):
+    def test_a_hidden_bar_never_starts_the_loader(self):
+        # publish fired kmx-wave-on (kitty then redraws at 15 fps) before it found the bar hidden, then clear fired it off:
+        # an on/off pair on every scanner pass while an agent worked in a window whose bar was hidden
+        from unittest.mock import patch
+        import kittymux_groups as G
+        fired = []
+        saved = dict(PX._S.wave)
+        try:
+            PX._S.wave.clear()
+            groups = G.group([G.Row(1, "t", "p", state="working")])
+            with patch.object(PX, "metrics", return_value=None), patch.object(PX, "cross_shown", return_value=True), \
+                    patch.object(PX, "wave", side_effect=lambda osw, on, fire=None: fired.append(on)), \
+                    patch.dict(sys.modules, {"kitty.fast_data_types": types.SimpleNamespace(
+                        get_boss=lambda: types.SimpleNamespace(os_window_map={6: None}))}):
+                for _ in range(3):
+                    PX.publish(6, groups, None)
+            self.assertNotIn(True, fired)
+        finally:
+            PX._S.wave.clear(); PX._S.wave.update(saved)
+
+
 class DividerFirstTest(unittest.TestCase):
     def _press(self, in_divider):
         from unittest.mock import patch

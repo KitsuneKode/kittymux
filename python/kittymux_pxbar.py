@@ -34,10 +34,15 @@ def _resources():
 
 
 def metrics(os_window_id: int):
-    """(bar_right_px, window_height_px, scale) for an OS window whose bar is on the left, else None."""
+    """(bar_right_px, window_height_px, scale) for an OS window whose bar is on the left and shown, else None (publish then
+    takes the picture away). A hidden bar (one tab under `tab_bar_min_tabs 2`, or hidden) still gets drawn by kitty, with
+    the geometry of its last layout: without this check every redraw put the picture back behind the terminal's text."""
     from kitty.fast_data_types import get_boss, get_os_window_size
     tm = get_boss().os_window_map.get(os_window_id)
     if tm is None or getattr(tm, "tab_bar", None) is None:
+        return None
+    import kittymux_barsize
+    if not kittymux_barsize.bar_shown(tm):
         return None
     g = tm.tab_bar.window_geometry
     size = get_os_window_size(os_window_id) or {}
@@ -81,19 +86,19 @@ def wants_wave(groups, animate: bool, shader: bool, start: int = 0, shown: int |
 
 def publish(os_window_id: int, groups, pal, host: str = "", animate: bool = True) -> bool:
     """Render and show the picture when what it shows changed. Returns True when it swapped."""
-    shader = cross_shown()
-    seen = _S.windows.get(os_window_id) or {}
-    view0 = _S.view.get(os_window_id) or {}
-    wave(os_window_id, wants_wave(groups, animate, shader, view0.get("start", 0), seen.get("shown")))
     try:
         from kitty.fast_data_types import get_boss
         prune(get_boss().os_window_map)
     except Exception:
         pass
     m = metrics(os_window_id)
-    if m is None:                             # no bar on the left (moved to the right edge): no picture, no hit bands
-        clear(os_window_id)
+    if m is None:                             # no bar shown on the left (hidden, or on another edge): no picture, no hit bands,
+        clear(os_window_id)                   # and no loader animating a picture nobody sees
         return False
+    shader = cross_shown()
+    seen = _S.windows.get(os_window_id) or {}
+    view0 = _S.view.get(os_window_id) or {}
+    wave(os_window_id, wants_wave(groups, animate, shader, view0.get("start", 0), seen.get("shown")))
     right, fb_h, scale = m
     scale = round(scale * ui_scale(font_points()) * 8) / 8   # device px per drawn px, in eighths: the scale run the shaders read encodes it exactly
     alpha = material_alpha()
