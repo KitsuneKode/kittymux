@@ -171,7 +171,7 @@ shot inbox-scroll inbox-restored
 key q
 panel_closed() { ! screen | grep -q 'Inbox'; }
 wait_until "panel close" panel_closed
-if kitty --version | grep -q '0\.50\.'; then
+if kitty --version | grep -qE '0\.[5-9][0-9]\.|[1-9][0-9]*\.'; then
     KMX() { env -u KITTY_WINDOW_ID -u KITTY_PID -u KITTY_LISTEN_ON KITTYMUX_TARGET="$SOCK" KITTYMUX_STATE="$STATE" python3 "$ROOT/bin/kittymux" pane-controls "$@" --window 1; }
     KMX show
     KMX show
@@ -185,7 +185,7 @@ import json,sys
 print(next(w['id'] for o in json.load(open(sys.argv[1])) for t in o['tabs'] for w in t['windows'] if 'kittymux_pane_controls' in w.get('user_vars',{})))
 PY
 )
-    strip_ready() { kitty @ --to "$SOCK" get-text --match "id:$DOCK_ID" | grep -qE 'R (Right|Split)'; }
+    strip_ready() { kitty @ --to "$SOCK" get-text --match "id:$DOCK_ID" | grep -qE '◫ (Right|Split)'; }
     wait_until "pane controls UI initialization" strip_ready
     shot pane-controls
     windows() { kitty @ --to "$SOCK" ls | python3 -c 'import json,sys;print(sum(len(t["windows"]) for o in json.load(sys.stdin) for t in o["tabs"]))'; }
