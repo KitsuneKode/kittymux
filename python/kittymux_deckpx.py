@@ -377,8 +377,10 @@ def ring(pt: Painter, cx, cy, r, state, phase, bar, width=2.0, track=True):
     if state == "working":
         pt.circle(cx, cy, r, col, 0.22, width)
         pt.spinner(cx, cy, r, col, phase)
-    elif state in ("waiting", "error", "limited"):
+    elif state in ("waiting", "error"):
         pt.circle(cx, cy, r, col, 1.0, width)
+    elif state == "limited":
+        pt.circle(cx, cy, r, col, 0.55, width)
     elif state == "done":
         br = max(4.5, r * 0.42)
         bx, by = cx + r * 0.72, cy + r * 0.72
@@ -709,10 +711,12 @@ def _paint_space(pt, p, bar, frame, pad, inner, y, h, sp, index, hit, tones):
             pt.circle(cx, cy, r, col, 1.0, 1.4)
             pt.check(cx, cy, 7, col, width=1.4)
         else:
-            pt.circle(cx, cy, r, col, 1.0 if state != "working" else 0.9, 1.4)
+            alpha = 0.55 if state == "limited" else 0.9 if state == "working" else 1.0
+            pt.circle(cx, cy, r, col, alpha, 1.4)
             label = str(n) if n < 100 else "99"
             lw = pt.text_w(label, T_SMALL, weight=Pango.Weight.SEMIBOLD, tnum=True)
-            pt.text(cx - lw / 2, cy, label, T_SMALL, col, weight=Pango.Weight.SEMIBOLD, tnum=True)
+            text_col = th.blend(col, bar, 0.65) if state == "limited" else col
+            pt.text(cx - lw / 2, cy, label, T_SMALL, text_col, weight=Pango.Weight.SEMIBOLD, tnum=True)
         right = cx - r - 8
     x = pad + 6
     name_col = hi if sp.current else mid

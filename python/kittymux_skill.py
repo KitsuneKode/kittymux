@@ -86,7 +86,7 @@ def install(home: str | Path | None = None) -> tuple[list[Path], list[Path]]:
         if path.exists():
             try:
                 existing = path.read_text(encoding="utf-8")
-            except OSError:
+            except (OSError, UnicodeError):
                 skipped.append(path)
                 continue
             if MARKER not in existing:
@@ -107,7 +107,7 @@ def remove(home: str | Path | None = None) -> tuple[list[Path], list[Path]]:
             continue
         try:
             existing = path.read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, UnicodeError):
             skipped.append(path)
             continue
         if MARKER not in existing:
