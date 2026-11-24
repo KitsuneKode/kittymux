@@ -1,60 +1,71 @@
-/* The kittymux site's palette, taken from the mascot (assets/brand/mascot.png): the slate-blue field, the cream half of the face, the pink half.
-   Light is warm paper with a blue brand band; dark is a full second theme (deep navy), not an inversion. Pink is an accent for fills and
-   marks (buttons, diamonds, stripes); text in pink uses --link, a deeper pink that clears 4.5:1 on the page.
-   Every text pair is checked by src/lib/contrast.test.ts: change a value here and that test tells you if it still reads. */
+/* The kittymux "Lantern" palette: warm archival paper + deep indigo night camp, anchored by the mascot's cream & rose,
+   a vivid cobalt field (#1C3A8E), warm apricot editorial band (#F2D3A2), and lantern amber reserved for one meaning
+   (needs you / primary night action). Every text pair is verified >= 4.5:1 by src/lib/contrast.test.ts. */
 :root {
-  --bg: #FBF5EC;
-  --fg: #17202E;
-  --muted: #566070;
+  --bg: #FAF4EA;
+  --fg: #15172E;
+  --muted: #55566F;
   --surface: #FFFDF8;
-  --surface-hi: #F1E8DA;
-  --link: #C8264C;
-  --brand: #3F5B86;
-  --on-brand: #FBF3E8;
-  --on-brand-soft: #DCE6F3;
+  --surface-hi: #F1E8D9;
+  --link: #C01E48;
+  --brand: #1C3A8E;
+  --on-brand: #FFF6E8;
+  --on-brand-soft: #F2D6AC;
   --pink: #FB4C74;
-  --on-pink: #17202E;
-  --code-bg: #141B28;
-  --code-fg: #F4EFE6;
-  --line: rgb(23 32 46 / 0.13);
-  --ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --on-pink: #15172E;
+  --code-bg: #0C0E20;
+  --code-fg: #F4EDE1;
+  --signal: #F4B740;
+  --on-signal: #15172E;
+  --signal-ink: #8F5600;
+  --field: #F2D3A2;
+  --on-field: #15172E;
+  --field-muted: #4D4A5E;
+  --line: color-mix(in oklch, #15172E 12%, transparent);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-out: var(--ease);
-  /* Tactile elevation (app.css: .tactile, .raised, .well). --ground is the surface a thing sits on: the page here, --surface on a .bg-card section. */
   --ground: var(--bg);
   --raised: var(--surface);
   --raised-hover: color-mix(in oklch, var(--fg) 3%, var(--surface));
   --card-fill: var(--surface);
   --card-hover: var(--surface-hi);
-  --well-deep: color-mix(in oklch, var(--fg) 5%, var(--surface-hi));
-  --shadow-button: 0 0 0 1px color-mix(in oklch, var(--fg) 8%, transparent), 0 1px 2px 0 color-mix(in oklch, var(--fg) 12%, transparent);
-  --shadow-card: 0 0 0 1px color-mix(in oklch, var(--fg) 7%, transparent), 0 1px 2px 0 color-mix(in oklch, var(--fg) 12%, transparent), 0 3px 4px -2px color-mix(in oklch, var(--fg) 10%, transparent);
+  --well-deep: color-mix(in oklch, var(--fg) 6%, var(--surface-hi));
+  --shadow-button: 0 0 0 1px color-mix(in oklch, var(--fg) 10%, transparent), 0 1px 2px 0 color-mix(in oklch, var(--fg) 12%, transparent);
+  --shadow-card: 0 0 0 1px color-mix(in oklch, var(--fg) 8%, transparent), 0 2px 6px -1px color-mix(in oklch, var(--fg) 8%, transparent), 0 14px 30px -12px color-mix(in oklch, #15172E 14%, transparent);
+  --shadow-stage: 0 0 0 1px color-mix(in oklch, #15172E 12%, transparent), 0 14px 34px -8px color-mix(in oklch, #15172E 20%, transparent), 0 42px 84px -24px color-mix(in oklch, #15172E 28%, transparent);
   color-scheme: light;
 }
 
 .dark {
-  --bg: #0F1522;
-  --fg: #F4EFE6;
-  --muted: #A9B4C6;
-  --surface: #18202F;
-  --surface-hi: #222C3F;
-  --link: #FF8FA8;
-  --brand: #2B4468;
-  --on-brand: #FBF3E8;
-  --on-brand-soft: #D3DEEE;
+  --bg: #0B0D1C;
+  --fg: #F4EDE1;
+  --muted: #A4A6BF;
+  --surface: #13162A;
+  --surface-hi: #1C203A;
+  --link: #FF8FAB;
+  --brand: #1C3A8E;
+  --on-brand: #FFF6E8;
+  --on-brand-soft: #F2D6AC;
   --pink: #FB4C74;
-  --on-pink: #17202E;
-  --code-bg: #0A0F18;
-  --code-fg: #F4EFE6;
-  --line: rgb(244 239 230 / 0.14);
+  --on-pink: #15172E;
+  --code-bg: #070916;
+  --code-fg: #F4EDE1;
+  --signal: #F6C453;
+  --on-signal: #15172E;
+  --signal-ink: #F6C453;
+  --field: #F2D3A2;
+  --on-field: #15172E;
+  --field-muted: #4D4A5E;
+  --line: color-mix(in oklch, #F4EDE1 13%, transparent);
+  --shadow-stage: 0 0 0 1px color-mix(in oklch, #F4EDE1 14%, transparent), 0 18px 44px -8px oklch(0% 0 none / 0.6), 0 50px 100px -20px oklch(0% 0 none / 0.78);
   color-scheme: dark;
 }
-/* Dark elevation is a step of lightness from the ground plus one solid 0.5px outline (a fixed colour all round, never a lit top edge) and a black drop.
-   Declared again on every surface that sets --ground: custom properties inherit as resolved values, so a token built from --ground on the page would not follow a card. */
+
 .dark, .dark .bg-card {
   --raised: color-mix(in oklch, var(--fg) 10%, var(--ground));
   --raised-hover: color-mix(in oklch, var(--fg) 14%, var(--ground));
   --card-fill: color-mix(in oklch, var(--fg) 5%, var(--ground));
   --card-hover: color-mix(in oklch, var(--fg) 9%, var(--ground));
-  --shadow-button: 0 0 0 0.5px color-mix(in oklch, var(--fg) 30%, var(--ground)), 0 1px 2px 0 rgb(0 0 0 / 0.5);
-  --shadow-card: 0 0 0 0.5px color-mix(in oklch, var(--fg) 20%, var(--ground)), 0 1px 2px 0 rgb(0 0 0 / 0.5), 0 3px 4px -2px rgb(0 0 0 / 0.45);
+  --shadow-button: 0 0 0 0.5px color-mix(in oklch, var(--fg) 28%, var(--ground)), 0 1px 2px 0 oklch(0% 0 none / 0.5);
+  --shadow-card: 0 0 0 0.5px color-mix(in oklch, var(--fg) 18%, var(--ground)), 0 2px 6px -1px oklch(0% 0 none / 0.45), 0 16px 36px -12px oklch(0% 0 none / 0.58);
 }

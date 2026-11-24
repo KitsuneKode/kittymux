@@ -6,27 +6,56 @@ export const DEMO_CMD = 'git clone https://github.com/KitsuneKode/kittymux ~/kit
 export const INSTALL_CMD = 'git clone https://github.com/KitsuneKode/kittymux ~/kittymux && ~/kittymux/install.sh';
 
 const ROWS = [
-  { title: 'Look first', cmd: DEMO_CMD, note: 'Opens its own window with made-up agents. Nothing of yours is read or changed.' },
-  { title: 'Install', cmd: '~/kittymux/install.sh', note: 'Checks its dependencies, backs up kitty.conf and adds a few include lines. It never overwrites a key of yours.' },
-  { title: 'Check', cmd: 'kittymux doctor', note: 'Lists anything that is off, and how to fix it.' },
-  { title: 'Or all at once', cmd: INSTALL_CMD, note: 'Clone and install in one go, for when you already know.' },
+  {
+    num: '01',
+    title: 'Look first',
+    cmd: DEMO_CMD,
+    note: 'Opens an isolated kitty window with synthetic agents. Add --px --light to preview the pixel bar in daylight. Nothing in your config is changed.',
+  },
+  {
+    num: '02',
+    title: 'Install into kitty',
+    cmd: INSTALL_CMD,
+    note: 'Checks dependencies, backs up kitty.conf, and adds include lines. Never overwrites your own key bindings.',
+  },
+  {
+    num: '03',
+    title: 'Turn on pixel upgrades and hooks',
+    cmd: 'kittymux settings preset pixel && kittymux hooks --install',
+    note: 'Enables the Cairo/Slang pixel tab bar, graphical Usage and Inbox panel, busy-close guard, and direct agent hooks. Cell fallback stays automatic.',
+  },
+  {
+    num: '04',
+    title: 'Verify your setup',
+    cmd: 'kittymux doctor',
+    note: 'Checks kitty version, socket-only remote control, renderer packages, and window-manager key clashes.',
+  },
 ] as const;
 
-/** A list of rows, not a set of cards: the commands are the content, so each row is a name and a note on the left and the command, ready to copy, on the right. */
 export function Install() {
   return (
-    <section id="install" aria-labelledby="install-title" className="mx-auto w-full max-w-[1280px] px-5 py-16 md:px-8 lg:py-24">
-      <h2 id="install-title" className="t-h2 max-w-[20ch]">Try it, then install it</h2>
-      <p className="t-lead mt-4 max-w-[52ch] text-mute">The demo opens its own window and touches nothing of yours. When you like it, install takes one command.</p>
-      <ol className="mt-12 flex flex-col gap-10">
+    <section id="install" aria-labelledby="install-title" className="mx-auto w-full max-w-[1220px] px-5 py-20 md:px-8 lg:py-28">
+      <div className="max-w-[54ch]">
+        <h2 id="install-title" className="t-h2">Try it, then install it</h2>
+        <p className="t-body mt-4 text-mute">
+          Start with the isolated demo window. When you are ready, installation takes one command and every pixel upgrade is opt-in.
+        </p>
+      </div>
+
+      <ol className="mt-12 divide-y divide-line border-t border-line">
         {ROWS.map((r) => (
-          <li key={r.title} className="grid gap-4 lg:grid-cols-12 lg:gap-10">
+          <li key={r.title} className="grid gap-5 py-8 lg:grid-cols-12 lg:items-start lg:gap-10">
             <div className="lg:col-span-4">
-              <h3 className="t-h3">{r.title}</h3>
-              <p className="t-small mt-2 max-w-[40ch] text-mute">{r.note}</p>
+              <div className="flex items-baseline gap-3">
+                <span className="t-mono text-[0.875rem] font-bold text-signal-ink">{r.num}</span>
+                <h3 className="t-h3 text-ink">{r.title}</h3>
+              </div>
+              <p className="t-body mt-2 max-w-[38ch] ps-7 text-mute">{r.note}</p>
             </div>
             <div className="flex min-w-0 flex-col items-start gap-3 lg:col-span-8">
-              <pre className="t-mono w-full whitespace-pre-wrap rounded-xl bg-[var(--code-bg)] p-4 text-[var(--code-fg)] [overflow-wrap:anywhere]"><code>{r.cmd}</code></pre>
+              <pre className="t-mono w-full whitespace-pre-wrap rounded-xl bg-[var(--code-bg)] px-5 py-4 text-[var(--code-fg)] [overflow-wrap:anywhere]">
+                <code>{r.cmd}</code>
+              </pre>
               <CopyButton text={r.cmd} label="Copy command" context={r.title} className="raised" />
             </div>
           </li>

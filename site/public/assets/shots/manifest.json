@@ -7,6 +7,22 @@
     "width": 380,
     "height": 700
   },
+  "client-attach-dark.png": {
+    "width": 760,
+    "height": 720
+  },
+  "client-attach-light.png": {
+    "width": 760,
+    "height": 720
+  },
+  "pane-controls-dark.png": {
+    "width": 506,
+    "height": 260
+  },
+  "pane-controls-light.png": {
+    "width": 506,
+    "height": 260
+  },
   "panel-agents-dark.png": {
     "width": 506,
     "height": 621
@@ -70,5 +86,37 @@
   "plain-tabs-light.png": {
     "width": 1249,
     "height": 30
+  },
+  "px-inbox-dark.png": {
+    "width": 235,
+    "height": 721
+  },
+  "px-inbox-light.png": {
+    "width": 343,
+    "height": 721
+  },
+  "px-usage-dark.png": {
+    "width": 343,
+    "height": 721
+  },
+  "px-usage-light.png": {
+    "width": 343,
+    "height": 721
+  },
+  "pxbar-dark.png": {
+    "width": 380,
+    "height": 900
+  },
+  "pxbar-light.png": {
+    "width": 380,
+    "height": 900
+  },
+  "workspace-dark.png": {
+    "width": 1583,
+    "height": 900
+  },
+  "workspace-light.png": {
+    "width": 1583,
+    "height": 900
   }
 }

@@ -1,4 +1,3 @@
-import { IconArrowRight, IconBrandGithub, IconRefresh } from '@tabler/icons-react';
 import type { ReactNode } from 'react';
 import { Mascot } from '@/components/logo';
 import { ISSUES_URL, REPO_URL } from '@/lib/links';
@@ -56,7 +55,7 @@ export function StatusPage({ kind, path, detail, primary }: Props) {
             <a href="/" data-press="" className={secondary}>Back to the front page</a>
             {!missing && (
               <a href={issueUrl(path, 'error')} target="_blank" rel="noopener" data-press="" className={secondary}>
-                <IconBrandGithub aria-hidden="true" className="size-5" stroke={1.75} />
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="size-5"><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg>
                 Report it
               </a>
             )}
@@ -82,7 +81,7 @@ export function StatusPage({ kind, path, detail, primary }: Props) {
                   <span className="font-semibold">{s.label}</span>
                   <span className="text-sm text-mute">{s.hint}</span>
                 </span>
-                <IconArrowRight aria-hidden="true" className="size-4 shrink-0 text-mute transition-transform duration-150 motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:group-hover:translate-x-0.5" stroke={1.75} />
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="size-4 shrink-0 text-mute transition-transform duration-150 motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:group-hover:translate-x-0.5"><path d="M5 12h14m-6 6 6-6-6-6" /></svg>
               </a>
             </li>
           ))}
@@ -98,7 +97,7 @@ export function StatusPage({ kind, path, detail, primary }: Props) {
 export function RetryButton({ onClick }: { onClick: () => void }) {
   return (
     <button type="button" onClick={onClick} data-cta="" data-press="" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full px-6 text-base font-semibold">
-      <IconRefresh aria-hidden="true" className="size-5" stroke={1.75} />
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="size-5"><path d="M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4m-4 4a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" /></svg>
       Try again
     </button>
   );

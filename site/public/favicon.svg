@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <clipPath id="face">
+      <path d="M13 26C13 18 15 11 19 10C22 9.2 26 14 29 17.2C30.9 16.9 33.1 16.9 35 17.2C38 14 42 9.2 45 10C49 11 51 18 51 26C52.5 31 53 38 49.5 44C46 50 39.5 53 32 53C24.5 53 18 50 14.5 44C11 38 11.5 31 13 26Z"/>
+    </clipPath>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#1C3A8E"/>
+  <g clip-path="url(#face)">
+    <rect x="0" y="0" width="64" height="64" fill="#FAF4EA"/>
+    <path d="M32 0H64V64H30C28.5 52 34.5 43 32 32C29.8 22 33.5 12 32 0Z" fill="#FB4C74"/>
+  </g>
+  <circle cx="23.5" cy="34.5" r="3.4" fill="#C01E48"/>
+  <circle cx="40.5" cy="34.5" r="3.4" fill="#8C1435"/>
+  <path d="M28.2 40.5C29.6 42.3 34.4 42.3 35.8 40.5" stroke="#B01841" stroke-width="2.6" stroke-linecap="round"/>
+</svg>

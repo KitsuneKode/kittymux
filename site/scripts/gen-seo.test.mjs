@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pagePaths, robots, siteBase, sitemap } from './gen-seo.mjs'
+import { pagePaths, parseChangelogFeed, robots, rss, siteBase, sitemap } from './gen-seo.mjs'
 
 test('the base address is https only, without a trailing slash', () => {
   expect(siteBase(undefined)).toBe('')
@@ -19,12 +19,30 @@ test('pages are found from the built files, error pages left out', () => {
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
-test('sitemap and robots', () => {
-  const xml = sitemap(['/', '/docs', '/a&b'], 'https://x.test')
+test('sitemap and robots include lastmod, priority, and XML escaping', () => {
+  const xml = sitemap(['/', '/docs', '/docs/users/guide', '/a&b'], 'https://x.test', '2026-11-24')
   expect(xml).toContain('<loc>https://x.test/</loc>')
+  expect(xml).toContain('<priority>1.0</priority>')
   expect(xml).toContain('<loc>https://x.test/docs</loc>')
+  expect(xml).toContain('<priority>0.9</priority>')
+  expect(xml).toContain('<priority>0.8</priority>')
+  expect(xml).toContain('<lastmod>2026-11-24</lastmod>')
   expect(xml).toContain('a&amp;b')
   expect(robots('https://x.test')).toContain('Sitemap: https://x.test/sitemap.xml')
   expect(robots('')).not.toContain('Sitemap')
   expect(robots('')).toContain('Allow: /')
+})
+
+test('rss feed parses changelog bullets into valid escaped RSS 2.0 XML', () => {
+  const md = `## [Unreleased]\n### Added\n- **Pixel tab bar:** renders with Cairo & Slang (\`pxbar\`).\n### Fixed\n- Escape <angle> brackets in feeds.\n`
+  const items = parseChangelogFeed(md, 10)
+  expect(items).toHaveLength(2)
+  expect(items[0].title).toBe('Pixel tab bar')
+  expect(items[0].group).toBe('Added')
+  const feed = rss(items, 'https://x.test', 'Tue, 24 Nov 2026 12:00:00 GMT')
+  expect(feed).toContain('<rss version="2.0"')
+  expect(feed).toContain('href="https://x.test/rss.xml"')
+  expect(feed).toContain('<title>Pixel tab bar</title>')
+  expect(feed).toContain('&amp; Slang')
+  expect(feed).toContain('&lt;angle&gt;')
 })

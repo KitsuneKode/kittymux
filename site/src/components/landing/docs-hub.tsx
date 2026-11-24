@@ -1,32 +1,43 @@
-import { IconArrowRight } from '@tabler/icons-react';
 import { DocLink } from '../doc-link';
 import { SearchLauncher } from './search-launcher';
 
+const ArrowRight = ({ className }: { className?: string }) => (
+  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M5 12h14m-6 6 6-6-6-6" /></svg>
+);
+
 const HUB = [
-  { slug: 'users/getting-started', title: 'Getting started', text: 'Try the demo, install, check, add hooks.' },
-  { slug: 'users/shortcuts', title: 'Shortcuts', text: 'Every key, grouped by what it does.' },
-  { slug: 'users/troubleshooting', title: 'Troubleshooting', text: 'A key does nothing? A tab says the wrong thing? Start here.' },
-  { slug: 'users/cli-reference', title: 'CLI reference', text: 'Every kittymux command and its options.' },
+  { slug: 'users/getting-started', title: 'Getting started', text: 'Run the demo, install into kitty, enable hooks, and verify with doctor.' },
+  { slug: 'users/the-tab-bar', title: 'The tab bar and pixel mode', text: 'Vertical cell bar, opt-in Cairo/Slang pixel bar, rail mode, and OSC 9;4 progress.' },
+  { slug: 'users/the-client', title: 'The Quickshell client', text: 'Native Wayland sidebar, Hyprland attach mode, and live tabs.json feeds.' },
+  { slug: 'users/cli-reference', title: 'CLI reference', text: 'Every kittymux subcommand, settings switch, and workflow action.' },
+  { slug: 'users/troubleshooting', title: 'Troubleshooting', text: 'A key does nothing, a state looks stale, or a graphics probe timed out.' },
 ] as const;
 
-/** Heading and search on the left, the four most-wanted pages as plain large links on the right: no boxes. */
 export function DocsHub() {
   return (
-    <section id="docs" aria-labelledby="docs-title" className="border-y border-line bg-card py-16 lg:py-24">
-      <div className="mx-auto grid w-full max-w-[1280px] gap-12 px-5 md:px-8 lg:grid-cols-12">
+    <section id="docs" aria-labelledby="docs-title" className="border-y border-line py-20 lg:py-28">
+      <div className="mx-auto grid w-full max-w-[1220px] gap-12 px-5 md:px-8 lg:grid-cols-12">
         <div className="lg:col-span-5">
           <h2 id="docs-title" className="t-h2">Looking for something?</h2>
-          <p className="t-body mt-4 max-w-[36ch] text-mute">Search every page from here, or start with one of these.</p>
+          <p className="t-body mt-4 max-w-[38ch] text-mute">
+            Search every user guide, key chord, and changelog entry from here, or open the full documentation.
+          </p>
           <div className="mt-6"><SearchLauncher tone="page" /></div>
+          <div className="mt-6">
+            <DocLink className="inline-flex min-h-11 items-center gap-2 font-semibold text-link underline underline-offset-4">
+              Read the docs
+              <ArrowRight className="size-4" />
+            </DocLink>
+          </div>
         </div>
-        <ul className="flex flex-col gap-7 lg:col-span-6 lg:col-start-7">
+        <ul className="divide-y divide-line border-t border-line lg:col-span-6 lg:col-start-7">
           {HUB.map(({ slug, title, text }) => (
-            <li key={slug} className="group relative rounded-md has-[a:focus-visible]:outline has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-8 has-[a:focus-visible]:outline-ink">
-              <DocLink slug={slug} className="t-h3 inline-flex items-center gap-2 underline-offset-4 outline-2 outline-transparent after:absolute after:inset-0 group-hover:underline focus-visible:outline-transparent">
+            <li key={slug} className="group relative py-5 has-[a:focus-visible]:outline has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-4 has-[a:focus-visible]:outline-ink">
+              <DocLink slug={slug} className="t-h3 inline-flex items-center gap-2 text-ink underline-offset-4 outline-2 outline-transparent after:absolute after:inset-0 group-hover:underline focus-visible:outline-transparent">
                 {title}
-                <IconArrowRight aria-hidden="true" className="size-5 text-link motion-safe:transition-transform motion-safe:duration-150 group-hover:translate-x-1" stroke={1.75} />
+                <ArrowRight className="size-4 text-link motion-safe:transition-transform motion-safe:duration-150 group-hover:translate-x-1" />
               </DocLink>
-              <span className="t-body mt-1 block max-w-[46ch] text-mute">{text}</span>
+              <span className="t-body mt-1 block max-w-[48ch] text-mute">{text}</span>
             </li>
           ))}
         </ul>
