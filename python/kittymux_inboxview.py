@@ -11,6 +11,7 @@ from __future__ import annotations
 import time
 from typing import NamedTuple
 
+import kittymux_answer as A
 import kittymux_deck
 import kittymux_ledger as LG
 import kittymux_meters as M
@@ -138,28 +139,37 @@ def _event_rows(kit: U.Kit, ev: dict, inner: int, selected: bool, now: float, ex
         rows.append(kit.gauge(100.0, inner, bg, tone="warm"))
         if reset:
             rows.append(kit.fit_line(kit.chip("↻ " + V.fmt_span(reset - now), "muted", on=bg), inner, bg))
-    button_row, regions = None, []
+    button_rows = []
     if selected:
+        def _place_buttons(tiers):
+            for tier in tiers:
+                widths = [U.line_cells(b, kit.cells) for _, b in tier]
+                if sum(widths) + len(tier) - 1 <= inner:
+                    line, x, regs = [], 0, []
+                    for (action, button), w in zip(tier, widths):
+                        if line:
+                            line.append(U.S(" ", None, bg))
+                            x += 1
+                        line += button
+                        regs.append((x, x + w, action))
+                        x += w
+                    rows.append(kit.fit_line(line, inner, bg))
+                    button_rows.append((len(rows) - 1, regs))
+                    return
+        if expanded and A.can_allow_deny(ev):
+            _place_buttons([
+                [("allow", kit.button("Allow", "y", primary=True, on=bg)), ("deny", kit.button("Deny", "n", on=bg))],
+                [("allow", kit.button("Allow", primary=True, on=bg)), ("deny", kit.button("Deny", on=bg))],
+                [("allow", kit.button("✓", "y", primary=True, on=bg)), ("deny", kit.button("✕", "n", on=bg))],
+            ])
         # the widest set that fits: both with their key hints, both plain, Jump with a compact dismiss, Jump alone
-        tiers = [[("jump", kit.button("Jump", "⏎", primary=True, on=bg)), ("dismiss", kit.button("Dismiss", "x", on=bg))],
-                 [("jump", kit.button("Jump", primary=True, on=bg)), ("dismiss", kit.button("Dismiss", on=bg))],
-                 [("jump", kit.button("Jump", primary=True, on=bg)), ("dismiss", kit.button("✕", on=bg))],
-                 [("jump", kit.button("Jump", primary=True, on=bg))]]
-        for tier in tiers:
-            widths = [U.line_cells(b, kit.cells) for _, b in tier]
-            if sum(widths) + len(tier) - 1 <= inner:
-                line, x = [], 0
-                for (action, button), w in zip(tier, widths):
-                    if line:
-                        line.append(U.S(" ", None, bg))
-                        x += 1
-                    line += button
-                    regions.append((x, x + w, action))
-                    x += w
-                rows.append(kit.fit_line(line, inner, bg))
-                button_row = len(rows) - 1
-                break
-    return rows, button_row, regions
+        _place_buttons([
+            [("jump", kit.button("Jump", "⏎", primary=True, on=bg)), ("dismiss", kit.button("Dismiss", "x", on=bg))],
+            [("jump", kit.button("Jump", primary=True, on=bg)), ("dismiss", kit.button("Dismiss", on=bg))],
+            [("jump", kit.button("Jump", primary=True, on=bg)), ("dismiss", kit.button("✕", on=bg))],
+            [("jump", kit.button("Jump", primary=True, on=bg))],
+        ])
+    return rows, button_rows
 
 
 GLYPH_LABELS = {"all": "All", "needs": "!", "done": "✓", "limits": "⊘"}
@@ -212,7 +222,7 @@ def _ledger(kit: U.Kit, events, cols: int, now: float) -> list:
     return [kit.blank(cols, p.bar)] + kit.card(rows, cols)
 
 
-def view(events, filt: str, sel: int, cols: int, kit: U.Kit, now: float | None = None, *, expanded: str | None = None) -> InboxView:
+def view(events, filt: str, sel: int, cols: int, kit: U.Kit, now: float | None = None, *, expanded: str | None = None, notice=None) -> InboxView:
     """Never raises. `sel` indexes the VISIBLE list (clamped); the caller keeps it in range across refreshes."""
     p = kit.p
     now = time.time() if now is None else now
@@ -223,9 +233,14 @@ def view(events, filt: str, sel: int, cols: int, kit: U.Kit, now: float | None =
     tally = counts(events, now)
     sel = max(0, min(int(sel) if M.num(sel) is not None else 0, max(0, len(items) - 1)))
     un, ny = unread(events), needs_you(events)
-    left = [U.S(f" {un} unread" if un else " all read", kit.ink(p.muted, p.bar), p.bar)]
-    if ny:
-        left.append(U.S(f"  ! {ny} need{'s' if ny == 1 else ''} you", kit.ink(p.waiting, p.bar), p.bar, bold=True))
+    if isinstance(notice, (tuple, list)) and len(notice) >= 2 and notice[0]:
+        msg = kittymux_place.clean(str(notice[0]))
+        tone = p.alert if notice[1] else p.done
+        left = [U.S(" " + msg, kit.ink(tone, p.bar), p.bar, bold=True)]
+    else:
+        left = [U.S(f" {un} unread" if un else " all read", kit.ink(p.muted, p.bar), p.bar)]
+        if ny:
+            left.append(U.S(f"  ! {ny} need{'s' if ny == 1 else ''} you", kit.ink(p.waiting, p.bar), p.bar, bold=True))
     header = kit.fit_line(left, cols, p.bar)
     chip_line, chips = _chips(kit, filt, tally, cols)
     lines = [chip_line, kit.blank(cols, p.bar)]
@@ -238,12 +253,12 @@ def view(events, filt: str, sel: int, cols: int, kit: U.Kit, now: float | None =
         return InboxView(header, chips, lines, [], [], 0, 0)
     for i, ev in enumerate(items):
         selected = i == sel
-        rows, button_row, regions = _event_rows(kit, ev, inner, selected, now, ev.get("id") == expanded)
+        rows, button_rows = _event_rows(kit, ev, inner, selected, now, ev.get("id") == expanded)
         card = kit.card(rows, cols, selected=selected, accent=selected)
         y0 = len(lines)
         lines += card
         cards.append((y0, len(lines), i))
-        if button_row is not None:
+        for button_row, regions in button_rows:
             y = y0 + 1 + button_row                              # +1: the card's top edge row
             buttons += [(2 + a, 2 + b, y, i, act) for a, b, act in regions]      # 2 = margin + padx
     lines += _ledger(kit, events, cols, now)

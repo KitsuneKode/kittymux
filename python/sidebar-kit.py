@@ -40,6 +40,7 @@ for _d in (_CONFIG_DIR, _source_dir()):
         sys.path.insert(0, _d)
 import kittymux_agents  # noqa: E402
 import kittymux_agentsview  # noqa: E402
+import kittymux_answer  # noqa: E402
 import kittymux_features  # noqa: E402
 import kittymux_panelfocus  # noqa: E402
 import kittymux_panelhit as panelhit  # noqa: E402
@@ -458,6 +459,8 @@ class Sidebar(Handler):
         self._inbox_undo = None                   # (ids, expires on the monotonic clock) of the last dismissal, while `z` can still take it back
         self._inbox_expanded = None               # event ID; expansion never acknowledges or focuses the agent
         self._inbox_follow = None
+        self._inbox_notice = None                 # (text, is_error, expires_monotonic) for inline Allow/Deny feedback
+        self._inbox_answering = False
         self._panelpx_scroll = {"usage": 0.0, "inbox": 0.0}
         self._panelpx_follow = None
         self._panelpx_hover = None
@@ -600,6 +603,12 @@ class Sidebar(Handler):
         elif k == "ENTER":
             self._inbox_act("jump")
             return
+        elif k == "Y":
+            self._inbox_act("allow")
+            return
+        elif k == "N":
+            self._inbox_act("deny")
+            return
         elif k == "X":
             self._inbox_act("dismiss_all" if shifted else "dismiss")
             return
@@ -614,9 +623,46 @@ class Sidebar(Handler):
             return
         self.draw_screen()
 
+    def _inbox_notice_live(self):
+        n = getattr(self, "_inbox_notice", None)
+        if not n or time.monotonic() >= n[2]:
+            return None
+        return (n[0], n[1])
+
+    def _set_inbox_notice(self, text: str, is_error: bool = False, ttl: float = 3.5) -> None:
+        self._inbox_notice = (kittymux_place.clean(str(text or ""))[:120], bool(is_error), time.monotonic() + ttl)
+        if self._alive:
+            self.asyncio_loop.call_later(ttl + 0.1, self._inbox_notice_expired)
+
+    def _inbox_notice_expired(self) -> None:
+        if self._alive and not self._inbox_notice_live():
+            self._inbox_notice = None
+            if self._view == "inbox":
+                self.draw_screen()
+
+    def _inbox_answer_done(self, ev_id: str, label: str, action: str, ok: bool, detail: str) -> None:
+        self._inbox_answering = False
+        if not self._alive:
+            return
+        if ok:
+            self._inbox_reload()
+            if self._inbox_expanded == ev_id:
+                self._inbox_expanded = None
+            verb = "Allowed" if action == "allow" else "Denied"
+            self._set_inbox_notice(f"{verb} {label}", is_error=False, ttl=3.5)
+        else:
+            msg = detail or "Could not answer prompt"
+            for prefix in ("kittymux answer: not sent: ", "kittymux answer: "):
+                if msg.startswith(prefix):
+                    msg = msg[len(prefix):]
+                    break
+            self._set_inbox_notice(msg, is_error=True, ttl=4.5)
+        self.draw_screen()
+
     def _inbox_act(self, action: str, idx: int | None = None) -> None:
         """jump: focus the agent's window (the CLI resolves its kitty and the window manager, and marks the event read).
-        dismiss: hide the event. Nothing here ever sends text to an agent."""
+        allow / deny: safely answer a live-verified permission via `kittymux answer` (off the UI thread, never steals focus).
+        dismiss: hide the event."""
         items = self._inbox_items()
         i = self._inbox_sel if idx is None else idx
         if action == "dismiss_all":
@@ -624,6 +670,38 @@ class Sidebar(Handler):
         elif 0 <= i < len(items) and isinstance(items[i].get("id"), str):
             ids = [items[i]["id"]]
         else:
+            return
+        if action in ("allow", "deny"):
+            ev = items[i]
+            if self._inbox_answering:
+                return
+            if not kittymux_answer.can_allow_deny(ev):
+                self._set_inbox_notice("Open its pane to answer", is_error=True, ttl=3.0)
+                self.draw_screen()
+                return
+            key = kittymux_answer.event_key(ev)
+            expect = kittymux_answer.event_expect(ev)
+            agent = kittymux_place.clean(str(ev.get("agent") or "Agent")).title()
+            tab = kittymux_place.clean(str(ev.get("tab") or ""))
+            label = f"{agent} · {tab}" if tab and tab.lower() != agent.lower() else agent
+            root = Path(deck.__file__).resolve().parent.parent
+            cmd = [str(root / "bin" / "kittymux"), "answer", key, action]
+            if expect:
+                cmd += ["--expect", expect]
+            self._inbox_answering = True
+            self._set_inbox_notice(f"Sending {action} to {label}…", is_error=False, ttl=6.0)
+            self.draw_screen()
+
+            def _work():
+                try:
+                    proc = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=6)
+                    ok = proc.returncode == 0
+                    detail = (proc.stderr or proc.stdout or "").strip().splitlines()[-1] if (proc.stderr or proc.stdout or "").strip() else ""
+                except (OSError, subprocess.TimeoutExpired):
+                    ok, detail = False, "answer timed out"
+                self._post(self._inbox_answer_done, ids[0], label, action, ok, detail)
+
+            threading.Thread(target=_work, daemon=True).start()
             return
         if action == "jump":
             root = Path(deck.__file__).resolve().parent.parent
@@ -834,17 +912,21 @@ class Sidebar(Handler):
         self._usage_regions = list(v.tiles)
 
     def _draw_inbox(self, cols, height):
+        notice = self._inbox_notice_live()
         v = kittymux_inboxview.view(self._inbox, self._inbox_filter, self._inbox_sel, self._body_width(cols), self.kit,
-                                   expanded=self._inbox_expanded)
+                                   expanded=self._inbox_expanded, notice=notice)
         self._inbox_sel = v.sel
         page, top = max(1, height - 3), self._inbox_scroll
         items = self._inbox_items()
-        follow = (items[v.sel].get("id") if items else None, self._inbox_expanded)
+        cur = items[v.sel] if items else None
+        follow = (cur.get("id") if cur else None, self._inbox_expanded)
         if v.cards and follow != self._inbox_follow:                       # manual scrolling survives redraws and fresh events
             y0, y1, _ = v.cards[v.sel]
             top = y0 if y1 - y0 > page else 0 if v.sel == 0 else len(v.lines) if v.sel == v.count - 1 else y0 if y0 < top else y1 - page if y1 > top + page else top
         self._inbox_follow = follow
         footer = [("⏎", "jump", "ENTER", "go"), ("x", "dismiss", "X"), ("d", "hide" if self._inbox_expanded else "details", "D"), ("j k", "move"), ("tab", "filter", "TAB")]
+        if cur is not None and kittymux_answer.can_allow_deny(cur):
+            footer = [("y", "allow", "Y"), ("n", "deny", "N")] + footer
         if self._undo_live():                                             # the way back is offered where the hand just was, replacing what it does not need
             footer = [("z", "undo " + (f"{len(self._inbox_undo[0])} dismissed" if len(self._inbox_undo[0]) > 1 else "dismiss"), "Z")] + footer[:2]
         self._inbox_scroll = self._draw_body(cols, height, v.header, v.lines, top, footer)
@@ -1437,6 +1519,7 @@ class Sidebar(Handler):
             self._inbox_sel = max(0, min(self._inbox_sel, len(items) - 1))
         selected = items[self._inbox_sel].get("id") if items else None
         now = time.time()
+        notice = self._inbox_notice_live() if view == "inbox" else None
         def render(offset):
             if view == "usage":
                 return panelpx.usage(self._usage_data, self._usage_history, self._usage_sel, self.pal, width, height,
@@ -1444,12 +1527,12 @@ class Sidebar(Handler):
                                      hover=self._panelpx_hover, resources=resources)
             return panelpx.inbox(self._inbox, self._inbox_filter, selected, self.pal, width, height,
                                  now=now, expanded=self._inbox_expanded, scroll=offset,
-                                 hover=self._panelpx_hover, undo=self._undo_live(), resources=resources)
+                                 hover=self._panelpx_hover, undo=self._undo_live(), notice=notice, resources=resources)
         # Snapshot signatures retain values, not mutable dictionaries owned by the collector.
         sig = (view, width, height, repr(self.pal), repr(self._usage_data if view == "usage" else self._inbox),
                repr(self._usage_history) if view == "usage" else self._inbox_filter,
                self._usage_sel if view == "usage" else selected, self._usage_details if view == "usage" else self._inbox_expanded,
-               self._panelpx_hover, self._undo_live(), int(now // 60), scroll)
+               self._panelpx_hover, self._undo_live(), notice, int(now // 60), scroll)
         result = None
         if sig != self._px_sig or self._px is None:
             result = render(scroll)
@@ -1505,7 +1588,7 @@ class Sidebar(Handler):
             if index is None:
                 return                                      # an event removed after drawing is not a different row
             self._inbox_sel = index
-            if kind in ("jump", "dismiss"):
+            if kind in ("jump", "dismiss", "allow", "deny"):
                 self._inbox_act(kind, index)
             elif kind == "expand":
                 self._inbox_key("D", False)

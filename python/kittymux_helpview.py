@@ -20,7 +20,7 @@ KEYS = {
         ("a i s", "Agents / Inbox / Settings"), ("q", "quit the panel"),
     ],
     "inbox": [
-        ("j k", "move down / up"), ("⏎", "go to the agent"), ("x X", "dismiss this / all in the filter"), ("z", "undo the last dismissal"),
+        ("j k", "move down / up"), ("⏎", "go to the agent"), ("y n", "allow / deny a verified permission"), ("x X", "dismiss this / all in the filter"), ("z", "undo the last dismissal"),
         ("d space", "expand / collapse the message"), ("pgup pgdn", "scroll the message"),
         ("tab 1-4", "change the filter"), ("g G", "first / last"), ("r", "reload"), ("a u s", "Agents / Usage / Settings"), ("q", "quit the panel"),
     ],
@@ -32,7 +32,7 @@ KEYS = {
 MOUSE = {
     "agents": [("hover", "preview a tab or pane"), ("click", "go to it"), ("right-click", "mute / unmute it"), ("▸ ▾", "open / close a split's panes"), ("drag edge", "resize the panel")],
     "usage": [("click a tile", "pick that provider")],
-    "inbox": [("click a card", "pick it"), ("click a summary", "expand the pixel card"), ("Jump / Dismiss", "act on the picked card"), ("a chip", "filter")],
+    "inbox": [("click a card", "pick it"), ("click a summary", "expand the pixel card"), ("Allow / Deny", "answer an expanded permission"), ("Jump / Dismiss", "act on the picked card"), ("a chip", "filter")],
     "settings": [("a row", "pick it"), ("a state", "turn it on or off"), ("a preset", "apply it"), ("a button", "answer the question")],
 }
 TITLES = {"agents": "Agents", "usage": "Usage", "inbox": "Inbox", "settings": "Settings"}
