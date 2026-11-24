@@ -18,12 +18,15 @@ float3 enc(float3 c) { return pow(max(c, float3(0.0)), float3(1.0 / 2.2)); }
 float far(float3 a, float3 b) { return distance(enc(a), enc(b)); }
 
 float scale_of(KittyTextures t, float2 px, float mx) {
+    float3 bar = t.backbuffer.Sample(float2(mx, 1.0 - 2.0 * px.y)).rgb;
     float3 run = t.backbuffer.Sample(float2(mx, 2.5 * px.y)).rgb;
+    if (far(run, bar) < EPS * 0.5) return 0.0;
     float n = 0.0;
     for (int k = 0; k < 48; k++) {
         if (far(t.backbuffer.Sample(float2(mx, (2.5 + float(k)) * px.y)).rgb, run) > EPS) break;
         n += 1.0;
     }
+    if (n < 4.0 || n >= 44.0) return 0.0;
     return max(1.0, n / RUN);
 }
 
@@ -37,6 +40,7 @@ fragment_main(float4 color, KittyTextures t, KittyCustomShaderData d) {
     if (p.x > barw || p.x < barw - 90.0) return color;              // only the end slot's strip (up to 3x scale)
     float mx = px.x * 0.5;
     float sc = scale_of(t, px, mx);
+    if (sc <= 0.0) return color;
     float right = barw - (PAD + INSET) * sc;
     if (p.x < right - 13.0 * sc || p.x > right) return color;
     float3 bar = t.backbuffer.Sample(float2(mx, 1.0 - 2.0 * px.y)).rgb;

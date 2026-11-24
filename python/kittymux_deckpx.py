@@ -31,9 +31,9 @@ import kittymux_theme as th  # noqa: E402
 
 ICONS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "icons")
 
-UI_FONT = "SF Pro Text"
-DISPLAY_FONT = "SF Pro Display"
-MONO_FONT = "SF Mono"
+UI_FONT = "Inter, SF Pro Text, Cantarell, sans-serif"
+DISPLAY_FONT = "Inter, SF Pro Display, Cantarell, sans-serif"
+MONO_FONT = "JetBrains Mono, SF Mono, monospace"
 
 # White at .96 / .72 / .50 over the bar: hierarchy from weight and tone before size.
 TONE_HI, TONE_MID, TONE_LO = 0.96, 0.72, 0.50
@@ -360,7 +360,7 @@ class Painter:
 
 
 def state_color(p: th.Palette, state: str) -> int | None:
-    return {"working": p.working, "waiting": p.waiting, "done": p.done, "error": p.alert, "limited": p.alert}.get(state)
+    return {"working": p.working, "waiting": p.waiting, "done": p.done, "error": p.alert, "limited": p.waiting}.get(state)
 
 
 def ring(pt: Painter, cx, cy, r, state, phase, bar, width=2.0, track=True):

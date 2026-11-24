@@ -200,12 +200,34 @@ Every on/off setting in one list: the bar, notifications, safety and recovery, a
 kittymux settings [list]
 kittymux settings on NAME [--yes]
 kittymux settings off NAME
+kittymux settings preset minimal|default|full|pixel
 kittymux settings reset NAME|GROUP|all
 kittymux settings apply
 kittymux settings open
 ```
 
-A setting that changes what leaves your machine, what moves your focus or whether agents resume without asking (`usage-live`, `attention`, `resume-auto`) needs `--yes` to turn on, and the command prints what it will do first. Turning any setting off never asks. `apply` reloads the running kitties once; the other commands do it for you. `open` shows the Settings view in a running panel.
+A setting that changes what leaves your machine, what moves your focus or whether agents resume without asking (`usage-live`, `attention`, `resume-auto`) needs `--yes` to turn on, and the command prints what it will do first. Turning any setting off never asks. `preset pixel` enables the pixel tab bar (`pxbar`), graphical panel (`deckpx`), attention ring, and busy close guard in one command. `apply` reloads the running kittymux kitties once; the other commands do it for you. `open` shows the Settings view in a running panel.
+
+## `kittymux skill`
+
+Installs or prints a small agent skill (`SKILL.md`) for Claude Code, Codex, and OpenCode so coding agents know how to inspect live tabs, open companion panes without stealing focus, read output, and clean up only panes they created.
+
+```sh
+kittymux skill --print
+kittymux skill --install
+kittymux skill --remove
+```
+
+`--install` writes into `~/.claude/skills/kittymux/SKILL.md`, `~/.codex/skills/kittymux/SKILL.md`, and `~/.agents/skills/kittymux/SKILL.md`. It skips any file that does not carry kittymux's own marker, and `--remove` removes only files kittymux wrote.
+
+## `kittymux tabs`
+
+Lists every live tab across running kitties from `$KITTYMUX_STATE/tabs.json`, dropping kitties that have exited. Useful for scripts and coding agents without running remote control queries.
+
+```sh
+kittymux tabs
+kittymux tabs --json
+```
 
 ## `kittymux pane-controls`
 

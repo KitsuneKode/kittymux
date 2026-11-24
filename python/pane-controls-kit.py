@@ -1,4 +1,4 @@
-"""Optional Kitty 0.50 pane dock. No-UI controller + event-driven strip UI."""
+"""Optional Kitty 0.50 pane dock. No-UI controller + themed event-driven strip UI."""
 import os
 import sys
 import subprocess
@@ -6,6 +6,7 @@ import subprocess
 from kittens.tui.handler import Handler, kitten_ui, result_handler
 from kittens.tui.loop import Loop, MouseButton
 from kittens.tui.operations import MouseTracking, set_cursor_position, styled
+from kitty.fast_data_types import Color
 from kitty.key_encoding import EventType
 
 
@@ -19,6 +20,11 @@ def _paths():
 
 HERE = _paths()
 import kittymux_panecontrols as controls  # noqa: E402
+import kittymux_theme as theme  # noqa: E402
+
+
+def _color(rgb: int) -> Color:
+    return Color((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF)
 
 
 class Strip(Handler):
@@ -29,18 +35,29 @@ class Strip(Handler):
         self.parent = parent
         self.socket = socket
         self.hits = []
+        self.hovered = None
         self.message = ''
+        self.is_error = False
+        self.palette = theme.from_colors({})
 
     def initialize(self):
+        self.palette = theme.palette_from_kitty(self.socket)
         self.draw_screen()
 
     def draw_screen(self):
-        lines, self.hits = controls.strip(self.screen_size.cols)
-        if self.message:
-            lines[0] = self.message[:self.screen_size.cols]
+        rows, self.hits = controls.styled_strip(
+            self.screen_size.cols,
+            self.palette,
+            hovered=self.hovered,
+            message=self.message,
+            is_error=self.is_error,
+        )
         self.cmd.clear_screen()
-        for y, line in enumerate(lines[:self.screen_size.rows]):
-            self.write(set_cursor_position(0, y) + styled(line[:self.screen_size.cols], reverse=y > 0))
+        for y, segs in enumerate(rows[:self.screen_size.rows]):
+            out = set_cursor_position(0, y)
+            for seg in segs:
+                out += styled(seg.text, fg=_color(seg.fg), bg=_color(seg.bg), bold=seg.bold)
+            self.write(out)
         self.flush()
 
     def on_resize(self, size):
@@ -56,8 +73,10 @@ class Strip(Handler):
                                   capture_output=True, text=True, timeout=4)
         except (OSError, subprocess.TimeoutExpired):
             self.message = 'Action unavailable; retry from the pane'
+            self.is_error = True
             self.draw_screen()
             return
+        self.is_error = proc.returncode != 0
         self.message = (proc.stdout.strip() if proc.returncode == 0 else 'Action failed; use CLI for details')
         if action != 'hide':
             self.draw_screen()
@@ -71,11 +90,17 @@ class Strip(Handler):
                 return
 
     def on_mouse_move(self, event):
+        hit = None
         for action, x, y, width in self.hits:
             if event.cell_y == y and x <= event.cell_x < x + width:
-                self.message = controls.LABELS[controls.ACTIONS.index(action)]
-                self.draw_screen()
-                return
+                hit = action
+                break
+        if hit != self.hovered:
+            self.hovered = hit
+            if hit is not None:
+                self.message = ''
+                self.is_error = False
+            self.draw_screen()
 
     def on_key_event(self, event, in_bracketed_paste=False):
         if event.type == EventType.RELEASE:

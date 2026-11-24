@@ -14,8 +14,8 @@ static const float R = 10.0;         // logical px, the band's corner radius (ki
 static const float REACH = 64.0;     // logical px searched up and down the row map (taller than any row)
 static const float RAIL_MAX = 130.0; // logical px, kittymux_barpx.RAIL_MAX: narrower is the rail
 static const float RUN = 8.0;        // kittymux_barpx.SCALE_RUN: column 0 ends in a run of RUN × scale device px
-static const float CARD_M = 6.0;     // logical px: the terminal is a card inset this far from the window's top, right, bottom
-static const float CARD_R = 10.0;    // logical px: its corner radius (Rex: the content rests on the sidebar's material)
+static const float CARD_M = 5.0;     // logical px: the terminal is a card inset this far from the window's top, right, bottom
+static const float CARD_R = 9.0;     // logical px: its corner radius (Rex: the content rests on the sidebar's material)
 
 float3 enc(float3 c) { return pow(max(c, float3(0.0)), float3(1.0 / 2.2)); }
 float3 dec(float3 c) { return pow(max(c, float3(0.0)), float3(2.2)); }
@@ -27,14 +27,19 @@ float2 bar_span(KittyCustomShaderData d) {
     return float2(-1.0, -1.0);
 }
 
-// the device-pixel scale the picture was drawn at: the length of the run at the bottom of column 0, over RUN
+// the device-pixel scale the picture was drawn at: the length of the run at the bottom of column 0, over RUN.
+// returns 0.0 when no valid scale-run marker is present (e.g. during resize, fallback to cell bar, or switch-off),
+// preventing oversized fallback frames or hover leftovers.
 float scale_of(KittyTextures t, float2 px, float mx) {
+    float3 bar = t.backbuffer.Sample(float2(mx, 1.0 - 2.0 * px.y)).rgb;
     float3 run = t.backbuffer.Sample(float2(mx, 2.5 * px.y)).rgb;
+    if (far(run, bar) < EPS * 0.5) return 0.0;
     float n = 0.0;
     for (int k = 0; k < 48; k++) {
         if (far(t.backbuffer.Sample(float2(mx, (2.5 + float(k)) * px.y)).rgb, run) > EPS) break;
         n += 1.0;
     }
+    if (n < 4.0 || n >= 44.0) return 0.0;
     return max(1.0, n / RUN);
 }
 
@@ -48,6 +53,7 @@ float4 card(float4 color, KittyTextures t, KittyCustomShaderData d, float2 span)
     float edge = min(min(p.x - l, r - p.x), min(p.y - b, tp - p.y));
     if (edge > 40.0) return color;                                  // the card's inside: untouched, and cheap
     float sc = scale_of(t, px, px.x * 0.5);
+    if (sc <= 0.0) return color;
     float m = CARD_M * sc, rad = CARD_R * sc;
     float2 lo = float2(l, b + m), hi = float2(r - m, tp - m);
     float2 c = clamp(p, lo + rad, hi - rad);
@@ -74,6 +80,7 @@ fragment_main(float4 color, KittyTextures t, KittyCustomShaderData d) {
     if (d.mouse_pointer_hidden != 0.0 || m.x < 0.0 || m.x > span.y || m.y < 0.0 || m.y > 1.0) return color;
     float mx = px.x * 0.5;
     float sc = scale_of(t, px, mx);
+    if (sc <= 0.0) return color;
     float reach = REACH * sc;
     if (m.y < (4.0 + RUN * sc) * px.y) return color;                               // the scale run, not a row
     if (abs(t.pos.y - m.y) / px.y > reach) return color;
@@ -111,7 +118,13 @@ fragment_main(float4 color, KittyTextures t, KittyCustomShaderData d) {
     if (rail) return float4(hi, color.a);                          // the rail: the tile is the whole row, no cross over it
     float cx = x1 - (PAD - INSET + 6.0) * sc, cy = max(y1 - 15.0 * sc, (y0 + y1) * 0.5);   // y grows UP: max is the top line (the end mark's slot)
     float2 r = (p - float2(cx, cy)) / sc;
-    if (abs(r.x) < 11.0 && abs(r.y) < 10.0) hi = lerp(color.rgb, dec(lerp(eb, veil, lift)), inside);   // the cover stays inside the band
+    // Match this row's own surface (active card or bar) so hovering an active row never leaves a darker square around ×,
+    // and feather the left edge of the cover so wider end marks (age, percent, wave) dissolve cleanly without jagged scraps.
+    float3 row_base = t.backbuffer.Sample(float2((x0 + 3.0 * sc) * px.x, (y1 - 3.0 * sc) * px.y)).rgb;
+    float3 cover_col = dec(lerp(enc(row_base), veil, lift));
+    float cover_x = smoothstep(-20.0, -12.0, r.x) * (1.0 - smoothstep(10.0, 12.0, r.x));
+    float cover_y = 1.0 - smoothstep(9.0, 10.5, abs(r.y));
+    hi = lerp(hi, cover_col, cover_x * cover_y * inside);
     // the cross itself (the mockup's 10 px glyph, stroke 1.6): arms 3 px from the centre, a ~1.3 px line, muted until the
     // pointer is on its own 18 px square, which then lifts a step like a button
     float2 mr = (m / px - float2(cx, cy)) / sc;
@@ -119,7 +132,7 @@ fragment_main(float4 color, KittyTextures t, KittyCustomShaderData d) {
     if (hot) {
         float2 qs = max(abs(r) - float2(9.0 - 5.0), 0.0);
         float sq = 1.0 - smoothstep(5.0 - 0.75 / sc, 5.0 + 0.75 / sc, length(qs));
-        hi = lerp(hi, dec(lerp(eb, veil, lift * 2.2)), sq * inside);
+        hi = lerp(hi, dec(lerp(enc(row_base), veil, lift * 2.2)), sq * inside);
     }
     float d1 = abs(r.x - r.y) * 0.7071, d2 = abs(r.x + r.y) * 0.7071;
     float arm = 1.0 - smoothstep(3.0, 3.0 + 0.9 / sc, max(abs(r.x), abs(r.y)));       // round-ish ends, no hard square cut

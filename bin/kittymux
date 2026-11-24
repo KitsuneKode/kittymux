@@ -33,7 +33,9 @@
   kittymux features    pick which optional pieces of the bar you want — the project/branch line under each tab, a colour per project, emphasis on look-alike tabs:
                          features [list] | on NAME | off NAME | preset minimal|default|full     (kittymux features -h)
   kittymux settings    every on/off setting in one list (bar, notifications, safety, opt-in), what each does and why it is on or off:
-                         settings [list] | on NAME [--yes] | off NAME | reset NAME|GROUP|all | apply | open     (the panel's Settings view is the same list: press s)
+                         settings [list] | on NAME [--yes] | off NAME | preset minimal|default|full|pixel | reset NAME|GROUP|all | apply | open     (the panel's Settings view is the same list: press s)
+  kittymux skill       install or print the kittymux agent skill for Claude Code, Codex, and OpenCode: skill [--print|--install|--remove]
+  kittymux tabs        list every live tab across running kitties from tabs.json (safe for agents and scripts): tabs [--json]
   kittymux pane-controls optional top pane dock (running Kitty >= 0.50): pane-controls [show|hide|toggle] | split-right|split-down|zoom|move-to-tab|close
   kittymux panel       persistent agent-and-usage panel: panel [toggle|start|stop|status|summon|dock|wider|narrower|width N]
   kittymux client      the Quickshell sidebar beside kitty (Wayland): client [start|stop|toggle|status]
@@ -88,6 +90,7 @@ import kittymux_quiet  # noqa: E402
 import kittymux_resume  # noqa: E402
 import kittymux_layout  # noqa: E402
 import kittymux_place  # noqa: E402
+import kittymux_skill  # noqa: E402
 import kittymux_theme  # noqa: E402
 
 VERSION = "0.2.0"
@@ -630,6 +633,32 @@ color14 #7dcfff
 color15 #c0caf5
 """
 
+DEMO_THEME_LIGHT = """\
+foreground #1f2335
+background #f5f7fb
+selection_foreground #f5f7fb
+selection_background #2e7de9
+cursor #1f2335
+active_border_color #2e7de9
+inactive_border_color #c4c8da
+color0 #e9e9ed
+color1 #f52a65
+color2 #587539
+color3 #8c6c3e
+color4 #2e7de9
+color5 #9854f1
+color6 #007197
+color7 #6172b0
+color8 #a1a6c5
+color9 #f52a65
+color10 #587539
+color11 #8c6c3e
+color12 #2e7de9
+color13 #9854f1
+color14 #007197
+color15 #3760bf
+"""
+
 DEMO_SESSION = """\
 new_tab api
 cd {home}
@@ -646,6 +675,9 @@ launch bash -c 'printf "  Thinking · 2m 4s (esc to interrupt)\\n"; exec -a agy 
 new_tab droid
 cd {home}
 launch bash -c 'printf "No active subscription found.\\nSubscribe to start using Droid.\\n"; exec -a droid sleep 86400'
+new_tab build
+cd {project}
+launch bash -c 'printf "\\033]9;4;1;64\\033\\\\\\n  Compiling workspace (64%%) — OSC 9;4 progress hairline in the tab bar\\n"; exec sleep 86400'
 new_tab review
 cd {home}
 launch
@@ -712,6 +744,8 @@ def _demo_events(sock: str, pid: int, state: str) -> None:
 
 def demo(argv: list[str]) -> int:
     edge = "bottom" if "--bottom" in argv else "left"
+    light = "--light" in argv
+    pixel = "--px" in argv or "--pixel" in argv
     if not shutil.which("kitty"):
         print("kitty not found", file=sys.stderr)
         return 1
@@ -727,8 +761,11 @@ def demo(argv: list[str]) -> int:
     ltpl = open(os.path.join(HOME_DIR, "kittymux-leader.conf.tpl"), encoding="utf-8").read()
     open(os.path.join(cfg, "kittymux-leader.conf"), "w").write(
         ltpl.replace("@KITTYMUX_HOME@", HOME_DIR).replace("@KITTYMUX_LEADER@", "ctrl+space"))
-    open(os.path.join(cfg, "theme.conf"), "w").write(DEMO_THEME)
+    open(os.path.join(cfg, "theme.conf"), "w").write(DEMO_THEME_LIGHT if light else DEMO_THEME)
     env = dict(os.environ, KITTY_CONFIG_DIRECTORY=cfg, KITTYMUX_STATE=state, KITTYMUX_NOTIFY="0")
+    if pixel:
+        import kittymux_switches
+        kittymux_switches.apply_preset(state, "pixel")
     world = _demo_world(tmp, state)                            # synthetic usage for the panel's Usage view: nothing of yours is read or shown
     if world:
         env["KITTYMUX_USAGE_HOME"] = world
@@ -775,8 +812,12 @@ def demo(argv: list[str]) -> int:
             subprocess.run(["git", "init", "-q", "-b", "main", os.path.join(twins, repo)], capture_output=True)
     otpl = open(os.path.join(HOME_DIR, "open-actions.conf.tpl"), encoding="utf-8").read()
     open(os.path.join(cfg, "open-actions.conf"), "w").write(otpl.replace("@KITTYMUX_HOME@", HOME_DIR))
+    workspace = os.path.join(tmp, "calm-otter")                # synthetic git repo so the demo never leaks your real $HOME
+    os.makedirs(workspace)
+    if shutil.which("git"):
+        subprocess.run(["git", "init", "-q", "-b", "feat/agent-ux", workspace], capture_output=True)
     session = os.path.join(tmp, "demo.kitty")
-    open(session, "w").write(DEMO_SESSION.format(home=os.path.expanduser("~"), project=project, twins=twins))
+    open(session, "w").write(DEMO_SESSION.format(home=workspace, project=project, twins=twins))
 
     banner()
     print(c("1", "kittymux demo") + " — an isolated window; your config is untouched.\n")
@@ -791,20 +832,20 @@ def demo(argv: list[str]) -> int:
     _demo_events(sock, proc.pid, state)
 
     print("  try:")
-    print(f"    {c('1', 'ctrl+alt+b')}       sidebar deck — hover, click, live preview; / to search, t to promote a pane")
-    print(f"    {c('1', 'ctrl+alt+y')}       jump to the agent that is waiting on you")
+    print(f"    {c('1', 'ctrl+alt+b')}       sidebar deck — hover, click, live preview; g groups by priority, / searches, t detaches a pane")
+    print(f"    {c('1', 'ctrl+alt+y')}       jump to the agent that is waiting on you  ·  {c('1', 'ctrl+alt+shift+q')} quick peek without leaving")
     print(f"    {c('1', 'ctrl+alt+shift+space')}  command palette — type to find a tab, an agent that needs you, a conversation or an action; ⏎ does it")
-    print(f"    {c('1', 'ctrl+alt+b')} then {c('1', 'u')} usage (provider tiles, gauges with a pace tick, a week of tokens) · {c('1', 'i')} inbox (Jump, Dismiss) · {c('1', 'a')} back — made-up numbers")
+    print(f"    {c('1', 'ctrl+alt+b')} then {c('1', 'u')} usage (quota meters + pace tick) · {c('1', 'i')} inbox (Jump, Dismiss, z undo) · {c('1', 's')} settings · {c('1', 'a')} back")
     print(f"    {c('1', 'ctrl+alt+/')}       every key, gesture and command — just type to search, esc closes")
     print(f"    {c('1', 'ctrl+space')} then {c('1', '?')}   leader mode card")
     print(f"  in the {c('1', 'panes')} tab:")
     print(f"    {c('1', 'ctrl+alt+e')}       number every pane, press a digit    {c('1', 'ctrl+alt+1..4')}        jump straight to pane N")
-    print(f"    {c('1', 'ctrl+alt+d')}       turn the focused pane into its own tab    {c('1', 'ctrl+alt+shift+c')}  show pane title bars (drag them)")
-    print(f"  in the {c('1', 'file-refs')} tab: {c('1', 'ctrl+shift+click')} src/app.py:42:7 — opens your editor at that line")
-    print(f"  in the two {c('1', 'app')} tabs: the same title, different projects — the bar says which (`kittymux features` turns pieces off)")
+    print(f"    {c('1', 'ctrl+alt+d')}       turn the focused pane into its own tab    {c('1', 'ctrl+alt+shift+c')}  toggle pane title bars")
+    print(f"  in the {c('1', 'build')} tab: live OSC 9;4 progress hairline in the bar · in {c('1', 'file-refs')}: {c('1', 'ctrl+shift+click')} src/app.py:42:7")
+    print(f"  in the two {c('1', 'app')} tabs: the same title, different projects — the bar says which (`kittymux settings` toggles every piece)")
     print(f"  in the {c('1', 'scrollback')} tab: {c('1', 'ctrl+alt+PgUp / PgDn')} page · {c('1', 'ctrl+alt+Home / End')} oldest / live · {c('1', 'ctrl+alt+[')} {c('1', ']')} prompts")
-    print(f"  the bar: drag its right edge to resize (try a fast flick) · click « to collapse · right-click a tab to peek")
-    print(f"  from a pane here:  {c('1', 'kittymux dim on')} (needs shader-slang) · {c('1', 'kittymux screenshot')} · {c('1', 'kittymux layout pick')}")
+    print(f"  the bar: drag its right edge to resize · click « to collapse · right-click a tab to peek · try closing a busy tab (closeguard asks first)")
+    print(f"  from a pane here:  {c('1', 'kittymux pane-controls show')} (Kitty 0.50+) · {c('1', 'kittymux settings')} · {c('1', 'kittymux demo --px --light')}")
     print(f"\n  status is read from each agent's screen — ! waiting on you, a spinner while it works — and from `mux-status` hooks if you add them.")
     print("  close the kitty window to end the demo.\n")
     try:
@@ -2476,7 +2517,7 @@ def settings_cmd(argv: list[str]) -> int:
     SW = kittymux_switches
     sdir = SW.state_dir()
     cmd = argv[0] if argv else "list"
-    usage = "usage: kittymux settings [list] | on NAME [--yes] | off NAME | reset NAME|GROUP|all | apply | open"
+    usage = "usage: kittymux settings [list] | on NAME [NAME ...] [--yes] | off NAME [NAME ...] | preset minimal|default|full|pixel | reset NAME|GROUP|all | apply | open"
     if cmd in ("-h", "--help", "help"):
         print(usage)
         return 0
@@ -2489,26 +2530,34 @@ def settings_cmd(argv: list[str]) -> int:
                     src = {"env": c("33", f"env {what}"), "flag": c("2", "file"), "default": c("2", "")}[where]
                     note = c("2", "  (planned: not built yet)") if sw.status == SW.PLANNED else ""
                     print(f"  {sw.id:<15} {'on ' if on else 'off'}  {src:<28} {sw.label}: {sw.help}{note}")
-            print(c("2", "\n  change one: kittymux settings on|off NAME · back to the default: kittymux settings reset NAME|GROUP|all · presets: kittymux features preset ..."))
+            print(c("2", "\n  change one: kittymux settings on|off NAME · presets: kittymux settings preset minimal|default|full|pixel · reset: kittymux settings reset NAME|GROUP|all"))
+            return 0
+        if cmd == "preset" and len(argv) == 2:
+            enabled = SW.apply_preset(sdir, argv[1])
+            print(f"{OK} preset {argv[1]}: " + ", ".join(enabled))
+            print(c("2", f"  {_reloaded(_nudge_bars())}"))
             return 0
         if cmd in ("on", "off") and len(argv) >= 2:
-            name = argv[1]
-            sw = SW.get(name)
-            extra = [a for a in argv[2:] if a != "--yes"]
-            if extra:
+            yes = "--yes" in argv[1:]
+            names = [a for a in argv[1:] if a != "--yes"]
+            if not names:
                 print(usage, file=sys.stderr)
                 return 2
-            if cmd == "on" and sw.risk != SW.NONE and "--yes" not in argv:
-                print(f"{WARN} {sw.label}: {sw.consequence}", file=sys.stderr)
-                print(f"  to turn it on anyway: kittymux settings on {name} --yes", file=sys.stderr)
-                return 2
-            SW.set_switch(sdir, name, cmd == "on")
-            note = ""
-            if SW.source(name, sdir)[1] == "env":
-                note = f"  {WARN} {SW.resolve(name, sdir)[2]} is set in this shell's environment and wins over this (kitty's own environment may differ)"
-            if sw.status == SW.PLANNED:
-                note += f"  {WARN} not built yet: the choice is saved for when it exists"
-            print(f"{OK} {name} {cmd}{note}")
+            switches = [SW.get(n) for n in names]
+            if cmd == "on" and not yes:
+                for sw in switches:
+                    if sw.risk != SW.NONE:
+                        print(f"{WARN} {sw.label}: {sw.consequence}", file=sys.stderr)
+                        print(f"  to turn it on anyway: kittymux settings on {sw.id} --yes", file=sys.stderr)
+                        return 2
+            for sw in switches:
+                SW.set_switch(sdir, sw.id, cmd == "on")
+                note = ""
+                if SW.source(sw.id, sdir)[1] == "env":
+                    note = f"  {WARN} {SW.resolve(sw.id, sdir)[2]} is set in this shell's environment and wins over this (kitty's own environment may differ)"
+                if sw.status == SW.PLANNED:
+                    note += f"  {WARN} not built yet: the choice is saved for when it exists"
+                print(f"{OK} {sw.id} {cmd}{note}")
             print(c("2", f"  {_reloaded(_nudge_bars())}"))
             return 0
         if cmd == "reset" and len(argv) == 2:
@@ -3589,6 +3638,65 @@ def main(argv: list[str]) -> int:
         return 2
 
 
+def skill_cmd(argv: list[str]) -> int:
+    """`kittymux skill [--print|--install|--remove]` — install the kittymux agent skill for Claude Code, Codex, and OpenCode."""
+    usage = "usage: kittymux skill [--print | --install | --remove]"
+    if argv in (["-h"], ["--help"], ["help"]):
+        print(usage)
+        return 0
+    if not argv or argv == ["--print"]:
+        sys.stdout.write(kittymux_skill.SKILL_MD)
+        return 0
+    if argv == ["--install"]:
+        written, skipped = kittymux_skill.install()
+        for p in written:
+            print(f"{OK} installed {p}")
+        for p in skipped:
+            print(f"{WARN} skipped {p} (not kittymux-managed)", file=sys.stderr)
+        return 1 if skipped and not written else 0
+    if argv == ["--remove"]:
+        removed, skipped = kittymux_skill.remove()
+        for p in removed:
+            print(f"{OK} removed {p}")
+        for p in skipped:
+            print(f"{WARN} left {p} alone (not kittymux-managed)", file=sys.stderr)
+        if not removed and not skipped:
+            print("kittymux skill is not installed")
+        return 1 if skipped and not removed else 0
+    print(usage, file=sys.stderr)
+    return 2
+
+
+def tabs_cmd(argv: list[str]) -> int:
+    """`kittymux tabs [--json]` — print live tabs across running kitties from `$KITTYMUX_STATE/tabs.json`."""
+    usage = "usage: kittymux tabs [--json]"
+    if argv in (["-h"], ["--help"], ["help"]):
+        print(usage)
+        return 0
+    if any(a != "--json" for a in argv):
+        print(usage, file=sys.stderr)
+        return 2
+    windows = kittymux_skill.load_live_tabs(kittymux_switches.state_dir())
+    if "--json" in argv:
+        print(json.dumps({"version": 1, "windows": windows}, indent=2))
+        return 0
+    if not windows:
+        print("no live tabs published in tabs.json yet")
+        return 0
+    for win in windows:
+        host = win.get("host") or "kitty"
+        pid = win.get("kitty_pid", "?")
+        print(c("1", f"{host} (pid {pid})"))
+        for tab in win.get("tabs") or []:
+            state = tab.get("state") or "idle"
+            title = tab.get("title") or "tab"
+            proj = tab.get("project") or ""
+            branch = tab.get("branch") or ""
+            where = f"  {proj}" + (f" ({branch})" if branch else "") if proj else ""
+            print(f"  [{state:<7}] {title}{where}")
+    return 0
+
+
 def _dispatch(argv: list[str]) -> int:
     cmd = argv[0] if argv else "help"
     if cmd == "uninstall":
@@ -3633,6 +3741,10 @@ def _dispatch(argv: list[str]) -> int:
         return features_cmd(argv[1:])
     if cmd == "settings":
         return settings_cmd(argv[1:])
+    if cmd == "skill":
+        return skill_cmd(argv[1:])
+    if cmd == "tabs":
+        return tabs_cmd(argv[1:])
     if cmd == "keys":
         return keys_cmd(argv[1:])
     if cmd == "join":

@@ -2,6 +2,7 @@
 
 - `python/kittymux_panelpx.py` draws graphical Usage and expandable Inbox with the deck's painter/resources/transport; `sidebar-kit.py` owns input, ID-stable selection, scrolling and fallback. `python/kittymux_usagebridge.py` reads only the sibling rice T3 cache on the existing worker, normalizing presentation fields and keeping sample ages; no token/RPC/provider fetch.
 - `python/kittymux_panecontrols.py` owns explicit-parent pane dock lifecycle/actions; `python/pane-controls-kit.py` is its no-UI controller and strip UI. `kittymux pane-controls` resolves its own socket, verifies the running process's version inside Kitty and never selects a different Kitty on failure. Close delegates to `close-kit.py`.
+- `python/kittymux_skill.py` (pure) — `kittymux skill --install|--print|--remove` and `kittymux tabs --json` (live `tabs.json` reader that drops dead kitty PIDs). Installs a managed `SKILL.md` (marked with `<!-- kittymux-managed-skill -->`) into `~/.claude/skills/kittymux`, `~/.codex/skills/kittymux`, and `~/.agents/skills/kittymux`, never overwriting or removing unowned user files.
 
 Which file owns what. Read it before adding, moving or duplicating code: most bugs in this repository were a second copy of a rule that one module should own.
 

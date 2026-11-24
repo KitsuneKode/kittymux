@@ -18,7 +18,8 @@ Item {
     readonly property bool turning: state === "working" && progress < 0 && !muted
     readonly property color tone: muted ? Theme.faint
         : (state === "waiting" || state === "limited") ? Theme.waiting
-        : state === "error" ? Theme.alert : state === "done" ? Theme.done : Theme.text
+        : state === "error" ? Theme.alert : state === "done" ? Theme.done
+        : state === "working" ? Theme.working : Theme.text
     readonly property real sweepTarget: muted ? 0
         : turning ? 90
         : state === "working" ? Math.max(4, progress * 360)
