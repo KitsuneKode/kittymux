@@ -194,20 +194,22 @@ def _pxbar_on(sdir: str) -> bool:
 
 
 PXBAR_MIN_PADDING = (6.0, 6.0, 6.0, 4.0)      # pt (top, right, bottom, left): clears kittymux-pxbar.slang CARD_M + CARD_R
+_MAX_CONF_BYTES = 262_144                     # 256 KiB cap: never do unbounded reads on kitty's main thread
 
 
-def parse_padding(text: str) -> tuple[float, float, float, float]:
-    """Parse the last `window_padding_width` directive in a kitty.conf snippet into (top, right, bottom, left) floats."""
-    pad = (0.0, 0.0, 0.0, 0.0)
+def _parse_pad_directive(text: str, directive: str, default: tuple[float, float, float, float],
+                         allow_negative: bool = False) -> tuple[float, float, float, float]:
+    pad = default
     for raw in text.splitlines():
         line = raw.split("#", 1)[0].strip()
-        if not line.startswith("window_padding_width"):
+        parts = line.split()
+        if not parts or parts[0] != directive:
             continue
-        parts = line.split()[1:]
         vals = []
-        for tok in parts[:4]:
+        for tok in parts[1:5]:
             try:
-                vals.append(max(0.0, float(tok)))
+                v = float(tok)
+                vals.append(v if allow_negative else max(0.0, v))
             except ValueError:
                 vals = []
                 break
@@ -222,27 +224,60 @@ def parse_padding(text: str) -> tuple[float, float, float, float]:
     return pad
 
 
+def parse_padding(text: str) -> tuple[float, float, float, float]:
+    """Parse the last `window_padding_width` directive in a kitty.conf snippet into (top, right, bottom, left) floats."""
+    return _parse_pad_directive(text, "window_padding_width", (0.0, 0.0, 0.0, 0.0), allow_negative=False)
+
+
+def parse_single_window_padding(text: str) -> tuple[float, float, float, float]:
+    """Parse `single_window_padding_width` (negative inherits `window_padding_width` in kitty)."""
+    return _parse_pad_directive(text, "single_window_padding_width", (-1.0, -1.0, -1.0, -1.0), allow_negative=True)
+
+
+def _read_conf_bounded(cfg_dir: str | None = None) -> str | None:
+    """Read kitty.conf up to `_MAX_CONF_BYTES`; return None if missing, unreadable, or oversized."""
+    cdir = cfg_dir or os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty")
+    path = os.path.join(cdir, "kitty.conf")
+    try:
+        if os.stat(path).st_size > _MAX_CONF_BYTES:
+            return None
+        with open(path, encoding="utf-8", errors="replace") as f:
+            data = f.read(_MAX_CONF_BYTES + 1)
+            return None if len(data.encode("utf-8", errors="replace")) > _MAX_CONF_BYTES else data
+    except OSError:
+        return None
+
+
 def configured_padding(cfg_dir: str | None = None) -> tuple[float, float, float, float]:
     """Read the user's configured `window_padding_width` from kitty.conf (never raises)."""
-    cdir = cfg_dir or os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty")
-    try:
-        with open(os.path.join(cdir, "kitty.conf"), encoding="utf-8") as f:
-            return parse_padding(f.read())
-    except OSError:
-        return (0.0, 0.0, 0.0, 0.0)
+    text = _read_conf_bounded(cfg_dir)
+    return parse_padding(text) if text is not None else (0.0, 0.0, 0.0, 0.0)
 
 
-def pxbar_padding_conf(existing: tuple[float, float, float, float] | None = None) -> str:
+def pxbar_padding_conf(existing: tuple[float, float, float, float] | None = None,
+                       existing_single: tuple[float, float, float, float] | None = None) -> str:
     """Ensure the terminal pane has enough padding for pxbar's rounded card frame without shrinking larger user padding."""
-    cur = configured_padding() if existing is None else existing
-    if all(c >= m for c, m in zip(cur, PXBAR_MIN_PADDING)):
-        return ""
-    merged = tuple(max(c, m) for c, m in zip(cur, PXBAR_MIN_PADDING))
+    if existing is None or existing_single is None:
+        text = _read_conf_bounded()
+        if existing is None:
+            existing = parse_padding(text) if text is not None else (0.0, 0.0, 0.0, 0.0)
+        if existing_single is None:
+            existing_single = parse_single_window_padding(text) if text is not None else (-1.0, -1.0, -1.0, -1.0)
     fmt = lambda v: str(int(v)) if v == int(v) else f"{v:g}"
-    return "window_padding_width " + " ".join(fmt(v) for v in merged) + "\n"
+    out = []
+    if not all(c >= m for c, m in zip(existing, PXBAR_MIN_PADDING)):
+        merged = tuple(max(c, m) for c, m in zip(existing, PXBAR_MIN_PADDING))
+        out.append("window_padding_width " + " ".join(fmt(v) for v in merged))
+    # Explicit non-negative single_window_padding_width overrides window_padding_width in kitty; lift any side below min while preserving negatives (inherit).
+    if any(0.0 <= c < m for c, m in zip(existing_single, PXBAR_MIN_PADDING)):
+        merged_single = tuple(c if c < 0.0 else max(c, m) for c, m in zip(existing_single, PXBAR_MIN_PADDING))
+        out.append("single_window_padding_width " + " ".join(fmt(v) for v in merged_single))
+    return "".join(line + "\n" for line in out)
 
 
-def gated_conf(version: tuple, sdir: str, slangc: bool = False, existing_padding: tuple[float, float, float, float] | None = None) -> str:
+def gated_conf(version: tuple, sdir: str, slangc: bool = False,
+               existing_padding: tuple[float, float, float, float] | None = None,
+               existing_single_padding: tuple[float, float, float, float] | None = None) -> str:
     """Config lines for features the asking kitty supports. `version` is that kitty's (major, minor, patch);
     `slangc` says the shader compiler is installed (custom shaders cannot build without it)."""
     lines = []
@@ -262,9 +297,9 @@ def gated_conf(version: tuple, sdir: str, slangc: bool = False, existing_padding
     if shaders:
         lines.append("custom_shaders " + " ".join(shaders))
     if pxbar_shader:
-        pad_line = pxbar_padding_conf(existing_padding).strip()
-        if pad_line:
-            lines.append(pad_line)
+        for pad_line in pxbar_padding_conf(existing_padding, existing_single_padding).splitlines():
+            if pad_line.strip():
+                lines.append(pad_line.strip())
     return "".join(line + "\n" for line in lines)
 
 

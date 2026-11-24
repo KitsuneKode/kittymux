@@ -554,7 +554,19 @@ class PxbarPaddingTests(unittest.TestCase):
     def test_gated_conf_emits_padding_only_when_pxbar_shader_runs_with_small_padding(self):
         d = tempfile.mkdtemp()
         open(os.path.join(d, "pxbar-on"), "w").close()
-        out_zero = L.gated_conf((0, 50, 0), d, slangc=True, existing_padding=(0.0, 0.0, 0.0, 0.0))
+        out_zero = L.gated_conf((0, 50, 0), d, slangc=True, existing_padding=(0.0, 0.0, 0.0, 0.0), existing_single_padding=(-1.0, -1.0, -1.0, -1.0))
         self.assertIn("window_padding_width 6 6 6 4", out_zero)
-        out_big = L.gated_conf((0, 50, 0), d, slangc=True, existing_padding=(10.0, 10.0, 10.0, 10.0))
+        self.assertNotIn("single_window_padding_width", out_zero)
+        out_big = L.gated_conf((0, 50, 0), d, slangc=True, existing_padding=(10.0, 10.0, 10.0, 10.0), existing_single_padding=(-1.0, -1.0, -1.0, -1.0))
         self.assertNotIn("window_padding_width", out_big)
+        out_single_zero = L.gated_conf((0, 50, 0), d, slangc=True, existing_padding=(10.0, 10.0, 10.0, 10.0), existing_single_padding=(0.0, 0.0, 0.0, 0.0))
+        self.assertIn("single_window_padding_width 6 6 6 4", out_single_zero)
+        out_single_mix = L.pxbar_padding_conf((10.0, 10.0, 10.0, 10.0), (-1.0, 2.0, 12.0, -1.0))
+        self.assertEqual(out_single_mix, "single_window_padding_width -1 6 12 -1\n")
+
+    def test_bounded_config_read_skips_oversized_kitty_conf(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 20\n" + ("# pad\n" * 60000))
+            self.assertIsNone(L._read_conf_bounded(cfg))
+            self.assertEqual(L.configured_padding(cfg), (0.0, 0.0, 0.0, 0.0))

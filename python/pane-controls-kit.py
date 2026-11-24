@@ -55,8 +55,13 @@ class Strip(Handler):
         self.cmd.clear_screen()
         for y, segs in enumerate(rows[:self.screen_size.rows]):
             out = set_cursor_position(0, y)
+            rem = self.screen_size.cols
             for seg in segs:
-                out += styled(seg.text, fg=_color(seg.fg), bg=_color(seg.bg), bold=seg.bold)
+                if rem <= 0:
+                    break
+                chunk = seg.text[:rem]
+                rem -= len(chunk)
+                out += styled(chunk, fg=_color(seg.fg), bg=_color(seg.bg), bold=seg.bold)
             self.write(out)
         self.flush()
 
@@ -76,8 +81,10 @@ class Strip(Handler):
             self.is_error = True
             self.draw_screen()
             return
-        self.is_error = proc.returncode != 0
-        self.message = (proc.stdout.strip() if proc.returncode == 0 else 'Action failed; use CLI for details')
+        reply = proc.stdout.strip()
+        refused = reply.startswith('ERROR:')
+        self.is_error = proc.returncode != 0 or refused
+        self.message = (reply if proc.returncode == 0 else 'Action failed; use CLI for details')
         if action != 'hide':
             self.draw_screen()
 
