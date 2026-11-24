@@ -866,6 +866,8 @@ class DemoSessionTests(unittest.TestCase):
         text = self.m.DEMO_SESSION.format(home="/home/demo", project="/home/demo/project", twins="")
         self.assertNotIn("exec bash'", text)
         self.assertIn('exec "${SHELL:-bash}"', text)
+        self.assertIn("9;4;1;64", text)
+        self.assertIn("background #f5f7fb", self.m.DEMO_THEME_LIGHT)
 
 
 class OpenCodePluginTests(unittest.TestCase):

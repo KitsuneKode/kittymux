@@ -115,9 +115,30 @@ class ControlsTests(unittest.TestCase):
 
     def test_narrow_strip_uses_whole_short_labels(self):
         lines, _ = P.strip(26)
-        self.assertIn('R Right', lines[1])
-        self.assertIn('D Down', lines[1])
-        self.assertIn('T Tab', lines[2])
+        self.assertIn('◫ Right', lines[1])
+        self.assertIn('⬓ Down', lines[1])
+        self.assertIn('↗ Tab', lines[2])
+        self.assertNotIn('--help', lines[0])
+
+    def test_styled_strip_uses_theme_surfaces_and_distinct_hover(self):
+        import kittymux_theme as T
+        for colors in (
+            {'background': 0x1a1b26, 'foreground': 0xc0caf5, 'color9': 0xf7768e, 'color10': 0x9ece6a, 'color12': 0x7aa2f7},
+            {'background': 0xf6f8fc, 'foreground': 0x0f172a, 'color9': 0xc11f49, 'color10': 0x2f7d32, 'color12': 0x253d63},
+        ):
+            pal = T.from_colors(colors)
+            for width in (8, 18, 26, 60):
+                rows, hits = P.styled_strip(width, pal, hovered='zoom')
+                self.assertEqual(len(rows), 3)
+                self.assertEqual({h[0] for h in hits}, set(P.ACTIONS))
+                for row in rows:
+                    self.assertEqual(sum(len(seg.text) for seg in row), max(8, width))
+                row1_bgs = {seg.bg for seg in rows[1]}
+                self.assertIn(pal.card, row1_bgs)
+                self.assertIn(pal.card_hi, row1_bgs)
+                self.assertIn(pal.bar, row1_bgs)
+            rows_close, _ = P.styled_strip(40, pal, hovered='close')
+            self.assertIn('Close pane', ''.join(s.text for s in rows_close[0]))
 
 
 class CLITests(unittest.TestCase):

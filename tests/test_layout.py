@@ -537,3 +537,24 @@ class AttachTests(CoverTests):
         self.assertTrue(L.sweep_attached(self.dir, self.k))
         self.assertFalse(os.path.exists(os.path.join(self.dir, f"bar-attached-{self.k}")))
         self.assertFalse(L.sweep_attached(self.dir, self.k))
+
+
+class PxbarPaddingTests(unittest.TestCase):
+    def test_parse_padding_handles_one_two_three_and_four_values(self):
+        self.assertEqual(L.parse_padding("window_padding_width 10\n"), (10.0, 10.0, 10.0, 10.0))
+        self.assertEqual(L.parse_padding("window_padding_width 8 4\n"), (8.0, 4.0, 8.0, 4.0))
+        self.assertEqual(L.parse_padding("window_padding_width 2 4 6\n"), (2.0, 4.0, 6.0, 4.0))
+        self.assertEqual(L.parse_padding("window_padding_width 1 2 3 4 # comment\n"), (1.0, 2.0, 3.0, 4.0))
+
+    def test_pxbar_padding_lifts_zero_and_preserves_larger_user_padding(self):
+        self.assertEqual(L.pxbar_padding_conf((0.0, 0.0, 0.0, 0.0)), "window_padding_width 6 6 6 4\n")
+        self.assertEqual(L.pxbar_padding_conf((10.0, 10.0, 10.0, 10.0)), "")
+        self.assertEqual(L.pxbar_padding_conf((12.0, 2.0, 12.0, 0.0)), "window_padding_width 12 6 12 4\n")
+
+    def test_gated_conf_emits_padding_only_when_pxbar_shader_runs_with_small_padding(self):
+        d = tempfile.mkdtemp()
+        open(os.path.join(d, "pxbar-on"), "w").close()
+        out_zero = L.gated_conf((0, 50, 0), d, slangc=True, existing_padding=(0.0, 0.0, 0.0, 0.0))
+        self.assertIn("window_padding_width 6 6 6 4", out_zero)
+        out_big = L.gated_conf((0, 50, 0), d, slangc=True, existing_padding=(10.0, 10.0, 10.0, 10.0))
+        self.assertNotIn("window_padding_width", out_big)
