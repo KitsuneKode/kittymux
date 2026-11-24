@@ -193,7 +193,56 @@ def _pxbar_on(sdir: str) -> bool:
         return False
 
 
-def gated_conf(version: tuple, sdir: str, slangc: bool = False) -> str:
+PXBAR_MIN_PADDING = (6.0, 6.0, 6.0, 4.0)      # pt (top, right, bottom, left): clears kittymux-pxbar.slang CARD_M + CARD_R
+
+
+def parse_padding(text: str) -> tuple[float, float, float, float]:
+    """Parse the last `window_padding_width` directive in a kitty.conf snippet into (top, right, bottom, left) floats."""
+    pad = (0.0, 0.0, 0.0, 0.0)
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line.startswith("window_padding_width"):
+            continue
+        parts = line.split()[1:]
+        vals = []
+        for tok in parts[:4]:
+            try:
+                vals.append(max(0.0, float(tok)))
+            except ValueError:
+                vals = []
+                break
+        if len(vals) == 1:
+            pad = (vals[0], vals[0], vals[0], vals[0])
+        elif len(vals) == 2:
+            pad = (vals[0], vals[1], vals[0], vals[1])
+        elif len(vals) == 3:
+            pad = (vals[0], vals[1], vals[2], vals[1])
+        elif len(vals) == 4:
+            pad = (vals[0], vals[1], vals[2], vals[3])
+    return pad
+
+
+def configured_padding(cfg_dir: str | None = None) -> tuple[float, float, float, float]:
+    """Read the user's configured `window_padding_width` from kitty.conf (never raises)."""
+    cdir = cfg_dir or os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty")
+    try:
+        with open(os.path.join(cdir, "kitty.conf"), encoding="utf-8") as f:
+            return parse_padding(f.read())
+    except OSError:
+        return (0.0, 0.0, 0.0, 0.0)
+
+
+def pxbar_padding_conf(existing: tuple[float, float, float, float] | None = None) -> str:
+    """Ensure the terminal pane has enough padding for pxbar's rounded card frame without shrinking larger user padding."""
+    cur = configured_padding() if existing is None else existing
+    if all(c >= m for c, m in zip(cur, PXBAR_MIN_PADDING)):
+        return ""
+    merged = tuple(max(c, m) for c, m in zip(cur, PXBAR_MIN_PADDING))
+    fmt = lambda v: str(int(v)) if v == int(v) else f"{v:g}"
+    return "window_padding_width " + " ".join(fmt(v) for v in merged) + "\n"
+
+
+def gated_conf(version: tuple, sdir: str, slangc: bool = False, existing_padding: tuple[float, float, float, float] | None = None) -> str:
     """Config lines for features the asking kitty supports. `version` is that kitty's (major, minor, patch);
     `slangc` says the shader compiler is installed (custom shaders cannot build without it)."""
     lines = []
@@ -202,14 +251,20 @@ def gated_conf(version: tuple, sdir: str, slangc: bool = False) -> str:
     if version >= PANE_TITLE_MIN:
         lines.append(f"window_title_template {PANE_TITLE_TEMPLATE}")
     shaders = []                                     # ONE custom_shaders line: a second one would replace the first
+    pxbar_shader = False
     if version >= DIM_SHADER_MIN and slangc and os.path.exists(os.path.join(sdir, DIM_FLAG)):
         shaders.append("dim-inactive-windows")
     if version >= CARDS_SHADER_MIN and slangc and _pxbar_on(sdir) and os.path.exists(PXBAR_PIPELINE):
         shaders.append(PXBAR_PIPELINE)               # the pixel tab bar draws its own cards: its shader replaces the cards one
+        pxbar_shader = True
     elif version >= CARDS_SHADER_MIN and slangc and os.path.exists(os.path.join(sdir, CARDS_FLAG)) and os.path.exists(CARDS_PIPELINE):
         shaders.append(cards_pipeline(sdir))
     if shaders:
         lines.append("custom_shaders " + " ".join(shaders))
+    if pxbar_shader:
+        pad_line = pxbar_padding_conf(existing_padding).strip()
+        if pad_line:
+            lines.append(pad_line)
     return "".join(line + "\n" for line in lines)
 
 

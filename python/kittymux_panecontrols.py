@@ -3,14 +3,33 @@
 Native docks are created in Kitty's own event loop so concurrent `show` requests
 cannot make duplicate strips. Imports here also work in plain Python tests.
 """
+from dataclasses import dataclass
 from pathlib import Path
 import os
 
+import kittymux_theme as T
 import kittymux_zoom
 
 MARK = 'kittymux_pane_controls'
 ACTIONS = ('split-right', 'split-down', 'zoom', 'move-to-tab', 'close', 'hide')
-LABELS = ('R Split right', 'D Split down', 'Z Zoom', 'T Move to tab', 'X Close', '- Hide')
+LABELS = ('◫ Split right', '⬓ Split down', '⤢ Zoom', '↗ Move to tab', '× Close', '− Hide')
+SHORT_LABELS = ('◫ Right', '⬓ Down', '⤢ Zoom', '↗ Tab', '× Close', '− Hide')
+HINTS = (
+    'Split pane to the right',
+    'Split pane below',
+    'Toggle zoom on this pane',
+    'Move pane to its own tab',
+    'Close pane (busy agents confirm)',
+    'Hide pane controls strip',
+)
+
+
+@dataclass(frozen=True)
+class Seg:
+    text: str
+    fg: int
+    bg: int
+    bold: bool = False
 
 
 def supported(version) -> bool:
@@ -21,12 +40,12 @@ def supported(version) -> bool:
 def strip(width: int):
     """Three rows, with all six pointer targets even in an eight-column pane.
 
-    Labels shorten with the viewport; the CLI lists the full names and provides
-    the keyboard equivalent because a skip-focus dock never intercepts typing.
+    Labels use visual glyphs rather than fake key letters because a skip-focus
+    dock keeps typing inside the parent pane.
     """
     width = max(8, width)
     cell = max(2, (width - 2) // 3)
-    lines = ['Pane controls - kittymux pane-controls --help'[:width]]
+    lines = ['Pane controls'[:width]]
     hits = []
     for row in range(2):
         pieces = []
@@ -34,12 +53,67 @@ def strip(width: int):
             index = row * 3 + col
             label = LABELS[index]
             if len(label) > cell:
-                label = ('R Right', 'D Down', 'Z Zoom', 'T Tab', 'X Close', '- Hide')[index]
+                label = SHORT_LABELS[index]
             text = label[:cell].ljust(cell)
             pieces.append(text)
             hits.append((ACTIONS[index], col * (cell + 1), row + 1, cell))
         lines.append(' '.join(pieces))
     return lines, hits
+
+
+def styled_strip(width: int, palette: T.Palette, hovered: str | None = None, message: str = '', is_error: bool = False):
+    """Themed 3-row dock layout: calm status header on row 0 + raised button pills with gutters on rows 1-2.
+
+    Returns (rows, hits) where each row is a list[Seg] summing to `max(8, width)` columns and hits matches `strip()`.
+    """
+    width = max(8, width)
+    p = palette
+    _, hits = strip(width)
+    cell = max(2, (width - 2) // 3)
+
+    # Row 0: status / hover description (no misleading hotkey hint: --dock-skip-focus keeps keys in the pane)
+    if message:
+        status = message
+        status_fg = T.ensure_contrast(p.alert if is_error else p.done, p.bar, 4.5)
+    elif hovered in ACTIONS:
+        status = HINTS[ACTIONS.index(hovered)]
+        status_fg = T.ensure_contrast(p.text, p.bar, 4.5)
+    else:
+        status = 'Pane controls'
+        status_fg = T.ensure_contrast(p.muted, p.bar, 4.5)
+    row0 = [Seg(status[:width].ljust(width), status_fg, p.bar, bold=bool(message or hovered))]
+
+    # Rows 1-2: raised surface pills separated by 1-cell bar gutters
+    rows = [row0]
+    for r in range(2):
+        segs: list[Seg] = []
+        used = 0
+        for c in range(3):
+            if c > 0:
+                segs.append(Seg(' ', p.bar, p.bar))
+                used += 1
+            idx = r * 3 + c
+            action = ACTIONS[idx]
+            is_hov = action == hovered
+            is_close = action == 'close'
+            if is_hov:
+                btn_bg = T.blend(p.alert, p.bar, 0.28) if is_close else p.card_hi
+            else:
+                btn_bg = p.card
+            raw = LABELS[idx] if len(LABELS[idx]) <= cell else SHORT_LABELS[idx]
+            txt = raw[:cell].ljust(cell)
+            key_ch = txt[:1]
+            rest = txt[1:]
+            key_col = T.ensure_contrast(p.alert if is_close else p.accent, btn_bg, 4.5)
+            lbl_col = T.ensure_contrast(p.text if is_hov else p.muted, btn_bg, 4.5)
+            segs.append(Seg(key_ch, key_col, btn_bg, bold=True))
+            if rest:
+                segs.append(Seg(rest, lbl_col, btn_bg, bold=is_hov))
+            used += len(txt)
+        if used < width:
+            segs.append(Seg(' ' * (width - used), p.bar, p.bar))
+        rows.append(segs)
+    return rows, hits
 
 
 def _parent(boss, parent_id):

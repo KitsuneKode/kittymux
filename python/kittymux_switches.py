@@ -179,3 +179,28 @@ def reset(sdir: str, names) -> list[str]:
 
 def by_group() -> list[tuple[str, list[Switch]]]:
     return [(g, [s for s in CATALOG if s.group == g]) for g in GROUPS]
+
+
+PIXEL_PRESET = frozenset({
+    "folder", "hue", "collide", "panetitle", "motion", "titles",
+    "ring", "closeguard", "sudo", "loginprompt", "pkgprompt", "socketlink",
+    "pxbar", "deckpx", "pxcover",
+})
+
+
+def apply_preset(sdir: str, preset: str) -> list[str]:
+    """Apply a named preset (`minimal`, `default`, `full`, or `pixel`). Returns sorted ids turned on."""
+    import kittymux_features as F
+
+    if preset in F.PRESETS:
+        F.apply_preset(sdir, preset)
+        set_switch(sdir, "pxbar", False)
+        set_switch(sdir, "deckpx", False)
+        return sorted(F.PRESETS[preset])
+    if preset == "pixel":
+        for name in F.FEATURES:
+            set_switch(sdir, name, name in PIXEL_PRESET)
+        for name in ("pxbar", "deckpx", "pxcover", "ring", "closeguard"):
+            set_switch(sdir, name, True)
+        return sorted(PIXEL_PRESET)
+    raise ValueError(f"unknown preset {preset!r} (known: minimal, default, full, pixel)")
