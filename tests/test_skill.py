@@ -50,6 +50,19 @@ class SkillTests(unittest.TestCase):
             self.assertEqual(left, [custom])
             self.assertTrue(custom.exists())
 
+    def test_install_and_remove_skip_non_utf8_unowned_files(self):
+        with tempfile.TemporaryDirectory() as home:
+            bad = SK.skill_paths(home)[0]
+            bad.parent.mkdir(parents=True, exist_ok=True)
+            bad.write_bytes(b"\xff\xfe\x00not utf-8")
+            written, skipped = SK.install(home)
+            self.assertEqual(len(written), 2)
+            self.assertEqual(skipped, [bad])
+            removed, left = SK.remove(home)
+            self.assertEqual(len(removed), 2)
+            self.assertEqual(left, [bad])
+            self.assertEqual(bad.read_bytes(), b"\xff\xfe\x00not utf-8")
+
     def test_load_live_tabs_drops_dead_pids(self):
         with tempfile.TemporaryDirectory() as sdir:
             doc = {

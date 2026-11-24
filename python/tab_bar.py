@@ -1667,7 +1667,7 @@ def _px_row(tab, pal) -> "kittymux_groups.Row":
         tool = kittymux_agents.tool_in(foreground)
         mark = kittymux_agents.TOOL_MARKS.get(tool or "", "")
         tint = kittymux_agents.TOOL_TINTS.get(mark)
-        if tool and facts and title:
+        if tool and facts and title and _features().get("titles", True):
             # Strip redundant `:project` / ` - project` suffix (e.g. `nvim:kitsunesnipe` under group `kitsunesnipe`)
             proj = facts.project
             low = title.lower()

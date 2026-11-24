@@ -121,7 +121,8 @@ fragment_main(float4 color, KittyTextures t, KittyCustomShaderData d) {
     // Match this row's own surface (active card or bar) so hovering an active row never leaves a darker square around ×,
     // and feather the left edge of the cover so wider end marks (age, percent, wave) dissolve cleanly without jagged scraps.
     float3 row_base = t.backbuffer.Sample(float2((x0 + 3.0 * sc) * px.x, (y1 - 3.0 * sc) * px.y)).rgb;
-    float3 cover_col = dec(lerp(enc(row_base), veil, lift));
+    float3 base_ink = (enc(row_base) - eb) * 0.3;
+    float3 cover_col = dec(clamp(lerp(enc(row_base), veil, lift) + base_ink, 0.0, 1.0));
     float cover_x = smoothstep(-20.0, -12.0, r.x) * (1.0 - smoothstep(10.0, 12.0, r.x));
     float cover_y = 1.0 - smoothstep(9.0, 10.5, abs(r.y));
     hi = lerp(hi, cover_col, cover_x * cover_y * inside);
@@ -132,7 +133,7 @@ fragment_main(float4 color, KittyTextures t, KittyCustomShaderData d) {
     if (hot) {
         float2 qs = max(abs(r) - float2(9.0 - 5.0), 0.0);
         float sq = 1.0 - smoothstep(5.0 - 0.75 / sc, 5.0 + 0.75 / sc, length(qs));
-        hi = lerp(hi, dec(lerp(enc(row_base), veil, lift * 2.2)), sq * inside);
+        hi = lerp(hi, dec(clamp(lerp(enc(row_base), veil, lift * 2.2) + base_ink, 0.0, 1.0)), sq * inside);
     }
     float d1 = abs(r.x - r.y) * 0.7071, d2 = abs(r.x + r.y) * 0.7071;
     float arm = 1.0 - smoothstep(3.0, 3.0 + 0.9 / sc, max(abs(r.x), abs(r.y)));       // round-ish ends, no hard square cut
