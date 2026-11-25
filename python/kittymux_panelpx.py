@@ -413,7 +413,7 @@ def inbox(events, filter, selected, palette, width, height, *, now=None, expande
         hot = hover == ('select', id) or hover == ('expand', id)
         pt.surface(PAD, y, max(1, width - PAD * 2), card_h, 13, .085 if is_selected else .055 if hot else .03, rim=.11 if is_selected else .06)
         kind = event.get('kind')
-        color = pt.p.waiting if kind in ('permission', 'question') else pt.p.alert if kind in ('error', 'limit') else pt.p.done if kind == 'done' else pt.p.muted
+        color = pt.p.waiting if kind in ('permission', 'question', 'limit') else pt.p.alert if kind == 'error' else pt.p.done if kind == 'done' else pt.p.muted
         glyph = I.KIND.get(kind, ('·', 'muted'))[0]
         _text(pt, PAD * 2, y + 19, glyph, 13, color, width=14, bold=True)
         agent = _clean(event.get('agent') or 'Agent', 80).title()
