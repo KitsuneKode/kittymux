@@ -1493,7 +1493,7 @@ def _draw_vertical(draw_data, screen, tab, index, extra_data, pal) -> int:
     rail = stripe or (active and compact)
     if rail or not (active and not compact):             # the card's left edge (column 0) stays the bar's colour
         _put(screen, 0, _RAIL if rail else " ",
-                 _rgb((pal.alert if state == "limited" else pal.waiting) if stripe else pal.accent))
+                 _rgb(pal.waiting if stripe else pal.accent))          # limited too: one colour for "needs you", alert is for errors
     if info:
         glyph, brand, _n = info
         _put(screen, gx, glyph, _rgb(brand if active else _mute(brand, pal)))
