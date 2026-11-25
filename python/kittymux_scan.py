@@ -339,6 +339,11 @@ def scan_window(window, now: float) -> bool:
     wid = str(window.id)
     prev = _RT.verdicts.get(wid) or {}
     if agent is None:
+        try:
+            import kittymux_psp
+            kittymux_psp.mark_stale(window)            # what kitty still holds here is left over from an agent that is gone
+        except Exception:
+            pass
         if prev.get("state"):
             _RT.verdicts[wid] = {"state": "", "reason": "", "ts_state": now, "ts_scan": now}
             _RT.book.pop(wid, None)
@@ -419,7 +424,7 @@ def scan_window(window, now: float) -> bool:
             kind = _inbox().classify_text("", text)[0]
             kind = kind if kind in ("permission", "question") else "permission"
         reset = reset_at if kind == "limit" else None
-        source = "hook" if "hook" in why else "screen"
+        source = "hook" if "hook" in why or "OSC 7501" in why else "screen"     # a report is the agent's own word, like a hook
         if kind == "limit" and _same_limit_episode(book, reset, wall):
             outcome = "suppressed: the same usage-limit episode was already announced"
         else:

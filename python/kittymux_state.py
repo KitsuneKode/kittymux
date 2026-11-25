@@ -255,6 +255,7 @@ def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bo
     if marker in ("limited", "waiting"):
         entry["seen_working"], entry["unseen"] = False, False
         return _why(entry, marker, "the screen shows a usage-limit message" if marker == "limited"
+                    else "it reports it is blocked (OSC 7501)" if entry.get("reported_blocked")
                     else "the screen shows a permission/question prompt")
     if marker == "error":
         entry["seen_working"], entry["unseen"] = False, False

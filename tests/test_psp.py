@@ -107,10 +107,11 @@ class ViewTests(unittest.TestCase):
                          ("limited", "usage limit reached"))
         self.assertNotIn("why", view)
 
-    def test_working_clears_a_stale_prompt(self):
+    def test_a_prompt_on_screen_outranks_a_working_report(self):
         view = {}
-        # the prompt is gone, and the report itself stands as the busy marker (a held record must not expire after the hook grace)
-        self.assertEqual(P.apply_to_view({"state": "working", "t": 3}, view, "waiting", "old"), ("working", "old"))
+        # a report that missed a prompt, or one left over, must never hide it; a quiet screen takes the report as its busy marker
+        self.assertEqual(P.apply_to_view({"state": "working", "t": 3}, view, "waiting", "old"), ("waiting", "old"))
+        self.assertEqual(P.apply_to_view({"state": "working", "t": 3}, {}, "", ""), ("working", ""))
         self.assertEqual(view["status"], "working")
 
     def test_done_feeds_the_agent_done_path(self):
@@ -267,6 +268,54 @@ class NativeReviewTests(unittest.TestCase):
         # kitty lists records from least to most recently changed: the last one is the newest
         w = _Window(9, [_rec("old", "blocked", "older question"), _rec("new", "blocked", "newer question")])
         self.assertEqual(P.read_native(w, 100.0)["id"], "new")
+
+
+class NativeSecondReviewTests(unittest.TestCase):
+    """Fable's review of 1ff67aa: a report must never hide a prompt on screen or a finished root, nor outlive the agent."""
+
+    def setUp(self):
+        P._SEEN.clear()
+        P._RT.stale.clear()
+
+    def _resolve(self, records, screen_marker, now, agent="claude", wid=11, view=None):
+        import kittymux_state as S
+        view = {} if view is None else view
+        marker, _line = P.apply_to_view(P.read_native(_Window(wid, records), now), view, screen_marker, "Do you want to proceed?")
+        return S.resolve(view, agent, marker, now, False), view
+
+    def test_a_prompt_on_screen_outranks_a_working_report_however_long_it_stays(self):
+        for now in (100.0, 105.0, 4000.0):
+            self.assertEqual(self._resolve([_rec("", "working")], "waiting", now)[0], "waiting", now)
+
+    def test_a_root_done_outranks_a_leaked_child_working_as_kitty_ranks_them(self):
+        rec = P.read_native(_Window(12, [_rec("sub/1", "working"), _rec("", "done")]), 50.0)
+        self.assertEqual(rec["state"], "done")
+
+    def test_kittys_order_decides_between_equals_not_the_first_seen_time(self):
+        w = _Window(13, [_rec("a", "blocked", "first")])
+        P.read_native(w, 100.0)
+        w.program_status.records = [_rec("a", "blocked", "first"), _rec("b", "blocked", "second")]
+        P.read_native(w, 110.0)
+        w.program_status.records = [_rec("b", "blocked", "second"), _rec("a", "blocked", "asked again")]   # a changed last
+        self.assertEqual(P.read_native(w, 120.0)["id"], "a")
+
+    def test_a_record_left_behind_by_an_agent_that_is_gone_is_ignored_until_it_changes(self):
+        w = _Window(14, [_rec("", "working")])
+        P.mark_stale(w)                              # the scanner saw no agent in this window: whatever kitty holds is left over
+        self.assertIsNone(P.read_native(w, 10.0))
+        w.program_status.records = [_rec("", "blocked", "Allow rm?")]    # the new agent reports: that is news
+        self.assertEqual(P.read_native(w, 11.0)["state"], "blocked")
+
+    def test_a_blocked_report_is_the_agents_own_word(self):
+        state, view = self._resolve([_rec("", "blocked", "Allow rm?")], "", 5.0)
+        self.assertEqual(state, "waiting")
+        self.assertIn("OSC 7501", view["why"])
+
+    def test_working_over_a_hook_request_marks_that_request_handled(self):
+        import kittymux_state as S
+        view = {"status": "waiting", "ts_status": 40.0, "msg": "Allow rm?"}
+        P.apply_to_view({"state": "working", "t": 41.0}, view, "", "")
+        self.assertEqual(view.get("handled_wait_ts"), 40.0)
 
 
 if __name__ == "__main__":
