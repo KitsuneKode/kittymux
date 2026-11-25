@@ -9,6 +9,7 @@ import importlib.util
 import os
 import types
 import re
+import shlex
 import tempfile
 import unittest
 from unittest import mock
@@ -1981,6 +1982,12 @@ class MuteCommandTests(unittest.TestCase):
         self.assertIn("pricing review", out.getvalue())
 
 
+_GIT_ENV = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}     # never act on an inherited GIT_DIR (a hook running the suite)
+_GIT_ENV.update(GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null", GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+
+
+@unittest.skipUnless(shutil.which("git"), "git not installed")
 class LiveCheckoutTests(unittest.TestCase):
     """Live kitties load whatever the checkout they are linked to has checked out. A feature branch left checked out there ran
     as 'the release' for 10 days (2026-11-15..25) while main got fixes it never saw: doctor names the branch."""
@@ -1990,32 +1997,40 @@ class LiveCheckoutTests(unittest.TestCase):
         cls.m = load()
 
     def _git(self, repo, *args):
-        subprocess.run(["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", *args],
-                       check=True, capture_output=True)
+        subprocess.run(["git", "-C", repo, "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", *args],
+                       check=True, capture_output=True, env=_GIT_ENV)
 
-    def _install(self):
-        root = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, root, True)
+    def _root(self, name="root"):
+        root = os.path.join(tempfile.mkdtemp(), name)
+        os.makedirs(root)
+        self.addCleanup(shutil.rmtree, os.path.dirname(root), True)
+        return root
+
+    def _install(self, root=None, git=True):
+        root = root or self._root()
         repo, cfg = os.path.join(root, "repo"), os.path.join(root, "cfg")
         os.makedirs(os.path.join(repo, "python")); os.makedirs(cfg)
         with open(os.path.join(repo, "python", "tab_bar.py"), "w") as f:
             f.write("# bar\n")
-        self._git(repo, "init", "-q", "-b", "main")
-        self._git(repo, "add", "-A"); self._git(repo, "commit", "-q", "-m", "init")
+        if git:
+            self._git(repo, "init", "-q", "-b", "main")
+            self._git(repo, "add", "-A"); self._git(repo, "commit", "-q", "-m", "init")
         os.symlink(os.path.join(repo, "python", "tab_bar.py"), os.path.join(cfg, "tab_bar.py"))
         return repo, cfg
 
     def _doctor(self, cfg):
         r = self.m.Report()
         out = io.StringIO()
-        with redirect_stdout(out):
+        with redirect_stdout(out), patch.dict(os.environ, {"GIT_DIR": "/nonexistent-git-dir"}):   # the doctor must ignore it too
             self.m._doctor_live_checkout(r, cfg)
         return r.warn, out.getvalue()
 
     def test_main_checked_out_is_fine(self):
         repo, cfg = self._install()
         self.assertEqual(self.m.live_checkout(cfg), os.path.realpath(repo))
-        self.assertEqual(self._doctor(cfg)[0], 0)
+        warn, out = self._doctor(cfg)
+        self.assertEqual(warn, 0)
+        self.assertIn("on main", out)
 
     def test_a_feature_branch_checked_out_is_named(self):
         repo, cfg = self._install()
@@ -2040,12 +2055,47 @@ class LiveCheckoutTests(unittest.TestCase):
         self.assertEqual(warn, 1)
         self.assertIn("uncommitted", out)
 
+    def test_a_tag_named_main_does_not_rename_the_branch(self):
+        repo, cfg = self._install()
+        self._git(repo, "tag", "main")
+        self.assertEqual(self._doctor(cfg)[0], 0)
+
+    def test_a_linked_worktree_is_told_to_upgrade_from_the_main_checkout(self):
+        repo, cfg = self._install()
+        wt = os.path.join(os.path.dirname(repo), "wt")
+        self._git(repo, "worktree", "add", "-q", "-b", "feat/calm-otter", wt)
+        os.unlink(os.path.join(cfg, "tab_bar.py"))
+        os.symlink(os.path.join(wt, "python", "tab_bar.py"), os.path.join(cfg, "tab_bar.py"))
+        warn, out = self._doctor(cfg)
+        self.assertEqual(warn, 1)
+        self.assertIn("worktree", out)
+        self.assertIn(os.path.realpath(repo), out)                  # where to run `kittymux upgrade` from
+        self.assertNotIn("switch main", out)                         # git refuses: main is checked out in the main checkout
+
+    def test_a_path_with_a_space_is_quoted_in_the_hint(self):
+        repo, cfg = self._install(self._root("my kitty"))
+        self._git(repo, "switch", "-q", "-c", "feat/calm-otter")
+        self.assertIn(shlex.quote(os.path.realpath(repo)), self._doctor(cfg)[1])
+
+    def test_a_copy_inside_some_other_repository_says_nothing(self):
+        root = self._root()
+        self._git(root, "init", "-q", "-b", "master")                 # e.g. a dotfiles repository holding a plain copy
+        repo, cfg = self._install(root, git=False)
+        self.assertEqual(self._doctor(cfg), (0, ""))
+
+    def test_a_failed_status_is_not_reported_as_clean(self):
+        repo, cfg = self._install()
+        real = self.m._git_live
+
+        def flaky(r, *args):
+            return (1, "") if args[:1] == ("status",) else real(r, *args)
+        with patch.object(self.m, "_git_live", side_effect=flaky):
+            warn, out = self._doctor(cfg)
+        self.assertNotIn("on main", out)
+
     def test_not_a_git_checkout_says_nothing(self):
-        root = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, root, True)
-        os.makedirs(os.path.join(root, "pkg", "python")); os.makedirs(os.path.join(root, "cfg"))
-        open(os.path.join(root, "pkg", "python", "tab_bar.py"), "w").close()
-        os.symlink(os.path.join(root, "pkg", "python", "tab_bar.py"), os.path.join(root, "cfg", "tab_bar.py"))
-        self.assertEqual(self._doctor(os.path.join(root, "cfg")), (0, ""))
+        repo, cfg = self._install(git=False)
+        self.assertEqual(self._doctor(cfg), (0, ""))
 
     def test_no_linked_bar_says_nothing(self):
         root = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, root, True)

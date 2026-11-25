@@ -199,26 +199,47 @@ def live_checkout(cfg: str) -> str | None:
     return os.path.dirname(os.path.dirname(real)) if os.path.isfile(real) else None
 
 
+def _git_live(repo: str, *args: str) -> tuple[int, str]:
+    """git in `repo`, never an inherited GIT_DIR/GIT_WORK_TREE (a hook running doctor), never taking index.lock in a live checkout."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    try:
+        p = subprocess.run(["git", "--no-optional-locks", "-C", repo, *args], capture_output=True, text=True, timeout=3.0, env=env)
+        return p.returncode, p.stdout.strip()
+    except Exception:
+        return 1, ""
+
+
 def _doctor_live_checkout(r, cfg: str) -> None:
     """Running kitties load whatever that checkout has checked out, at every reload. A feature branch left checked out there runs
     as the release (and misses main's fixes); uncommitted edits are live the moment anything reloads. Develop in a worktree."""
     repo = live_checkout(cfg)
     if repo is None:
         return
-    rc, branch = _run(["git", "-C", repo, "rev-parse", "--abbrev-ref", "HEAD"])
-    if rc != 0 or not branch.strip():
-        return                                                     # not a git checkout (a package, a tarball): nothing to say
-    branch = branch.strip()
+    rc, top = _git_live(repo, "rev-parse", "--show-toplevel")
+    if rc != 0 or os.path.realpath(top) != repo:
+        return                    # not a git checkout of kittymux itself (a package, a copy inside a dotfiles repository): nothing to say
+    rc, branch = _git_live(repo, "branch", "--show-current")       # not rev-parse --abbrev-ref: a tag named main makes that heads/main
+    if rc != 0:
+        return
+    q = shlex.quote(repo)
     worktree_hint = "develop in a worktree (git worktree add .worktrees/<name> -b <name> main)"
-    if branch == "HEAD":
-        r.warning(f"your kitties load {repo} at a detached commit, not main", f"git -C {repo} switch main, then `kittymux upgrade`; {worktree_hint}")
+    rc1, git_dir = _git_live(repo, "rev-parse", "--absolute-git-dir")
+    rc2, common = _git_live(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if rc1 == 0 and rc2 == 0 and os.path.realpath(git_dir) != os.path.realpath(common):
+        main_checkout = os.path.dirname(os.path.realpath(common))    # a linked worktree: `git switch main` there is refused (main is checked out)
+        r.warning(f"your kitties load the worktree {repo} ({branch or 'detached'}), not the main checkout: a reload runs that worktree's code",
+                  f"cd {shlex.quote(main_checkout)} && bin/kittymux upgrade  (re-links your kitties to the main checkout)")
+    elif not branch:
+        r.warning(f"your kitties load {repo} at a detached commit, not main", f"git -C {q} switch main, then `kittymux upgrade`; {worktree_hint}")
     elif branch != "main":
         r.warning(f"your kitties load {repo} on branch {branch}, not main: a reload runs that branch's code, without main's fixes",
-                  f"git -C {repo} switch main, then `kittymux upgrade`; {worktree_hint}")
+                  f"git -C {q} switch main, then `kittymux upgrade`; {worktree_hint}")
     else:
-        rc, dirty = _run(["git", "-C", repo, "status", "--porcelain", "--untracked-files=no"])
-        if rc == 0 and dirty.strip():
-            n = len(dirty.strip().splitlines())
+        rc, dirty = _git_live(repo, "status", "--porcelain", "--untracked-files=no")
+        if rc != 0:
+            return                                                     # could not tell (a timeout): no claim either way
+        if dirty:
+            n = len(dirty.splitlines())
             r.warning(f"your kitties load {repo}, which has {n} uncommitted change(s): they are live at the next reload",
                       f"commit or move them to a worktree; {worktree_hint}")
         else:
