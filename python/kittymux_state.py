@@ -266,7 +266,7 @@ def resolve(entry: dict, agent: str | None, marker: str, now: float, focused: bo
         if explicit == "waiting":
             # Resumed work proves this particular permission request was handled.
             entry["handled_wait_ts"] = ts_status
-        return _why(entry, "working", "the screen shows a busy marker")
+        return _why(entry, "working", "it reports it is working (OSC 7501)" if entry.get("reported_working") else "the screen shows a busy marker")
 
     # nothing recognisable on screen
     if explicit == "working" and now - ts_status < _HOOK_GRACE:

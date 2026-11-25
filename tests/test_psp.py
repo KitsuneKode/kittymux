@@ -109,7 +109,8 @@ class ViewTests(unittest.TestCase):
 
     def test_working_clears_a_stale_prompt(self):
         view = {}
-        self.assertEqual(P.apply_to_view({"state": "working", "t": 3}, view, "waiting", "old"), ("", "old"))
+        # the prompt is gone, and the report itself stands as the busy marker (a held record must not expire after the hook grace)
+        self.assertEqual(P.apply_to_view({"state": "working", "t": 3}, view, "waiting", "old"), ("working", "old"))
         self.assertEqual(view["status"], "working")
 
     def test_done_feeds_the_agent_done_path(self):
@@ -164,9 +165,6 @@ class BoundaryTests(unittest.TestCase):
         self.assertTrue(b.feed(b"ok"))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class _Status:
     def __init__(self, records):
@@ -214,3 +212,62 @@ class NativeTests(unittest.TestCase):
         view = {}
         marker, line = P.apply_to_view(P.read_native(w, 5.0), view, "", "")
         self.assertEqual((marker, line), ("waiting", "Has a question"))
+
+
+def _rec(rid, state, msg=""):
+    return {"id": rid, "state": state, "kind": "permission" if state == "blocked" else None, "progress": None, "app": "claude",
+            "title": "", "msg": msg}
+
+
+class NativeReviewTests(unittest.TestCase):
+    """CodeRabbit on #47: what kitty's records say must hold for as long as kitty holds them, survive a reload, forget a record
+    that went away, and keep kitty's own order when two records were first seen together."""
+
+    def setUp(self):
+        P._SEEN.clear()
+
+    def test_a_working_record_keeps_a_quiet_screen_working_past_the_hook_grace(self):
+        import kittymux_state as S
+        w = _Window(4, [_rec("", "working")])
+        view = {}
+        P.apply_to_view(P.read_native(w, 100.0), view, "", "")
+        view = {}
+        marker, _line = P.apply_to_view(P.read_native(w, 105.0), view, "", "")      # first seen at 100: 5 s later, still held
+        self.assertEqual(S.resolve(view, "claude", marker, 105.0, False), "working")
+        self.assertIn("OSC 7501", view.get("why", ""))
+
+    def test_blocked_reaches_the_resolver_for_an_agent_whose_screen_is_not_read(self):
+        import kittymux_state as S
+        self.assertNotIn("pi", S.SCREEN_AGENTS)
+        w = _Window(5, [_rec("", "blocked", "Allow rm?")])
+        view = {}
+        marker, _line = P.apply_to_view(P.read_native(w, 50.0), view, "", "")
+        self.assertEqual(S.resolve(view, "pi", marker, 50.0, False), "waiting")
+        self.assertEqual(view.get("msg"), "Allow rm?")
+
+    def test_first_seen_times_survive_a_config_reload(self):
+        import importlib
+        w = _Window(6, [_rec("", "done")])
+        self.assertEqual(P.read_native(w, 100.0)["t"], 100.0)
+        importlib.reload(P)                                   # kitty re-runs the module on every config reload
+        self.assertEqual(P.read_native(w, 300.0)["t"], 100.0, "an unchanged done must not get a new completion time")
+
+    def test_a_record_that_went_away_starts_over_when_it_comes_back(self):
+        w = _Window(8, [_rec("a", "blocked", "first")])
+        P.read_native(w, 100.0)
+        w.program_status.records = [_rec("a", "blocked", "first"), _rec("b", "blocked", "second")]
+        P.read_native(w, 110.0)
+        w.program_status.records = [_rec("b", "blocked", "second")]                 # a answered; b still asks
+        P.read_native(w, 120.0)
+        w.program_status.records = [_rec("b", "blocked", "second"), _rec("a", "blocked", "third")]
+        rec = P.read_native(w, 130.0)
+        self.assertEqual((rec["id"], rec["t"]), ("a", 130.0), "the new request is the newest, not a ghost from 100")
+
+    def test_records_first_seen_together_keep_kittys_order(self):
+        # kitty lists records from least to most recently changed: the last one is the newest
+        w = _Window(9, [_rec("old", "blocked", "older question"), _rec("new", "blocked", "newer question")])
+        self.assertEqual(P.read_native(w, 100.0)["id"], "new")
+
+
+if __name__ == "__main__":
+    unittest.main()
