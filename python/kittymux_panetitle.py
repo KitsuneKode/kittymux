@@ -170,7 +170,7 @@ def pane_icon(agent: str | None, cmd: str) -> tuple[str, int | None]:
 
 
 def _state_rgb(state: str, pal, bg: int, title_rgb: int) -> int:
-    rgb = {"waiting": pal.waiting, "limited": pal.alert, "error": pal.alert, "working": pal.working, "done": pal.done}.get(state, title_rgb)
+    rgb = {"waiting": pal.waiting, "limited": pal.waiting, "error": pal.alert, "working": pal.working, "done": pal.done}.get(state, title_rgb)
     return kittymux_theme.ensure_contrast(rgb, bg, 4.5)
 
 

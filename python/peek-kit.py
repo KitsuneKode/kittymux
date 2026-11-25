@@ -208,7 +208,7 @@ class Peek(Handler):
             lines.append(self._line([(" " + ("this tab is gone" if self.gone else "loading…"), p.faint, False)], width, bg))
         else:
             st = card["state"]
-            state_fg = {"waiting": p.waiting, "working": p.working, "limited": p.alert, "error": p.alert,
+            state_fg = {"waiting": p.waiting, "working": p.working, "limited": p.waiting, "error": p.alert,
                         "done": kittymux_theme.blend(p.done, p.bg, 0.65)}.get(st)
             agent = kittymux_agents.AGENTS.get(card["agent"])
             glyph = agent.glyph if agent else kittymux_agents.TOOLS.get(card["tool"], "")
@@ -238,7 +238,7 @@ class Peek(Handler):
                     lines.append(self._line([(" " + text, p.muted, False)], width, bg))
             for i, pane in enumerate(card["panes"]):
                 brand = kittymux_agents.AGENTS[pane["agent"]].brand if pane["agent"] in kittymux_agents.AGENTS else p.muted
-                pfg = {"waiting": p.waiting, "working": p.working, "limited": p.alert, "error": p.alert,
+                pfg = {"waiting": p.waiting, "working": p.working, "limited": p.waiting, "error": p.alert,
                        "done": kittymux_theme.blend(p.done, p.bg, 0.65)}.get(pane["state"])
                 mark = kittymux_agents.state_glyph(pane["state"]) if pfg is not None else " "
                 label = f" {i + 1} " + (pane["glyph"] or "·") + " "

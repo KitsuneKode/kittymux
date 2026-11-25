@@ -656,7 +656,7 @@ class _MiniMap(tuple):
     """Cells (char, fg_rgb, bg_rgb) of a tab's layout picture — a subtitle piece drawn as it is, colours and all."""
 
 
-_STATE_TINT = {"working": "working", "waiting": "waiting", "limited": "alert", "error": "alert"}
+_STATE_TINT = {"working": "working", "waiting": "waiting", "limited": "waiting", "error": "alert"}
 
 
 @_per_pass
@@ -1156,7 +1156,7 @@ def _state_color(state: str, pal) -> int | None:
     return {
         "working": pal.working,
         "waiting": pal.waiting,
-        "limited": pal.alert,
+        "limited": pal.waiting,
         "error": pal.alert,
         "done": kittymux_theme.blend(pal.done, pal.bg, 0.65),
         "unread": pal.faint,
@@ -1184,7 +1184,7 @@ def _session_stats(tab: TabBarData) -> tuple[int, dict[str, int]]:
         return 0, {}
 
 
-_ROW_WORD_COLOR = {"working": "working", "waiting": "waiting", "done": "done", "limited": "alert", "error": "alert"}
+_ROW_WORD_COLOR = {"working": "working", "waiting": "waiting", "done": "done", "limited": "waiting", "error": "alert"}
 
 
 def _state_word(state: str, pal) -> tuple[str, int] | None:
