@@ -415,6 +415,14 @@ class IdleComposerTest(unittest.TestCase):
     def test_cursor_a_quoted_prompt_above_its_idle_composer_is_not_waiting(self):
         self.assertNotEqual(S.classify_screen(self.CURSOR_IDLE)[0], "waiting")
 
+    def test_cursor_only_the_bare_placeholder_counts_as_idle(self):
+        # control: a decision pending swaps the placeholder (cursor-agent 2026.11.22's bundle: "Waiting for decision (y/n/p)...");
+        # that composer must NOT hide the question above it, so a later loosening of the pattern's `$` fails here
+        for composer in ("  → Waiting for decision (y/n/p)...", "  → Add a follow-up             ctrl+c to stop"):
+            screen = self.CURSOR_IDLE.replace("  → Add a follow-up\n", composer + "\n")
+            self.assertNotEqual(screen, self.CURSOR_IDLE)
+            self.assertIn(S.classify_screen(screen)[0], ("waiting", "working"), composer)
+
     def test_cursor_working_and_its_real_approval_are_unchanged(self):
         self.assertEqual(S.classify_screen(self.CURSOR_WORKING)[0], "working")
         self.assertEqual(S.classify_screen(self.CURSOR_APPROVAL)[0], "waiting")
