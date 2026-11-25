@@ -2160,8 +2160,10 @@ class MuxAskTests(unittest.TestCase):
                     reqs = [f for f in os.listdir(asks)] if os.path.isdir(asks) else []
                     reqs = [f for f in reqs if f.endswith(".json")]
                     if reqs:
+                        with open(os.path.join(asks, reqs[0])) as f:
+                            req = json.load(f)
                         with open(os.path.join(asks, reqs[0][:-5] + ".answer"), "w") as f:
-                            f.write(answer)
+                            f.write(answer(req) if callable(answer) else f"{answer} {req['id']}")
                         return
                     time.sleep(0.05)
             t = threading.Thread(target=answer_it)
@@ -2183,6 +2185,22 @@ class MuxAskTests(unittest.TestCase):
                                    {"KITTY_WINDOW_ID": "7", "KITTY_PID": "1"}, answer=choice)
             self.assertEqual(json.loads(r.stdout)["hookSpecificOutput"]["decision"]["behavior"], choice)
             self.assertEqual(left, [])                     # request and answer cleaned up
+
+    def test_an_answer_without_this_requests_id_is_ignored(self):
+        for stale in ("allow", "allow 0123456789abcdef", "allowx"):
+            r, left = self.run_ask({"tool_name": "Bash", "tool_input": {"command": "ls"}},
+                                   {"KITTY_WINDOW_ID": "7", "KITTY_PID": "1"}, answer=lambda req, s=stale: s, wait="1")
+            self.assertEqual((r.returncode, r.stdout, left), (0, "", []))
+
+    def test_the_request_names_the_command_and_a_random_id(self):
+        seen = {}
+
+        def grab(req):
+            seen.update(req)
+            return "deny " + req["id"]
+        self.run_ask({"tool_name": "Bash", "tool_input": {"command": "ls -la"}}, {"KITTY_WINDOW_ID": "7", "KITTY_PID": "1"}, answer=grab)
+        self.assertEqual(seen["what"], "Run: ls -la")
+        self.assertRegex(seen["id"], r"^[0-9a-f]{16}$")
 
     def test_what_cannot_be_read_whole_is_not_offered(self):
         for cmd in ("echo " + "x" * 300, "echo a\necho b"):
