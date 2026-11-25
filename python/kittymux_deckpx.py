@@ -435,7 +435,7 @@ def status_mark(pt: Painter, right, cy, state, phase, bar):
     if state == "error":
         return pt.pill(right, cy, "Error", p.alert, bar)
     if state == "limited":
-        return pt.pill(right, cy, "Limited", p.alert, bar)
+        return pt.pill(right, cy, "Limited", p.waiting, bar)
     if state in ("working", "done"):
         ring(pt, right - 6, cy, 5, state, phase, bar, width=1.6)
         return 12

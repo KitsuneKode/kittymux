@@ -19,7 +19,7 @@ import kittymux_ui as U
 import kittymux_usageview as V
 
 FILTERS = (("all", "All"), ("needs", "Needs you"), ("done", "Done"), ("limits", "Limits"))
-KIND = {"permission": ("!", "warm"), "question": ("?", "warm"), "limit": ("⊘", "hot"), "done": ("✓", "calm"), "error": ("✕", "hot"),
+KIND = {"permission": ("!", "warm"), "question": ("?", "warm"), "limit": ("⊘", "warm"), "done": ("✓", "calm"), "error": ("✕", "hot"),
         "info": ("·", "muted")}
 SHOWN_MAX = 40
 READ_SHOWN_S = 86400.0                  # a read event stays listed for a day; older ones are history (`kittymux inbox --all`, and the ledger)
@@ -135,7 +135,7 @@ def _event_rows(kit: U.Kit, ev: dict, inner: int, selected: bool, now: float, ex
             rows.append(kit.fit_line([U.S(line, kit.ink(p.text, bg), bg)], inner, bg))
     if ev["kind"] == "limit":
         reset = M.num(ev.get("reset_at"))
-        rows.append(kit.gauge(100.0, inner, bg, tone="hot"))
+        rows.append(kit.gauge(100.0, inner, bg, tone="warm"))
         if reset:
             rows.append(kit.fit_line(kit.chip("↻ " + V.fmt_span(reset - now), "muted", on=bg), inner, bg))
     button_row, regions = None, []

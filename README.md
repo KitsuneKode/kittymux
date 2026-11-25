@@ -219,7 +219,7 @@ use hooks or title activity. Logos are the real brand marks, compiled into the b
 The design follows how t3code's sidebar resolves thread status: one ordered
 resolver (limited › waiting › error › working › done › idle), "done" only while unseen. An error the agent reports is not a completion.
 
-**Splits.** A split tab shows a to-scale **mini-map** of its panes under its title (a row of quadrant blocks: left/right and top/bottom splits at their real proportions, each pane tinted by its state — amber waiting, blue working, red limited — the focused one brighter), and lists each agent pane on its own: in the deck/panel as indented child lines
+**Splits.** A split tab shows a to-scale **mini-map** of its panes under its title (a row of quadrant blocks: left/right and top/bottom splits at their real proportions, each pane tinted by its state — amber waiting and limited, blue working — the focused one brighter), and lists each agent pane on its own: in the deck/panel as indented child lines
 (`├ ◆ claude !`, `└ ◐ codex`) you can hover (live preview of *that* pane) and click (focus it); in the bar as
 `logo + state` chips under the tab. The tab itself shows the most important state of all its panes, and
 jumping to a tab that needs you lands on the pane that is asking. kitty rings a waiting split with its bell border.
