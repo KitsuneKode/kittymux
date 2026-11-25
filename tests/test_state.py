@@ -400,6 +400,27 @@ class IdleComposerTest(unittest.TestCase):
         self.assertEqual(S.classify_screen(OPENCODE_QUESTION)[0], "waiting")
         self.assertEqual(S.classify_screen(AGY_TRUST)[0], "waiting")
 
+    # Cursor Agent (captured live 2026-11-13, retyped): its composer reads "→ Add a follow-up", with "ctrl+c to stop" on the same
+    # line while it works; its approval menu REPLACES the composer, so a bare composer is drawn only while it is idle.
+    CURSOR_IDLE = ("  I added the check. The script now asks: Do you want to proceed? (y/n)\n"
+                   " ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄\n  → Add a follow-up\n ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n"
+                   "  Composer 2 · 6%           Run Everything\n  ~/work/calm-otter · main\n")
+    CURSOR_WORKING = (" ⠰⠳ Working\n ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄\n  → Add a follow-up             ctrl+c to stop\n"
+                      " ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n  Composer 2                    Run Everything\n")
+    CURSOR_APPROVAL = ("  Running that command.\n  $ touch notes.txt Waiting for approval...\n──────────────────────────────────────\n"
+                       " $  touch notes.txt in .\n Run this command?\n Not in allowlist: touch\n  → Run (once) (y)\n"
+                       "    Add Shell(touch) to allowlist? (tab)\n    Run Everything (shift+tab)\n"
+                       "    Skip & tell the agent what to do instead (esc or n)\n")
+
+    def test_cursor_a_quoted_prompt_above_its_idle_composer_is_not_waiting(self):
+        self.assertNotEqual(S.classify_screen(self.CURSOR_IDLE)[0], "waiting")
+
+    def test_cursor_working_and_its_real_approval_are_unchanged(self):
+        self.assertEqual(S.classify_screen(self.CURSOR_WORKING)[0], "working")
+        self.assertEqual(S.classify_screen(self.CURSOR_APPROVAL)[0], "waiting")
+        # a quoted prompt in a reply while Cursor still works is working, not waiting
+        self.assertEqual(S.classify_screen("  It asks: Do you want to proceed? (y/n)\n" + self.CURSOR_WORKING)[0], "working")
+
     def test_a_real_dialog_over_a_shared_footer_still_waits(self):
         # Claude's and Codex's idle footer is also "? for shortcuts": a real approval has its chrome under the question
         self.assertEqual(S.classify_screen(CODEX_APPROVAL + "? for shortcuts\n")[0], "waiting")

@@ -83,8 +83,10 @@ WORKING_RE = re.compile(
 # Codex log, a pasted screen), never live work: what is drawn below it says the turn is over.
 _IDLE_COMPOSER_RE = re.compile(r"\bask\s+devin\s+to\s+build\s+features\b", _I)
 # Composers drawn ONLY while the agent is idle (captured live 2026-11-12: a question menu or panel replaces them), so a
-# question-looking line above one is old text in a finished reply, not a prompt: Antigravity's footer, OpenCode's model line.
-_IDLE_ONLY_RE = re.compile(r"^\?\s+for\s+shortcuts\b|\bBuild\s+·\s+.+\bOpenCode\s+·", _I)
+# question-looking line above one is old text in a finished reply, not a prompt: Antigravity's footer, OpenCode's model line,
+# Cursor Agent's bare composer (captured live 2026-11-13: "→ Add a follow-up" gains "ctrl+c to stop" while it works, and its
+# approval menu replaces the composer, so the bare placeholder is drawn only while it is idle).
+_IDLE_ONLY_RE = re.compile(r"^\?\s+for\s+shortcuts\b|\bBuild\s+·\s+.+\bOpenCode\s+·|^→\s+add\s+a\s+follow-up\s*$", _I)
 
 # chrome only a real dialog draws: if one of these sits at or below a question, it IS the dialog even with a spinner nearby
 _DIALOG_CHROME_RE = re.compile(
