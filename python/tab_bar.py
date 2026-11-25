@@ -1688,7 +1688,8 @@ def _px_row(tab, pal) -> "kittymux_groups.Row":
     elif state == "working" and ask:
         meta, tone, age = ask, "waiting", ""
     elif state == "working":
-        meta, tone, age = "Working" + (f" · {age}" if age else ""), "working", ""
+        doing = kittymux_place.clean(entry.get("activity") or "")      # what it is doing (plan 016 §2), else the state word
+        meta, tone, age = (doing or "Working") + (f" · {age}" if age else ""), "working", ""
     elif state == "done":
         summary = _changes_summary(str(entry.get("wid", "")))
         meta, tone = (summary, "diff") if summary and summary != "no changes" else ("", "")

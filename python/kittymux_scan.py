@@ -397,6 +397,10 @@ def scan_window(window, now: float) -> bool:
     why = view.get("why", "")
     _RT.verdicts[wid] = {"state": new, "reason": reason, "agent": agent, "why": why,
                          "ts_state": now if changed else prev.get("ts_state", now), "ts_scan": now}
+    if new == "working" and marker == "working" and text:
+        doing = st.activity(text, line)             # what it is doing (plan 016 §2); not a change of state: the clock keeps running
+        if doing:
+            _RT.verdicts[wid]["activity"] = doing
     if reset_at is not None and (marker == "limited" or new == "limited"):
         _RT.verdicts[wid]["reset_at"] = int(reset_at)
     if new != old_state:

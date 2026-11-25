@@ -272,7 +272,7 @@ def merge_scan(panes: dict | None, scan: dict | None) -> dict:
             continue
         e = out.setdefault(str(wid), {})
         e["wid"] = str(wid)                                  # consumers that only hold the entry (the bar) can look the window up elsewhere
-        for k in ("state", "reason", "agent", "ts_scan", "ts_state", "reset_at"):
+        for k in ("state", "reason", "agent", "ts_scan", "ts_state", "reset_at", "activity"):
             if k in v:
                 e[k] = v[k]
     return out

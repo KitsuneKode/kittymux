@@ -167,6 +167,53 @@ def classify_screen(text: str) -> tuple[str, str]:
 _REQUEST_RE = re.compile(r"permission|approv|confirm|needs\s+your|\ballow\b|proceed|authori[sz]|\?\s*$", _I)
 
 
+# ── what a working agent is doing (plan 016 §2): the second line of a working row ─────────────────────────────────────
+ACTIVITY_MAX = 48
+_TOOL_LOOKBACK = 30                                  # lines above the busy line: further up is an earlier step, not this one
+_TOOL_CALL_RE = re.compile(r"^\s*⏺\s*([A-Z]\w{1,30})\((.*?)\)?\s*$")      # Claude Code: "⏺ Bash(npm test)"
+_HINT_PAREN_RE = re.compile(r"\([^()]*(?:\besc\b|ctrl\+c|interrupt|cancel|tokens|\b\d+\s*[hms]\b)[^()]*\)|\(\s*\d+\s*[a-z]?\s*\)", _I)
+_TIMER_RE = re.compile(r"[·•]\s*(?:\d+\s*[hms]\s*)+", _I)
+_LEAD_RE = re.compile(r"^[^\w(\[\"']+")
+_TRAIL_RE = re.compile(r"[\s·•,:;|-]+$")
+_SAYS_NOTHING = frozenset({"working", "working…", "working..."})
+_CTRL_CHARS = {c: " " for c in list(range(0, 32)) + [127] + list(range(0x80, 0xA0))}
+
+
+def _bounded(text: str) -> str:
+    text = " ".join(text.translate(_CTRL_CHARS).split())
+    return text if len(text) <= ACTIVITY_MAX else text[:ACTIVITY_MAX - 1].rstrip() + "…"
+
+
+def _busy_words(line: str) -> str:
+    """A busy line without its spinner, timer, token count and interrupt hint: "✻ Pondering… (12s · esc to interrupt)" →
+    "Pondering…". '' when nothing but the busy marker is left (Devin's placeholder, a bare "Working")."""
+    s = " ".join(line.translate(_CTRL_CHARS).split())
+    s = _HINT_PAREN_RE.sub(" ", s)
+    s = WORKING_RE.sub(" ", s)
+    s = _TIMER_RE.sub(" ", s)
+    s = _TRAIL_RE.sub("", _LEAD_RE.sub("", " ".join(s.split())))
+    return "" if not s or s.lower() in _SAYS_NOTHING else s
+
+
+def activity(text: str, line: str = "") -> str:
+    """What a working agent is doing, from its screen, in one bounded clean line ('' when the screen does not say):
+    Claude's latest tool call above its busy line ("Bash: npm test"), else the busy line's own words ("Running tests").
+    `line` is classify_screen's busy line; the screen is read bottom-up because a placeholder can sit below the real one."""
+    lines = (text or "").splitlines()
+    for i in range(len(lines) - 1, -1, -1):
+        if not WORKING_RE.search(lines[i]):
+            continue
+        for j in range(i - 1, max(-1, i - 1 - _TOOL_LOOKBACK), -1):
+            m = _TOOL_CALL_RE.match(lines[j])
+            if m:
+                args = " ".join(m.group(2).split())
+                return _bounded(f"{m.group(1)}: {args}" if args else m.group(1))
+        words = _busy_words(lines[i])
+        if words:
+            return _bounded(words)
+    return _bounded(_busy_words(line)) if line else ""
+
+
 def is_request(msg: str) -> bool:
     return bool(msg and _REQUEST_RE.search(msg) and not re.search(r"waiting\s+for\s+your\s+input", msg, _I))
 
