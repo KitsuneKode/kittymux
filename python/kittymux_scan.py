@@ -397,6 +397,15 @@ def scan_window(window, now: float) -> bool:
     why = view.get("why", "")
     _RT.verdicts[wid] = {"state": new, "reason": reason, "agent": agent, "why": why,
                          "ts_state": now if changed else prev.get("ts_state", now), "ts_scan": now}
+    if new == "working":
+        # what it is doing (plan 016 §2); not a change of state: the clock keeps running. Read only from a busy screen; a
+        # repaint gap (still working, no marker this frame) keeps the last one instead of flickering back to "Working"
+        if marker == "working" and text:
+            doing = st.activity(text)
+        else:
+            doing = prev.get("activity", "") if prev.get("state") == "working" else ""
+        if doing:
+            _RT.verdicts[wid]["activity"] = doing
     if reset_at is not None and (marker == "limited" or new == "limited"):
         _RT.verdicts[wid]["reset_at"] = int(reset_at)
     if new != old_state:

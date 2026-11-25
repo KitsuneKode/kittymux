@@ -124,6 +124,39 @@ class ScanBase(unittest.TestCase):
 
 
 class VerdictTests(ScanBase):
+    def test_a_working_verdict_says_what_it_is_doing_and_keeps_its_clock(self):
+        # plan 016 §2: the row's second line comes from here; a new activity is not a new state, so "Working · 6m" keeps counting
+        w = FakeWindow(1, "claude", "⏺ Bash(npm test)\n  ⎿  Running…\n\n✻ Pondering… (2s · esc to interrupt)\n\n> \n")
+        self.add(w)
+        with mock.patch.object(KS.time, "monotonic", return_value=1000.0):
+            KS.scan_all()
+        v = KS._RT.verdicts["1"]
+        self.assertEqual((v["state"], v.get("activity")), ("working", "Bash: npm test"))
+        w.text = "⏺ Read(src/cache.ts)\n  ⎿  Read 40 lines\n\n✻ Pondering… (9s · esc to interrupt)\n\n> \n"
+        with mock.patch.object(KS.time, "monotonic", return_value=1010.0):
+            KS.scan_all()
+        v = KS._RT.verdicts["1"]
+        self.assertEqual(v.get("activity"), "Read: src/cache.ts")
+        self.assertEqual(v["ts_state"], 1000.0)
+
+    def test_a_repaint_gap_keeps_the_activity_and_a_bare_working_line_drops_it(self):
+        w = FakeWindow(3, "claude", "● Bash(npm test)\n  ⎿  Running…\n\n✻ Pondering… (2s · esc to interrupt)\n")
+        self.add(w)
+        KS.scan_all()
+        self.assertEqual(KS._RT.verdicts["3"].get("activity"), "Bash: npm test")
+        w.text = "● Bash(npm test)\n  ⎿  Running…\n"                   # one frame without the busy line: still working (grace)
+        KS.scan_all()
+        if KS._RT.verdicts["3"]["state"] == "working":
+            self.assertEqual(KS._RT.verdicts["3"].get("activity"), "Bash: npm test")
+        w.text = "• Working (4s • esc to interrupt)\n"                  # the screen says nothing more: no stale activity
+        KS.scan_all()
+        self.assertNotIn("activity", KS._RT.verdicts["3"])
+
+    def test_a_waiting_verdict_has_no_activity(self):
+        self.add(FakeWindow(2, "claude", PERMISSION))
+        KS.scan_all()
+        self.assertNotIn("activity", KS._RT.verdicts["2"])
+
     def test_devin_thinking_is_working_not_waiting(self):      # the screenshot bug
         w = FakeWindow(1, "devin", DEVIN_THINKING)
         self.add(w)

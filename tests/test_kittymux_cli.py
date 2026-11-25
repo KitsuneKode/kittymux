@@ -184,6 +184,17 @@ class ExplainTests(unittest.TestCase):
         self.assertIn("notify waiting", out)
         self.assertIn("sent", out)
 
+    def test_explain_never_prints_the_activity(self):
+        # the activity is text from the agent's screen (a command line): explain's output may be pasted, and it is no reason
+        self.write("scan-4321.json", json.dumps({"7": {"state": "working", "agent": "claude", "why": "busy", "activity": "Bash: calm-otter"}}))
+        import io
+        from contextlib import redirect_stdout
+        for args in ([], ["--json"]):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                self.assertEqual(self.m.explain(args), 0)
+            self.assertNotIn("calm-otter", buf.getvalue(), args)
+
     def test_explain_json_and_argument_errors(self):
         self.write("scan-4321.json", json.dumps({"7": {"state": "idle", "agent": "codex", "why": "quiet"}}))
         import io
