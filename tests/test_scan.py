@@ -139,6 +139,19 @@ class VerdictTests(ScanBase):
         self.assertEqual(v.get("activity"), "Read: src/cache.ts")
         self.assertEqual(v["ts_state"], 1000.0)
 
+    def test_a_repaint_gap_keeps_the_activity_and_a_bare_working_line_drops_it(self):
+        w = FakeWindow(3, "claude", "● Bash(npm test)\n  ⎿  Running…\n\n✻ Pondering… (2s · esc to interrupt)\n")
+        self.add(w)
+        KS.scan_all()
+        self.assertEqual(KS._RT.verdicts["3"].get("activity"), "Bash: npm test")
+        w.text = "● Bash(npm test)\n  ⎿  Running…\n"                   # one frame without the busy line: still working (grace)
+        KS.scan_all()
+        if KS._RT.verdicts["3"]["state"] == "working":
+            self.assertEqual(KS._RT.verdicts["3"].get("activity"), "Bash: npm test")
+        w.text = "• Working (4s • esc to interrupt)\n"                  # the screen says nothing more: no stale activity
+        KS.scan_all()
+        self.assertNotIn("activity", KS._RT.verdicts["3"])
+
     def test_a_waiting_verdict_has_no_activity(self):
         self.add(FakeWindow(2, "claude", PERMISSION))
         KS.scan_all()

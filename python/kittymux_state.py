@@ -170,7 +170,13 @@ _REQUEST_RE = re.compile(r"permission|approv|confirm|needs\s+your|\ballow\b|proc
 # ── what a working agent is doing (plan 016 §2): the second line of a working row ─────────────────────────────────────
 ACTIVITY_MAX = 48
 _TOOL_LOOKBACK = 30                                  # lines above the busy line: further up is an earlier step, not this one
-_TOOL_CALL_RE = re.compile(r"^\s*⏺\s*([A-Z]\w{1,30})\((.*?)\)?\s*$")      # Claude Code: "⏺ Bash(npm test)"
+_STEP_RE = re.compile(r"^[⏺●•] ")                    # a new step, drawn at column 0 (Claude: ⏺ on macOS, ● elsewhere; Codex: •)
+# Claude's tool call: "● Bash(npm test)", "● github - create_issue (MCP)(title: …)"; a name never ends in a space before "("
+_TOOL_CALL_RE = re.compile(r"^[⏺●] ((?:[^()\n]|\(MCP\)){1,60}?)(?<! )\((.*?)\)?\s*$")
+_PLACEHOLDER_RE = re.compile(r"\bguide\s+devin\s+while\s+it\s+works\b", _I)    # the marker in an input box, not a busy line
+_SPINNER_RE = re.compile(r"^\s*[^\w\s]{1,3}\s+([A-Z][\w'-]{1,30}(?:…|\.\.\.))")      # "✻ Pondering… (3s)"
+_HINTS_RE = re.compile(r"(?:shift|ctrl|alt|cmd|meta)\+\w|\bto\s+cycle\b|\baccept\s+edits\b|\bbypass\s+permissions\b"
+                       r"|\bplan\s+mode\b|⏵", _I)                        # a footer of key hints or a mode label
 _HINT_PAREN_RE = re.compile(r"\([^()]*(?:\besc\b|ctrl\+c|interrupt|cancel|tokens|\b\d+\s*[hms]\b)[^()]*\)|\(\s*\d+\s*[a-z]?\s*\)", _I)
 _TIMER_RE = re.compile(r"[·•]\s*(?:\d+\s*[hms]\s*)+", _I)
 _LEAD_RE = re.compile(r"^[^\w(\[\"']+")
@@ -186,32 +192,53 @@ def _bounded(text: str) -> str:
 
 def _busy_words(line: str) -> str:
     """A busy line without its spinner, timer, token count and interrupt hint: "✻ Pondering… (12s · esc to interrupt)" →
-    "Pondering…". '' when nothing but the busy marker is left (Devin's placeholder, a bare "Working")."""
+    "Pondering…". '' when nothing but the busy marker is left (a bare "Working"), or when it is a footer of key hints."""
     s = " ".join(line.translate(_CTRL_CHARS).split())
     s = _HINT_PAREN_RE.sub(" ", s)
     s = WORKING_RE.sub(" ", s)
     s = _TIMER_RE.sub(" ", s)
     s = _TRAIL_RE.sub("", _LEAD_RE.sub("", " ".join(s.split())))
-    return "" if not s or s.lower() in _SAYS_NOTHING else s
+    return "" if not s or s.lower() in _SAYS_NOTHING or _HINTS_RE.search(s) else s
+
+
+def _safe_call(name: str, args: str) -> str:
+    """A tool call for the bar, with no secret in it: arguments carrying a secret-looking word or value keep only their
+    first word ("Bash: curl …"). The bar is always on screen, for every tab."""
+    import kittymux_journal as J
+    args = " ".join(args.split())
+    low = args.lower()
+    if any(w in low for w in J._SECRET_FLAG) or J._SECRET_VALUE.search(args) or re.search(r"://[^/\s:@]+:[^@\s]+@", args):
+        args = (args.split() or [""])[0] + " …"
+    return f"{name.strip()}: {args}" if args.strip() else name.strip()
 
 
 def activity(text: str, line: str = "") -> str:
-    """What a working agent is doing, from its screen, in one bounded clean line ('' when the screen does not say):
-    Claude's latest tool call above its busy line ("Bash: npm test"), else the busy line's own words ("Running tests").
-    `line` is classify_screen's busy line; the screen is read bottom-up because a placeholder can sit below the real one."""
-    lines = (text or "").splitlines()
-    for i in range(len(lines) - 1, -1, -1):
-        if not WORKING_RE.search(lines[i]):
-            continue
-        for j in range(i - 1, max(-1, i - 1 - _TOOL_LOOKBACK), -1):
-            m = _TOOL_CALL_RE.match(lines[j])
+    """What a working agent is doing, from its screen, in one bounded clean line ('' when the screen does not say).
+    The busy line is the lowest one in the classifier's tail (`_TAIL_LINES`), skipping an input box's placeholder. Above it,
+    the newest step speaks only if it is a tool call (Claude: "Bash: npm test"); prose or a finished summary does not, and
+    the search stops there. Otherwise the busy line's own words ("Running tests"), or, when that line is only a footer of
+    key hints, the spinner verb above it. `line` is accepted for the caller's convenience and not trusted: a status that
+    came from a report can carry a stale prompt."""
+    raw = [ln for ln in (text or "").splitlines() if ln.strip()]
+    tail_from = max(0, len(raw) - _TAIL_LINES)
+    busy = next((i for i in range(len(raw) - 1, tail_from - 1, -1)
+                 if WORKING_RE.search(raw[i]) and not _PLACEHOLDER_RE.search(raw[i])), None)
+    if busy is None:
+        return ""
+    for j in range(busy - 1, max(-1, busy - 1 - _TOOL_LOOKBACK), -1):
+        if _STEP_RE.match(raw[j]):
+            m = _TOOL_CALL_RE.match(raw[j].rstrip())
             if m:
-                args = " ".join(m.group(2).split())
-                return _bounded(f"{m.group(1)}: {args}" if args else m.group(1))
-        words = _busy_words(lines[i])
-        if words:
-            return _bounded(words)
-    return _bounded(_busy_words(line)) if line else ""
+                return _bounded(_safe_call(m.group(1), m.group(2)))
+            break
+    words = _busy_words(raw[busy])
+    if words or not _HINTS_RE.search(raw[busy]):
+        return _bounded(words)
+    for j in range(busy - 1, max(-1, busy - 4), -1):             # the busy line was a footer: the spinner sits just above
+        m = _SPINNER_RE.match(raw[j])
+        if m:
+            return _bounded(m.group(1))
+    return ""
 
 
 def is_request(msg: str) -> bool:

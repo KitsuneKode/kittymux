@@ -2980,7 +2980,9 @@ def explain(argv: list[str]) -> int:
                 verdicts = json.load(f)
         except (OSError, ValueError):
             verdicts = {}
-        now = {w: v for w, v in verdicts.items() if isinstance(v, dict) and v.get("state") and (wid is None or w == wid)}
+        # explain prints what decided each state; the activity (text from the agent's screen) is not a reason, and output may be pasted
+        now = {w: {k: x for k, x in v.items() if k != "activity"} for w, v in verdicts.items()
+               if isinstance(v, dict) and v.get("state") and (wid is None or w == wid)}
         report.append({"pid": pid, "now": now, "titles": titles,
                        "events": read_events(os.path.join(state_dir, f"decisions-{pid}.jsonl"), last, wid)})
     if as_json:
