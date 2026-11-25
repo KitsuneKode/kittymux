@@ -20,6 +20,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 - **T3 Code** (`t3`) is a known program: its tab shows T3 Code's own mark (traced from the app's icon by `tools/trace-t3code.py`) on its night-sky gradient.
 
 ### Fixed
+- **Turning the pixel bar off brings back your own `background_image` on kitty 0.51.** kitty 0.51 hands the option over as a list, and the bar passed the list's text as the image path, so the window lost its configured image.
 - **No ghost sidebar behind a one-tab window's text.** With the pixel bar, a window whose bar kitty hides (one tab under `tab_bar_min_tabs 2`) got the bar's picture back on every agent state change or background-colour change: kitty redraws a hidden bar, and the picture is the window's background image. A hidden bar now takes its picture away instead of drawing it.
 - **Graphics startup:** redrawing while the capability probe is pending no longer records a false failure or consumes the warning for a real timeout.
 - **Inbox refresh keeps the selected event**, error cards retain their body, and `d` or Space expands details without acknowledging or jumping. Page Up/Down scrolls long messages.

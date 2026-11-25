@@ -195,6 +195,8 @@ def material_alpha() -> float:
 def configured_background(opts) -> tuple:
     """(path, layout) of the background_image in kitty.conf, or (None, None): what the window shows without the picture."""
     path = getattr(opts, "background_image", None)
+    if isinstance(path, (tuple, list)):        # kitty 0.51: tuple[str, ...]; kitty itself shows the first (boss.py)
+        path = path[0] if path else None
     if not path or str(path).lower() == "none":
         return None, None
     return str(path), getattr(opts, "background_image_layout", None)

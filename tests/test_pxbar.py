@@ -135,6 +135,13 @@ class BackgroundTest(unittest.TestCase):
         opts = types.SimpleNamespace(background_image="/home/u/wall.png", background_image_layout="scaled")
         self.assertEqual(PX.configured_background(opts), ("/home/u/wall.png", "scaled"))
 
+    def test_kitty_0_51_gives_the_configured_image_as_a_tuple(self):
+        # kitty 0.51's background_image is tuple[str, ...] (kitty itself reads [0]): str() of the tuple was passed as a path
+        opts = types.SimpleNamespace(background_image=("/home/u/wall.png",), background_image_layout="tiled")
+        self.assertEqual(PX.configured_background(opts), ("/home/u/wall.png", "tiled"))
+        self.assertEqual(PX.configured_background(types.SimpleNamespace(background_image=())), (None, None))
+        self.assertEqual(PX.configured_background(types.SimpleNamespace(background_image=("none",))), (None, None))
+
     def test_no_configured_image_clears(self):
         for v in (None, "", "none"):
             self.assertEqual(PX.configured_background(types.SimpleNamespace(background_image=v)), (None, None))
@@ -523,11 +530,7 @@ class EllipsisTest(unittest.TestCase):
         self.assertEqual(drawn, [])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
-class HiddenBarRedrawTest(unittest.TestCase):
+class HiddenBarDrawTest(unittest.TestCase):
     """kitty's TabBar.update draws a bar it has laid out once even while it is hidden (kittymux_scan.refresh_bar, and
     kitty's own default_bg_changed_for, call update_tab_bar_data for every state change). With one tab under
     tab_bar_min_tabs 2 that draw must not publish the picture: it is the OS window's background image and would sit
@@ -535,26 +538,37 @@ class HiddenBarRedrawTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))     # test_tab_bar_header, under discover and -m alike
         from test_tab_bar_header import RecordingScreen, load_tab_bar
         cls.tb, cls.boss = load_tab_bar()
         cls.Screen = RecordingScreen
 
-    def _draw(self, visible, hidden=False):
+    def _draw(self, visible, hidden=False, picture_up=True):
         from unittest.mock import patch
         tm = types.SimpleNamespace(os_window_id=7, tab_bar_hidden=hidden, tab_bar_should_be_visible=visible, tab_bar_data=[])
         self.boss.os_window_map[7] = tm
         self.addCleanup(self.boss.os_window_map.pop, 7, None)
-        draw_data = types.SimpleNamespace(os_window_id=7)
-        extra = types.SimpleNamespace(for_layout=False)
+        self.tb._MEMO.pop(("px_failed", 7), None)
+        screen = self.Screen()
         with patch.object(self.tb.kittymux_pxbar, "publish") as pub, patch.object(self.tb.kittymux_pxbar, "clear") as cl, \
-                patch.object(self.tb.kittymux_pxbar, "active", return_value=True), \
+                patch.object(self.tb.kittymux_pxbar, "active", return_value=picture_up), \
                 patch.object(self.tb, "_host", return_value="box"), patch.object(self.tb, "_features", return_value={}):
-            self.tb._draw_px(draw_data, self.Screen(), types.SimpleNamespace(tab_id=1), 1, extra, None)
+            self.tb._draw_px(types.SimpleNamespace(os_window_id=7), screen, types.SimpleNamespace(tab_id=1), 1,
+                             types.SimpleNamespace(for_layout=False), None)
+        self.assertFalse(self.tb._MEMO.get(("px_failed", 7)), "the hidden-bar path must not count as a failed draw")
+        self.assertEqual(screen.drawn, [(0, 0, " " * screen.columns)], "blank default-background cells, as for a shown bar")
         return pub.called, cl.called
 
     def test_a_hidden_bar_redrawn_does_not_publish_and_drops_the_picture(self):
         self.assertEqual(self._draw(visible=False), (False, True))
         self.assertEqual(self._draw(visible=True, hidden=True), (False, True))
 
+    def test_a_hidden_bar_with_no_picture_up_does_nothing(self):
+        self.assertEqual(self._draw(visible=False, picture_up=False), (False, False))
+
     def test_control_a_shown_bar_publishes(self):
         self.assertEqual(self._draw(visible=True), (True, False))
+
+
+if __name__ == "__main__":
+    unittest.main()
