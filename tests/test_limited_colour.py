@@ -14,7 +14,8 @@ sys.path.insert(0, os.path.join(ROOT, "python"))
 class LimitedColourTest(unittest.TestCase):
     def test_no_renderer_maps_limited_to_the_alert_colour(self):
         bad = []
-        pattern = re.compile(r"""["']limited["']\s*:\s*(?:["']alert["']|\w+\.alert\b)""")
+        pattern = re.compile(r"""["']limited["']\s*:\s*(?:["']alert["']|\w+\.alert\b)"""        # a mapping
+                             r"""|\.alert\s+if\s+\w+\s*==\s*["']limited["']""")              # an inline if (the rail's stripe)
         for name in sorted(os.listdir(os.path.join(ROOT, "python"))):
             if name.endswith(".py"):
                 with open(os.path.join(ROOT, "python", name), encoding="utf-8") as f:
