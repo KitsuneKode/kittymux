@@ -14,6 +14,8 @@ import base64
 import binascii
 import json
 import re
+import sys
+import types
 
 STATES = ("idle", "working", "done", "blocked", "error", "clear")
 KINDS = ("permission", "question", "auth")
@@ -167,7 +169,7 @@ class Records:
         if not self.by_id:
             return None
         rank = {"blocked": 5, "error": 4, "working": 3, "done": 2, "idle": 1}
-        return max(self.by_id.values(), key=lambda r: (rank.get(r["state"], 0), r["t"]))
+        return max(self.by_id.values(), key=lambda r: (rank.get(r["state"], 0), r["t"], r.get("n", 0)))   # n: kitty's own order
 
 
 def user_var(summary: dict | None) -> bytes:
@@ -188,9 +190,11 @@ def read_var(user_vars: dict) -> dict | None:
 
 
 # kitty's records carry no time; the summary ranks the newest first among equals, so a record's time is when it was
-# first seen in its current state. Keyed by window and record id; pruned when the window has no records, and capped
-# (a closed window's entries are never pruned by it, so the oldest go past _SEEN_MAX).
-_SEEN: dict[tuple[int, str], tuple[str, float]] = {}
+# first seen in its current state. Keyed by window and record id. It lives in sys.modules["_kittymux_psp_rt"]: kitty re-runs
+# this module on every config reload, and fresh times for unchanged records would renew an old completion. A record that is
+# no longer listed is forgotten at once (it starts over if it comes back); a closed window's entries go past _SEEN_MAX.
+_RT = sys.modules.setdefault("_kittymux_psp_rt", types.SimpleNamespace(seen={}))
+_SEEN: dict[tuple[int, str], tuple[str, float]] = _RT.seen
 _SEEN_MAX = 1024
 
 
@@ -205,12 +209,13 @@ def read_native(window, now: float) -> dict | None:
     except Exception:
         return None
     wid = int(getattr(window, "id", 0) or 0)
+    listed = {r.get("id") or "" for r in records or ()}
+    for k in [k for k in _SEEN if k[0] == wid and k[1] not in listed]:
+        del _SEEN[k]                                    # gone from kitty's list: if it comes back, it is new
     if not records:
-        for k in [k for k in _SEEN if k[0] == wid]:
-            del _SEEN[k]
         return None
     recs = Records()
-    for r in records:
+    for n, r in enumerate(records):                     # kitty lists them from least to most recently changed
         state = r.get("state")
         if state not in STATES or state == "clear":
             continue
@@ -225,10 +230,13 @@ def read_native(window, now: float) -> dict | None:
                 rec[key] = r[key]
         if r.get("progress") is not None:
             rec["progress"] = r["progress"]
-        recs.by_id[rid] = {**rec, "t": t}
+        recs.by_id[rid] = {**rec, "t": t, "n": n}
     import kittymux_bounded
     kittymux_bounded.cap_newest(_SEEN, _SEEN_MAX)
-    return recs.summary()
+    out = recs.summary()
+    if out is not None:
+        out = {k: v for k, v in out.items() if k != "n"}
+    return out
 
 
 def apply_to_view(rec: dict | None, view: dict, marker: str, line: str) -> tuple[str, str]:
@@ -242,10 +250,16 @@ def apply_to_view(rec: dict | None, view: dict, marker: str, line: str) -> tuple
         if marker == "limited":                 # a usage limit on screen outranks a permission prompt (status contract)
             return "limited", line
         view["why"] = "it reports it is blocked (OSC 7501)"
-        return "waiting", text or line or ({"auth": "Needs a login", "question": "Has a question"}.get(rec.get("kind", ""), "Needs your permission"))
+        ask = text or line or ({"auth": "Needs a login", "question": "Has a question"}.get(rec.get("kind", ""), "Needs your permission"))
+        # explicit evidence too, like a waiting hook: an agent whose screen is not read ignores the marker (resolve)
+        view["status"], view["ts_status"], view["msg"] = "waiting", t, ask
+        return "waiting", ask
     if state == "working":
+        # a record kitty still holds is current evidence, like a busy marker on screen: the hook grace (a few seconds for a
+        # TUI to draw) must not expire it. t stays the first-seen time, so the turn and its completion keep their real times.
         view["status"], view["ts_status"] = "working", t
-        return ("" if marker == "waiting" else marker), line
+        view["reported_working"] = True
+        return ("working" if marker in ("", "waiting") else marker), line
     if state == "done":
         if t > float(view.get("agent_done_ts") or 0):
             view["agent_done_ts"] = t
