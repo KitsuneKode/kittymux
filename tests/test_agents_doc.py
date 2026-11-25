@@ -56,5 +56,23 @@ class AgentGuide(unittest.TestCase):
                 self.assertTrue(os.path.exists(os.path.join(ROOT, path)), f"{'/'.join(where)} names {path}, which does not exist")
 
 
+class CiRuns(unittest.TestCase):
+    """docs/agents/verify.md says every new rig goes in CI; six real-kitty rigs (the pixel bar's among them) never did, and nothing
+    noticed. A rig CI skips is a rig nobody runs."""
+
+    def test_every_smoke_rig_runs_in_ci(self):
+        ci = read(".github", "workflows", "ci.yml")
+        rigs = sorted(n for n in os.listdir(os.path.join(ROOT, "tests")) if n.startswith("smoke_") and n.endswith(".sh"))
+        missing = [n for n in rigs if f"tests/{n}" not in ci]
+        self.assertEqual(missing, [], "add these rigs to the smoke job in .github/workflows/ci.yml")
+
+    def test_doctor_names_the_newest_kitty_ci_tests(self):
+        # doctor warns "newer than the tested 0.<minor>.x": the number must be the newest kitty the smoke job really builds
+        matrix = re.search(r"kitty:\s*\[([^\]]*)\]", read(".github", "workflows", "ci.yml")).group(1)
+        newest = max(int(v.split(".")[1]) for v in re.findall(r"0\.\d+\.\d+", matrix))
+        tested = int(re.search(r"^TESTED_KITTY_MINOR\s*=\s*(\d+)", read("bin", "kittymux"), re.M).group(1))
+        self.assertEqual(tested, newest, "bin/kittymux TESTED_KITTY_MINOR must match the newest kitty in the CI matrix")
+
+
 if __name__ == "__main__":
     unittest.main()

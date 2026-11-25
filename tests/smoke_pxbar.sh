@@ -151,7 +151,7 @@ echo "  ok   the header folds the bar to the rail and the rail's mascot opens it
 # 6. one tab left under `tab_bar_min_tabs 2`: kitty hides the bar, and the picture must go with it and STAY gone. kitty still
 #    runs the bar's draw while it is hidden; the release before 2026-11-20 put the picture back on the next redraw, a ghost
 #    sidebar behind the terminal's text (the owner's screen). Run against that release, this step must FAIL.
-if command -v import >/dev/null 2>&1 && command -v magick >/dev/null 2>&1; then
+if command -v import >/dev/null 2>&1 && python3 -c "import PIL" 2>/dev/null; then
   sed -i 's/^tab_bar_min_tabs 1$/tab_bar_min_tabs 2/' "$CFG/kitty.conf"
   kitty @ --to "$SOCK" load-config >/dev/null 2>&1
   # a working agent in the tab that stays: the scanner redraws the bar on its own while it works (the owner's tab ran Devin)
@@ -170,13 +170,15 @@ print(max(t)) if t else sys.exit(1)' "$STATE/scan-$KPID.json" 2>/dev/null; }
   t1=""; for _ in $(seq 160); do t1=$(working_scan) && python3 -c "import sys; sys.exit(0 if $t1 >= $t0 + 7 else 1)" && break; t1=""; sleep 0.25; done
   [ -n "$t1" ] || fail "the scanner stopped passing over the working agent within 7 s of the bar hiding (last scan $w, hidden at $t0)"
   DISPLAY=$DISP import -window root "$T/ghost.png" || fail "could not take the screenshot of the hidden bar's place"
-  px() { magick "$T/ghost.png" -format "%[pixel:p{$1,$2}]" info:; }
+  px() { python3 -c 'import sys; from PIL import Image; print(Image.open(sys.argv[1]).convert("RGB").getpixel((int(sys.argv[2]), int(sys.argv[3]))))' "$T/ghost.png" "$1" "$2"; }   # PIL: ImageMagick 6 (CI) has no `magick`
   side=$(px 40 600) && mid=$(px 600 600) || fail "could not read the screenshot's pixels"
   [ -n "$side" ] && [ -n "$mid" ] || fail "the screenshot gave no pixels (side='$side' mid='$mid')"    # the bar's old place; the pane
   [ "$side" = "$mid" ] || fail "with the bar hidden its picture stayed behind the terminal (x=40: $side, x=600: $mid)"
   echo "  ok   one tab left: the hidden bar's picture is gone and stays gone"
+elif [ -n "${CI:-}" ]; then
+  fail "the hidden-bar check needs ImageMagick's import and python3 PIL, and CI must not skip it"
 else
-  echo "  skip the hidden-bar check (ImageMagick not installed)"
+  echo "  skip the hidden-bar check (needs ImageMagick's import and python3 PIL)"
 fi
 
 tripwire || exit 1

@@ -91,7 +91,7 @@ import kittymux_place  # noqa: E402
 import kittymux_theme  # noqa: E402
 
 VERSION = "0.2.0"
-TESTED_KITTY_MINOR = 49          # the kitty 0.<minor>.x the smoke tests run against
+TESTED_KITTY_MINOR = 51          # the kitty 0.<minor>.x the smoke tests run against
 USE_COLOR = sys.stdout.isatty()
 
 

@@ -125,9 +125,11 @@ python3 - "$STATE/bar-dump.json" <<'PY' || fail "the folder line ignores the pie
 import json, sys
 rows = list(json.load(open(sys.argv[1])).values())
 def where(r): return "".join(t for t, role in r["pieces"] if role in ("project", "inner"))
-split = [r for r in rows if where(r) == "alpha/pane"]
+# the split tab is found by its title, not by its line: with its pane map beside it only a few cells are left, and the bar
+# shortens the line to the project alone ("alpha", the "/pane" dropped), which is exactly what this step allows
+split = [r for r in rows if r.get("title") == "pane"]
 plain = [r for r in rows if where(r) == "alpha/app"]
-assert split and plain, ("rows missing", [where(r) for r in rows])
+assert split and plain, ("rows missing", [(r.get("title"), where(r)) for r in rows])
 for r in split + plain:
     assert "room" in r and "avail" in r, ("the dump has no room/avail", r)
 assert all(r["room"] < r["avail"] for r in split), ("a split tab did not reserve room for its pane map", split)
