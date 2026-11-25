@@ -8,7 +8,7 @@ States, most important first — a state needs positive evidence, and silence is
 
 | State | Evidence | Shown as |
 |---|---|---|
-| `limited` | "usage limit reached" / quota text on screen | `⊘`, dim waiting colour in pixel panels (`alert` in cell views) |
+| `limited` | "usage limit reached" / quota text on screen | `⊘`, the waiting colour in every view (dimmed where pixels allow); never `alert`, which is kept for errors: a limit resets by itself |
 | `waiting` | a permission/question prompt on screen, a hook message that is a real request, or a turn that ENDS asking you (the agent's own last reply: `bin/mux-status` turns a Stop/notify whose `last_assistant_message` / `last-assistant-message` ends in a question into `waiting` with that sentence; Claude and Codex only, hook-less agents stay `done`) | `!`, bold, rail stripe |
 | `error` | the agent reported `error` over OSC 7501; the message is kept. A quiet screen is not a completion, and a screen that still looks busy does not hide it. A prompt or a usage limit on screen still outranks it | `✕`, alert colour |
 | `working` | an activity marker on screen (`esc to interrupt`, Claude's `Verb… (6m 52s · ↓ tokens)`), or a hook inside its grace | animated spinner |

@@ -165,7 +165,7 @@ class HeaderSessionTests(unittest.TestCase):
         self.assertEqual(self.tb._state_word("working", pal), ("Working", 11))
         self.assertEqual(self.tb._state_word("waiting", pal), ("Needs you", 12))
         self.assertEqual(self.tb._state_word("done", pal), ("Finished", 13))
-        self.assertEqual(self.tb._state_word("limited", pal), ("Limited", 14))
+        self.assertEqual(self.tb._state_word("limited", pal), ("Limited", 12))      # the waiting colour, as in the pixel bar: never alert
         for quiet in ("", "idle", "unread"):
             self.assertIsNone(self.tb._state_word(quiet, pal))
 

@@ -29,7 +29,7 @@ TINT = 0.09                    # how much of the warning colour a needs-you row 
 
 
 def _state_color(p, state: str):
-    return {"waiting": p.waiting, "working": p.working, "limited": p.alert, "error": p.alert, "done": T.blend(p.done, p.bg, 0.65), "unread": p.faint}.get(state)
+    return {"waiting": p.waiting, "working": p.working, "limited": p.waiting, "error": p.alert, "done": T.blend(p.done, p.bg, 0.65), "unread": p.faint}.get(state)
 
 
 def row_bg(p, r, selected: bool, hovered: bool) -> int:
