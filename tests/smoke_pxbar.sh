@@ -159,10 +159,19 @@ if command -v import >/dev/null 2>&1 && command -v magick >/dev/null 2>&1; then
   kitty @ --to "$SOCK" close-tab --match title:bravo >/dev/null 2>&1
   kitty @ --to "$SOCK" close-tab --match title:echo >/dev/null 2>&1
   until_true has_tabs alpha -- bravo echo || fail "could not get down to one tab (tabs: $(titles))"
-  sleep 9                                                       # several scanner passes: each one redraws the (hidden) bar
-  DISPLAY=$DISP import -window root "$T/ghost.png"
+  # evidence, with deadlines, that the scanner kept redrawing the hidden bar: the agent is judged working, and the scan of it
+  # moved on by two heartbeats (scan-<pid>.json is rewritten at least every 3 s) after the bar was hidden
+  working_scan() { python3 -c 'import json,sys
+d=json.load(open(sys.argv[1])); t=[v.get("ts_scan",0) for v in d.values() if isinstance(v,dict) and v.get("state")=="working"]
+print(max(t)) if t else sys.exit(1)' "$STATE/scan-$KPID.json" 2>/dev/null; }
+  t0=""; for _ in $(seq 160); do t0=$(working_scan) && break; sleep 0.25; done
+  [ -n "$t0" ] || fail "the scanner never judged the remaining agent working, so nothing proves the hidden bar was redrawn"
+  t1=""; for _ in $(seq 160); do t1=$(working_scan) && python3 -c "import sys; sys.exit(0 if $t1 >= $t0 + 6 else 1)" && break; t1=""; sleep 0.25; done
+  [ -n "$t1" ] || fail "the scanner stopped passing over the working agent (scan time stuck at $t0)"
+  DISPLAY=$DISP import -window root "$T/ghost.png" || fail "could not take the screenshot of the hidden bar's place"
   px() { magick "$T/ghost.png" -format "%[pixel:p{$1,$2}]" info:; }
-  side=$(px 40 600) mid=$(px 600 600)                            # the bar's old place; the left pane, past any picture
+  side=$(px 40 600) && mid=$(px 600 600) || fail "could not read the screenshot's pixels"
+  [ -n "$side" ] && [ -n "$mid" ] || fail "the screenshot gave no pixels (side='$side' mid='$mid')"    # the bar's old place; the pane
   [ "$side" = "$mid" ] || fail "with the bar hidden its picture stayed behind the terminal (x=40: $side, x=600: $mid)"
   echo "  ok   one tab left: the hidden bar's picture is gone and stays gone"
 else
