@@ -33,6 +33,12 @@ kittymux doctor
 
 **Fix.** Run `git pull && kittymux upgrade`. It refreshes the links and reloads every running kitty twice. A new kitty window picks up the new bar at once. If `doctor` says a kitty was updated while it was running, save with `ctrl+alt+shift+s`, quit that kitty and start it again.
 
+## Doctor says your kitties load a branch, not main
+
+**Cause.** Running kitties load the code of the checkout `install.sh` linked, whatever it has checked out, at every reload. A feature branch left checked out there runs as your release and misses the fixes on `main`. Uncommitted edits there go live at the next reload.
+
+**Fix.** In your kittymux checkout run `git switch main`, then `kittymux upgrade`. Make changes in a separate worktree (`git worktree add .worktrees/<name> -b <name> main`) so the checkout your kitties load stays on `main`.
+
 ## Logos are missing or show as boxes
 
 **Cause.** The bundled icon font loads only when kitty starts. A glyph added to the font reaches a running kitty only after a restart.

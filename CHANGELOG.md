@@ -5,6 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 ## [Unreleased]
 
 ### Added
+- **`kittymux doctor` says which branch your kitties load.** It warns when the checkout they are linked to is on a branch other than `main`, at a detached commit, or has uncommitted edits: each is live at the next reload.
 - **Graphical Usage and Inbox** share the pixel Agents panel (`kittymux features on deckpx`): remaining quota, reset and pace markers, provider cards, expandable messages and keyboard/pointer actions. A recent rice T3 cache supplies separate account segments without another provider connection; absent providers keep local collectors.
 - **Review hardening:** pane controls preserve owning-Kitty and OS-window scope even after focus changes, two-pane Zoom restores correctly, delayed Inbox reports retain IDs through compaction, and mixed usage sources preserve their own cache age and live errors.
 - **Narrow panel controls** keep the help exit hint at the top and retain Jump and Dismiss in the cell footer.

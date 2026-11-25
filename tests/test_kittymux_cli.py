@@ -1979,3 +1979,75 @@ class MuteCommandTests(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             self.assertEqual(self.m.mute_cmd(["--list"], True), 0)
         self.assertIn("pricing review", out.getvalue())
+
+
+class LiveCheckoutTests(unittest.TestCase):
+    """Live kitties load whatever the checkout they are linked to has checked out. A feature branch left checked out there ran
+    as 'the release' for 10 days (2026-11-15..25) while main got fixes it never saw: doctor names the branch."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.m = load()
+
+    def _git(self, repo, *args):
+        subprocess.run(["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", *args],
+                       check=True, capture_output=True)
+
+    def _install(self):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, True)
+        repo, cfg = os.path.join(root, "repo"), os.path.join(root, "cfg")
+        os.makedirs(os.path.join(repo, "python")); os.makedirs(cfg)
+        with open(os.path.join(repo, "python", "tab_bar.py"), "w") as f:
+            f.write("# bar\n")
+        self._git(repo, "init", "-q", "-b", "main")
+        self._git(repo, "add", "-A"); self._git(repo, "commit", "-q", "-m", "init")
+        os.symlink(os.path.join(repo, "python", "tab_bar.py"), os.path.join(cfg, "tab_bar.py"))
+        return repo, cfg
+
+    def _doctor(self, cfg):
+        r = self.m.Report()
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.m._doctor_live_checkout(r, cfg)
+        return r.warn, out.getvalue()
+
+    def test_main_checked_out_is_fine(self):
+        repo, cfg = self._install()
+        self.assertEqual(self.m.live_checkout(cfg), os.path.realpath(repo))
+        self.assertEqual(self._doctor(cfg)[0], 0)
+
+    def test_a_feature_branch_checked_out_is_named(self):
+        repo, cfg = self._install()
+        self._git(repo, "switch", "-q", "-c", "feat/calm-otter")
+        warn, out = self._doctor(cfg)
+        self.assertEqual(warn, 1)
+        self.assertIn("feat/calm-otter", out)
+        self.assertIn("switch main", out)
+
+    def test_a_detached_head_is_named(self):
+        repo, cfg = self._install()
+        self._git(repo, "switch", "-q", "--detach")
+        warn, out = self._doctor(cfg)
+        self.assertEqual(warn, 1)
+        self.assertIn("detached", out)
+
+    def test_uncommitted_edits_are_live_too(self):
+        repo, cfg = self._install()
+        with open(os.path.join(repo, "python", "tab_bar.py"), "a") as f:
+            f.write("# half-edited\n")
+        warn, out = self._doctor(cfg)
+        self.assertEqual(warn, 1)
+        self.assertIn("uncommitted", out)
+
+    def test_not_a_git_checkout_says_nothing(self):
+        root = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, root, True)
+        os.makedirs(os.path.join(root, "pkg", "python")); os.makedirs(os.path.join(root, "cfg"))
+        open(os.path.join(root, "pkg", "python", "tab_bar.py"), "w").close()
+        os.symlink(os.path.join(root, "pkg", "python", "tab_bar.py"), os.path.join(root, "cfg", "tab_bar.py"))
+        self.assertEqual(self._doctor(os.path.join(root, "cfg")), (0, ""))
+
+    def test_no_linked_bar_says_nothing(self):
+        root = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, root, True)
+        self.assertIsNone(self.m.live_checkout(root))
+        self.assertEqual(self._doctor(root), (0, ""))

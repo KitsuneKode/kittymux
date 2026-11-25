@@ -190,6 +190,41 @@ def _socket_dirs() -> list[str]:
     return dirs
 
 
+def live_checkout(cfg: str) -> str | None:
+    """The checkout running kitties load: where the linked tab_bar.py really lives (install.sh links it), or None."""
+    link = os.path.join(cfg, "tab_bar.py")
+    if not os.path.islink(link):
+        return None
+    real = os.path.realpath(link)
+    return os.path.dirname(os.path.dirname(real)) if os.path.isfile(real) else None
+
+
+def _doctor_live_checkout(r, cfg: str) -> None:
+    """Running kitties load whatever that checkout has checked out, at every reload. A feature branch left checked out there runs
+    as the release (and misses main's fixes); uncommitted edits are live the moment anything reloads. Develop in a worktree."""
+    repo = live_checkout(cfg)
+    if repo is None:
+        return
+    rc, branch = _run(["git", "-C", repo, "rev-parse", "--abbrev-ref", "HEAD"])
+    if rc != 0 or not branch.strip():
+        return                                                     # not a git checkout (a package, a tarball): nothing to say
+    branch = branch.strip()
+    worktree_hint = "develop in a worktree (git worktree add .worktrees/<name> -b <name> main)"
+    if branch == "HEAD":
+        r.warning(f"your kitties load {repo} at a detached commit, not main", f"git -C {repo} switch main, then `kittymux upgrade`; {worktree_hint}")
+    elif branch != "main":
+        r.warning(f"your kitties load {repo} on branch {branch}, not main: a reload runs that branch's code, without main's fixes",
+                  f"git -C {repo} switch main, then `kittymux upgrade`; {worktree_hint}")
+    else:
+        rc, dirty = _run(["git", "-C", repo, "status", "--porcelain", "--untracked-files=no"])
+        if rc == 0 and dirty.strip():
+            n = len(dirty.strip().splitlines())
+            r.warning(f"your kitties load {repo}, which has {n} uncommitted change(s): they are live at the next reload",
+                      f"commit or move them to a worktree; {worktree_hint}")
+        else:
+            r.ok(f"kitties load {repo} on main")
+
+
 def _doctor_legacy_scripts(r) -> None:
     """The socket lives in a private directory, but older scripts look for /tmp/mykitty-<pid> (what `listen_on unix:/tmp/mykitty` made). Say how many of
     YOUR scripts do, and whether the compatibility link that keeps them working is on (feature `socketlink`)."""
@@ -399,6 +434,7 @@ def doctor() -> int:
     for f in ["tab_bar.py"] + sorted(os.path.basename(g) for g in _glob.glob(os.path.join(HOME_DIR, "python", "kittymux_*.py"))):
         p = os.path.join(CFG, f)
         (r.ok(f"{f} → linked") if os.path.exists(p) else r.fail(f"{f} missing from {CFG}", "run ./install.sh"))
+    _doctor_live_checkout(r, CFG)
     fonts = _run(["fc-list", ":family=kittymux icons"])[1] if shutil.which("fc-list") else ""
     r.ok("brand icon font installed") if "kittymux" in fonts.lower() else \
         r.warning("brand icon font not found — agent logos will show as boxes", "run ./install.sh (copies it to ~/.local/share/fonts)")
