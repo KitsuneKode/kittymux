@@ -7,9 +7,10 @@
 # prompt. This one publishes the request — which tool, the exact command or
 # file — as $XDG_STATE_HOME/kittymux/asks/<pane key>.json, marks the pane
 # `waiting` with that line (mux-status), and waits for an answer file beside
-# it (<pane key>.answer: "allow" or "deny"), written by the shell's Allow /
-# Deny (kuwai's notch). The answer goes back to the agent as the hook's
-# decision: nothing is typed into the pane.
+# it (<pane key>.answer: "allow ID" or "deny ID", ID being the request's own
+# random id), written by the shell's Allow / Deny (kuwai's notch). An answer
+# naming another id (an older request on this pane) or no id is ignored. The
+# answer goes back to the agent as the hook's decision: nothing is typed.
 #
 # It stays out of the way (exit 0, no output: the agent shows its own prompt,
 # exactly as without the hook) when:
@@ -59,9 +60,11 @@ req="$dir/$key.json"
 ans="$dir/$key.answer"
 rm -f "$ans"
 now="$(date +%s)"
+id="$(od -An -N8 -tx1 /dev/urandom 2>/dev/null | tr -dc '0-9a-f')"
+[ "${#id}" -eq 16 ] || exit 0
 jq -n --arg key "$key" --arg agent "$agent" --arg tool "$tool" --arg what "$what" \
-      --arg cwd "$PWD" --argjson at "$now" --argjson wait "$wait_s" \
-      '{version: 1, key: $key, agent: $agent, tool: $tool, what: $what, cwd: $cwd, at: $at, until: ($at + $wait)}' \
+      --arg cwd "$PWD" --argjson at "$now" --argjson wait "$wait_s" --arg id "$id" \
+      '{version: 2, id: $id, key: $key, agent: $agent, tool: $tool, what: $what, cwd: $cwd, at: $at, until: ($at + $wait)}' \
       > "$req.tmp" 2>/dev/null && mv -f "$req.tmp" "$req" || exit 0
 cleanup() { rm -f "$req" "$req.tmp" "$ans"; }
 trap cleanup EXIT
@@ -70,7 +73,9 @@ trap cleanup EXIT
 deadline=$(( now + wait_s ))
 while [ "$(date +%s)" -lt "$deadline" ]; do
     if [ -s "$ans" ]; then
-        choice="$(head -c 16 "$ans" | tr -dc 'a-z')"
+        reply="$(head -c 64 "$ans")"
+        choice=""
+        case "$reply" in "allow $id"|"deny $id") choice=${reply%% *} ;; esac
         case "$choice" in
             allow)
                 "$here/mux-status" working </dev/null >/dev/null 2>&1 || true
