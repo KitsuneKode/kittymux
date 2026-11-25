@@ -175,7 +175,8 @@ shot inbox-scroll inbox-restored
 key q
 panel_closed() { ! screen | grep -q 'Inbox'; }
 wait_until "panel close" panel_closed
-if kitty --version | grep -qE '0\.[5-9][0-9]\.|[1-9][0-9]*\.'; then
+# pane controls need kitty >= 0.50: compare the version as numbers (an unanchored grep matched the "49." of 0.49.1)
+if kitty --version | python3 -c 'import re,sys;v=tuple(map(int,re.search(r"(\d+)\.(\d+)\.(\d+)",sys.stdin.read()).groups()));sys.exit(0 if v>=(0,50,0) else 1)'; then
     KMX() { env -u KITTY_WINDOW_ID -u KITTY_PID -u KITTY_LISTEN_ON KITTYMUX_TARGET="$SOCK" KITTYMUX_STATE="$STATE" python3 "$ROOT/bin/kittymux" pane-controls "$@" --window 1; }
     KMX show
     KMX show
