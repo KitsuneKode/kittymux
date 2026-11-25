@@ -102,8 +102,9 @@ F=$STATE/sessions/test.kitty-session
 grep -q -- "--resume $SID" "$F" || { cat "$F"; fail "the saved claude line does not resume its session"; }
 grep -q -- "--dangerously-skip-permissions" "$F" || fail "the flags claude was started with were lost"
 grep -E "opencode" "$F" | grep -q -- "-s ses_smoke1" || { cat "$F"; fail "the lone opencode did not resolve to -s ses_smoke1"; }
-[ "$(grep -c "bin/droid" "$F")" = 2 ] || { cat "$F"; fail "expected two droid launch lines"; }
-! grep "bin/droid" "$F" | grep -qE " (-r|--last)( |'|$)" || { grep "bin/droid" "$F"; fail "the two droids were rewritten (one conversation would open twice)"; }
+# found by the agent variable, not the program path: kitty 0.51 saves the program by name ("droid"), older kitty by its full path
+[ "$(grep -c -- "--var=kittymux_agent=droid" "$F")" = 2 ] || { cat "$F"; fail "expected two droid launch lines"; }
+! grep -- "--var=kittymux_agent=droid" "$F" | grep -qE " (-r|--last)( |'|$)" || { grep -- "--var=kittymux_agent=droid" "$F"; fail "the two droids were rewritten (one conversation would open twice)"; }
 ! grep -q "kittymux_status\|kittymux_msg" "$F" || fail "restored hook state leaked into the saved file"
 echo "  ok   saved: claude --resume <id> with its flags, opencode -s <its id>, droids as saved, no stale hook state, file is 0600"
 

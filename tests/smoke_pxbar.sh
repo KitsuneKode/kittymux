@@ -111,21 +111,31 @@ wobble_click 90 $(( y1 + 120 )); quiet_wait
 [ "$(active)" = bravo ] || fail "a click below the rows activated '$(active)'"
 echo "  ok   the space under the rows activates nothing"
 
-# 3. the close cross closes a plain tab
-read -r y0 y1 right < <(band delta)
-wobble_click $(( right - 16 )) $(( y0 + 16 ))
-until_true has_tabs alpha bravo agent echo -- delta || fail "the close cross did not close 'delta' alone (tabs: $(titles))"
-echo "  ok   the close cross closes a plain tab"
+# 3-4 need kitty >= 0.49.2: below it kittymux keeps its own cell divider (kittymux_layout.NATIVE_EDGE_MIN), whose resize grab
+# zone is centred a cell inside the bar's edge and covers the row ends where the cross sits, and the divider comes first
+# (kittymux_barsize._pxbar_click). kitty 0.49.1 draws the cross but cannot click it; doctor already asks for 0.49.2 there.
+if kitty --version | python3 -c 'import re,sys;v=tuple(map(int,re.search(r"(\d+)\.(\d+)\.(\d+)",sys.stdin.read()).groups()));sys.exit(0 if v>=(0,49,2) else 1)'; then
+  # 3. the close cross closes a plain tab
+  read -r y0 y1 right < <(band delta)
+  wobble_click $(( right - 16 )) $(( y0 + 16 ))
+  until_true has_tabs alpha bravo agent echo -- delta || fail "the close cross did not close 'delta' alone (tabs: $(titles))"
+  echo "  ok   the close cross closes a plain tab"
 
-# 4. a busy agent's cross asks first; a second click inside the guard's window closes it
-sleep 2
-read -r y0 y1 right < <(band agent)
-wobble_click $(( right - 16 )) $(( y0 + 16 )); quiet_wait
-has_tabs alpha bravo agent echo || fail "one click on a working agent's cross closed it without asking (tabs: $(titles))"
-read -r y0 y1 right < <(band agent)
-wobble_click $(( right - 16 )) $(( y0 + 16 ))
-until_true has_tabs alpha bravo echo -- agent || fail "a second click on the working agent's cross did not close it alone (tabs: $(titles))"
-echo "  ok   a busy agent's cross asks first, a second click closes it"
+  # 4. a busy agent's cross asks first; a second click inside the guard's window closes it
+  sleep 2
+  read -r y0 y1 right < <(band agent)
+  wobble_click $(( right - 16 )) $(( y0 + 16 )); quiet_wait
+  has_tabs alpha bravo agent echo || fail "one click on a working agent's cross closed it without asking (tabs: $(titles))"
+  read -r y0 y1 right < <(band agent)
+  wobble_click $(( right - 16 )) $(( y0 + 16 ))
+  until_true has_tabs alpha bravo echo -- agent || fail "a second click on the working agent's cross did not close it alone (tabs: $(titles))"
+  echo "  ok   a busy agent's cross asks first, a second click closes it"
+else
+  echo "  skip the close cross (kitty < 0.49.2: the cell divider's grab zone owns the row ends)"
+  kitty @ --to "$SOCK" close-tab --match title:delta >/dev/null 2>&1
+  kitty @ --to "$SOCK" close-tab --match title:agent >/dev/null 2>&1
+  until_true has_tabs alpha bravo echo -- delta agent || fail "could not close delta and agent for the steps after (tabs: $(titles))"
+fi
 
 # 5. the header's collapse control folds the bar to the rail, and the rail's mascot opens it again (kittymux_layout saves the mode)
 mode() { python3 -c "import sys;sys.path.insert(0,'$HOME_DIR/python');import kittymux_layout as L;l=L.load('$STATE',$KPID);print(l.mode if l else 'none')"; }

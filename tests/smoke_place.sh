@@ -134,7 +134,7 @@ for r in split + plain:
     assert "room" in r and "avail" in r, ("the dump has no room/avail", r)
 assert all(r["room"] < r["avail"] for r in split), ("a split tab did not reserve room for its pane map", split)
 assert all(r["room"] == r["avail"] for r in plain), ("a single-pane tab reserved room it does not need", plain)
-assert all(any(role == "project" for _t, role in r["pieces"]) for r in split), ("the project vanished from the split tab", split)
+assert all(any(role == "project" and t == "alpha" for t, role in r["pieces"]) for r in split), ("the project vanished from the split tab", split)
 PY
 echo "  ok   a split tab reserves room for its pane map and still shows its project"
 

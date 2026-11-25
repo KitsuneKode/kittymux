@@ -100,7 +100,7 @@ jobs:
         run: bash tests/smoke_state.sh
       - name: a waiting agent stays waiting while its pane is scrolled (the scanner reads the live screen)
         run: bash tests/smoke_scroll.sh
-      - name: OSC 7501 program status through the mux-pty relay (with a control kitty drops)
+      - name: OSC 7501 program status through the mux-pty relay (and a control window without it)
         run: bash tests/smoke_psp.sh
       - name: sidebar collapse button + drag (real mouse events)
         run: bash tests/smoke_sidebar.sh
