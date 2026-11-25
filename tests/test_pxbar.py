@@ -478,3 +478,36 @@ class EllipsisTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HiddenBarRedrawTest(unittest.TestCase):
+    """kitty's TabBar.update draws a bar it has laid out once even while it is hidden (kittymux_scan.refresh_bar, and
+    kitty's own default_bg_changed_for, call update_tab_bar_data for every state change). With one tab under
+    tab_bar_min_tabs 2 that draw must not publish the picture: it is the OS window's background image and would sit
+    behind the terminal's text as a ghost sidebar, with nothing to take it away until the bar is laid out again."""
+
+    @classmethod
+    def setUpClass(cls):
+        from test_tab_bar_header import RecordingScreen, load_tab_bar
+        cls.tb, cls.boss = load_tab_bar()
+        cls.Screen = RecordingScreen
+
+    def _draw(self, visible, hidden=False):
+        from unittest.mock import patch
+        tm = types.SimpleNamespace(os_window_id=7, tab_bar_hidden=hidden, tab_bar_should_be_visible=visible, tab_bar_data=[])
+        self.boss.os_window_map[7] = tm
+        self.addCleanup(self.boss.os_window_map.pop, 7, None)
+        draw_data = types.SimpleNamespace(os_window_id=7)
+        extra = types.SimpleNamespace(for_layout=False)
+        with patch.object(self.tb.kittymux_pxbar, "publish") as pub, patch.object(self.tb.kittymux_pxbar, "clear") as cl, \
+                patch.object(self.tb.kittymux_pxbar, "active", return_value=True), \
+                patch.object(self.tb, "_host", return_value="box"), patch.object(self.tb, "_features", return_value={}):
+            self.tb._draw_px(draw_data, self.Screen(), types.SimpleNamespace(tab_id=1), 1, extra, None)
+        return pub.called, cl.called
+
+    def test_a_hidden_bar_redrawn_does_not_publish_and_drops_the_picture(self):
+        self.assertEqual(self._draw(visible=False), (False, True))
+        self.assertEqual(self._draw(visible=True, hidden=True), (False, True))
+
+    def test_control_a_shown_bar_publishes(self):
+        self.assertEqual(self._draw(visible=True), (True, False))

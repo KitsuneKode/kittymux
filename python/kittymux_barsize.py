@@ -948,14 +948,17 @@ def _install_native_edge() -> None:
         _debug_exc()
 
 
+def bar_shown(tm) -> bool:
+    """Whether kitty shows this TabManager's bar (not `tab_bar_style hidden`, and enough tabs for `tab_bar_min_tabs`)."""
+    return not getattr(tm, "tab_bar_hidden", False) and bool(tm.tab_bar_should_be_visible)
+
+
 def pxbar_after_layout(tm) -> None:
     """After kitty lays the tab bar out: a bar that is no longer shown (one tab under `tab_bar_min_tabs 2`, or hidden) takes
-    its picture away at once. kitty stops calling the bar's code while it is hidden, and the picture is the OS window's
-    background image, so it would stay behind the terminal's text as a ghost sidebar."""
+    its picture away at once. The picture is the OS window's background image, so it would stay behind the terminal's
+    text as a ghost sidebar. (A redraw of a hidden bar must not bring it back either: tab_bar._draw_px checks bar_shown.)"""
     import kittymux_pxbar as PX
-    if not PX.active(tm.os_window_id):
-        return
-    if getattr(tm, "tab_bar_hidden", False) or not tm.tab_bar_should_be_visible:
+    if PX.active(tm.os_window_id) and not bar_shown(tm):
         PX.clear(tm.os_window_id)
 
 

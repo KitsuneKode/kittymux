@@ -1761,10 +1761,16 @@ def _draw_px(draw_data, screen, tab, index, extra_data, pal) -> int:
     if index == 1 and not extra_data.for_layout:
         try:
             tm = get_boss().os_window_map.get(osw)
-            rows = [_px_row(t, pal) for t in tm.tab_bar_data] if tm is not None else []
-            groups = kittymux_groups.group(rows, expanded=kittymux_pxbar.expanded())
-            kittymux_pxbar.prune_expanded(g.project for g in groups)
-            kittymux_pxbar.publish(osw, groups, pal, _host(), animate=_features().get("motion", True))
+            if tm is not None and not kittymux_barsize.bar_shown(tm):
+                # kitty's TabBar.update draws a hidden bar too (refresh_bar on every agent state change, an OSC 11
+                # background change): publishing here would put the picture back behind the terminal as a ghost sidebar
+                if kittymux_pxbar.active(osw):
+                    kittymux_pxbar.clear(osw)
+            else:
+                rows = [_px_row(t, pal) for t in tm.tab_bar_data] if tm is not None else []
+                groups = kittymux_groups.group(rows, expanded=kittymux_pxbar.expanded())
+                kittymux_pxbar.prune_expanded(g.project for g in groups)
+                kittymux_pxbar.publish(osw, groups, pal, _host(), animate=_features().get("motion", True))
         except Exception:
             _log_exception(tab, index)
             _MEMO[("px_failed", osw)] = True              # this pass draws the cell bar: never a blank bar behind a bug
