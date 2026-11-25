@@ -45,7 +45,8 @@ class HygieneTests(unittest.TestCase):
         keep = os.path.join(self.dir, f"panes-{os.getppid()}.json")
         for name in (f"panes-{dead}.json", f"panes-{dead}.json.tmp", f"scan-{dead}.json", f"panes-{alive}.json",
                      f"decisions-{dead}.jsonl", f"changes-{dead}.json", f"decisions-{alive}.jsonl", f"changes-{alive}.json",
-                     f"progress-{dead}.json", f"progress-{alive}.json", "agent-usage.json", "keep.txt"):
+                     f"progress-{dead}.json", f"progress-{alive}.json", f"snoozes-{dead}.json", f"snoozes-{alive}.json",
+                     "agent-usage.json", "keep.txt"):
             open(os.path.join(self.dir, name), "w").close()
         open(keep, "w").close()
         self.m._cleanup_stale()
@@ -53,12 +54,22 @@ class HygieneTests(unittest.TestCase):
         self.assertNotIn(f"panes-{dead}.json", left)
         self.assertNotIn(f"panes-{dead}.json.tmp", left)
         self.assertNotIn(f"scan-{dead}.json", left)
-        for name in (f"decisions-{dead}.jsonl", f"changes-{dead}.json", f"progress-{dead}.json"):
+        for name in (f"decisions-{dead}.jsonl", f"changes-{dead}.json", f"progress-{dead}.json", f"snoozes-{dead}.json"):
             self.assertNotIn(name, left)
-        for name in (f"decisions-{alive}.jsonl", f"changes-{alive}.json", f"progress-{alive}.json"):
+        for name in (f"decisions-{alive}.jsonl", f"changes-{alive}.json", f"progress-{alive}.json", f"snoozes-{alive}.json"):
             self.assertIn(name, left)
         for name in (f"panes-{alive}.json", "agent-usage.json", "keep.txt", os.path.basename(keep)):
             self.assertIn(name, left)
+
+    def test_cleanup_keeps_everything_when_proc_cannot_see_this_process(self):
+        # an empty or foreign /proc (unmounted, another PID namespace) would make every other kitty look dead
+        os.makedirs(self.dir)
+        path = os.path.join(self.dir, f"scan-{2 ** 22 + 777}.json")
+        open(path, "w").close()
+        real = os.path.exists
+        with mock.patch.object(self.m.os.path, "exists", side_effect=lambda p: False if p.startswith("/proc/") else real(p)):
+            self.m._cleanup_stale()
+        self.assertTrue(os.path.isfile(path))
 
     def test_cleanup_keeps_instances_when_proc_is_unavailable(self):
         os.makedirs(self.dir)

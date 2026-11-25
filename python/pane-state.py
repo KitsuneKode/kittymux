@@ -58,11 +58,11 @@ def _clean(text, limit: int = 120) -> str:
 
 def _cleanup_stale() -> None:
     """Delete stale state only when the process filesystem can establish liveness."""
-    if not os.path.isdir("/proc"):
-        return
+    if not os.path.isdir("/proc") or not os.path.exists(f"/proc/{os.getpid()}"):
+        return                    # an empty or foreign /proc (unmounted, another PID namespace) would make every other kitty look dead
     try:
         for name in os.listdir(_STATE_DIR):
-            m = re.fullmatch(r"(?:panes|scan|changes|mutes|progress)-(\d+)\.json(?:\.tmp)?|decisions-(\d+)\.jsonl(?:\.tmp)?", name)
+            m = re.fullmatch(r"(?:panes|scan|changes|mutes|progress|snoozes)-(\d+)\.json(?:\.tmp)?|decisions-(\d+)\.jsonl(?:\.tmp)?", name)
             pid = (m.group(1) or m.group(2)) if m else None
             if m and int(pid) != os.getpid() and not os.path.exists(f"/proc/{pid}"):
                 try:
