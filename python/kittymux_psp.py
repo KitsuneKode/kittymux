@@ -193,9 +193,41 @@ def read_var(user_vars: dict) -> dict | None:
 # first seen in its current state. Keyed by window and record id. It lives in sys.modules["_kittymux_psp_rt"]: kitty re-runs
 # this module on every config reload, and fresh times for unchanged records would renew an old completion. A record that is
 # no longer listed is forgotten at once (it starts over if it comes back); a closed window's entries go past _SEEN_MAX.
-_RT = sys.modules.setdefault("_kittymux_psp_rt", types.SimpleNamespace(seen={}))
+_RT = sys.modules.setdefault("_kittymux_psp_rt", types.SimpleNamespace(seen={}, stale={}))
+vars(_RT).setdefault("stale", {})                       # a runtime from before this field existed
 _SEEN: dict[tuple[int, str], tuple[str, float]] = _RT.seen
 _SEEN_MAX = 1024
+_STALE_MAX = 256
+# kitty's own ranking (program_status.URGENCY, ties to the most recently changed record): a finished root outranks a child
+# record left working, and the record kitty changed last speaks among equals.
+KITTY_URGENCY = {"idle": 0, "working": 1, "done": 2, "error": 3, "blocked": 4}
+
+
+def _fingerprint(r: dict) -> tuple:
+    return tuple(r.get(k) for k in ("id", "state", "kind", "msg", "title", "progress"))
+
+
+def mark_stale(window) -> None:
+    """The scanner saw no agent in this window: whatever kitty still holds for it is left over (kitty drops working and
+    blocked records only on a shell prompt mark or a process-exited report, so an agent killed in a shell without shell
+    integration leaves them for the next one). Those exact records are ignored until kitty changes or drops them."""
+    as_list = getattr(getattr(window, "program_status", None), "as_list", None)
+    if as_list is None:
+        return
+    try:
+        records = as_list()
+    except Exception:
+        return
+    wid = int(getattr(window, "id", 0) or 0)
+    if records:
+        _RT.stale.pop(wid, None)
+        _RT.stale[wid] = {_fingerprint(r) for r in records}
+        import kittymux_bounded
+        kittymux_bounded.cap_newest(_RT.stale, _STALE_MAX)
+    else:
+        _RT.stale.pop(wid, None)
+    for k in [k for k in _SEEN if k[0] == wid]:
+        del _SEEN[k]
 
 
 def read_native(window, now: float) -> dict | None:
@@ -209,6 +241,13 @@ def read_native(window, now: float) -> dict | None:
     except Exception:
         return None
     wid = int(getattr(window, "id", 0) or 0)
+    stale = _RT.stale.get(wid)
+    if stale:
+        prints = {_fingerprint(r) for r in records or ()}
+        stale &= prints                                 # a left-over record that kitty changed or dropped is news again
+        if not stale:
+            _RT.stale.pop(wid, None)
+        records = [r for r in records or () if _fingerprint(r) not in stale]
     listed = {r.get("id") or "" for r in records or ()}
     for k in [k for k in _SEEN if k[0] == wid and k[1] not in listed]:
         del _SEEN[k]                                    # gone from kitty's list: if it comes back, it is new
@@ -233,10 +272,10 @@ def read_native(window, now: float) -> dict | None:
         recs.by_id[rid] = {**rec, "t": t, "n": n}
     import kittymux_bounded
     kittymux_bounded.cap_newest(_SEEN, _SEEN_MAX)
-    out = recs.summary()
-    if out is not None:
-        out = {k: v for k, v in out.items() if k != "n"}
-    return out
+    if not recs.by_id:
+        return None
+    best = max(recs.by_id.values(), key=lambda r: (KITTY_URGENCY.get(r["state"], 0), r["n"]))   # as kitty ranks them
+    return {k: v for k, v in best.items() if k != "n"}
 
 
 def apply_to_view(rec: dict | None, view: dict, marker: str, line: str) -> tuple[str, str]:
@@ -250,6 +289,7 @@ def apply_to_view(rec: dict | None, view: dict, marker: str, line: str) -> tuple
         if marker == "limited":                 # a usage limit on screen outranks a permission prompt (status contract)
             return "limited", line
         view["why"] = "it reports it is blocked (OSC 7501)"
+        view["reported_blocked"] = True
         ask = text or line or ({"auth": "Needs a login", "question": "Has a question"}.get(rec.get("kind", ""), "Needs your permission"))
         # explicit evidence too, like a waiting hook: an agent whose screen is not read ignores the marker (resolve)
         view["status"], view["ts_status"], view["msg"] = "waiting", t, ask
@@ -257,9 +297,13 @@ def apply_to_view(rec: dict | None, view: dict, marker: str, line: str) -> tuple
     if state == "working":
         # a record kitty still holds is current evidence, like a busy marker on screen: the hook grace (a few seconds for a
         # TUI to draw) must not expire it. t stays the first-seen time, so the turn and its completion keep their real times.
+        if view.get("status") == "waiting":
+            view["handled_wait_ts"] = view.get("ts_status")   # it moved on: that hook request was handled, it must not return
         view["status"], view["ts_status"] = "working", t
         view["reported_working"] = True
-        return ("working" if marker in ("", "waiting") else marker), line
+        # a prompt on screen still wins (classify_screen already ignores one above a live busy line): a report that missed
+        # a prompt, or one left over, must never hide it
+        return ("working" if marker == "" else marker), line
     if state == "done":
         if t > float(view.get("agent_done_ts") or 0):
             view["agent_done_ts"] = t
