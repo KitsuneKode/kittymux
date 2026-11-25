@@ -164,10 +164,11 @@ if command -v import >/dev/null 2>&1 && command -v magick >/dev/null 2>&1; then
   working_scan() { python3 -c 'import json,sys
 d=json.load(open(sys.argv[1])); t=[v.get("ts_scan",0) for v in d.values() if isinstance(v,dict) and v.get("state")=="working"]
 print(max(t)) if t else sys.exit(1)' "$STATE/scan-$KPID.json" 2>/dev/null; }
-  t0=""; for _ in $(seq 160); do t0=$(working_scan) && break; sleep 0.25; done
-  [ -n "$t0" ] || fail "the scanner never judged the remaining agent working, so nothing proves the hidden bar was redrawn"
-  t1=""; for _ in $(seq 160); do t1=$(working_scan) && python3 -c "import sys; sys.exit(0 if $t1 >= $t0 + 6 else 1)" && break; t1=""; sleep 0.25; done
-  [ -n "$t1" ] || fail "the scanner stopped passing over the working agent (scan time stuck at $t0)"
+  t0=$(python3 -c 'import time; print(time.monotonic())')     # the bar is hidden now; kitty's scan times are on this same clock
+  w=""; for _ in $(seq 160); do w=$(working_scan) && break; sleep 0.25; done
+  [ -n "$w" ] || fail "the scanner never judged the remaining agent working, so nothing proves the hidden bar was redrawn"
+  t1=""; for _ in $(seq 160); do t1=$(working_scan) && python3 -c "import sys; sys.exit(0 if $t1 >= $t0 + 7 else 1)" && break; t1=""; sleep 0.25; done
+  [ -n "$t1" ] || fail "the scanner stopped passing over the working agent within 7 s of the bar hiding (last scan $w, hidden at $t0)"
   DISPLAY=$DISP import -window root "$T/ghost.png" || fail "could not take the screenshot of the hidden bar's place"
   px() { magick "$T/ghost.png" -format "%[pixel:p{$1,$2}]" info:; }
   side=$(px 40 600) && mid=$(px 600 600) || fail "could not read the screenshot's pixels"
