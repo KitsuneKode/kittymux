@@ -52,16 +52,20 @@ def _live_windows(boss, tab) -> list:
     return [w for w in tab if known is None or known.get(w.id) is w]
 
 
-def _pane(boss, tab):
-    """The pane an action on the tab means: its active window, or, when that is the card itself, the one you were in."""
+def _pane(boss, tab, target_window_id=None):
+    """The pane an action on the tab means: the window the card was opened over when it is in this tab (kitty passes it),
+    else its active window, or, when that is the card itself, the one you were in last."""
     live = _live_windows(boss, tab)
+    target = getattr(boss, "window_id_map", {}).get(target_window_id) if target_window_id else None
+    if target is not None and target in live:
+        return target
     active = tab.active_window
     if active in live:
         return active
     return max(live, key=lambda w: getattr(w, "last_focused_at", 0.0), default=None)
 
 
-def run(boss, text: str, state_dir: str | None = None, kitty_pid: int | None = None) -> bool:
+def run(boss, text: str, state_dir: str | None = None, kitty_pid: int | None = None, target_window_id: int | None = None) -> bool:
     """Run the card's answer inside kitty. False when there was nothing to do (no action, or the tab is gone)."""
     got = parse(text)
     if got is None:
@@ -72,7 +76,9 @@ def run(boss, text: str, state_dir: str | None = None, kitty_pid: int | None = N
         return False
     if action == "close":
         import kittymux_pxbar
-        kittymux_pxbar.close_tab(boss, tab_id, again="press x")      # the question names the way you asked, not the ×
+        # the card has closed by the time the question shows: a second x would go to the pane. The way to confirm is the way
+        # you asked: open the card again and press x (within the guard's window)
+        kittymux_pxbar.close_tab(boss, tab_id, again="right-click it and press x")
         return True
     if action == "mute":
         if state_dir is None:
@@ -92,7 +98,7 @@ def run(boss, text: str, state_dir: str | None = None, kitty_pid: int | None = N
         tm.set_active_tab(tab)
     else:
         boss.set_active_tab(tab)          # the user asked for this tab: it is where the prompt or the new pane appears
-    window = _pane(boss, tab)
+    window = _pane(boss, tab, target_window_id)
     if window is None:
         return False
     if action == "rename":
