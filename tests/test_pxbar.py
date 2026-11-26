@@ -273,6 +273,17 @@ class ViewportFollowTest(unittest.TestCase):
         PX.publish(3, self.groups(2), None)
         self.assertEqual(PX._S.view[3]["start"], 0)           # you went to tab 2 (row index 1): back in view, one row of context above
 
+    def test_paging_a_list_that_fits_does_nothing_and_never_runs_past_the_end(self):
+        # Fable on #59: leader . paged 6 of 6 shown tabs to "↑ 5 above" and one row
+        PX._S.windows[4] = {"shown": 6, "total": 6}
+        PX._S.view[4] = {"start": 0, "user": False, "active": 1}
+        PX.page(4, 1)
+        self.assertEqual((PX._S.view[4]["start"], PX._S.view[4]["user"]), (0, False))
+        PX._S.windows[4] = {"shown": 10, "total": 25}
+        for _ in range(5):
+            PX.page(4, 1)
+        self.assertEqual(PX._S.view[4]["start"], 15)          # the last full page, not one row at the bottom
+
     def test_clearing_the_picture_forgets_the_view(self):
         PX.publish(3, self.groups(35), None)
         PX.clear(3)

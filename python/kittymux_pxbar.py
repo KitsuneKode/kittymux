@@ -141,8 +141,11 @@ def page(os_window_id: int, direction: int) -> None:
     view = _S.view.get(os_window_id)
     if w is None or view is None:
         return
-    step = max(1, int(w.get("shown") or 1) - 1)
-    view["start"] = max(0, min(int(w.get("total") or 0) - 1, view["start"] + direction * step))
+    shown, total = max(1, int(w.get("shown") or 1)), int(w.get("total") or 0)
+    if total <= shown and view["start"] == 0:
+        return                                    # everything fits: nothing to page to (leader . on a short list)
+    step = max(1, shown - 1)
+    view["start"] = max(0, min(max(0, total - shown), view["start"] + direction * step))     # the last full page, not past it
     view["user"] = True
 
 
@@ -313,7 +316,7 @@ def prune_expanded(live_projects) -> None:
     _S.expanded &= set(live_projects)
 
 
-def close_tab(boss, tab_id: int) -> None:
+def close_tab(boss, tab_id: int, again: str = "click ×") -> None:
     """The close cross: closes the tab, except that a tab with a busy agent asks on its row first and a second click inside
     the guard's window closes it (kittymux_closeguard, the same rule as the close keys; no dialog)."""
     tab = boss.tab_for_id(tab_id)
@@ -333,7 +336,7 @@ def close_tab(boss, tab_id: int) -> None:
             (boss.close_tab_no_confirm if busy else boss.close_tab)(tab)
             return
         state, agent = states[str(busy[0])]
-        guard.set_text(guard.question(kittymux_agents.product_label(agent) if agent else "", state, "click ×", "tab", len(busy) - 1),
+        guard.set_text(guard.question(kittymux_agents.product_label(agent) if agent else "", state, again, "tab", len(busy) - 1),
                        guard.short("click ×"))
         guard.refresh(boss, busy)
         import kittymux_timers
