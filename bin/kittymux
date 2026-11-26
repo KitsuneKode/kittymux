@@ -269,7 +269,9 @@ def _sockets() -> list[str]:
     """Kitty sockets we may trust: real sockets owned by us, in /tmp or $XDG_RUNTIME_DIR."""
     import glob
     import kittymux_sockets
-    socks = [s for d in _socket_dirs() for s in glob.glob(os.path.join(d, "mykitty-*")) if _owned_socket(s)]
+    # a kitty that exited can leave its socket file behind: it is not a kitty (doctor warned about it, upgrade tried to reload it)
+    socks = [s for d in _socket_dirs() for s in glob.glob(os.path.join(d, "mykitty-*"))
+             if _owned_socket(s) and kittymux_sockets.pid_alive(os.path.basename(s))]
     env = os.environ.get("KITTY_LISTEN_ON", "")
     ok_env = [env] if env.startswith("unix:") and _owned_socket(env[5:]) else []
     every = list(dict.fromkeys(ok_env + [f"unix:{s}" for s in socks]))

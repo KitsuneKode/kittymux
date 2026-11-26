@@ -118,7 +118,8 @@ def legacy_link(listening_on, legacy_dir="/tmp"):
         return f"could not link: {type(e).__name__}"
 
 
-def _pid_alive(name):
+def pid_alive(name):
+    """True unless the kitty a `mykitty-<pid>` name belongs to has exited (True when the name carries no pid: no claim)."""
     try:
         return os.path.exists("/proc/" + name.rsplit("-", 1)[1])
     except Exception:
@@ -137,7 +138,7 @@ def prune_links(legacy_dir="/tmp", runtime_dir=None):
             info = os.lstat(path)
             if not stat.S_ISLNK(info.st_mode) or info.st_uid != os.getuid() or os.path.exists(path):
                 continue
-            if os.path.basename(os.readlink(path)) != name or _pid_alive(name):
+            if os.path.basename(os.readlink(path)) != name or pid_alive(name):
                 continue
             os.unlink(path)
             removed.append(name)

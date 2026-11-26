@@ -21,6 +21,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 - **T3 Code** (`t3`) is a known program: its tab shows T3 Code's own mark (traced from the app's icon by `tools/trace-t3code.py`) on its night-sky gradient.
 
 ### Fixed
+- **A live prompt below an old one still reads as "needs you".** When a quoted question in an agent's earlier reply was set aside (an idle composer under it), the screen reader stopped there and could miss a real approval prompt further down.
+- **`kittymux doctor` and `upgrade` skip a kitty that has exited.** A kitty can leave its socket file behind; doctor warned that its scanner was not running and upgrade tried to reload it.
 - **Turning the pixel bar off brings back your own `background_image` on kitty 0.51.** kitty 0.51 hands the option over as a list, and the bar passed the list's text as the image path, so the window lost its configured image.
 - **No ghost sidebar behind a one-tab window's text.** With the pixel bar, a window whose bar kitty hides (one tab under `tab_bar_min_tabs 2`) got the bar's picture back on every agent state change or background-colour change: kitty redraws a hidden bar, and the picture is the window's background image. A hidden bar now takes its picture away instead of drawing it.
 - **The `progress-` and `snoozes-<pid>.json` files of kitties that have quit are removed** with their other per-kitty state files when a kitty starts. Nothing swept them before, so they piled up, and a new kitty that reused a dead kitty's pid inherited its unexpired snoozes. The sweep now also does nothing when `/proc` cannot see kitty itself (unmounted, or another PID namespace), instead of taking every other kitty for dead.

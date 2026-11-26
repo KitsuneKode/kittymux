@@ -435,9 +435,10 @@ class SessionsCliTests(unittest.TestCase):
         rc, out, _ = self.run_cli(self.m.sessions_history, ["--json", "--since", "1h"])
         self.assertEqual(json.loads(out)["insights"]["sessions"], 2)
         recs2 = J.load(self.tmp.name)
-        recs2[f"claude:{sid}"]["argv"] = ["/usr/bin/claude", "--api-key", "hunter2hunter2"]
+        filler = "q" * 14                                                            # built at run time: nothing credential-shaped in the repository
+        recs2[f"claude:{sid}"]["argv"] = ["/usr/bin/claude", "--api-key", filler]
         J.flush(self.tmp.name, recs2, now)
-        self.assertNotIn("hunter2", self.run_cli(self.m.sessions_history, ["--json"])[1])             # pasted output carries no secret
+        self.assertNotIn(filler, self.run_cli(self.m.sessions_history, ["--json"])[1])             # pasted output carries no secret
         with mock.patch.object(self.m, "agent_enabled", lambda n, a, *k: True):
             rc, out, _ = self.run_cli(self.m.sessions_recover, ["--since", "1h"])
         self.assertEqual(rc, 0)
@@ -1015,6 +1016,22 @@ class HooksTests(unittest.TestCase):
 
 
 class SocketListTests(unittest.TestCase):
+    def test_a_dead_kittys_left_over_socket_is_not_a_kitty(self):
+        # doctor warned "agent scanner is not running in kitty <pid>" and upgrade tried to reload a kitty that had exited
+        import socket, tempfile
+        m = load()
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        live, dead = os.path.join(d, f"mykitty-{os.getpid()}"), os.path.join(d, f"mykitty-{2 ** 22 + 777}")
+        servers = []
+        for path in (live, dead):
+            srv = socket.socket(socket.AF_UNIX)
+            srv.bind(path)
+            servers.append(srv)
+        self.addCleanup(lambda: [s.close() for s in servers])
+        with mock.patch.object(m, "_socket_dirs", return_value=[d]), mock.patch.dict(os.environ, {"KITTY_LISTEN_ON": ""}):
+            self.assertEqual(m._sockets(), ["unix:" + live])
+
     def test_a_socket_named_by_env_and_found_by_glob_is_listed_once(self):
         import socket, tempfile
         m = load()
