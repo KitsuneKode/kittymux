@@ -926,7 +926,8 @@ class Sidebar(Handler):
         self._inbox_follow = follow
         footer = [("⏎", "jump", "ENTER", "go"), ("x", "dismiss", "X"), ("d", "hide" if self._inbox_expanded else "details", "D"), ("j k", "move"), ("tab", "filter", "TAB")]
         if cur is not None and kittymux_answer.can_allow_deny(cur):
-            footer = [("y", "allow", "Y"), ("n", "deny", "N")] + footer
+            # after jump and dismiss: a narrow footer drops from the end, and those two must stay (y and n still work as keys)
+            footer = footer[:2] + [("y", "allow", "Y"), ("n", "deny", "N")] + footer[2:]
         if self._undo_live():                                             # the way back is offered where the hand just was, replacing what it does not need
             footer = [("z", "undo " + (f"{len(self._inbox_undo[0])} dismissed" if len(self._inbox_undo[0]) > 1 else "dismiss"), "Z")] + footer[:2]
         self._inbox_scroll = self._draw_body(cols, height, v.header, v.lines, top, footer)
