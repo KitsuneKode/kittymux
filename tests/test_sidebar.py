@@ -1045,6 +1045,22 @@ class SidebarTests(unittest.TestCase):
             self.assertTrue({'ENTER', 'X'} <= tokens, (width, tokens))
         s.finalize()
 
+    def test_undo_with_an_answerable_event_keeps_jump_and_dismiss(self):
+        # Fable on #51: the undo footer keeps footer[:2], which was allow/deny while they came first: jump and dismiss vanished
+        import kittymux_answer
+        s = self.sidebar()
+        s.draw_screen = type(s).draw_screen.__get__(s)
+        self.draw_ready(s)
+        s._view, s._inbox = 'inbox', self.inbox_events()
+        s._inbox_undo = ([s._inbox[1]["id"]], time.monotonic() + 60)
+        s.screen_size.cols = 50                     # wide enough for undo + jump + dismiss (at 38 the undo label leaves room for two)
+        with patch.object(kittymux_answer, "can_allow_deny", return_value=True), \
+                patch.object(self.m, 'set_cursor_position', lambda x, y: f'@{x},{y}:'):
+            s.draw_screen()
+        tokens = [region[2] for region in s._foot_regions]
+        self.assertEqual(tokens[:3], ['Z', 'ENTER', 'X'], tokens)
+        s.finalize()
+
     def test_an_empty_inbox_and_empty_usage_draw_without_error(self):
         s = self.sidebar()
         s.draw_screen = type(s).draw_screen.__get__(s)
