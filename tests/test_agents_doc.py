@@ -61,9 +61,12 @@ class CiRuns(unittest.TestCase):
     noticed. A rig CI skips is a rig nobody runs."""
 
     def test_every_smoke_rig_runs_in_ci(self):
-        ci = read(".github", "workflows", "ci.yml")
+        # only lines that RUN a rig count: a commented-out step is not a rig CI runs (CodeRabbit on #56)
+        run = re.compile(r"^\s*(?:-\s*)?(?:run:\s*)?(?:[A-Z_][A-Z0-9_]*=\S*\s+)*bash\s+tests/(smoke_[a-z0-9_]+\.sh)\b")
+        ran = {m.group(1) for line in read(".github", "workflows", "ci.yml").splitlines()
+               if not line.lstrip().startswith("#") and (m := run.match(line))}
         rigs = sorted(n for n in os.listdir(os.path.join(ROOT, "tests")) if n.startswith("smoke_") and n.endswith(".sh"))
-        missing = [n for n in rigs if f"tests/{n}" not in ci]
+        missing = [n for n in rigs if n not in ran]
         self.assertEqual(missing, [], "add these rigs to the smoke job in .github/workflows/ci.yml")
 
     def test_doctor_names_the_newest_kitty_ci_tests(self):
