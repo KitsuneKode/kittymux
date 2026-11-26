@@ -69,7 +69,7 @@ class TabActionsTest(unittest.TestCase):
         boss = Boss([Tab(4, [40])])
         with patch("kittymux_pxbar.close_tab") as close:
             self.assertTrue(A.run(boss, "close:4"))
-        close.assert_called_once_with(boss, 4, again="press x")
+        close.assert_called_once_with(boss, 4, again="right-click it and press x")
 
     def test_mute_mutes_the_whole_tab_then_unmutes_it(self):
         boss = Boss([Tab(3, [30, 31])])
@@ -101,6 +101,11 @@ class CardOverItsOwnTabTest(unittest.TestCase):
             self.assertEqual(Q.load_mutes(d, 4242), {"50", "51"})
             A.run(boss, "mute:5", state_dir=d, kitty_pid=4242)          # all muted: the second press unmutes
             self.assertEqual(Q.load_mutes(d, 4242), set())
+
+    def test_the_window_kitty_names_wins_over_the_focus_guess(self):
+        boss, _ = self.tab_with_card()
+        A.run(boss, "split:5", target_window_id=50)                  # the card was opened over 50, not the last-focused 51
+        self.assertEqual([c for c in boss.calls if c[0] == "combine"], [("combine", "launch --location=vsplit --cwd=current", 50)])
 
     def test_split_and_rename_go_to_the_pane_you_were_in_not_the_card(self):
         boss, _ = self.tab_with_card()

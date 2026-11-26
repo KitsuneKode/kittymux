@@ -343,4 +343,4 @@ def main(args: list[str]) -> str:
 
 @result_handler()
 def handle_result(args: list[str], answer: str, target_window_id: int, boss: BossType) -> None:
-    kittymux_tabactions.run(boss, answer)
+    kittymux_tabactions.run(boss, answer, target_window_id=target_window_id)
