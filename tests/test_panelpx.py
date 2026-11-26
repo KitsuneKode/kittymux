@@ -142,6 +142,12 @@ class PanelTests(unittest.TestCase):
             self.assertNotIn('allow', [h[0] for h in res.hits])
             self.assertNotIn('deny', [h[0] for h in res.hits])
 
+    def test_a_narrow_footer_keeps_jump_and_dismiss(self):
+        # the footer drops from the end: jump and dismiss go first, as in the cell Inbox (Fable on #51: at 200-260 px dismiss went)
+        for width, undo in ((200, False), (220, False), (260, True)):
+            keys = [h[1] for h in px.inbox([self.event()], 'all', 'calm-otter', self.pal, width, 600, undo=undo).hits if h[0] == 'key']
+            self.assertTrue({'ENTER', 'X'} <= set(keys), (width, undo, keys))
+
     def test_undo_uses_the_existing_inbox_undo_key_not_usage_navigation(self):
         result = px.inbox([self.event()], 'all', 'calm-otter', self.pal, 260, 600, undo=True)
         self.assertIn(('key', 'Z'), [(h[0], h[1]) for h in result.hits])

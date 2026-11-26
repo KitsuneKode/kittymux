@@ -469,7 +469,7 @@ def inbox(events, filter, selected, palette, width, height, *, now=None, expande
                 _body_hit(hits, action, id, bx, button_y, bw, 25, width, height, offset)
     pt.cr.restore()
     keys = [('Z', 'Z Undo')] if undo else []
-    keys += [('D', 'D detail'), ('ENTER', '↵ jump'), ('X', 'X dismiss'), ('?', '?')]
+    keys += [('ENTER', '↵ jump'), ('X', 'X dismiss'), ('D', 'D detail'), ('?', '?')]     # drops from the end: jump and dismiss stay
     _footer(pt, hits, keys, width, height)
     surf.flush()
     return Rendered(surf, hits, content_height, selected_bounds)

@@ -154,7 +154,7 @@ BEFORE_UNREAD=$(unread)
 click 40 180; shot inbox-expanded inbox
 [ "$(unread)" = "$BEFORE_UNREAD" ] || fail 'expanding acknowledged an event'
 cmp -s "$OUT/inbox.png" "$OUT/inbox-expanded.png" && fail 'inbox expansion did not draw'
-click 160 "$((WIN_H - 16))"
+click 112 "$((WIN_H - 16))"                 # the footer's X dismiss (76-148 px: ↵ jump, X dismiss, D detail, ? — jump and dismiss first)
 dismissed() { [ "$(unread)" = "$((BEFORE_UNREAD - 1))" ]; }
 wait_until "dismissed event" dismissed
 [ "$(unread)" = "$((BEFORE_UNREAD - 1))" ] || fail 'dismiss did not target the selected event'
