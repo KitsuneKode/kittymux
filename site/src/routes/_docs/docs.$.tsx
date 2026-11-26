@@ -16,7 +16,7 @@ import { getPageMarkdownUrl, gitConfig } from '@/lib/shared';
 import { useFumadocsLoader } from 'fumadocs-core/source/client';
 import { Suspense, use } from 'react';
 import { useMDXComponents } from '@/components/mdx';
-import { breadcrumbLd, pageHead } from '@/lib/seo';
+import { breadcrumbLd, pageHead, techArticleLd } from '@/lib/seo';
 import { DocsEnd, DocsTopRight } from '@/components/docs-extras';
 import { useArriveAtTop, usePreloadNeighbours } from '@/lib/docs-nav';
 
@@ -50,7 +50,10 @@ export const Route = createFileRoute('/_docs/docs/$')({
       description: loaderData?.description || 'kittymux documentation',
       path,
       type: 'article',
-      ldJson: [breadcrumbLd([{ name: 'Docs', path: '/docs' }, ...(path === '/docs' ? [] : [{ name: title, path }])])].filter((x): x is NonNullable<typeof x> => x !== null),
+      ldJson: [
+        breadcrumbLd([{ name: 'Docs', path: '/docs' }, ...(path === '/docs' ? [] : [{ name: title, path }])]),
+        techArticleLd({ title, description: loaderData?.description || 'kittymux documentation', path }),
+      ].filter((x): x is NonNullable<typeof x> => x !== null),
     });
   },
   loader: async ({ params }) => {

@@ -3,17 +3,10 @@
 @import 'fumadocs-ui/css/preset.css';
 @import './tokens.css';
 
-/* Three faces, latin subset only (the site is English; anything else falls through to the system font), straight from @fontsource-variable:
-   Bricolage Grotesque for headings (a soft, slightly quirky grotesque that rhymes with the mascot), Geist for text and interface (built for small sizes),
-   JetBrains Mono for anything you type and for the wordmark (it is the face on the brand's own social card).
-   Headings use font-display: swap and a fallback cut to the same metrics; text and mono use `optional`, preloaded (see __root.tsx): they are used when they
-   arrive with the first paint and otherwise not on that view, so body text is never laid out twice. The next page view finds them cached. */
 @font-face { font-family: 'Bricolage Grotesque Variable'; font-style: normal; font-display: swap; font-weight: 200 800; src: url('../../node_modules/@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-wght-normal.woff2') format('woff2-variations'); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
 @font-face { font-family: 'Geist Variable'; font-style: normal; font-display: optional; font-weight: 100 900; src: url('../../node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2') format('woff2-variations'); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
 @font-face { font-family: 'JetBrains Mono Variable'; font-style: normal; font-display: optional; font-weight: 100 800; src: url('../../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations'); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
 
-/* Fallbacks shaped like the web fonts, so a swap does not move the text (layout shift). Numbers from `python3 tools/font_fallback.py FONT.woff2`
-   (average advance over English letter frequencies; the vertical overrides keep each line the same height). */
 @font-face { font-family: 'Bricolage Fallback'; src: local('Arial'), local('Liberation Sans'), local('Helvetica Neue'), local('Helvetica'); size-adjust: 112.71%; ascent-override: 82.51%; descent-override: 23.95%; line-gap-override: 0%; }
 @font-face { font-family: 'Geist Fallback'; src: local('Arial'), local('Liberation Sans'), local('Helvetica Neue'), local('Helvetica'); size-adjust: 105.83%; ascent-override: 94.96%; descent-override: 27.87%; line-gap-override: 0%; }
 @font-face { font-family: 'JetBrains Mono Fallback'; src: local('Liberation Mono'), local('Menlo'), local('Consolas'), local('Courier New'); size-adjust: 99.98%; ascent-override: 102.02%; descent-override: 30%; line-gap-override: 0%; }
@@ -35,8 +28,13 @@
   --color-link: var(--link);
   --color-onbrand: var(--on-brand);
   --color-onbrand-soft: var(--on-brand-soft);
+  --color-signal: var(--signal);
+  --color-onsignal: var(--on-signal);
+  --color-signal-ink: var(--signal-ink);
+  --color-field: var(--field);
+  --color-onfield: var(--on-field);
+  --color-field-muted: var(--field-muted);
   --color-line: var(--line);
-  /* the names shadcn components use, pointed at the same tokens */
   --color-background: var(--bg);
   --color-foreground: var(--fg);
   --color-muted: var(--surface-hi);
@@ -56,8 +54,6 @@
   --color-popover-foreground: var(--fg);
 }
 
-/* Fumadocs' own variables, pointed at our tokens. Declared on :root AND .dark so the preset's own .dark values never win;
-   the sidebar override in the preset (.dark #nd-sidebar) is answered below. */
 :root, .dark {
   --color-fd-background: var(--bg);
   --color-fd-foreground: var(--fg);
@@ -82,110 +78,368 @@
   --color-fd-muted-foreground: var(--muted);
 }
 
-html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; font-family: var(--font-sans); font-optical-sizing: auto; interpolate-size: allow-keywords; text-wrap: pretty; overflow-wrap: break-word; }
-input, textarea, select { font-size: max(16px, 1rem); }   /* below 16px iOS zooms the page when a field gets focus */
-button, a, [role='button'] { touch-action: manipulation; }
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: var(--font-sans);
+  font-optical-sizing: auto;
+  interpolate-size: allow-keywords;
+  text-wrap: pretty;
+  overflow-wrap: break-word;
+  scrollbar-gutter: stable;
+  scroll-padding-block-start: 5.5rem;
+}
+input, textarea, select { font-size: max(16px, 1rem); }
+button, a, [role='button'], [role='tab'] { touch-action: manipulation; }
 body { font-size: 1.0625rem; line-height: 1.62; font-kerning: normal; }
 
-/* The type scale. A role is one decision (size, leading, tracking, weight): components name the role, never the numbers.
-   Tracking is in em so it scales with the size; leading is unitless; headings balance their lines and text avoids a lone last word. */
-h1, h2, h3, .t-display, .t-h2, .t-h3 { font-family: var(--font-display); text-wrap: balance; }
-.t-display { font-size: clamp(2.5rem, 1.55rem + 3.6vw, 4.25rem); line-height: 1.02; letter-spacing: -0.035em; font-weight: 740; }
-.t-h2 { font-size: clamp(1.875rem, 1.45rem + 1.7vw, 2.875rem); line-height: 1.08; letter-spacing: -0.028em; font-weight: 700; }
-.t-h3 { font-size: 1.375rem; line-height: 1.22; letter-spacing: -0.014em; font-weight: 650; }
-.t-lead { font-size: clamp(1.125rem, 1.05rem + 0.4vw, 1.3125rem); line-height: 1.5; text-wrap: pretty; }
+/* Clear editorial type hierarchy */
+h1, h2, h3, .t-hero, .t-display, .t-h2, .t-h3 { font-family: var(--font-display); text-wrap: balance; }
+.t-hero { font-size: clamp(2.85rem, 1.35rem + 5vw, 5.5rem); line-height: 0.96; letter-spacing: -0.042em; font-weight: 780; }
+.t-display { font-size: clamp(2.35rem, 1.45rem + 3.2vw, 3.85rem); line-height: 1.01; letter-spacing: -0.036em; font-weight: 760; }
+.t-h2 { font-size: clamp(1.85rem, 1.35rem + 1.6vw, 2.75rem); line-height: 1.08; letter-spacing: -0.03em; font-weight: 720; }
+.t-h3 { font-size: 1.1875rem; line-height: 1.3; letter-spacing: -0.018em; font-weight: 700; }
+.t-lead { font-size: 1.0625rem; line-height: 1.62; text-wrap: pretty; }
 .t-body { font-size: 1.0625rem; line-height: 1.62; text-wrap: pretty; }
 .t-small { font-size: 0.9375rem; line-height: 1.5; text-wrap: pretty; }
-.t-caption { font-size: 0.8125rem; line-height: 1.45; }
+.t-caption { font-size: 0.875rem; line-height: 1.45; }
 .t-mono { font-family: var(--font-mono); font-size: 0.875rem; line-height: 1.55; }
-.t-label { font-size: 0.8125rem; line-height: 1.3; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 600; }
+.plate-label { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+
 ::selection { background: var(--brand); color: var(--on-brand); }
 :focus-visible { outline: max(2px, 0.08em) solid var(--fg); outline-offset: 0.2em; }
 [data-brand] :focus-visible { outline-color: var(--on-brand); }
-[data-brand] ::selection { background: var(--on-brand); color: var(--brand); }
-
-html {
-  scrollbar-gutter: stable;
-}
+[data-brand] ::selection { background: var(--signal); color: var(--on-signal); }
+[data-field] :focus-visible { outline-color: var(--on-field); }
+[data-field] ::selection { background: var(--on-field); color: var(--field); }
 
 html > body[data-scroll-locked] {
-  margin-right: 0px !important;
+  margin-inline-end: 0px !important;
   --removed-body-scroll-bar-size: 0px !important;
 }
 
-/* Reading typography: a 60-72 character measure, relaxed leading, pretty wrapping. */
+/* Reading typography for docs pages */
 .prose :where(p, li) { text-wrap: pretty; line-height: 1.65; }
 .prose :where(h1, h2, h3) { font-family: var(--font-display); text-wrap: balance; letter-spacing: -0.022em; font-weight: 700; }
 .prose :where(h1) { letter-spacing: -0.032em; }
 .prose :where(td, th) { font-variant-numeric: tabular-nums; }
-.prose :where(a):not([data-card]) { color: var(--link); text-decoration-line: underline; text-decoration-color: color-mix(in oklch, var(--link) 45%, transparent); text-underline-offset: 0.2em; text-decoration-thickness: from-font; }   /* a link reads as a link: the link colour (4.5:1 on every surface, checked in contrast.test), a softer underline that firms up on hover */
+.prose :where(a):not([data-card]) { color: var(--link); text-decoration-line: underline; text-decoration-color: color-mix(in oklch, var(--link) 45%, transparent); text-underline-offset: 0.2em; text-decoration-thickness: from-font; }
 @media (hover: hover) and (pointer: fine) {
   .prose :where(a):not([data-card]):hover { text-decoration-color: currentColor; text-decoration-thickness: 2px; }
 }
 .prose :where(a):not([data-card]):active { opacity: 0.8; }
-/* Code blocks stay dark in both themes (one frame, the figure): they sit well on cream and match the terminal screenshots. */
-figure.shiki { background: var(--code-bg); color: var(--code-fg); border-color: transparent; border-radius: 0.75rem; outline: 1px solid rgb(0 0 0 / 0.1); outline-offset: -1px; box-shadow: none; }
-.dark figure.shiki { outline-color: rgb(255 255 255 / 0.1); }
+
+figure.shiki { background: var(--code-bg); color: var(--code-fg); border-color: transparent; border-radius: 0.75rem; outline: 1px solid oklch(0% 0 none / 0.1); outline-offset: -1px; box-shadow: none; }
+.dark figure.shiki { outline-color: oklch(100% 0 none / 0.1); }
 figure.shiki pre { background: transparent !important; }
-/* a code block's scroll box is a tab stop: on the dark figure the page's dark ring is 1:1, and its outset outline is clipped by the figure's overflow */
 figure.shiki { --color-fd-ring: var(--code-fg); }
 figure.shiki :focus-visible { outline-color: var(--code-fg); outline-offset: -2px; }
-.prose :where(code):not(pre code) { font-family: var(--font-mono); font-size: 0.875em; background: var(--surface-hi); padding: 0.1em 0.35em; border-radius: 0.35rem; }
+.prose :where(code):not(pre code) { font-family: var(--font-mono); font-size: 0.875em; background: var(--surface-hi); padding-block: 0.1em; padding-inline: 0.35em; border-radius: 0.35rem; }
 .tabular { font-variant-numeric: tabular-nums; }
 
-/* Motion: one easing, a press scale of 0.96, a clip-path wipe on the primary action; all of it off under reduced motion. */
-/* Interaction, after the "good CSS" entries: hover only where hover exists, press feedback on everything pressable, motion only for people who allow it
-   (fades of colour stay outside the query: they are not motion), named properties, never ease-in. */
-/* Tactile surfaces (the tactile-design rules): a thing takes its fill, edge and drop from the surface beneath it (--ground, set per
-   surface below). Light: raised = the warm white + a 1px ring + a crisp 1px drop. Dark: raised = a step or two lighter than its
-   ground + one solid 0.5px outline + a tight black drop, so elevation never rests on the shadow alone. Fields are wells. */
+/* Tactile surfaces and gallery frames */
 .bg-card { --ground: var(--surface); }
-/* a card of rows (tables): ring, 1px drop, one short drop */
 .tactile { background: var(--card-fill); box-shadow: var(--shadow-card); }
 .tactile :where(tr) { transition: background-color 150ms var(--ease-out); }
-.tactile tr { border-top-width: 0.5px; }
-/* a docs table: the prose styles give the table its own margin, frame and radius; inside a card that is a second border and a gap, so the card is the frame */
+.tactile tr { border-block-start-width: 0.5px; }
 .tactile > table { margin: 0; border: 0; border-radius: 0; }
 .tactile > table :where(th, td) { border-width: 0.5px; }
 .tactile > table :where(tr > :first-child) { border-inline-start-width: 0; }
 .tactile > table :where(tr > :last-child) { border-inline-end-width: 0; }
-.tactile > table :where(thead tr:first-child > *) { border-top-width: 0; }
-.tactile > table :where(tbody tr:last-child > *) { border-bottom-width: 0; }
+.tactile > table :where(thead tr:first-child > *) { border-block-start-width: 0; }
+.tactile > table :where(tbody tr:last-child > *) { border-block-end-width: 0; }
 @media (hover: hover) and (pointer: fine) {
   .tactile :where(tbody tr:hover) { background: var(--card-hover); }
 }
-/* a secondary control or a key chip: raised one step, no border */
+
 .raised { background: var(--raised); box-shadow: var(--shadow-button); border-color: transparent; transition: background-color 150ms var(--ease-out); }
 @media (hover: hover) and (pointer: fine) {
   :where(a, button).raised:hover { background: var(--raised-hover); }
 }
-/* a field (or a button that opens one): a well, no border; focus deepens it, the focus outline still marks the keyboard */
+
 .well { background: var(--surface-hi); border-color: transparent; transition: background-color 150ms var(--ease-out); }
 @media (hover: hover) and (pointer: fine) {
   .well:hover { background: var(--well-deep); }
 }
 .well:focus-visible { background: var(--well-deep); }
-[data-cta] { position: relative; isolation: isolate; overflow: clip; background: var(--on-brand); color: var(--brand); }
-[data-cta]::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--fg); clip-path: inset(0 100% 0 0); }
+
+/* Tactile 3D physical keycaps */
+.keycap {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  display: inline-block;
+  max-inline-size: 100%;
+  padding-block: 0.3rem;
+  padding-inline: 0.65rem;
+  border-radius: 0.5rem;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid color-mix(in oklch, var(--fg) 16%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, #FFFFFF 75%, transparent),
+    0 2px 0 color-mix(in oklch, var(--fg) 20%, transparent),
+    0 3px 6px color-mix(in oklch, #15172E 10%, transparent);
+  transition: transform 90ms var(--ease-out), box-shadow 90ms var(--ease-out);
+  overflow-wrap: anywhere;
+}
+.dark .keycap {
+  background: color-mix(in oklch, var(--fg) 8%, var(--surface-hi));
+  border-color: color-mix(in oklch, var(--fg) 20%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, #FFFFFF 16%, transparent),
+    0 2px 0 oklch(0% 0 none / 0.68),
+    0 4px 10px oklch(0% 0 none / 0.4);
+}
+.keycap:active {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, #FFFFFF 40%, transparent),
+    0 1px 0 color-mix(in oklch, var(--fg) 18%, transparent);
+}
+
+/* Floating sticky header surface separation once scrolled */
+.site-header {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline: 0;
+  z-index: 40;
+  background: transparent;
+  border-block-end: 1px solid transparent;
+  transition: background-color 200ms var(--ease-out), border-color 200ms var(--ease-out), backdrop-filter 200ms var(--ease-out);
+}
+.site-header[data-scrolled='true'] {
+  background: color-mix(in oklch, var(--bg) 88%, transparent);
+  border-block-end-color: var(--line);
+  backdrop-filter: blur(18px) saturate(1.25);
+}
+
+/* Full-bleed atmospheric backdrops from imageory.in with focused text scrim */
+.hero-canvas {
+  position: relative;
+  overflow: clip;
+  isolation: isolate;
+}
+.hero-art {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  block-size: min(58rem, 100%);
+  inline-size: 100%;
+  object-fit: cover;
+  object-position: center 42%;
+  pointer-events: none;
+  user-select: none;
+  z-index: -2;
+}
+.hero-veil {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 64% 38% at 50% 17%, color-mix(in oklch, var(--bg) 88%, transparent) 0%, color-mix(in oklch, var(--bg) 52%, transparent) 62%, transparent 100%),
+    linear-gradient(180deg, color-mix(in oklch, var(--bg) 62%, transparent) 0%, color-mix(in oklch, var(--bg) 18%, transparent) 38%, color-mix(in oklch, var(--bg) 88%, transparent) 74%, var(--bg) 96%);
+}
+.dark .hero-veil {
+  background:
+    radial-gradient(ellipse 62% 38% at 50% 16%, color-mix(in oklch, var(--bg) 82%, transparent) 0%, color-mix(in oklch, var(--bg) 42%, transparent) 62%, transparent 100%),
+    linear-gradient(180deg, color-mix(in oklch, var(--bg) 55%, transparent) 0%, color-mix(in oklch, var(--bg) 16%, transparent) 40%, color-mix(in oklch, var(--bg) 88%, transparent) 75%, var(--bg) 96%);
+}
+
+/* Lantern amber highlight on "needs you" inside the hero display headline */
+.signal-word {
+  display: inline-block;
+  padding-inline: 0.18em;
+  padding-block: 0.04em 0.08em;
+  border-radius: 0.22em;
+  background: var(--signal);
+  color: var(--on-signal);
+  box-decoration-break: clone;
+}
+
+/* Connected segmented control */
+.seg-track {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.25rem;
+  max-inline-size: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 0.25rem;
+  border-radius: 9999px;
+  background: color-mix(in oklch, var(--surface-hi) 90%, var(--bg));
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.seg-track::-webkit-scrollbar { display: none; }
+.seg-tab {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  min-block-size: 2.5rem;
+  padding-inline: 1rem;
+  border-radius: 9999px;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 160ms var(--ease-out), background-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
+}
+@media (max-width: 560px) {
+  .seg-track {
+    flex-wrap: wrap;
+    justify-content: center;
+    overflow-x: visible;
+    border-radius: 1.25rem;
+    padding: 0.3rem;
+  }
+  .seg-tab {
+    min-block-size: 2.25rem;
+    padding-inline: 0.78rem;
+    font-size: 0.875rem;
+  }
+}
 @media (hover: hover) and (pointer: fine) {
-  [data-cta]:hover { color: var(--bg); }
+  .seg-tab:hover { color: var(--fg); }
+}
+.seg-tab[aria-selected='true'] {
+  color: var(--fg);
+  font-weight: 600;
+  background: var(--surface);
+  box-shadow: var(--shadow-button);
+}
+.dark .seg-tab[aria-selected='true'] {
+  background: color-mix(in oklch, var(--fg) 14%, var(--surface-hi));
+}
+
+/* Pure CSS :has() callout pins on the pixel-bar plate */
+.bar-pin {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding-block: 0.2rem;
+  padding-inline: 0.55rem;
+  border-radius: 9999px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--code-bg);
+  color: var(--code-fg);
+  border: 1px solid color-mix(in oklch, #FFFFFF 22%, transparent);
+  box-shadow: 0 6px 18px oklch(0% 0 none / 0.38);
+  pointer-events: none;
+  opacity: 0.78;
+  transition: transform 180ms var(--ease-out), opacity 180ms var(--ease-out), background-color 180ms var(--ease-out), color 180ms var(--ease-out);
+}
+.problem-grid:has([data-gain='0']:is(:hover, :focus-within)) .bar-pin[data-pin='0'],
+.problem-grid:has([data-gain='1']:is(:hover, :focus-within)) .bar-pin[data-pin='1'],
+.problem-grid:has([data-gain='2']:is(:hover, :focus-within)) .bar-pin[data-pin='2'] {
+  opacity: 1;
+  background: var(--signal);
+  color: var(--on-signal);
+  border-color: var(--on-signal);
+  transform: scale(1.06);
+}
+
+/* Primary CTA with crisp directional wipe; dark mode glows with lantern amber */
+[data-cta] {
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+  background: var(--fg);
+  color: var(--bg);
+}
+[data-cta]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--brand);
+  clip-path: inset(0 100% 0 0);
+}
+@media (hover: hover) and (pointer: fine) {
+  [data-cta]:hover { color: var(--on-brand); }
   [data-cta]:hover::before { clip-path: inset(0); }
 }
-@keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.dark [data-cta] {
+  background: var(--signal);
+  color: var(--on-signal);
+}
+.dark [data-cta]::before {
+  background: var(--pink);
+}
+@media (hover: hover) and (pointer: fine) {
+  .dark [data-cta]:hover { color: var(--on-pink); }
+}
+[data-brand] [data-cta] {
+  background: var(--signal);
+  color: var(--on-signal);
+}
+[data-brand] [data-cta]::before {
+  background: var(--on-brand);
+}
+@media (hover: hover) and (pointer: fine) {
+  [data-brand] [data-cta]:hover { color: var(--brand); }
+}
+
+/* Stage frame shadow & shot transitions */
+.stage-frame {
+  box-shadow: var(--shadow-stage);
+}
+@keyframes stage-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes dock-in {
+  from { opacity: 0; transform: translateX(-14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes plate-enter {
+  from { transform: translateY(12px); }
+  to { transform: none; }
+}
 @media (prefers-reduced-motion: no-preference) {
-  [data-press] { transition: transform 150ms var(--ease-out), background-color 150ms var(--ease-out), color 150ms var(--ease-out), border-color 150ms var(--ease-out), box-shadow 150ms var(--ease-out); }
+  [data-press] {
+    transition: transform 140ms var(--ease-out), background-color 150ms var(--ease-out), color 150ms var(--ease-out), border-color 150ms var(--ease-out), box-shadow 150ms var(--ease-out);
+  }
   [data-press]:active { transform: scale(0.97); }
   [data-cta]::before { transition: clip-path 220ms var(--ease-out); }
-  [data-rise] { animation: rise 600ms var(--ease-out) both; }
+  [data-rise] { animation: rise 560ms var(--ease-out) both; }
+  .stage-swap { animation: stage-in 200ms var(--ease-out) both; }
+  .stage-dock { animation: dock-in 220ms var(--ease-out) both; }
 
-  /* the FAQ: <details> opens and closes with its height (Chrome today; elsewhere it simply opens) */
+  @supports (animation-timeline: view()) {
+    .scroll-plate {
+      animation: plate-enter linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 28%;
+    }
+  }
+
   details::details-content { block-size: 0; overflow: clip; transition: block-size 240ms var(--ease-out), content-visibility 240ms allow-discrete; }
   details[open]::details-content { block-size: auto; }
 }
-@media (forced-colors: active) { [data-cta], [data-press] { border: 1px solid CanvasText; } }
+@media (forced-colors: active) { [data-cta], [data-press], .seg-tab, .keycap { border: 1px solid CanvasText; } }
 
+/* Agent icon tactile hover */
+.agent-tile {
+  transition: transform 180ms var(--ease-out), box-shadow 180ms var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .agent-tile:hover {
+    transform: translateY(-3px);
+  }
+}
 
-/* the loading bar (src/components/nav-progress.tsx): a fixed strip, so it moves nothing; reduced motion gets a still bar */
 .nav-progress {
   position: fixed;
   inset-inline: 0;

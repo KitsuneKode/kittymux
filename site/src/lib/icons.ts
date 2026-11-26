@@ -1,12 +1,10 @@
-import { BookOpen, Wrench } from 'lucide-react';
+import { IconBook, IconTool } from '@tabler/icons-react';
 import { createElement, type ComponentType } from 'react';
 
 /**
- * The sidebar icons the docs name in a meta.json `icon`. Fumadocs' own `lucideIconsPlugin` looks names up in lucide's whole set, which put
- * ~1,850 icon modules (178 KB gzip) into every page, the landing page included. A name that is not listed here is a build-time warning, and
- * `icons.test.ts` fails the tests, so a new `icon` in docs/ cannot silently lose its icon.
+ * The sidebar icons the docs name in a meta.json `icon`. Using Tabler icons (already loaded elsewhere) keeps lucide-react off the landing page.
  */
-export const ICONS: Record<string, ComponentType> = { BookOpen, Wrench };
+export const ICONS: Record<string, ComponentType> = { BookOpen: IconBook, Wrench: IconTool };
 
 function resolve(icon: unknown) {
   if (typeof icon !== 'string') return icon;

@@ -3,7 +3,7 @@ import { HomeLayout } from 'fumadocs-ui/layouts/home';
 import { SiteFooter } from '@/components/site-footer';
 import { Inline } from '@/components/inline';
 import { baseOptions } from '@/lib/layout.shared';
-import { pageHead } from '@/lib/seo';
+import { breadcrumbLd, pageHead } from '@/lib/seo';
 import { parseChangelog } from '@/lib/inline';
 import raw from '@/generated/CHANGELOG.md?raw';
 
@@ -17,7 +17,12 @@ function merged(groups: { name: string; items: string[] }[]) {
 const releases = parseChangelog(raw).map((r) => ({ ...r, id: `r-${slug(r.heading)}`, groups: merged(r.groups) }));
 
 export const Route = createFileRoute('/_docs/changelog')({
-  head: () => pageHead({ title: 'Changelog | kittymux', description: 'What changed in kittymux, newest first: new features, changes and fixes, listed under Unreleased until the first tagged release.', path: '/changelog' }),
+  head: () => pageHead({
+    title: 'Changelog | kittymux',
+    description: 'What changed in kittymux, newest first: new features, changes and fixes, listed under Unreleased until the first tagged release.',
+    path: '/changelog',
+    ldJson: [breadcrumbLd([{ name: 'Home', path: '/' }, { name: 'Changelog', path: '/changelog' }])].filter((x): x is NonNullable<typeof x> => x !== null),
+  }),
   component: Changelog,
 });
 

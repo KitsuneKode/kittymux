@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { ThemeProvider } from 'next-themes';
+import { AgentRow } from '@/components/landing/agent-row';
 import { DocsHub } from '@/components/landing/docs-hub';
 import { FAQ, Faq } from '@/components/landing/faq';
 import { FinalCta } from '@/components/landing/final-cta';
@@ -10,42 +11,53 @@ import { Install } from '@/components/landing/install';
 import { KeysGlance } from '@/components/landing/keys-glance';
 import { Limits } from '@/components/landing/limits';
 import { Problem } from '@/components/landing/problem';
+import { Roadmap } from '@/components/landing/roadmap';
 import { Support } from '@/components/landing/support';
-import { AgentRow } from '@/components/landing/agent-row';
 import { SiteFooter } from '@/components/site-footer';
+import { faqLd, pageHead, softwareLd, websiteLd } from '@/lib/seo';
 import { THEME_PROPS } from '@/lib/theme-props';
-import { faqLd, pageHead, softwareLd } from '@/lib/seo';
 
 const TITLE = 'kittymux: know which agent needs you';
-const DESCRIPTION = 'kittymux turns kitty into a multiplexer for AI coding agents: one glance at the tab bar says who is working, who is waiting for you and who has finished.';
+const DESCRIPTION = 'One glance at the bar tells you which coding agent needs you. Native agent cockpit for kitty on Linux: pixel bar, inbox, quotas, zero daemon.';
 
 export const Route = createFileRoute('/')({
-  head: () => pageHead({ title: TITLE, description: DESCRIPTION, path: '/', ldJson: [softwareLd(), faqLd(FAQ)] }),
+  head: () => pageHead({
+    title: TITLE,
+    description: DESCRIPTION,
+    path: '/',
+    ldJson: [softwareLd(), websiteLd(), faqLd(FAQ)].filter((x): x is NonNullable<typeof x> => x !== null),
+  }),
   component: Home,
 });
 
 function Home() {
   return (
     <ThemeProvider {...THEME_PROPS}>
-    <div className="min-h-[100dvh] bg-page text-ink">
-      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:start-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-ink focus:px-4 focus:py-2 focus:text-page">Skip to content</a>
-      <LandingHeader />
-      <main id="main">
-      <Hero />
-      <AgentRow />
-      <Problem />
-      <Ideas />
-      <HowItKnows />
-      <Install />
-      <KeysGlance />
-      <DocsHub />
-      <Limits />
-      <Faq />
-      <Support />
-      <FinalCta />
-      </main>
-      <SiteFooter themeToggle />
-    </div>
+      <div className="min-h-[100dvh] bg-page text-ink">
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:fixed focus:start-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-ink focus:px-4 focus:py-2 focus:text-page"
+        >
+          Skip to content
+        </a>
+        <LandingHeader />
+        <main id="main">
+          <Hero />
+          <AgentRow />
+          <Problem />
+          <Ideas />
+          <HowItKnows />
+          <Install />
+          <KeysGlance />
+          <Roadmap />
+          <DocsHub />
+          <Limits />
+          <Faq />
+          <Support />
+          <FinalCta />
+        </main>
+        <SiteFooter themeToggle flush />
+      </div>
     </ThemeProvider>
   );
 }

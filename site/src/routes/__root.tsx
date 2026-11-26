@@ -17,7 +17,7 @@ export const Route = createRootRoute({
         name: 'viewport',
         content: 'width=device-width, initial-scale=1',
       },
-      { name: 'theme-color', content: '#3F5B86' },   // the brand blue: the top of the page is blue in both themes (two media-specific entries are merged into one by name)
+      { name: 'theme-color', content: '#253D63' },   // the brand slate-blue
       { name: 'color-scheme', content: 'light dark' },
     ],
     links: [
@@ -25,10 +25,12 @@ export const Route = createRootRoute({
       { rel: 'preload', href: textLatin, as: 'font', type: 'font/woff2', crossOrigin: 'anonymous' },
       { rel: 'preload', href: monoLatin, as: 'font', type: 'font/woff2', crossOrigin: 'anonymous' },
       { rel: 'stylesheet', href: appCss },
+      { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' },
       { rel: 'icon', href: '/favicon-32.png', sizes: '32x32', type: 'image/png' },
       { rel: 'icon', href: '/favicon-64.png', sizes: '64x64', type: 'image/png' },
       { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
       { rel: 'manifest', href: '/site.webmanifest' },
+      { rel: 'alternate', type: 'application/rss+xml', title: 'kittymux Changelog', href: '/rss.xml' },
     ],
   }),
   component: RootComponent,

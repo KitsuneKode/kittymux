@@ -14,12 +14,18 @@ const PAIRS: [string, string, number, string][] = [
   ['--link', '--bg', 4.5, 'links on the page'],
   ['--link', '--surface', 4.5, 'links on a card'],
   ['--link', '--surface-hi', 4.5, 'links on a raised card'],
-  ['--on-brand', '--brand', 4.5, 'text on the brand (blue) field'],
+  ['--on-brand', '--brand', 4.5, 'text on the brand (cobalt) field'],
   ['--on-brand-soft', '--brand', 4.5, 'secondary text on the brand field'],
   ['--brand', '--on-brand', 4.5, 'brand-coloured text on a cream button'],
   ['--on-pink', '--pink', 4.5, 'text on a pink button'],
   ['--link', '--code-bg', 3, 'a link-coloured mark on code'],
   ['--code-fg', '--code-bg', 4.5, 'code'],
+  ['--on-signal', '--signal', 4.5, 'text on a lantern-amber action'],
+  ['--signal-ink', '--bg', 4.5, 'amber signal text on the page'],
+  ['--signal-ink', '--surface', 4.5, 'amber signal text on a card'],
+  ['--signal-ink', '--surface-hi', 4.5, 'amber signal text on a raised card'],
+  ['--on-field', '--field', 4.5, 'text on the warm apricot field'],
+  ['--field-muted', '--field', 4.5, 'secondary text on the warm apricot field'],
 ]
 
 describe('theme contrast', () => {

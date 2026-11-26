@@ -1,9 +1,7 @@
-import { IconArrowUpRight } from '@tabler/icons-react';
 import { Link } from '@tanstack/react-router';
 import { GitHubStars } from './github-stars';
 import { Logo } from './logo';
 import { SponsorButton } from './sponsor-button';
-import { Separator } from './ui/separator';
 import { ThemeToggle } from './theme-toggle';
 import { WeaveBand } from './weave-band';
 import { facts } from '@/lib/facts';
@@ -22,14 +20,14 @@ function Ext({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <a href={href} target="_blank" rel="noopener" className={linkClass}>
       {children}
-      <IconArrowUpRight aria-hidden="true" className="ms-0.5 size-3.5 shrink-0" stroke={1.75} />
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="ms-0.5 size-3.5 shrink-0"><path d="M17 7 7 17M8 7h9v9" /></svg>
     </a>
   );
 }
 
-export function SiteFooter({ themeToggle = false }: { themeToggle?: boolean }) {
+export function SiteFooter({ themeToggle = false, flush = false }: { themeToggle?: boolean; flush?: boolean }) {
   return (
-    <footer className="mt-24">
+    <footer className={flush ? 'mt-0' : 'mt-24'}>
       <WeaveBand id="foot" />
       <div className="mx-auto w-full max-w-[1280px] px-5 py-12 md:px-8">
         <div className="grid gap-10 md:grid-cols-12">
@@ -49,6 +47,7 @@ export function SiteFooter({ themeToggle = false }: { themeToggle?: boolean }) {
                 <li><Link to="/docs/$" params={{ _splat: 'users/getting-started' }} className={linkClass}>Getting started</Link></li>
                 <li><Link to="/keys" className={linkClass}>Keys</Link></li>
                 <li><Link to="/changelog" className={linkClass}>Changelog</Link></li>
+                <li><a href="/rss.xml" className={linkClass}>RSS feed</a></li>
                 <li><a href="/llms.txt" className={linkClass}>llms.txt</a></li>
               </ul>
             </div>
@@ -65,7 +64,7 @@ export function SiteFooter({ themeToggle = false }: { themeToggle?: boolean }) {
           </nav>
         </div>
 
-        <Separator className="my-10 bg-line" />
+        <hr className="my-10 border-0 border-t border-line" />
 
         <section aria-labelledby="more-projects">
           <div className="flex flex-wrap items-end justify-between gap-3">
@@ -86,11 +85,11 @@ export function SiteFooter({ themeToggle = false }: { themeToggle?: boolean }) {
           </ul>
         </section>
 
-        <Separator className="my-10 bg-line" />
+        <hr className="my-10 border-0 border-t border-line" />
 
         <div className="flex flex-col gap-4 text-sm text-mute sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-col gap-1">
-            <p>kittymux <span className="tabular">{buildLabel(facts.version)}</span> · MIT license · made by KitsuneKode</p>
+            <p>kittymux <span className="tabular">{buildLabel(facts.version)}</span> · MIT license · made by KitsuneKode · Atmospheric backdrops from <a href="https://imageory.in" target="_blank" rel="noopener" className="underline underline-offset-4 hover:text-ink">imageory.in</a></p>
             <p className="max-w-[60ch] text-pretty">This site counts visits with Vercel Web Analytics: no cookies, nothing that identifies you, and nothing at all if your browser sends Do Not Track. <Link to="/docs/$" params={{ _splat: 'users/privacy-and-security' }} className="underline underline-offset-4 hover:text-ink">Read the privacy page</Link></p>
           </div>
           {themeToggle && <ThemeToggle className="self-start" />}

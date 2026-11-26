@@ -1,11 +1,13 @@
 import { cn } from '@/lib/utils';
 
-/** The mascot as the app-icon tile (its own blue field, rounded like an app icon) and the name in the brand's mono face, the way the social card sets it. */
-export function Logo({ size = 36, className, textClassName }: { size?: number; className?: string; textClassName?: string }) {
+/** The mascot as the app-icon tile and the split wordmark (`kitty` in ink, `mux` in rose) echoing the mascot's split face. */
+export function Logo({ size = 36, className, textClassName = 'text-[1.0625rem] tracking-[-0.02em]' }: { size?: number; className?: string; textClassName?: string }) {
   return (
     <span className={cn('inline-flex items-center gap-2.5', className)}>
       <img src={size > 40 ? '/brand/mascot-avatar-128.png' : '/brand/mascot-avatar-64.png'} width={size} height={size} alt="" decoding="async" className="shrink-0 rounded-[24%] ring-1 ring-black/10 dark:ring-white/15" style={{ width: size, height: size }} />
-      <span className={cn('font-mono text-[1.0625rem] font-extrabold tracking-[-0.02em]', textClassName)}>kittymux</span>
+      <span className={cn('font-mono font-extrabold', textClassName)}>
+        kitty<span className="text-link">mux</span>
+      </span>
     </span>
   );
 }

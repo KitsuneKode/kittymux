@@ -2,13 +2,14 @@ import { gitConfig } from './shared'
 
 export const SITE_NAME = 'kittymux'
 export const REPO_URL = `https://github.com/${gitConfig.user}/${gitConfig.repo}`
-/** Social preview, 1200x630 (scripts/og.mjs draws it from the site's own screenshots). */
-export const OG_IMAGE = { path: '/og.png', width: 1200, height: 630, alt: 'kittymux: a pink and cream kitten beside the name and the line agent-aware workspace for kitty, above a row of agent icons.' }
+/** Social preview, 1200x630 (scripts/gen-og.mjs renders it from the site's own fonts, mascot, cosmos backdrop, and live workspace capture). */
+export const OG_IMAGE = {
+  path: '/og.png',
+  width: 1200,
+  height: 630,
+  alt: 'kittymux: Know which agent needs you — pixel tab bar, multi-account usage, inbox, and live workspace inside kitty.',
+}
 
-/**
- * The public address of the site, from VITE_SITE_URL at build time (for example https://example.org). Unset means "not deployed yet": the pages then carry no canonical URL,
- * no absolute image URL and no sitemap, rather than a made-up address that search engines would trust.
- */
 export function siteUrl(env: string | undefined = import.meta.env?.VITE_SITE_URL): string {
   if (!env) return ''
   try {
@@ -30,7 +31,6 @@ export type Head = { meta: Meta[]; links: Record<string, string>[]; scripts: { t
 
 export type PageHeadInput = { title: string; description: string; path: string; type?: 'website' | 'article'; base?: string; ldJson?: object[] }
 
-/** Everything a page says about itself to a search engine or a link preview. `title` is the full title as shown. */
 export function pageHead({ title, description, path, type = 'website', base = siteUrl(), ldJson = [] }: PageHeadInput): Head {
   const url = absolute(path, base)
   const image = absolute(OG_IMAGE.path, base)
@@ -38,7 +38,7 @@ export function pageHead({ title, description, path, type = 'website', base = si
     { title },
     { name: 'description', content: description },
     { property: 'og:site_name', content: SITE_NAME },
-    { property: 'og:locale', content: 'en' },
+    { property: 'og:locale', content: 'en_US' },
     { property: 'og:type', content: type },
     { property: 'og:title', content: title },
     { property: 'og:description', content: description },
@@ -47,26 +47,59 @@ export function pageHead({ title, description, path, type = 'website', base = si
     { name: 'twitter:description', content: description },
   ]
   if (url) meta.push({ property: 'og:url', content: url })
-  if (image) meta.push({ property: 'og:image', content: image }, { property: 'og:image:width', content: String(OG_IMAGE.width) }, { property: 'og:image:height', content: String(OG_IMAGE.height) }, { property: 'og:image:alt', content: OG_IMAGE.alt }, { name: 'twitter:image', content: image })
+  if (image) {
+    meta.push(
+      { property: 'og:image', content: image },
+      { property: 'og:image:type', content: 'image/png' },
+      { property: 'og:image:width', content: String(OG_IMAGE.width) },
+      { property: 'og:image:height', content: String(OG_IMAGE.height) },
+      { property: 'og:image:alt', content: OG_IMAGE.alt },
+      { name: 'twitter:image', content: image },
+      { name: 'twitter:image:alt', content: OG_IMAGE.alt },
+    )
+  }
   const links = url ? [{ rel: 'canonical', href: url }] : []
-  // "<" is escaped so no string in the data can close the script element
   const scripts = ldJson.map((o) => ({ type: 'application/ld+json', children: JSON.stringify(o).replace(/</g, '\\u003c') }))
   return { meta, links, scripts }
 }
 
 export function softwareLd(base: string = siteUrl()) {
+  const shot = absolute('/assets/shots/workspace-dark.png', base)
   return {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
     name: SITE_NAME,
-    description: 'A configuration pack that turns the kitty terminal into a multiplexer for AI coding agents: tabs, panes, session restore and a tab bar that shows which agent is working, waiting or done.',
+    description: 'A configuration pack that turns the kitty terminal into a native workspace for AI coding agents: pixel tab bar, multi-account usage, inbox, Kitty 0.50 pane controls, Quickshell client, and session restore.',
     applicationCategory: 'DeveloperApplication',
     operatingSystem: 'Linux',
     license: 'https://opensource.org/license/mit',
     isAccessibleForFree: true,
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    author: { '@type': 'Person', name: 'KitsuneKode', url: `https://github.com/${gitConfig.user}` },
     codeRepository: REPO_URL,
+    featureList: [
+      'Cairo and Slang pixel tab bar inside kitty',
+      'Graphical Agents, multi-account Usage, and Inbox panel',
+      'Direct Claude Code, Codex, OpenCode, and OSC 7501 status hooks',
+      'Kitty 0.50 scoped pane controls and attention dividers',
+      'Quickshell native Wayland sidebar client',
+      'Session save and conversation-aware restore',
+    ],
+    ...(shot ? { screenshot: shot } : {}),
     ...(base ? { url: base + '/' } : {}),
+  }
+}
+
+export function websiteLd(base: string = siteUrl()) {
+  if (!base) return null
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: SITE_NAME,
+    url: base + '/',
+    description: 'Documentation, keymap, changelog, and setup guide for kittymux.',
+    publisher: { '@type': 'Person', name: 'KitsuneKode', url: `https://github.com/${gitConfig.user}` },
+    sameAs: [REPO_URL],
   }
 }
 
@@ -78,7 +111,20 @@ export function faqLd(items: readonly (readonly [string, string])[]) {
   }
 }
 
-/** Breadcrumbs for a docs page: Docs > Section > Page. Absolute URLs are required, so none are made without a site URL. */
+export function techArticleLd({ title, description, path }: { title: string; description: string; path: string }, base: string = siteUrl()) {
+  const url = absolute(path, base)
+  if (!url) return null
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'TechArticle',
+    headline: title,
+    description,
+    url,
+    author: { '@type': 'Person', name: 'KitsuneKode', url: `https://github.com/${gitConfig.user}` },
+    isPartOf: { '@type': 'WebSite', name: SITE_NAME, url: base + '/' },
+  }
+}
+
 export function breadcrumbLd(trail: { name: string; path: string }[], base: string = siteUrl()) {
   if (!base) return null
   return {

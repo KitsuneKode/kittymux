@@ -1,26 +1,40 @@
 import { facts } from '@/lib/facts';
-import { IconChevronDown } from '@tabler/icons-react';
 
 export const FAQ = [
-  ['Does it send my data anywhere?', 'No. There is no server, no network listener and no always-on daemon. It reads pane text and agent state locally and never transmits it. Live usage quotas are opt-in.'],
-  ['Will it type into my agents?', 'Notifications, the inbox and the panel never do: Jump moves focus, Dismiss hides a card. Only a key you press for it sends text, such as the one that sends a prompt to an agent pane.'],
-  ['Which agents does it recognise?', `${facts.agents.length} agent CLIs are in its table. Claude Code, Codex and Devin have been checked against live sessions. Some others follow each tool's documented hints, and a few get only their logo and what their hooks or window title report. The platforms page says which is which.`],
-  ['Do I have to leave tmux?', 'No. tmux stays for remote work. kittymux is for the terminal in front of you.'],
-  ['Does it need Wayland?', 'Only the docked panel does (it needs wlr-layer-shell). The tab bar, the scanner and the deck were tested on X11 in a virtual display.'],
+  [
+    'Does it send my data anywhere?',
+    'No. There is no server, no network listener, and no always-on daemon. It reads pane state locally, stores snapshots at mode 0600, and leaves live usage quotas strictly opt-in.',
+  ],
+  [
+    'Will it type into my agents or steal focus?',
+    'Never by itself. Notifications, the inbox, and attention dividers never move focus or send keystrokes. Only an explicit action you trigger, such as Jump or a deliberate send command, targets a pane.',
+  ],
+  [
+    'Do the pixel bar and graphical panel work without extra packages?',
+    'Pixel rendering (pxbar and deckpx) is opt-in and uses Cairo, Pango, and rsvg, with Slang shaders for glass cards and hover. If those packages are missing or disabled, kittymux automatically uses the zero-dependency terminal cell bar and panel.',
+  ],
+  [
+    'Which agents does it recognise?',
+    `${facts.agents.length} agent CLIs plus T3 Code are in its table. Claude Code, Codex, Devin, Cursor Agent, OpenCode, and Antigravity have live-captured prompt and hook support; the platforms page records exactly what has been verified for each.`,
+  ],
+  [
+    'Do I have to leave tmux or Wayland?',
+    'No. tmux remains the right tool for remote SSH sessions, while kittymux runs your local kitty workspace. Only the docked panel and Quickshell client need Wayland layer-shell; the tab bar, scanner, and overlay deck work on X11 too.',
+  ],
 ] as const;
 
 export function Faq() {
   return (
-    <section aria-labelledby="faq" className="mx-auto w-full max-w-[880px] px-5 py-16 md:px-8 lg:py-24">
+    <section aria-labelledby="faq" className="mx-auto w-full max-w-[920px] px-5 py-20 md:px-8 lg:py-28">
       <h2 id="faq" className="t-h2">Questions people ask first</h2>
       <div className="mt-8 divide-y divide-line border-y border-line">
         {FAQ.map(([q, a]) => (
           <details key={q} className="group">
-            <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-4 py-3 t-h3 !text-[1.125rem] marker:hidden [&::-webkit-details-marker]:hidden">
+            <summary className="t-h3 flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 py-4 text-ink marker:hidden [&::-webkit-details-marker]:hidden">
               {q}
-              <IconChevronDown aria-hidden="true" className="size-5 shrink-0 text-mute transition-transform duration-150 group-open:rotate-180 motion-reduce:transition-none" stroke={1.75} />
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="size-5 shrink-0 text-mute transition-transform duration-150 group-open:rotate-180 motion-reduce:transition-none"><path d="m6 9 6 6 6-6" /></svg>
             </summary>
-            <p className="t-body max-w-[60ch] pb-4 text-mute">{a}</p>
+            <p className="t-body max-w-[62ch] pb-5 text-mute">{a}</p>
           </details>
         ))}
       </div>
