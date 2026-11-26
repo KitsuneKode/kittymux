@@ -44,6 +44,23 @@ def toggle_mute(window_ids, state_dir: str, kitty_pid: int) -> bool:
     return on
 
 
+def _live_windows(boss, tab) -> list:
+    """The tab's windows that are still open. The card opens over the active tab's active window, and kitty runs the kitten's
+    handle_result before it takes the card's window out of the tab (it is already gone from boss.window_id_map): on the tab
+    you are on, that dying window must not be muted, split or renamed."""
+    known = getattr(boss, "window_id_map", None)
+    return [w for w in tab if known is None or known.get(w.id) is w]
+
+
+def _pane(boss, tab):
+    """The pane an action on the tab means: its active window, or, when that is the card itself, the one you were in."""
+    live = _live_windows(boss, tab)
+    active = tab.active_window
+    if active in live:
+        return active
+    return max(live, key=lambda w: getattr(w, "last_focused_at", 0.0), default=None)
+
+
 def run(boss, text: str, state_dir: str | None = None, kitty_pid: int | None = None) -> bool:
     """Run the card's answer inside kitty. False when there was nothing to do (no action, or the tab is gone)."""
     got = parse(text)
@@ -55,13 +72,13 @@ def run(boss, text: str, state_dir: str | None = None, kitty_pid: int | None = N
         return False
     if action == "close":
         import kittymux_pxbar
-        kittymux_pxbar.close_tab(boss, tab_id)
+        kittymux_pxbar.close_tab(boss, tab_id, again="press x")      # the question names the way you asked, not the ×
         return True
     if action == "mute":
         if state_dir is None:
             import kittymux_layout
             state_dir = kittymux_layout.state_dir()
-        toggle_mute([w.id for w in tab], state_dir, os.getpid() if kitty_pid is None else kitty_pid)
+        toggle_mute([w.id for w in _live_windows(boss, tab)], state_dir, os.getpid() if kitty_pid is None else kitty_pid)
         try:
             import kittymux_scan
             tm = boss.os_window_map.get(tab.os_window_id)
@@ -70,8 +87,14 @@ def run(boss, text: str, state_dir: str | None = None, kitty_pid: int | None = N
         except Exception:
             pass
         return True
-    boss.set_active_tab(tab)              # the user asked for this tab: it is where the prompt or the new pane appears
-    window = tab.active_window
+    tm = getattr(boss, "os_window_map", {}).get(tab.os_window_id)
+    if tm is not None:                    # the tab's own OS window: boss.set_active_tab works on the focused one only
+        tm.set_active_tab(tab)
+    else:
+        boss.set_active_tab(tab)          # the user asked for this tab: it is where the prompt or the new pane appears
+    window = _pane(boss, tab)
+    if window is None:
+        return False
     if action == "rename":
         boss.combine("set_tab_title", window_for_dispatch=window)
     elif action == "split":
