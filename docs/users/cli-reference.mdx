@@ -25,10 +25,13 @@ Opens an isolated kitty with a sample session, fake agents in different states a
 Prints the Claude Code hook configuration.
 
 ```sh
-kittymux hooks              # print the snippet
-kittymux hooks --install    # merge it into ~/.claude/settings.json, after a backup
-kittymux hooks --remove     # remove exactly those entries, after a backup
+kittymux hooks                    # print the snippet
+kittymux hooks --install          # merge it into ~/.claude/settings.json, after a backup
+kittymux hooks --remove           # remove exactly those entries, after a backup
+kittymux hooks --codex --install  # Codex: only the permission hook, in ~/.codex/hooks.json
 ```
+
+The snippet includes a `PermissionRequest` hook (`bin/mux-ask`) so a desktop shell can answer the agent's permission prompt with Allow or Deny, without typing into the pane. It only steps in when the pane's kitty is not the focused window and the request can be read whole (a command of at most 240 characters on one line, or a file edit); otherwise, and after 45 seconds without an answer, the agent shows its own prompt as usual. The files a shell reads and writes are described in [the inbox reference](https://github.com/KitsuneKode/kittymux/blob/main/docs/inbox.md#asks).
 
 
 `kittymux hooks --opencode --install` adds a plugin to OpenCode (`~/.config/opencode/plugins/kittymux-agent-state.js`) so it reports its own state from its events: working, waiting with the permission or question it asked, and done. `--opencode --remove` takes it out again; a file of that name you wrote yourself is never touched.

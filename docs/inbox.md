@@ -133,6 +133,23 @@ A client that draws over a kitty's vertical bar tells that kitty with `kittymux 
 
 A kitty that exits last leaves its entries behind (no other kitty is left to prune them): a client checks that `kitty_pid` still runs before it draws them.
 
+## asks/ — answering a permission prompt from the desktop {#asks}
+
+With the `PermissionRequest` hook installed (`kittymux hooks --install`, or `--codex --install`), `bin/mux-ask` publishes each request it can show whole as `$KITTYMUX_STATE/asks/<key>.json` (the directory is 0700) and waits up to 45 seconds for an answer beside it. The agent then gets the answer as the hook's decision; nothing is typed into the pane.
+
+| Field | Meaning |
+|---|---|
+| `version` | `2` |
+| `id` | 16 hex characters, new for every request |
+| `key` | `w<kitty pid>.<window id>`: the pane, the same key as `agents.json` |
+| `agent` | `claude` or `codex` |
+| `tool`, `what` | the tool and the one line to show: `Run: <command>` or `<tool>: <file>` |
+| `cwd`, `at`, `until` | where it runs; when it was asked and when it stops waiting (epoch seconds) |
+
+To answer, write `allow <id>` or `deny <id>` to `asks/<key>.answer`, with the `id` of the request you showed. A bare `allow`, an answer for another id, or one that arrives after the request file is gone is ignored, so a late click can never approve the next request on the same pane. The request file disappears when it is answered, withdrawn or out of time.
+
+It stays out of the way (the agent shows its own prompt) outside kitty, when the pane's kitty is the focused window, and when the request cannot be read whole: a command over 240 characters or on more than one line, or a tool that is neither a command nor a file edit.
+
 ## Notification hints
 
 `bin/mux-notify` already set `x-kittymux-pid` and `x-kittymux-window`. It also sets these, when the value is a short token:

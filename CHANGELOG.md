@@ -5,6 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 ## [Unreleased]
 
 ### Added
+- **Answer an agent's permission prompt from the desktop.** `kittymux hooks --install` (and `--codex --install`) adds a `PermissionRequest` hook, `bin/mux-ask`: a shell's Allow or Deny becomes the agent's decision without typing into the pane, and only for the exact request it showed (each request has its own id). It steps aside when you are looking at that kitty, when the command cannot be shown whole, and after 45 seconds. The files are described in `docs/inbox.md`.
 - **`kittymux doctor` says which branch your kitties load.** It warns when the checkout they are linked to is on a branch other than `main`, at a detached commit, or has uncommitted edits: each is live at the next reload.
 - **Graphical Usage and Inbox** share the pixel Agents panel (`kittymux features on deckpx`): remaining quota, reset and pace markers, provider cards, expandable messages and keyboard/pointer actions. A recent rice T3 cache supplies separate account segments without another provider connection; absent providers keep local collectors.
 - **Review hardening:** pane controls preserve owning-Kitty and OS-window scope even after focus changes, two-pane Zoom restores correctly, delayed Inbox reports retain IDs through compaction, and mixed usage sources preserve their own cache age and live errors.
