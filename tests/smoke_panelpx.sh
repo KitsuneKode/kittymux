@@ -89,7 +89,7 @@ click() { X mousemove --window "$W" "$1" "$2" click 1; }
 
 screen() { kitty @ --to "$SOCK" get-text; }
 shot() {
-    local label=$1 previous=${2:-} deadline=$((SECONDS + 25))
+    local label=$1 previous=${2:-} deadline=$((SECONDS + 25)) moved=0
     rm -f "$RUN/candidate.png"
     while [ "$SECONDS" -lt "$deadline" ]; do
         kitty @ --to "$SOCK" screenshot "$RUN/frame.png" >/dev/null 2>&1 || continue
@@ -97,6 +97,7 @@ shot() {
             cp "$OUT/inbox-dismissed.png" "$RUN/frame.png"   # simulate a delayed restored UI despite the restored log count
         fi
         if [ -n "$previous" ] && cmp -s "$RUN/frame.png" "$OUT/$previous.png"; then sleep .1; continue; fi
+        moved=1
         if [ -f "$RUN/candidate.png" ] && cmp -s "$RUN/frame.png" "$RUN/candidate.png"; then
             if [[ "$label" = inbox-scroll || "$label" = inbox-restored || "$label" = inbox-dismissed ]]; then
                 reference=inbox
@@ -126,7 +127,10 @@ PYFRAME
         cp "$RUN/frame.png" "$RUN/candidate.png"
         sleep .1
     done
-    fail "timed out waiting for stable $label render"
+    # say which wait failed (CI flaked here twice, 2026-11-26, on 0.49.2 and 0.50.0, never locally): the key never reached
+    # the panel (the picture never left the previous one), or the view kept changing
+    [ -n "$previous" ] && [ "$moved" = 0 ] && fail "timed out: $label never left the $previous picture (the key did not reach the panel)"
+    fail "timed out waiting for stable $label render (the picture kept changing)"
 }
 usage_ready() { screen | grep -q 'Usage' && [ -z "$(screen | tail -n +2 | tr -d '[:space:]')" ]; }
 agents_ready() { screen | grep -qE 'Agents|tabs'; }
