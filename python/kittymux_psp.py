@@ -230,6 +230,12 @@ def mark_stale(window) -> None:
         del _SEEN[k]
 
 
+def read_window(window, now: float) -> dict | None:
+    """What the agent in this window reported: kitty's own records (0.50+) first, else bin/mux-pty's summary. A relay
+    summary stays on the window after its agent exits, so it must not hide what a later agent reports to kitty itself."""
+    return read_native(window, now) or read_var(getattr(window, "user_vars", None) or {})
+
+
 def read_native(window, now: float) -> dict | None:
     """The summary from kitty's own records (kitty 0.50+: window.program_status), in read_var's shape, or None."""
     ps = getattr(window, "program_status", None)

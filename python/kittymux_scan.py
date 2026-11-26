@@ -364,11 +364,11 @@ def scan_window(window, now: float) -> bool:
     book = _RT.book.setdefault(wid, {})
     view = {**entry, **book}
     focused = bool(getattr(window, "is_focused", False))
-    # What the agent itself reported (OSC 7501: kitty's own records on 0.50+, else bin/mux-pty's user variable): the
+    # What the agent itself reported (OSC 7501: kitty's own records on 0.50+ first, else bin/mux-pty's user variable): the
     # strongest evidence, folded in like a hook.
     try:
         import kittymux_psp
-        rec = kittymux_psp.read_var(getattr(window, "user_vars", None) or {}) or kittymux_psp.read_native(window, now)
+        rec = kittymux_psp.read_window(window, now)
         marker, line = kittymux_psp.apply_to_view(rec, view, marker, line)
     except Exception:
         pass
