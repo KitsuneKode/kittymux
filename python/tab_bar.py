@@ -1669,13 +1669,7 @@ def _px_row(tab, pal) -> "kittymux_groups.Row":
         tint = kittymux_agents.TOOL_TINTS.get(mark)
         if tool and facts and title and _features().get("titles", True):
             # Strip redundant `:project` / ` - project` suffix (e.g. `nvim:kitsunesnipe` under group `kitsunesnipe`)
-            proj = facts.project
-            low = title.lower()
-            for sep in (":", " - ", " — ", " · "):
-                suf = sep + proj.lower()
-                if low.endswith(suf) and len(title) > len(suf):
-                    title = title[:-len(suf)].strip()
-                    break
+            title = kittymux_bartext.strip_project_suffix(title, facts.project)
         if not tool:
             # a plain shell says what it runs, and only where it is INSIDE its project: the group label already names it
             shell = next((_basename(c[0]).lstrip("-") for c in foreground or () if c), "") or "shell"

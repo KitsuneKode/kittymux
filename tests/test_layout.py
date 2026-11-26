@@ -547,9 +547,16 @@ class PxbarPaddingTests(unittest.TestCase):
         self.assertEqual(L.parse_padding("window_padding_width 1 2 3 4 # comment\n"), (1.0, 2.0, 3.0, 4.0))
 
     def test_pxbar_padding_lifts_zero_and_preserves_larger_user_padding(self):
-        self.assertEqual(L.pxbar_padding_conf((0.0, 0.0, 0.0, 0.0)), "window_padding_width 6 6 6 4\n")
-        self.assertEqual(L.pxbar_padding_conf((10.0, 10.0, 10.0, 10.0)), "")
-        self.assertEqual(L.pxbar_padding_conf((12.0, 2.0, 12.0, 0.0)), "window_padding_width 12 6 12 4\n")
+        inherit = (-1.0, -1.0, -1.0, -1.0)             # explicit: never the developer's own kitty.conf (CodeRabbit on #49)
+        self.assertEqual(L.pxbar_padding_conf((0.0, 0.0, 0.0, 0.0), inherit), "window_padding_width 6 6 6 4\n")
+        self.assertEqual(L.pxbar_padding_conf((10.0, 10.0, 10.0, 10.0), inherit), "")
+        self.assertEqual(L.pxbar_padding_conf((12.0, 2.0, 12.0, 0.0), inherit), "window_padding_width 12 6 12 4\n")
+
+    def test_a_small_negative_single_window_padding_is_explicit_as_kitty_reads_it(self):
+        # kitty uses single_window_padding_width when it is > -0.1: -0.0625 overrides, -0.1 and -1 inherit
+        big = (10.0, 10.0, 10.0, 10.0)
+        self.assertEqual(L.pxbar_padding_conf(big, (-0.0625, -1.0, -0.1, 20.0)), "single_window_padding_width 6 -1 -0.1 20\n")
+        self.assertEqual(L.pxbar_padding_conf(big, (-1.0, -0.1, -0.5, 30.0)), "")
 
     def test_gated_conf_emits_padding_only_when_pxbar_shader_runs_with_small_padding(self):
         d = tempfile.mkdtemp()
