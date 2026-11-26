@@ -24,5 +24,19 @@ class BarTextTests(unittest.TestCase):
         self.assertEqual(B.display_title(""), "")
 
 
+
+class ProjectSuffixTests(unittest.TestCase):
+    """`nvim:kitsunesnipe` under the group kitsunesnipe reads `nvim` (CodeRabbit on #49: lowercasing changed the length)."""
+
+    def test_the_suffix_goes_and_the_program_stays(self):
+        self.assertEqual(B.strip_project_suffix("nvim:alpha", "alpha"), "nvim")
+        self.assertEqual(B.strip_project_suffix("nvim:İ", "İ"), "nvim")              # "İ".lower() is two code points
+        self.assertEqual(B.strip_project_suffix("lazygit - Calm-Otter", "calm-otter"), "lazygit")
+
+    def test_nothing_else_is_touched(self):
+        for title, proj in (("nvim:beta", "alpha"), (":alpha", "alpha"), ("alpha", "alpha"), ("nvim", "")):
+            self.assertEqual(B.strip_project_suffix(title, proj), title, (title, proj))
+
+
 if __name__ == "__main__":
     unittest.main()

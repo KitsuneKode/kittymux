@@ -254,6 +254,9 @@ def configured_padding(cfg_dir: str | None = None) -> tuple[float, float, float,
     return parse_padding(text) if text is not None else (0.0, 0.0, 0.0, 0.0)
 
 
+SINGLE_INHERITS = -0.1          # kitty: a single_window_padding_width side at or below this inherits window_padding_width
+
+
 def pxbar_padding_conf(existing: tuple[float, float, float, float] | None = None,
                        existing_single: tuple[float, float, float, float] | None = None) -> str:
     """Ensure the terminal pane has enough padding for pxbar's rounded card frame without shrinking larger user padding."""
@@ -268,9 +271,10 @@ def pxbar_padding_conf(existing: tuple[float, float, float, float] | None = None
     if not all(c >= m for c, m in zip(existing, PXBAR_MIN_PADDING)):
         merged = tuple(max(c, m) for c, m in zip(existing, PXBAR_MIN_PADDING))
         out.append("window_padding_width " + " ".join(fmt(v) for v in merged))
-    # Explicit non-negative single_window_padding_width overrides window_padding_width in kitty; lift any side below min while preserving negatives (inherit).
-    if any(0.0 <= c < m for c, m in zip(existing_single, PXBAR_MIN_PADDING)):
-        merged_single = tuple(c if c < 0.0 else max(c, m) for c, m in zip(existing_single, PXBAR_MIN_PADDING))
+    # kitty uses a single_window_padding_width side when it is > -0.1 (window.py), else it inherits window_padding_width:
+    # lift an explicit side below the minimum, keep the inheriting ones as they are (CodeRabbit on #49: -0.0625 is explicit)
+    if any(SINGLE_INHERITS < c < m for c, m in zip(existing_single, PXBAR_MIN_PADDING)):
+        merged_single = tuple(c if c <= SINGLE_INHERITS else max(c, m) for c, m in zip(existing_single, PXBAR_MIN_PADDING))
         out.append("single_window_padding_width " + " ".join(fmt(v) for v in merged_single))
     return "".join(line + "\n" for line in out)
 

@@ -6,6 +6,23 @@ scanner's alone (kittymux_tabsnap, docs/inbox.md), and these stay here for the b
 from __future__ import annotations
 
 
+_PROJECT_SEPS = (":", " - ", " — ", " · ")
+
+
+def strip_project_suffix(title: str, project: str) -> str:
+    """`nvim:kitsunesnipe` under the group kitsunesnipe reads `nvim`: the separator is found in the title as it is and the rest
+    compared case-insensitively, never sliced by a lowercased length ("İ".lower() is two code points). Unchanged otherwise."""
+    if not title or not project:
+        return title
+    for sep in _PROJECT_SEPS:
+        i = title.rfind(sep)
+        if i > 0 and title[i + len(sep):].casefold() == project.casefold():
+            head = title[:i].strip()
+            if head:
+                return head
+    return title
+
+
 def display_title(title: str) -> str:
     """The title the bar draws for a tidied string. A bare `~` (the home folder) is Home."""
     return "Home" if (title or "").strip() == "~" else (title or "")
