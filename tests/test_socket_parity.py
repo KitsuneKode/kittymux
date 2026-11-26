@@ -88,16 +88,21 @@ class ParityTests(unittest.TestCase):
         real = self.rig.make(run, "mykitty-4242")
         self.agree([run], {"KITTY_LISTEN_ON": "unix:" + os.path.join(run, "gone"), "KITTY_PID": "4242"}, "unix:" + real, "unix:" + real)
 
+    def live_pid(self):
+        """A process that is surely alive and is not this one (a kitty's socket is named after its pid; the newest guess skips the dead)."""
+        p = subprocess.Popen(["sleep", "60"])
+        self.addCleanup(lambda: (p.kill(), p.wait()))
+        return p.pid
+
     def test_started_outside_every_kitty_the_answer_is_the_newest(self):
-        # live pids (pid 1 and this runner's parent): the newest guess skips a kitty that has exited
         run = self.rig.dir("run")
-        self.rig.make(run, "mykitty-1")
-        newest = self.rig.make(run, f"mykitty-{os.getppid()}")
+        self.rig.make(run, f"mykitty-{self.live_pid()}")
+        newest = self.rig.make(run, f"mykitty-{self.live_pid()}")
         self.agree([run], {}, "", "unix:" + newest)
 
     def test_the_newest_guess_skips_a_kitty_that_exited(self):
         run = self.rig.dir("run")
-        live = self.rig.make(run, f"mykitty-{os.getppid()}")
+        live = self.rig.make(run, f"mykitty-{self.live_pid()}")
         self.rig.make(run, f"mykitty-{2 ** 22 + 777}")              # newer, but its kitty is gone
         self.agree([run], {}, "", "unix:" + live)
 

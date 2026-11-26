@@ -16,6 +16,12 @@ class TargetHowTests(unittest.TestCase):
         self.socks = []
         self.addCleanup(lambda: [s.close() for s in self.socks])
 
+    def live_pid(self):
+        import subprocess
+        p = subprocess.Popen(["sleep", "60"])
+        self.addCleanup(lambda: (p.kill(), p.wait()))
+        return p.pid
+
     def sock(self, name):
         s = socket.socket(socket.AF_UNIX)
         path = os.path.join(self.tmp.name, name)
@@ -25,12 +31,16 @@ class TargetHowTests(unittest.TestCase):
         return path
 
     def test_target_says_how_it_chose(self):
-        older, newer = self.sock(f"mykitty-{os.getppid()}"), self.sock(f"mykitty-{os.getpid()}")      # live pids: the guess skips dead ones
+        older, newer = self.sock(f"mykitty-{self.live_pid()}"), self.sock(f"mykitty-{os.getpid()}")    # live pids: the guess skips dead ones
         dirs = [self.tmp.name]
         self.assertEqual(S.target_how(lambda: None, dirs, S.is_owned_socket, {}), ("unix:" + newer, "newest"))
         self.assertEqual(S.target_how(lambda: "unix:" + older, dirs, S.is_owned_socket, {}), ("unix:" + older, "own"))
         self.assertEqual(S.target_how(lambda: None, dirs, S.is_owned_socket, {"KITTYMUX_TARGET": "unix:" + older}), ("unix:" + older, "explicit"))
         self.assertEqual(S.target_how(lambda: None, [], S.is_owned_socket, {}), (None, "none"))
+
+    def test_a_name_whose_digits_are_not_ascii_is_no_claim(self):
+        for name in ("mykitty-²", "mykitty-٣"):                   # Python's isdigit says yes; the shell's [0-9] says no: agree with the shell
+            self.assertTrue(S.pid_alive(name), name)
 
     def test_the_newest_guess_skips_a_kitty_that_exited(self):
         # a dead kitty's socket file can be the newest one: a launcher outside every kitty must not pick it
