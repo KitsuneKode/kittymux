@@ -150,10 +150,13 @@ def _collect_local(name: str, fn, started: float) -> dict:
             result["collected_at"] = time.time()
             C.write_private(path, json.dumps({"collected_at": result["collected_at"], "provider": result}))
             return result
-    except C.UsageLockBusy:
+    except C.UsageLockBusy as busy:
         memo = _read_object(path).get("provider")
-        return copy.deepcopy(memo) if isinstance(memo, dict) else {
-            "name": name, "rows": [], "note": "refresh already running", "collected_at": 0}
+        if isinstance(memo, dict):
+            return copy.deepcopy(memo)
+        if isinstance(busy, C.UsageLockUnavailable):
+            return dict(fn())                  # no lock to take and nothing cached: a local scan only reads, so run it uncoordinated
+        return {"name": name, "rows": [], "note": "refresh already running", "collected_at": 0}
 
 
 def _latest_live(cached: dict, name: str) -> dict:

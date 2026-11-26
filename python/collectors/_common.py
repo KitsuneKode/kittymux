@@ -68,15 +68,19 @@ class UsageLockBusy(TimeoutError):
     """Coordination ownership is busy or unavailable; use the cached snapshot."""
 
 
+class UsageLockUnavailable(UsageLockBusy):
+    """No lock can be taken at all (an unwritable or full state dir, ENOLCK on NFS): nobody else is refreshing because of it."""
+
+
 @contextmanager
 def usage_lock(kind: str, name: str = "publication", timeout: float = 2.0):
     """Cross-process AND cross-thread ownership, independent of launcher locks."""
     path = usage_memo(kind, name).with_suffix(".lock")
     try:
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+        descriptor = os.open(path, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)   # never through a planted link
     except OSError:
-        raise UsageLockBusy("usage coordination unavailable") from None
+        raise UsageLockUnavailable("usage coordination unavailable") from None
     with os.fdopen(descriptor, "a") as lock:
         deadline = time.monotonic() + timeout
         while True:
@@ -88,7 +92,7 @@ def usage_lock(kind: str, name: str = "publication", timeout: float = 2.0):
                     raise UsageLockBusy("usage source is already refreshing") from None
                 time.sleep(min(.025, max(0, deadline - time.monotonic())))
             except OSError:
-                raise UsageLockBusy("usage coordination unavailable") from None
+                raise UsageLockUnavailable("usage coordination unavailable") from None
         try:
             yield
         finally:

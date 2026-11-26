@@ -191,6 +191,15 @@ print(json.dumps(u._collect_local('example',source,started)))
                 self.assertEqual(usage._fetch_live(
                     lambda cached:self.fail('must not request without ownership'),{},'example'),live)
 
+    def test_an_unusable_lock_with_nothing_cached_still_scans_local_usage(self):
+        # Fable on #10: an unwritable state dir showed no rows forever, noted "refresh already running". Local scans only read.
+        provider={'name':'example','rows':[{'label':'wk','pct':3}]}
+        for target in ('pathlib.Path.mkdir','os.open','fcntl.flock'):
+            with self.subTest(target=target),patch(target,side_effect=PermissionError('unavailable')):
+                got=usage._collect_local('example-'+target.split('.')[-1],lambda:dict(provider),time.time())
+                self.assertEqual(got['rows'],provider['rows'])
+                self.assertNotIn('already running',got.get('note',''))
+
     def test_local_collector_oserror_is_not_reported_as_lock_contention(self):
         def source():raise OSError('source read failed')
         with self.assertRaisesRegex(OSError,'source read failed'):
