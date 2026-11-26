@@ -17,14 +17,18 @@ class AccountFromProcessTests(unittest.TestCase):
         env.update(env_extra)
         p = subprocess.Popen(["sleep", "30"], env=env)
         self.addCleanup(lambda: (p.kill(), p.wait()))
-        want = [k.encode() + b"=" for k in env_extra]
+        want = [f"{k}={v}".encode() for k, v in env_extra.items()]
         for _ in range(40):                       # the child's environment as /proc shows it (a CI runner can hide it)
+            # until the child has exec'd `sleep`, /proc shows the TEST RUNNER's environment (fork copies it): a runner started
+            # with CLAUDE_CONFIG_DIR set read as that account (flaky). Wait for the exec and for the exact values.
             try:
+                with open(f"/proc/{p.pid}/cmdline", "rb") as f:
+                    execd = f.read() == b"sleep\x0030\x00"
                 with open(f"/proc/{p.pid}/environ", "rb") as f:
                     items = f.read().split(b"\0")
             except OSError:
-                items = []
-            if all(any(i.startswith(w) for i in items) for w in want):
+                execd, items = False, []
+            if execd and all(w in items for w in want):
                 break
             time.sleep(0.05)
         else:
