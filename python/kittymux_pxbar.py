@@ -297,12 +297,14 @@ def toggle_group(project: str) -> None:
 def toggle_folds(os_window_id: int) -> bool:
     """The keyboard's way to the folds (leader f): open every group this window's bar shows folded, or, when none is, fold
     back the ones opened. True when something changed (the next pass redraws)."""
-    folded = {g.project for g in (drawn_groups(os_window_id) or ()) if g.hidden}
+    groups = drawn_groups(os_window_id) or ()
+    folded = {g.project for g in groups if g.hidden}
     if folded:
         _S.expanded |= folded
         return True
-    if _S.expanded:
-        _S.expanded.clear()
+    mine = _S.expanded & {g.project for g in groups}          # only what THIS window's bar shows: another window keeps its own
+    if mine:
+        _S.expanded -= mine
         return True
     return False
 

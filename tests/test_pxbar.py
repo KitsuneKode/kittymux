@@ -284,6 +284,18 @@ class ViewportFollowTest(unittest.TestCase):
             PX.page(4, 1)
         self.assertEqual(PX._S.view[4]["start"], 15)          # the last full page, not one row at the bottom
 
+    def test_folding_back_touches_only_this_windows_groups(self):
+        # Fable on #59: leader f folded back every window's opened groups, not only the ones this window's bar shows
+        from unittest.mock import patch
+        import types as T
+        saved = set(PX._S.expanded)
+        self.addCleanup(lambda: (PX._S.expanded.clear(), PX._S.expanded.update(saved)))
+        PX._S.expanded.clear(); PX._S.expanded.update({"here", "elsewhere"})
+        drawn = [T.SimpleNamespace(project="here", hidden=False)]
+        with patch.object(PX, "drawn_groups", return_value=drawn):
+            self.assertTrue(PX.toggle_folds(4))
+        self.assertEqual(PX._S.expanded, {"elsewhere"})
+
     def test_clearing_the_picture_forgets_the_view(self):
         PX.publish(3, self.groups(35), None)
         PX.clear(3)
