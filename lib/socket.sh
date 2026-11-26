@@ -22,8 +22,8 @@ mux_runtime_dir() {
 # A real socket owned by us.
 mux_owned_socket() { [[ -S "$1" && -O "$1" ]]; }
 
-# False only when a mykitty-<pid> socket's kitty has exited (it can leave the file behind). No claim for a name without a pid, or when
-# /proc cannot see this shell (macOS, another PID namespace). The same rule as kittymux_sockets.pid_alive.
+# False only when a mykitty-<pid> socket's kitty has exited (it can leave the file behind). No claim for a name without an ASCII pid, or when
+# /proc cannot see this shell (macOS, no /proc). Best effort, as kittymux_sockets.pid_alive (the same rule): a reused pid reads as alive.
 mux_socket_alive() {
     local tail=${1##*-}
     [[ "$1" == *-* && "$tail" =~ ^[0-9]+$ && -d /proc/$$ ]] || return 0

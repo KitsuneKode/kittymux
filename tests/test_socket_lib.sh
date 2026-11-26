@@ -97,10 +97,24 @@ got="$(XDG_RUNTIME_DIR="$tmp/run" KITTY_PID=4242 KITTY_LISTEN_ON="" mux_own_sock
 check "the parent's socket wins over KITTY_PID"                  "unix:$tmp/run/mykitty-$PPID" "$got"
 # the panel itself (a stand-in hyprctl that knows no focused window, so a live desktop cannot change the answer): started from kitty 4242 while kitty 4243 is newer, it must watch 4242
 mkdir -p "$tmp/fakebin"; printf '#!/bin/sh\necho {}\n' > "$tmp/fakebin/hyprctl"; chmod +x "$tmp/fakebin/hyprctl"
-env -u KITTYMUX_TARGET KITTY_LISTEN_ON="" XDG_RUNTIME_DIR="$tmp/run2" KITTY_PID=4242 PATH="$tmp/fakebin:$PATH" "$here/../bin/mux-panel" target > "$tmp/target.out" 2>/dev/null
+env -u KITTYMUX_TARGET KITTY_LISTEN_ON="" KITTYMUX_SOCKET_DIRS="$tmp/run2" XDG_RUNTIME_DIR="$tmp/run2" KITTY_PID=4242 PATH="$tmp/fakebin:$PATH" "$here/../bin/mux-panel" target > "$tmp/target.out" 2>/dev/null
 check "mux-panel watches the kitty it was started from, not the newest" "unix:$tmp/run2/mykitty-4242" "$(cat "$tmp/target.out")"
-env -u KITTYMUX_TARGET -u KITTY_PID KITTY_LISTEN_ON="" KITTYMUX_TARGET="" XDG_RUNTIME_DIR="$tmp/run2" PATH="$tmp/fakebin:$PATH" "$here/../bin/mux-panel" target > "$tmp/target2.out" 2>/dev/null
-check "started from outside every kitty it falls back to the newest" "unix:$tmp/run2/mykitty-4243" "$(cat "$tmp/target2.out")"
+# the newest guess, confined to its own directory (never the real /tmp: a live kitty must not be named) and named after LIVE helper
+# processes, because a socket whose kitty has exited is skipped: the newest file here belongs to a dead pid and must lose
+mkdir -p "$tmp/run3"; sleep 60 & live_a=$!; sleep 60 & live_b=$!
+dead=$(( (1 << 22) + 777 ))
+python3 - "$tmp/run3/mykitty-$live_a" "$tmp/run3/mykitty-$live_b" "$tmp/run3/mykitty-$dead" <<'PY' &
+import socket, sys, time
+socks = []
+for path in sys.argv[1:]:
+    s = socket.socket(socket.AF_UNIX); s.bind(path); socks.append(s); time.sleep(0.2)   # each newer than the one before
+time.sleep(30)
+PY
+srv4=$!
+for _ in $(seq 1 30); do [[ -S "$tmp/run3/mykitty-$dead" ]] && break; sleep 0.1; done
+env -u KITTYMUX_TARGET -u KITTY_PID KITTY_LISTEN_ON="" KITTYMUX_TARGET="" KITTYMUX_SOCKET_DIRS="$tmp/run3" XDG_RUNTIME_DIR="$tmp/run3" PATH="$tmp/fakebin:$PATH" "$here/../bin/mux-panel" target > "$tmp/target2.out" 2>/dev/null
+check "started from outside every kitty it falls back to the newest LIVE kitty" "unix:$tmp/run3/mykitty-$live_b" "$(cat "$tmp/target2.out")"
+kill "$srv4" "$live_a" "$live_b" 2>/dev/null || true
 got="$(KITTYMUX_SOCKET_DIRS="$tmp/run2" XDG_RUNTIME_DIR="$tmp/run" mux_socket_for_pid 4242)"
 check "KITTYMUX_SOCKET_DIRS replaces the default directories (as in the CLI)" "unix:$tmp/run2/mykitty-4242" "$got"
 got="$(KITTYMUX_SOCKET_DIRS="$tmp/nonexistent" mux_socket_for_pid 4242 || printf none)"

@@ -119,11 +119,12 @@ def legacy_link(listening_on, legacy_dir="/tmp"):
 
 
 def pid_alive(name):
-    """True unless the kitty a `mykitty-<pid>` name belongs to has exited. No claim (True) when the name carries no pid
-    (`kitty --listen-on …/mykitty-work` keeps the name as given) or when /proc cannot see this very process (macOS, another
-    PID namespace): there, every kitty would look dead."""
+    """True unless the kitty a `mykitty-<pid>` name belongs to has exited. No claim (True) when the name carries no ASCII pid
+    (`kitty --listen-on …/mykitty-work` keeps the name as given) or when /proc cannot see this very process (macOS, no /proc).
+    Best effort: a reused pid reads as alive, and a container with its own procfs looking at a host's socket directory would
+    see every kitty there as gone."""
     tail = name.rsplit("-", 1)[-1] if "-" in name else ""
-    if not tail.isdigit() or not os.path.exists(f"/proc/{os.getpid()}"):
+    if not (tail.isascii() and tail.isdigit()) or not os.path.exists(f"/proc/{os.getpid()}"):
         return True
     return os.path.exists("/proc/" + tail)
 
