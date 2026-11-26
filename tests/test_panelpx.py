@@ -41,7 +41,7 @@ class PanelTests(unittest.TestCase):
 
     def assert_hits(self, result, width, height):
         for kind, value, x, y, w, h in result.hits:
-            self.assertIn(kind, ('provider', 'filter', 'select', 'expand', 'jump', 'dismiss', 'key'))
+            self.assertIn(kind, ('provider', 'filter', 'select', 'expand', 'allow', 'deny', 'jump', 'dismiss', 'key'))
             self.assertGreaterEqual(x, 0)
             self.assertGreaterEqual(y, 0)
             self.assertGreater(w, 0)
@@ -121,7 +121,32 @@ class PanelTests(unittest.TestCase):
         self.assertEqual(repr(events), before)
         for kind in ('select', 'expand', 'jump', 'dismiss'):
             self.assertIn((kind, 'calm-otter'), [(h[0], h[1]) for h in result.hits])
+        self.assertNotIn('allow', [h[0] for h in result.hits])
         self.assert_hits(result, 260, 600)
+
+    def test_expanded_verified_permission_shows_allow_deny_buttons_and_notice(self):
+        perm = self.event(id='perm-1', agent='claude', kind='permission', severity='needs-you',
+                          title='Do you want to proceed?', body='git status', pid=4242, w=7)
+        result, text = self.capture(px.inbox, [perm], 'all', 'perm-1', self.pal, 260, 600,
+                                    now=self.now, expanded='perm-1', notice=('Allowed Claude · project', False))
+        self.assertIn('Allow Y', text)
+        self.assertIn('Deny N', text)
+        self.assertIn('Allowed Claude · project', text)
+        for kind in ('allow', 'deny', 'jump', 'dismiss'):
+            self.assertIn((kind, 'perm-1'), [(h[0], h[1]) for h in result.hits])
+        self.assert_hits(result, 260, 600)
+        # Unverified agent or read permission never gets Allow/Deny buttons
+        for bad in (self.event(id='p2', agent='opencode', kind='permission', pid=4242, w=7),
+                    self.event(id='p3', agent='claude', kind='permission', status='read', pid=4242, w=7)):
+            res, _ = self.capture(px.inbox, [bad], 'all', bad['id'], self.pal, 260, 600, now=self.now, expanded=bad['id'])
+            self.assertNotIn('allow', [h[0] for h in res.hits])
+            self.assertNotIn('deny', [h[0] for h in res.hits])
+
+    def test_a_narrow_footer_keeps_jump_and_dismiss(self):
+        # the footer drops from the end: jump and dismiss go first, as in the cell Inbox (Fable on #51: at 200-260 px dismiss went)
+        for width, undo in ((200, False), (220, False), (260, True)):
+            keys = [h[1] for h in px.inbox([self.event()], 'all', 'calm-otter', self.pal, width, 600, undo=undo).hits if h[0] == 'key']
+            self.assertTrue({'ENTER', 'X'} <= set(keys), (width, undo, keys))
 
     def test_undo_uses_the_existing_inbox_undo_key_not_usage_navigation(self):
         result = px.inbox([self.event()], 'all', 'calm-otter', self.pal, 260, 600, undo=True)

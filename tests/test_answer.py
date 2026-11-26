@@ -61,5 +61,34 @@ class PlanTests(unittest.TestCase):
         self.assertIsNone(self.plan("approve-all", T.CLAUDE_PERMISSION)[0])
 
 
+class InboxEligibilityTests(unittest.TestCase):
+    def _ev(self, **kw):
+        base = {"id": "e1", "kind": "permission", "status": "unread", "agent": "claude",
+                "source": "agent", "sources": ["screen"], "pid": 4242, "w": 7, "title": "Do you want to proceed?"}
+        base.update(kw)
+        return base
+
+    def test_event_key_validates_positive_pid_and_window(self):
+        self.assertEqual(A.event_key(self._ev()), "w4242.7")
+        self.assertEqual(A.event_key(self._ev(pid="99", w="3")), "w99.3")
+        for bad in ({"pid": 0, "w": 1}, {"pid": -1, "w": 1}, {"pid": True, "w": 1}, {"pid": 1, "w": "x"}, {}, None):
+            self.assertIsNone(A.event_key(bad))
+
+    def test_can_allow_deny_requires_unread_verified_agent_permission(self):
+        self.assertTrue(A.can_allow_deny(self._ev(agent="claude")))
+        self.assertTrue(A.can_allow_deny(self._ev(agent="codex")))
+        self.assertFalse(A.can_allow_deny(self._ev(status="read")))
+        self.assertFalse(A.can_allow_deny(self._ev(kind="question")))
+        self.assertFalse(A.can_allow_deny(self._ev(kind="error")))
+        self.assertFalse(A.can_allow_deny(self._ev(source="tool")))
+        self.assertFalse(A.can_allow_deny(self._ev(agent="opencode")))
+        self.assertFalse(A.can_allow_deny(self._ev(pid=None)))
+
+    def test_event_expect_only_pins_screen_sourced_titles(self):
+        self.assertEqual(A.event_expect(self._ev(sources=["screen"], title="  Do you want to proceed? ")), "Do you want to proceed?")
+        self.assertIsNone(A.event_expect(self._ev(sources=["hook"], title="Claude needs permission")))
+        self.assertIsNone(A.event_expect(self._ev(sources=["screen"], title="   ")))
+
+
 if __name__ == "__main__":
     unittest.main()

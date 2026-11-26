@@ -114,6 +114,10 @@ kittymux inbox ledger           # how long agents waited on you; --json prints t
 
 Focusing a window acknowledges everything it reported.
 
+### Answer permissions from the Inbox
+
+In the panel's **Inbox** view, an expanded unread permission prompt from a live-verified agent (Claude Code or Codex) shows **Allow** (`y`) and **Deny** (`n`) buttons alongside **Jump** and **Dismiss**. Choosing either runs `kittymux answer` off the UI thread, re-reads the pane's live screen before typing anything (refusing if the prompt changed or already cleared), keeps focus where you are, and advances through the queue. Free-text questions, unverified agents, and plain terminal prompts (`sudo`, `ssh`, `pacman`) stay Jump-only.
+
 ### How long agents wait for you
 
 An agent that asks for you, with a permission prompt or a question, is waiting from the moment its event first appeared until you first looked at it: you focused its window, marked it read or dismissed it. While it is unread it is waiting now. The **Inbox** view of the [panel](/docs/users/peek-deck-and-panel#the-panels-three-views) shows this as a card under the events: how long agents waited on you today, the median, a week of bars, and how many are waiting right now. `kittymux inbox ledger` prints the same as a sentence.

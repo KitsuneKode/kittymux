@@ -108,6 +108,20 @@ class LayoutTests(unittest.TestCase):
         self.assertIn("RECOVERY_END", expanded)
         self.assertEqual(event["status"], "unread")
 
+    def test_expanded_verified_permission_exposes_allow_and_deny_buttons_and_notice(self):
+        perm = ev("permission", agent="claude", title="Allow Bash?", body="git status")
+        read_perm = ev("permission", agent="claude", status="read", title="Old prompt")
+        tool_perm = ev("permission", agent="sudo", title="Password required")
+        tool_perm["source"] = "tool"
+        v_open = IV.view([perm], "all", 0, 38, kit(), NOW, expanded=perm["id"], notice=("Allowed Claude · web", False))
+        self.assertEqual([b[4] for b in v_open.buttons], ["allow", "deny", "jump", "dismiss"])
+        self.assertIn("Allowed Claude · web", U.plain(v_open.header))
+        for line in [v_open.header] + v_open.lines:
+            self.assertEqual(U.line_cells(line, kit().cells), 38)
+        for non_answerable in (read_perm, tool_perm):
+            v_na = IV.view([non_answerable], "all", 0, 38, kit(), NOW, expanded=non_answerable["id"])
+            self.assertEqual([b[4] for b in v_na.buttons], ["jump", "dismiss"])
+
     def test_every_line_is_exactly_the_panel_width(self):
         for colors in (TOKYO, LATTE):
             for kw in ({}, {"cells": wide, "rounded": False}):

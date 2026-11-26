@@ -28,6 +28,42 @@ def clean_text(text: str) -> str:
     return _CTRL.sub("", re.sub(r"[\r\n\t]+", " ", str(text or "")))[:TEXT_MAX].strip()
 
 
+def event_key(event) -> str | None:
+    """Return the agents.json key (`w<pid>.<window>`) for an inbox event, or None if missing/invalid."""
+    if not isinstance(event, dict):
+        return None
+    pid, wid = event.get("pid"), event.get("w")
+    if isinstance(pid, bool) or isinstance(wid, bool):
+        return None
+    ps, ws = str(pid or "").strip(), str(wid or "").strip()
+    if not (ps.isdigit() and ws.isdigit() and int(ps) > 0 and int(ws) > 0):
+        return None
+    return f"w{int(ps)}.{int(ws)}"
+
+
+def can_allow_deny(event) -> bool:
+    """True only for an unread permission prompt from a live-verified agent with a valid target pane."""
+    if not isinstance(event, dict):
+        return False
+    if event.get("status") != "unread" or event.get("kind") != "permission":
+        return False
+    if event.get("source") == "tool":
+        return False
+    agent = str(event.get("agent") or "").lower()
+    return agent in KEYS and event_key(event) is not None
+
+
+def event_expect(event) -> str | None:
+    """Prompt wording to pin via `--expect` when the event came from screen classification."""
+    if not isinstance(event, dict):
+        return None
+    sources = event.get("sources")
+    if not isinstance(sources, (list, tuple, set)) or "screen" not in sources:
+        return None
+    title = _norm(event.get("title"))
+    return title or None
+
+
 def plan(how: str, row: dict, screen: str, expect=None, text: str = ""):
     """(keys, "") to send, or (None, why) when nothing may be typed."""
     agent = str((row or {}).get("agent") or "")

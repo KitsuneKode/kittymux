@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import time
 
+import kittymux_answer as A
 import kittymux_deckpx as D
 import kittymux_inboxview as I
 import kittymux_meters as M
@@ -351,12 +352,13 @@ def _event_identity(event):
     return event.get('id') if isinstance(event.get('id'), str) else ''
 
 
-def inbox(events, filter, selected, palette, width, height, *, now=None, expanded=None, scroll=0, hover=None, undo=False, resources=None):
+def inbox(events, filter, selected, palette, width, height, *, now=None, expanded=None, scroll=0, hover=None, undo=False, notice=None, resources=None):
     """Compact event summaries with deliberate expansion, keyed by event ID.
 
     Selection accepts an event ID (preferred) or a visible-list index. Expansion
-    accepts one ID or a collection of IDs. Jump/Dismiss exist on expanded cards;
-    expansion itself never reads, dismisses or focuses an event.
+    accepts one ID or a collection of IDs. Jump/Dismiss exist on expanded cards
+    (and Allow/Deny on expanded verified-agent permissions); expansion itself
+    never reads, dismisses, answers or focuses an event.
     """
     now = time.time() if now is None else _number(now)
     events = events if isinstance(events, list) else []
@@ -367,12 +369,19 @@ def inbox(events, filter, selected, palette, width, height, *, now=None, expande
         selected = _event_identity(items[index]) if items else None
     opened = {expanded} if isinstance(expanded, str) else set(expanded) if isinstance(expanded, (list, tuple, set, frozenset)) else set()
     surf, pt, width, height, hits = _start(palette, width, height, resources)
-    _header(pt, 'Inbox', f'{I.unread(events)} unread · {I.needs_you(events)} need you', width)
+    notice_text, notice_err = (notice[0], bool(notice[1])) if isinstance(notice, (tuple, list)) and len(notice) >= 2 and notice[0] else ('', False)
+    subtitle = _clean(notice_text, 120) if notice_text else f'{I.unread(events)} unread · {I.needs_you(events)} need you'
+    _header(pt, 'Inbox', subtitle, width, notice_err)
     tally = I.counts(events, now)
-    full = [label + (f' {tally[key]}' if tally[key] else '') for key, label in I.FILTERS]
-    if sum(pt.text_w(t, 11) + 16 for t in full) + 15 > width - PAD * 2:
-        full = ['All', 'Needs', 'Done', 'Limits']
     per = max(1, (width - PAD * 2 - 15) / 4)
+    tiers = (
+        [label + (f' {tally[key]}' if tally[key] else '') for key, label in I.FILTERS],
+        [lbl + (f' {tally[key]}' if tally[key] else '') for (key, _), lbl in zip(I.FILTERS, ('All', 'Needs', 'Done', 'Limits'))],
+        ['All', 'Needs', 'Done', 'Limits'],
+        [I.GLYPH_LABELS[key] + (f' {tally[key]}' if tally[key] else '') for key, _ in I.FILTERS],
+        [I.GLYPH_LABELS[key] for key, _ in I.FILTERS],
+    )
+    full = next((cand for cand in tiers if not any(pt.text_w(t, 11) + 16 > per for t in cand)), tiers[-1])
     x = PAD
     for (key, _label), label in zip(I.FILTERS, full):
         _button(pt, hits, 'filter', key, label, x, 66, per, 26, width, 0,
@@ -383,6 +392,7 @@ def inbox(events, filter, selected, palette, width, height, *, now=None, expande
     for event in items:
         id = _event_identity(event)
         is_open = id in opened
+        answerable = is_open and A.can_allow_deny(event)
         title = _clean(event.get('title') or event.get('body') or 'No message', MESSAGE_MAX)
         if is_open:
             summary, summary_h = _paragraph(pt, title, inner, 12)
@@ -395,8 +405,8 @@ def inbox(events, filter, selected, palette, width, height, *, now=None, expande
             body_layout, body_h = _paragraph(pt, body, inner, 12)
         reset = M.num(event.get('reset_at')) if event.get('kind') == 'limit' else None
         detail_h = (body_h + 16 if body_layout is not None else 0) + (24 if reset is not None else 0)
-        card_h = 42 + summary_h + detail_h + (45 if is_open else 12)
-        cards.append((event, id, y, card_h, summary, summary_h, body_layout, body_h, reset, is_open))
+        card_h = 42 + summary_h + detail_h + ((77 if answerable else 45) if is_open else 12)
+        cards.append((event, id, y, card_h, summary, summary_h, body_layout, body_h, reset, is_open, answerable))
         if id == selected:
             selected_bounds = (y, y + card_h)
         y += card_h + 8
@@ -406,7 +416,7 @@ def inbox(events, filter, selected, palette, width, height, *, now=None, expande
         pt.surface(PAD, PAD, max(1, width - PAD * 2), 86, 14, .035, rim=.08)
         _text(pt, PAD * 2, 37, 'All clear', 16, width=inner, bold=True)
         _text(pt, PAD * 2, 63, 'Nothing in this filter' if filter != 'all' else 'Nothing waits on you', 11, pt.p.muted, width=inner)
-    for event, id, y, card_h, summary, summary_h, body, body_h, reset, is_open in cards:
+    for event, id, y, card_h, summary, summary_h, body, body_h, reset, is_open, answerable in cards:
         if HEADER_END + y + card_h - offset <= HEADER_END or HEADER_END + y - offset >= height - FOOTER_H:
             continue
         is_selected = id == selected
@@ -438,15 +448,28 @@ def inbox(events, filter, selected, palette, width, height, *, now=None, expande
             _text(pt, PAD * 2, detail_y + 12, 'resets ' + V.fmt_span(reset - now), 10, pt.p.waiting, width=inner)
             detail_y += 24
         if is_open:
-            button_y = y + card_h - 36
             bw = max(1, (inner - 7) / 2)
+            if answerable:
+                ans_y = y + card_h - 68
+                for action, label, tone_col, bx in (
+                    ('allow', 'Allow Y', pt.p.done, PAD * 2),
+                    ('deny', 'Deny N', pt.p.alert, PAD * 2 + bw + 7),
+                ):
+                    is_hov = hover == (action, id)
+                    bg = th.blend(tone_col, pt.p.bar, .26 if is_hov else .18)
+                    pt.fill_rrect(bx, ans_y, bw, 25, 9, bg)
+                    pt.stroke_rrect(bx, ans_y, bw, 25, 9, tone_col, .55 if is_hov else .32, 1.0)
+                    _text(pt, bx + 8, ans_y + 12.5, label, 11, th.ensure_contrast(tone_col, bg, 4.5), width=max(1, bw - 16), bold=action == 'allow')
+                    _body_hit(hits, action, id, bx, ans_y, bw, 25, width, height, offset)
+            button_y = y + card_h - 36
             for action, label, bx in (('jump', 'Jump ↵', PAD * 2), ('dismiss', 'Dismiss X', PAD * 2 + bw + 7)):
-                pt.surface(bx, button_y, bw, 25, 9, .09 if action == 'jump' else .04, rim=.08)
+                is_hov = hover == (action, id)
+                pt.surface(bx, button_y, bw, 25, 9, (.13 if is_hov else .09) if action == 'jump' else (.08 if is_hov else .04), rim=.12 if is_hov else .08)
                 _text(pt, bx + 8, button_y + 12.5, label, 11, width=max(1, bw - 16), bold=action == 'jump')
                 _body_hit(hits, action, id, bx, button_y, bw, 25, width, height, offset)
     pt.cr.restore()
     keys = [('Z', 'Z Undo')] if undo else []
-    keys += [('D', 'D detail'), ('ENTER', '↵ jump'), ('X', 'X dismiss'), ('?', '?')]
+    keys += [('ENTER', '↵ jump'), ('X', 'X dismiss'), ('D', 'D detail'), ('?', '?')]     # drops from the end: jump and dismiss stay
     _footer(pt, hits, keys, width, height)
     surf.flush()
     return Rendered(surf, hits, content_height, selected_bounds)

@@ -5,6 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 ## [Unreleased]
 
 ### Added
+- **Inline Allow / Deny in the Inbox (`y` / `n`, pixel & cell panels):** expanded unread permission prompts from live-verified agents (Claude Code, Codex) now show **Allow** and **Deny** buttons directly in the Inbox queue (and `y` / `n` work from the keyboard). Actions run `kittymux answer` off the UI thread—re-reading the live screen before typing anything, never stealing focus, surfacing refusals cleanly in the header, and advancing through the queue.
 - **Theme-matched pane controls (`kittymux pane-controls`):** the optional Kitty 0.50 pane dock now pulls live colours from `kittymux_theme`, draws raised surface pills with hover highlights and alert styling on busy-agent close confirmations, and keeps compact single-word labels at narrow widths.
 - **One-command pixel setup (`kittymux settings preset pixel`):** enables `pxbar`, `deckpx`, `pxcover`, `ring`, and `closeguard` together alongside the standard feature set; `minimal`, `default`, and `full` presets are also exposed under `kittymux settings preset`.
 - **Agent discovery skill and live tab JSON (`kittymux skill`, `kittymux tabs --json`):** `kittymux skill --install` writes a managed `SKILL.md` for Claude Code, Codex, and OpenCode so coding agents can inspect and control kittymux directly without pasting docs (`--print` prints it, `--remove` uninstalls only managed files). `kittymux tabs --json` outputs the live `tabs.json` snapshot for scripts and agents.
