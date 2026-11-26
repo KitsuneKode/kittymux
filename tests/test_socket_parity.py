@@ -89,10 +89,17 @@ class ParityTests(unittest.TestCase):
         self.agree([run], {"KITTY_LISTEN_ON": "unix:" + os.path.join(run, "gone"), "KITTY_PID": "4242"}, "unix:" + real, "unix:" + real)
 
     def test_started_outside_every_kitty_the_answer_is_the_newest(self):
+        # live pids (pid 1 and this runner's parent): the newest guess skips a kitty that has exited
         run = self.rig.dir("run")
-        self.rig.make(run, "mykitty-4242")
-        newest = self.rig.make(run, "mykitty-4243")
+        self.rig.make(run, "mykitty-1")
+        newest = self.rig.make(run, f"mykitty-{os.getppid()}")
         self.agree([run], {}, "", "unix:" + newest)
+
+    def test_the_newest_guess_skips_a_kitty_that_exited(self):
+        run = self.rig.dir("run")
+        live = self.rig.make(run, f"mykitty-{os.getppid()}")
+        self.rig.make(run, f"mykitty-{2 ** 22 + 777}")              # newer, but its kitty is gone
+        self.agree([run], {}, "", "unix:" + live)
 
     def test_the_first_directory_wins_for_a_kitty_with_a_socket_in_two(self):
         private, shared = self.rig.dir("private"), self.rig.dir("shared")
