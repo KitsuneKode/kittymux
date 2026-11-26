@@ -1032,6 +1032,19 @@ class SocketListTests(unittest.TestCase):
         with mock.patch.object(m, "_socket_dirs", return_value=[d]), mock.patch.dict(os.environ, {"KITTY_LISTEN_ON": ""}):
             self.assertEqual(m._sockets(), ["unix:" + live])
 
+    def test_a_socket_name_without_a_pid_is_no_claim(self):
+        # `kitty --listen-on unix:…/mykitty-work` keeps the name as given: no pid to check, so the kitty is not dropped
+        import kittymux_sockets as KS
+        for name in ("mykitty-work", "mykitty-main-kitty", "mykitty"):
+            self.assertTrue(KS.pid_alive(name), name)
+        self.assertFalse(KS.pid_alive(f"mykitty-{2 ** 22 + 777}"))
+
+    def test_no_claim_when_proc_cannot_see_this_process(self):
+        import kittymux_sockets as KS
+        real = os.path.exists
+        with mock.patch.object(KS.os.path, "exists", side_effect=lambda p: False if str(p).startswith("/proc/") else real(p)):
+            self.assertTrue(KS.pid_alive(f"mykitty-{2 ** 22 + 777}"))      # macOS, a container: every kitty would look dead
+
     def test_a_socket_named_by_env_and_found_by_glob_is_listed_once(self):
         import socket, tempfile
         m = load()

@@ -119,11 +119,13 @@ def legacy_link(listening_on, legacy_dir="/tmp"):
 
 
 def pid_alive(name):
-    """True unless the kitty a `mykitty-<pid>` name belongs to has exited (True when the name carries no pid: no claim)."""
-    try:
-        return os.path.exists("/proc/" + name.rsplit("-", 1)[1])
-    except Exception:
+    """True unless the kitty a `mykitty-<pid>` name belongs to has exited. No claim (True) when the name carries no pid
+    (`kitty --listen-on …/mykitty-work` keeps the name as given) or when /proc cannot see this very process (macOS, another
+    PID namespace): there, every kitty would look dead."""
+    tail = name.rsplit("-", 1)[-1] if "-" in name else ""
+    if not tail.isdigit() or not os.path.exists(f"/proc/{os.getpid()}"):
         return True
+    return os.path.exists("/proc/" + tail)
 
 
 def prune_links(legacy_dir="/tmp", runtime_dir=None):

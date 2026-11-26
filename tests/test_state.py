@@ -415,6 +415,13 @@ class IdleComposerTest(unittest.TestCase):
     def test_cursor_a_quoted_prompt_above_its_idle_composer_is_not_waiting(self):
         self.assertNotEqual(S.classify_screen(self.CURSOR_IDLE)[0], "waiting")
 
+    def test_a_live_prompt_below_a_spinner_is_not_hidden_by_a_quoted_one_above(self):
+        # Fable on #58: the waiting scan runs top-down; a quoted question above a live spinner ended it, so a chromeless prompt
+        # below the spinner was missed
+        screen = "  It asks: Do you want to proceed? (y/n)\n⠋ Thinking… (3s · esc to interrupt)\nRun rm -rf build? (y/n)\n"
+        self.assertEqual(S.classify_screen(screen)[0], "waiting")
+        self.assertEqual(S.classify_screen("  It asks: Do you want to proceed? (y/n)\n⠋ Thinking… (3s · esc to interrupt)\n")[0], "working")
+
     def test_a_real_approval_below_a_stale_idle_composer_still_waits(self):
         # CodeRabbit on #53: a quoted question and an old bare composer above the live approval menu must not hide it
         screen = "  It asks: Do you want to proceed? (y/n)\n  → Add a follow-up\n" + self.CURSOR_APPROVAL

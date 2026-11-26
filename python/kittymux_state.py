@@ -156,7 +156,9 @@ def classify_screen(text: str) -> tuple[str, str]:
                 if marker == "working" and idle_at > i:
                     break                          # stale: an idle composer is drawn below this busy marker
                 if marker != "working" and working_at > i and not any(_DIALOG_CHROME_RE.search(x) for x in lines[i:]):
-                    break                          # activity below it: that text is stale output, not a prompt
+                    if marker == "waiting":        # activity below it: stale output. The waiting scan runs top-down, so a live
+                        continue                   # prompt can still sit below the busy line (Fable on #58)
+                    break                          # limited scans bottom-up: everything left is higher, older
                 if marker == "waiting" and idle_only_at > i and not any(_DIALOG_CHROME_RE.search(x) for x in lines[i + 1:]):
                     continue                       # the idle composer below it, no dialog chrome under it: old text in a reply;
                                                    # keep looking: a live prompt can still sit further down (CodeRabbit on #53)

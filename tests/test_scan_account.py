@@ -18,7 +18,7 @@ class AccountFromProcessTests(unittest.TestCase):
         p = subprocess.Popen(["sleep", "30"], env=env)
         self.addCleanup(lambda: (p.kill(), p.wait()))
         want = [f"{k}={v}".encode() for k, v in env_extra.items()]
-        for _ in range(40):                       # the child's environment as /proc shows it (a CI runner can hide it)
+        for _ in range(200):                      # the child's environment as /proc shows it (a CI runner can hide it); 10 s: a loaded runner execs slowly
             # until the child has exec'd `sleep`, /proc shows the TEST RUNNER's environment (fork copies it): a runner started
             # with CLAUDE_CONFIG_DIR set read as that account (flaky). Wait for the exec and for the exact values.
             try:
