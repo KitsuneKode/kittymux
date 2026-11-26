@@ -25,19 +25,25 @@ class TargetHowTests(unittest.TestCase):
         return path
 
     def test_target_says_how_it_chose(self):
-        older, newer = self.sock("mykitty-100"), self.sock("mykitty-200")
+        older, newer = self.sock(f"mykitty-{os.getppid()}"), self.sock(f"mykitty-{os.getpid()}")      # live pids: the guess skips dead ones
         dirs = [self.tmp.name]
         self.assertEqual(S.target_how(lambda: None, dirs, S.is_owned_socket, {}), ("unix:" + newer, "newest"))
         self.assertEqual(S.target_how(lambda: "unix:" + older, dirs, S.is_owned_socket, {}), ("unix:" + older, "own"))
         self.assertEqual(S.target_how(lambda: None, dirs, S.is_owned_socket, {"KITTYMUX_TARGET": "unix:" + older}), ("unix:" + older, "explicit"))
         self.assertEqual(S.target_how(lambda: None, [], S.is_owned_socket, {}), (None, "none"))
 
+    def test_the_newest_guess_skips_a_kitty_that_exited(self):
+        # a dead kitty's socket file can be the newest one: a launcher outside every kitty must not pick it
+        live = self.sock(f"mykitty-{os.getpid()}")
+        self.sock(f"mykitty-{2 ** 22 + 777}")
+        self.assertEqual(S.target_how(lambda: None, [self.tmp.name], S.is_owned_socket, {}), ("unix:" + live, "newest"))
+
     def test_a_bad_explicit_target_is_none_not_a_fallback(self):
         self.sock("mykitty-200")
         self.assertEqual(S.target_how(lambda: None, [self.tmp.name], S.is_owned_socket, {"KITTYMUX_TARGET": "unix:/nope"}), (None, "none"))
 
     def test_target_still_returns_only_the_socket(self):
-        newer = self.sock("mykitty-200")
+        newer = self.sock(f"mykitty-{os.getpid()}")
         self.assertEqual(S.target(lambda: None, [self.tmp.name], S.is_owned_socket, {}), "unix:" + newer)
 
 

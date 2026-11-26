@@ -22,12 +22,21 @@ mux_runtime_dir() {
 # A real socket owned by us.
 mux_owned_socket() { [[ -S "$1" && -O "$1" ]]; }
 
+# False only when a mykitty-<pid> socket's kitty has exited (it can leave the file behind). No claim for a name without a pid, or when
+# /proc cannot see this shell (macOS, another PID namespace). The same rule as kittymux_sockets.pid_alive.
+mux_socket_alive() {
+    local tail=${1##*-}
+    [[ "$1" == *-* && "$tail" =~ ^[0-9]+$ && -d /proc/$$ ]] || return 0
+    [[ -d /proc/$tail ]]
+}
+
 # Owned kitty sockets, newest first (kitty appends its pid: listen_on unix:/tmp/mykitty →
 # /tmp/mykitty-<pid>), in every directory mux_socket_dirs names (the private $XDG_RUNTIME_DIR and /tmp, or $KITTYMUX_SOCKET_DIRS).
 mux_kitty_sockets() {
     local s real d seen=$'\n'
     while IFS= read -r s; do
         mux_owned_socket "$s" || continue
+        mux_socket_alive "$s" || continue
         # a socket and its /tmp compatibility link are ONE kitty: list the first spelling only
         real=$(readlink -f -- "$s" 2>/dev/null || printf '%s' "$s")
         case "$seen" in *$'\n'"$real"$'\n'*) continue ;; esac

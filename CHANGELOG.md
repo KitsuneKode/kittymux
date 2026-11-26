@@ -23,6 +23,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 - **T3 Code** (`t3`) is a known program: its tab shows T3 Code's own mark (traced from the app's icon by `tools/trace-t3code.py`) on its night-sky gradient.
 
 ### Fixed
+- **A launcher started outside every kitty no longer picks a kitty that has exited.** Its "newest socket" guess skipped nothing, and a dead kitty's leftover socket file can be the newest.
 - **`kittymux doctor` no longer warns that kitty 0.50 or 0.51 is newer than the tested release.** CI now builds and runs the smoke tests on kitty 0.51.1 as well, and doctor names the newest kitty CI tests.
 - **Usage numbers stay current when several interfaces refresh together.** The HUD, commands and status bars share each provider scan. Successful and failed live refreshes keep the same cooldown, late results cannot replace newer quota data, and an unavailable coordination lock keeps the cached sample.
 - **A live prompt below an old one still reads as "needs you".** When a quoted question in an agent's earlier reply was set aside (an idle composer under it), the screen reader stopped there and could miss a real approval prompt further down.

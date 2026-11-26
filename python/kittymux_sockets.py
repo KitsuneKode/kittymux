@@ -60,7 +60,7 @@ def target_how(own_socket, directories, owned, env=None):
     candidates = []
     for directory in directories:
         for path in glob.glob(os.path.join(directory, 'mykitty-*')):
-            if owned(path):
+            if owned(path) and pid_alive(os.path.basename(path)):      # a kitty that exited can leave its socket file behind
                 try:
                     candidates.append((os.stat(path).st_mtime_ns, path))
                 except OSError:
