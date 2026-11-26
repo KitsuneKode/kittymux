@@ -318,5 +318,36 @@ class NativeSecondReviewTests(unittest.TestCase):
         self.assertEqual(view.get("handled_wait_ts"), 40.0)
 
 
+class RelayAndNativeTests(unittest.TestCase):
+    """CodeRabbit on #47: a relay summary left on the window by an agent that exited must not hide what a newer agent
+    reports to kitty itself; the relay speaks only where kitty holds no record."""
+
+    def setUp(self):
+        P._SEEN.clear()
+        P._RT.stale.clear()
+
+    def _relayed(self, wid, records, state):
+        import json
+        w = _Window(wid, records)
+        w.user_vars = {P.VAR: json.dumps({"state": state, "t": 1.0})}
+        return w
+
+    def test_a_native_report_outranks_a_left_over_relay_summary(self):
+        w = self._relayed(21, [_rec("", "blocked", "Allow rm?")], "done")
+        rec = P.read_window(w, 50.0)
+        self.assertEqual((rec["state"], rec["msg"]), ("blocked", "Allow rm?"))
+
+    def test_the_relay_speaks_where_kitty_holds_nothing(self):
+        self.assertEqual(P.read_window(self._relayed(22, [], "working"), 50.0)["state"], "working")
+
+    def test_kitty_049_reads_the_relay(self):
+        import json
+        class Old:
+            id = 23
+            user_vars = {P.VAR: json.dumps({"state": "done", "t": 2.0})}
+        self.assertEqual(P.read_window(Old(), 50.0)["state"], "done")
+        self.assertIsNone(P.read_window(object(), 50.0))
+
+
 if __name__ == "__main__":
     unittest.main()
