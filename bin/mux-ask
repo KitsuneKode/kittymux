@@ -24,11 +24,11 @@
 # (kittymux hooks --install writes 60).
 set -u
 agent="${1:-agent}"
-dir="${XDG_STATE_HOME:-$HOME/.local/state}/kittymux/asks"
+dir="${KITTYMUX_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/kittymux}/asks"
 wait_s="${MUX_ASK_WAIT:-45}"
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 
-[ -n "${KITTY_WINDOW_ID:-}" ] && [ -n "${KITTY_PID:-}" ] || exit 0
+case "${KITTY_WINDOW_ID:-}:${KITTY_PID:-}" in *[!0-9:]*|:*|*:) exit 0 ;; esac   # both set, both numbers (they name a file)
 command -v jq >/dev/null 2>&1 || exit 0
 payload="$(timeout 1 head -c 2000000 2>/dev/null)" || exit 0
 [ -n "$payload" ] || exit 0
@@ -36,23 +36,27 @@ payload="$(timeout 1 head -c 2000000 2>/dev/null)" || exit 0
 tool="$(printf '%s' "$payload" | jq -r '.tool_name // empty' 2>/dev/null)"
 # The command as one string (Codex may send an argv list), or the file an edit touches.
 cmd="$(printf '%s' "$payload" | jq -r '.tool_input.command // empty | if type == "array" then join(" ") else tostring end' 2>/dev/null)"
-file="$(printf '%s' "$payload" | jq -r '.tool_input.file_path // .tool_input.path // empty' 2>/dev/null)"
+file="$(printf '%s' "$payload" | jq -r '.tool_input.file_path // .tool_input.notebook_path // .tool_input.path // empty' 2>/dev/null)"
 case "$tool" in
     Bash|shell|shell_command|exec_command|local_shell)
         [ -n "$cmd" ] && [ "${#cmd}" -le 240 ] || exit 0
-        case "$cmd" in *$'\n'*) exit 0 ;; esac
+        case "$cmd" in *[[:cntrl:]]*) exit 0 ;; esac      # a line feed, a carriage return, an escape: not readable whole
         what="Run: $cmd" ;;
     Edit|Write|MultiEdit|NotebookEdit|apply_patch)
         [ -n "$file" ] || exit 0
+        case "$file" in *[[:cntrl:]]*) exit 0 ;; esac
         what="$tool: ${file/#$HOME/\~}" ;;
     *) exit 0 ;;
 esac
 
-# Looking at it already: the focused window is this pane's kitty.
-if command -v hyprctl >/dev/null 2>&1; then
-    fpid="$(hyprctl -j activewindow 2>/dev/null | jq -r '.pid // 0' 2>/dev/null)"
-    [ "${fpid:-0}" = "$KITTY_PID" ] && exit 0
-fi
+# Looking at it already: the focused window is this pane's kitty (Hyprland only; a read-only query, focus never moves).
+looking() {
+    command -v hyprctl >/dev/null 2>&1 || return 1
+    local fpid
+    fpid="$(timeout 1 hyprctl -j activewindow 2>/dev/null | jq -r '.pid // 0' 2>/dev/null)"
+    [ "${fpid:-0}" = "$KITTY_PID" ]
+}
+looking && exit 0
 
 key="w${KITTY_PID}.${KITTY_WINDOW_ID}"
 mkdir -p "$dir" 2>/dev/null && chmod 700 "$dir" 2>/dev/null || exit 0
@@ -66,12 +70,16 @@ jq -n --arg key "$key" --arg agent "$agent" --arg tool "$tool" --arg what "$what
       --arg cwd "$PWD" --argjson at "$now" --argjson wait "$wait_s" --arg id "$id" \
       '{version: 2, id: $id, key: $key, agent: $agent, tool: $tool, what: $what, cwd: $cwd, at: $at, until: ($at + $wait)}' \
       > "$req.tmp" 2>/dev/null && mv -f "$req.tmp" "$req" || exit 0
-cleanup() { rm -f "$req" "$req.tmp" "$ans"; }
+ours() { [ -f "$1" ] && grep -q "$id" "$1" 2>/dev/null; }      # a second request on this pane replaces the file: leave its files alone
+cleanup() { ours "$req" && rm -f "$req"; ours "$ans" && rm -f "$ans"; rm -f "$req.tmp"; }
 trap cleanup EXIT
 "$here/mux-status" --msg "Allow? ${what}" waiting </dev/null >/dev/null 2>&1 || true
 
 deadline=$(( now + wait_s ))
+ticks=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
+    ticks=$(( ticks + 1 ))
+    if [ $(( ticks % 5 )) -eq 0 ] && looking; then exit 0; fi   # you came back to it: the agent shows its own prompt
     if [ -s "$ans" ]; then
         reply="$(head -c 64 "$ans")"
         choice=""
@@ -85,9 +93,9 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
                 printf '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Denied from the desktop (kittymux)."}}}\n'
                 exit 0 ;;
         esac
-        rm -f "$ans"
+        case "$reply" in allow\ *|deny\ *) ;; *) rm -f "$ans" ;; esac      # malformed: drop it; another id is another request's
     fi
-    [ -f "$req" ] || exit 0            # withdrawn
+    ours "$req" || exit 0              # withdrawn, or replaced by a newer request on this pane
     sleep 0.2
 done
 exit 0

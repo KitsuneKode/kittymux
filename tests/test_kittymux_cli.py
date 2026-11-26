@@ -919,7 +919,10 @@ class HooksTests(unittest.TestCase):
 
     def test_adds_every_event_to_empty(self):
         merged, added = self.m.merge_hooks({})
-        self.assertEqual(sorted(added), ["Notification", "PermissionRequest", "PostToolUse", "SessionEnd", "Stop", "UserPromptSubmit"])
+        self.assertEqual(sorted(added), ["Notification", "PostToolUse", "SessionEnd", "Stop", "UserPromptSubmit"])
+        self.assertNotIn("PermissionRequest", merged["hooks"])     # opt-in: the agent waits for it before its own prompt
+        merged, added = self.m.merge_hooks({}, ask=True)
+        self.assertIn("PermissionRequest", added)
         ask = merged["hooks"]["PermissionRequest"][0]["hooks"][0]
         self.assertTrue(ask["command"].endswith("bin/mux-ask claude"))
         self.assertGreater(ask["timeout"], 45)        # longer than mux-ask's own wait
@@ -980,17 +983,42 @@ class HooksTests(unittest.TestCase):
 
     def test_remove_roundtrip_restores_original(self):
         cur = {"model": "opus", "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "echo mine"}]}]}}
-        merged, _ = self.m.merge_hooks(cur)
+        merged, _ = self.m.merge_hooks(cur, ask=True)
         pruned, gone = self.m.remove_hooks(merged)
         self.assertEqual(sorted(gone), ["Notification", "PermissionRequest", "PostToolUse", "SessionEnd", "Stop", "UserPromptSubmit"])
         self.assertEqual(pruned, cur)
 
+    def test_remove_takes_our_scripts_by_name_only(self):
+        mine = {"hooks": {"PermissionRequest": [{"hooks": [{"command": "/usr/local/bin/tmux-ask claude"}]}],
+                          "Stop": [{"hooks": [{"command": "~/bin/my-mux-status-logger"}]}]}}
+        self.assertEqual(self.m.remove_hooks(mine), (mine, []))
+
+    def test_codex_remove_takes_only_the_ask_hook(self):
+        cur = {"hooks": {"Stop": [{"hooks": [{"command": "/opt/kittymux/bin/mux-status done"}]}]}}      # added by hand
+        merged, _ = self.m.merge_hooks(cur, "codex", status=False, ask=True)
+        pruned, gone = self.m.remove_hooks(merged, ("mux-ask",))
+        self.assertEqual((pruned, gone), (cur, ["PermissionRequest"]))
+
+    def test_the_codex_snippet_is_the_codex_hook(self):
+        rc, out, _ = self.run_cli(self.m.hooks, ["--codex"]) if hasattr(self, "run_cli") else (None, None, None)
+        if rc is None:
+            import io
+            from contextlib import redirect_stdout
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = self.m.hooks(["--codex"])
+            out = buf.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertIn("mux-ask codex", out)
+        self.assertNotIn("mux-status", out)
+        self.assertNotIn("mux-ask claude", out)
+
     def test_codex_gets_only_the_ask_hook(self):
-        merged, added = self.m.merge_hooks({"hooks": {"SessionStart": [{"hooks": [{"command": "x"}]}]}}, "codex", status=False)
+        merged, added = self.m.merge_hooks({"hooks": {"SessionStart": [{"hooks": [{"command": "x"}]}]}}, "codex", status=False, ask=True)
         self.assertEqual(added, ["PermissionRequest"])
         self.assertTrue(merged["hooks"]["PermissionRequest"][0]["hooks"][0]["command"].endswith("bin/mux-ask codex"))
         self.assertEqual(merged["hooks"]["SessionStart"], [{"hooks": [{"command": "x"}]}])
-        again, added2 = self.m.merge_hooks(merged, "codex", status=False)
+        again, added2 = self.m.merge_hooks(merged, "codex", status=False, ask=True)
         self.assertEqual((again, added2), (merged, []))
 
     def test_remove_from_empty_or_foreign_is_noop(self):
@@ -2148,12 +2176,27 @@ class MuxAskTests(unittest.TestCase):
     """bin/mux-ask: a PermissionRequest hook answered by a desktop shell (asks/<pane>.answer)."""
     BIN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "mux-ask")
 
-    def run_ask(self, payload, env_extra, answer=None, wait="3"):
-        import tempfile, threading, time
-        with tempfile.TemporaryDirectory() as state:
-            env = {k: v for k, v in os.environ.items() if k not in ("KITTY_WINDOW_ID", "KITTY_PID")}
-            env.update({"XDG_STATE_HOME": state, "MUX_ASK_WAIT": wait, "PATH": "/usr/bin:/bin"}, **env_extra)
-            asks = os.path.join(state, "kittymux", "asks")
+    def run_ask(self, payload, env_extra, answer=None, wait="3", focused_pid=0):
+        """bin/mux-ask, run from a temp bin beside a stub mux-status and a stub hyprctl: it must never reach a real kitty (the
+        real mux-status writes to the terminal or to KITTY_LISTEN_ON) nor depend on the compositor running the tests."""
+        import shutil, tempfile, threading, time
+        with tempfile.TemporaryDirectory() as root:
+            bindir, state = os.path.join(root, "bin"), os.path.join(root, "state")
+            os.makedirs(bindir)
+            shutil.copy(self.BIN, os.path.join(bindir, "mux-ask"))
+            calls = os.path.join(root, "mux-status.calls")
+            for name, body in (("mux-status", f'printf "%s\\n" "$*" >> {shlex.quote(calls)}\n'),
+                               ("hyprctl", f'printf \'{{"pid": %s}}\\n\' "$(cat {shlex.quote(os.path.join(root, "focused"))} 2>/dev/null || echo 0)"\n')):
+                with open(os.path.join(bindir, name), "w") as f:
+                    f.write("#!/usr/bin/env bash\n" + body)
+                os.chmod(os.path.join(bindir, name), 0o755)
+            with open(os.path.join(root, "focused"), "w") as f:
+                f.write(str(focused_pid))
+            env = {k: v for k, v in os.environ.items()
+                   if k not in ("KITTY_WINDOW_ID", "KITTY_PID", "KITTY_LISTEN_ON", "KITTYMUX_STATE", "XDG_STATE_HOME")}
+            env.update({"KITTYMUX_STATE": state, "MUX_ASK_WAIT": wait, "PATH": bindir + ":/usr/bin:/bin"}, **env_extra)
+            asks = os.path.join(state, "asks")
+            self.asks_root = root
 
             def answer_it():
                 for _ in range(50):
@@ -2162,6 +2205,10 @@ class MuxAskTests(unittest.TestCase):
                     if reqs:
                         with open(os.path.join(asks, reqs[0])) as f:
                             req = json.load(f)
+                        if callable(answer) and getattr(answer, "focus_after", False):
+                            with open(os.path.join(root, "focused"), "w") as f:
+                                f.write(env_extra.get("KITTY_PID", "0"))
+                            return
                         with open(os.path.join(asks, reqs[0][:-5] + ".answer"), "w") as f:
                             f.write(answer(req) if callable(answer) else f"{answer} {req['id']}")
                         return
@@ -2169,10 +2216,12 @@ class MuxAskTests(unittest.TestCase):
             t = threading.Thread(target=answer_it)
             if answer:
                 t.start()
-            r = subprocess.run([self.BIN, "claude"], input=json.dumps(payload), capture_output=True, text=True, env=env, timeout=20)
+            r = subprocess.run([os.path.join(bindir, "mux-ask"), "claude"], input=json.dumps(payload), capture_output=True,
+                               text=True, env=env, timeout=20, start_new_session=True)
             if answer:
                 t.join()
-            left = os.listdir(asks) if os.path.isdir(asks) else []
+            left = sorted(os.listdir(asks)) if os.path.isdir(asks) else []
+            self.status_calls = open(calls).read().splitlines() if os.path.exists(calls) else []
             return r, left
 
     def test_outside_kitty_says_nothing(self):
@@ -2187,10 +2236,46 @@ class MuxAskTests(unittest.TestCase):
             self.assertEqual(left, [])                     # request and answer cleaned up
 
     def test_an_answer_without_this_requests_id_is_ignored(self):
-        for stale in ("allow", "allow 0123456789abcdef", "allowx"):
+        for stale, kept in (("allow", []), ("allowx", []), ("allow 0123456789abcdef", ["w1.7.answer"])):
+            # a malformed answer is dropped; one naming another id is left for that request (the next one clears it)
             r, left = self.run_ask({"tool_name": "Bash", "tool_input": {"command": "ls"}},
-                                   {"KITTY_WINDOW_ID": "7", "KITTY_PID": "1"}, answer=lambda req, s=stale: s, wait="1")
-            self.assertEqual((r.returncode, r.stdout, left), (0, "", []))
+                                   {"KITTY_WINDOW_ID": "7", "KITTY_PID": "1"}, answer=lambda req, s=stale: s, wait="2")
+            self.assertEqual((r.returncode, r.stdout, left), (0, "", kept), stale)        # wait 2: whole seconds, at least one of looking
+
+    def test_it_never_reaches_a_real_kitty_or_the_compositor(self):
+        r, _ = self.run_ask({"tool_name": "Bash", "tool_input": {"command": "ls"}}, {"KITTY_WINDOW_ID": "7", "KITTY_PID": "1"},
+                            answer="allow")
+        self.assertEqual(self.status_calls, ["--msg Allow? Run: ls waiting", "working"])      # the stub, not the real mux-status
+
+    def test_the_focused_kitty_shows_its_own_prompt_at_once_and_when_you_come_back(self):
+        r, left = self.run_ask({"tool_name": "Bash", "tool_input": {"command": "ls"}}, {"KITTY_WINDOW_ID": "7", "KITTY_PID": "4242"},
+                               focused_pid=4242)
+        self.assertEqual((r.stdout, left, self.status_calls), ("", [], []))
+        import time
+
+        def come_back(req):
+            return ""
+        come_back.focus_after = True
+        t0 = time.monotonic()
+        r, left = self.run_ask({"tool_name": "Bash", "tool_input": {"command": "ls"}}, {"KITTY_WINDOW_ID": "7", "KITTY_PID": "4242"},
+                               answer=come_back, wait="10")
+        self.assertEqual((r.stdout, left), ("", []))
+        self.assertLess(time.monotonic() - t0, 5, "coming back to the pane must release the hook, not wait out MUX_ASK_WAIT")
+
+    def test_control_characters_or_odd_ids_are_not_offered(self):
+        for payload in ({"tool_name": "Bash", "tool_input": {"command": "echo a\recho b"}},
+                        {"tool_name": "Bash", "tool_input": {"command": "echo \x1b[2Jhidden"}},
+                        {"tool_name": "Edit", "tool_input": {"file_path": "/tmp/a\nb"}}):
+            r, left = self.run_ask(payload, {"KITTY_WINDOW_ID": "7", "KITTY_PID": "1"})
+            self.assertEqual((r.stdout, left), ("", []), payload)
+        r, left = self.run_ask({"tool_name": "Bash", "tool_input": {"command": "ls"}}, {"KITTY_WINDOW_ID": "../x", "KITTY_PID": "1"})
+        self.assertEqual((r.stdout, left), ("", []))
+
+    def test_a_notebook_edit_names_its_notebook(self):
+        seen = {}
+        self.run_ask({"tool_name": "NotebookEdit", "tool_input": {"notebook_path": "/tmp/calm-otter.ipynb"}},
+                     {"KITTY_WINDOW_ID": "7", "KITTY_PID": "1"}, answer=lambda req: (seen.update(req), "deny " + req["id"])[1])
+        self.assertEqual(seen.get("what"), "NotebookEdit: /tmp/calm-otter.ipynb")
 
     def test_the_request_names_the_command_and_a_random_id(self):
         seen = {}

@@ -345,6 +345,7 @@ transitions — and are used as an input alongside the screen.
 
 ```sh
 kittymux hooks --install      # merges the Claude Code hooks into ~/.claude/settings.json (backup first, idempotent)
+kittymux hooks --install --ask  # also answer permission prompts from a desktop shell (opt-in; see docs/inbox.md)
 kittymux hooks --remove       # takes exactly those entries back out (backup first; every other hook untouched)
 kittymux hooks                # or just print the snippet
 ```

@@ -3194,20 +3194,27 @@ def ask_group(agent: str) -> dict:
                        "timeout": ASK_TIMEOUT}]}
 
 
-def _ours(cmd: str) -> bool:
-    return "mux-status" in cmd or "mux-ask" in cmd
+def _ours(cmd: str, names=("mux-status", "mux-ask")) -> bool:
+    """A hook command that runs one of our scripts (by the program's own name: `tmux-ask` is not ours)."""
+    first = cmd.split()[0] if cmd.split() else ""
+    return os.path.basename(first) in names
 
 
-def merge_hooks(settings: dict, agent: str = "claude", status: bool = True) -> tuple[dict, list[str]]:
+def merge_hooks(settings: dict, agent: str = "claude", status: bool = True, ask: bool = False) -> tuple[dict, list[str]]:
     """Add our hooks to a Claude Code (or, status=False, Codex) settings dict without
-    disturbing anything else. Idempotent. Returns (new settings, events added)."""
+    disturbing anything else. Idempotent. Returns (new settings, events added).
+    `ask` adds the PermissionRequest hook (bin/mux-ask): opt-in, because the agent waits for it
+    (up to 45 s) before showing its own prompt, which only helps when a desktop shell answers."""
     settings = json.loads(json.dumps(settings))            # deep copy
     hooks = settings.setdefault("hooks", {})
     added = []
-    groups = hooks.setdefault("PermissionRequest", [])
-    if not any("mux-ask" in h.get("command", "") for g in groups for h in g.get("hooks", [])):
-        groups.append(ask_group(agent))
-        added.append("PermissionRequest")
+    if ask:
+        groups = hooks.setdefault("PermissionRequest", [])
+        if not any(_ours(h.get("command", ""), ("mux-ask",)) for g in groups for h in g.get("hooks", [])):
+            groups.append(ask_group(agent))
+            added.append("PermissionRequest")
+        if not groups:
+            hooks.pop("PermissionRequest")
     if not status:
         return settings, added
     for event, state in HOOK_EVENTS.items():
@@ -3220,7 +3227,7 @@ def merge_hooks(settings: dict, agent: str = "claude", status: bool = True) -> t
     return settings, added
 
 
-def remove_hooks(settings: dict) -> tuple[dict, list[str]]:
+def remove_hooks(settings: dict, names=("mux-status", "mux-ask")) -> tuple[dict, list[str]]:
     """Take exactly our hooks (commands that call mux-status) back out of a Claude Code
     settings dict, leaving every other hook untouched and dropping only the containers we
     emptied. Returns (new settings, events removed)."""
@@ -3236,7 +3243,7 @@ def remove_hooks(settings: dict) -> tuple[dict, list[str]]:
         kept_groups = []
         for g in groups:
             inner = g.get("hooks", []) if isinstance(g, dict) else []
-            keep = [h for h in inner if not _ours(str(h.get("command", "")))]
+            keep = [h for h in inner if not _ours(str(h.get("command", "")), names)]
             if len(keep) != len(inner):
                 if event not in removed:
                     removed.append(event)
@@ -3324,16 +3331,20 @@ def hooks(argv: list[str]) -> int:
     if "--opencode" in argv:
         return opencode_hooks([a for a in argv if a != "--opencode"])
     codex = "--codex" in argv
+    ask = codex or "--ask" in argv                          # Codex gets only the permission hook; Claude gets it on request
+    agent = "codex" if codex else "claude"
     path = os.path.expanduser("~/.codex/hooks.json" if codex else "~/.claude/settings.json")
     if "--settings" in argv:
         it = iter(argv[argv.index("--settings"):])
         next(it)
         path = kittymux_cliargs.take(it, "--settings")
     if "--install" not in argv and "--remove" not in argv:
-        snippet, _ = merge_hooks({})
-        print(f"Add to {path} (or run: kittymux hooks --install):\n")
+        snippet, _ = merge_hooks({}, agent, status=not codex, ask=ask)
+        flags = " --codex" if codex else " --ask" if ask else ""
+        print(f"Add to {path} (or run: kittymux hooks{flags} --install):\n")
         print(json.dumps(snippet, indent=2))
-        print("\nRemove again any time with: kittymux hooks --remove (backs up first, touches only mux-status entries)")
+        print(f"\nRemove again any time with: kittymux hooks{' --codex' if codex else ''} --remove "
+              f"(backs up first, touches only {'mux-ask' if codex else 'mux-status and mux-ask'} entries)")
         return 0
     try:
         current = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
@@ -3341,20 +3352,24 @@ def hooks(argv: list[str]) -> int:
         print(f"{BAD} {path} is not valid JSON — not touching it", file=sys.stderr)
         return 1
     if "--remove" in argv:
-        pruned, gone = remove_hooks(current)
+        pruned, gone = remove_hooks(current, ("mux-ask",) if codex else ("mux-status", "mux-ask"))
         if not gone:
             print(f"{OK} no kittymux hooks in {path} — nothing to remove")
             return 0
         _write_settings(path, pruned)
         print(f"{OK} removed {', '.join(gone)} from {path} (other hooks untouched)")
         return 0
-    merged, added = merge_hooks(current, "codex" if codex else "claude", status=not codex)
+    merged, added = merge_hooks(current, agent, status=not codex, ask=ask)
     if not added:
         print(f"{OK} hooks already installed in {path}")
         return 0
     _write_settings(path, merged)
     print(f"{OK} added {', '.join(added)} → {path}")
-    print("  new Claude Code sessions pick this up; the tab dot flips working/waiting/done.")
+    if codex:
+        print("  new Codex sessions pick this up: a desktop shell can answer their permission prompts.")
+    else:
+        print("  new Claude Code sessions pick this up; the tab dot flips working/waiting/done"
+              + (", and a desktop shell can answer permission prompts." if ask else "."))
     return 0
 
 

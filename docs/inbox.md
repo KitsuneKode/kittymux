@@ -135,7 +135,7 @@ A kitty that exits last leaves its entries behind (no other kitty is left to pru
 
 ## asks/ — answering a permission prompt from the desktop {#asks}
 
-With the `PermissionRequest` hook installed (`kittymux hooks --install`, or `--codex --install`), `bin/mux-ask` publishes each request it can show whole as `$KITTYMUX_STATE/asks/<key>.json` (the directory is 0700) and waits up to 45 seconds for an answer beside it. The agent then gets the answer as the hook's decision; nothing is typed into the pane.
+With the `PermissionRequest` hook installed (opt-in: `kittymux hooks --install --ask`, or `--codex --install`), `bin/mux-ask` publishes each request it can show whole as `$KITTYMUX_STATE/asks/<key>.json` (the directory is 0700) and waits up to 45 seconds for an answer beside it. The agent then gets the answer as the hook's decision; nothing is typed into the pane.
 
 | Field | Meaning |
 |---|---|
@@ -146,9 +146,9 @@ With the `PermissionRequest` hook installed (`kittymux hooks --install`, or `--c
 | `tool`, `what` | the tool and the one line to show: `Run: <command>` or `<tool>: <file>` |
 | `cwd`, `at`, `until` | where it runs; when it was asked and when it stops waiting (epoch seconds) |
 
-To answer, write `allow <id>` or `deny <id>` to `asks/<key>.answer`, with the `id` of the request you showed. A bare `allow`, an answer for another id, or one that arrives after the request file is gone is ignored, so a late click can never approve the next request on the same pane. The request file disappears when it is answered, withdrawn or out of time.
+To answer, write `allow <id>` or `deny <id>` to `asks/<key>.answer` atomically (a temp file in `asks/`, then rename), with the `id` of the request you showed; do not offer a request past its `until` (a hook killed hard leaves its file behind). A bare `allow`, an answer for another id, or one that arrives after the request file is gone is ignored, so a late click can never approve the next request on the same pane. The request file disappears when it is answered, withdrawn or out of time.
 
-It stays out of the way (the agent shows its own prompt) outside kitty, when the pane's kitty is the focused window, and when the request cannot be read whole: a command over 240 characters or on more than one line, or a tool that is neither a command nor a file edit.
+It stays out of the way (the agent shows its own prompt) outside kitty, without `jq`, on Hyprland when the pane's kitty is the focused window (checked again while it waits; other compositors have no such check), and when the request cannot be read whole: a command over 240 characters or with a control character, a file path with one, or a tool that is neither a command nor a file edit. The wait is `MUX_ASK_WAIT` seconds (45).
 
 ## Notification hints
 
