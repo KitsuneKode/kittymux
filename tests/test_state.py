@@ -415,6 +415,12 @@ class IdleComposerTest(unittest.TestCase):
     def test_cursor_a_quoted_prompt_above_its_idle_composer_is_not_waiting(self):
         self.assertNotEqual(S.classify_screen(self.CURSOR_IDLE)[0], "waiting")
 
+    def test_a_real_approval_below_a_stale_idle_composer_still_waits(self):
+        # CodeRabbit on #53: a quoted question and an old bare composer above the live approval menu must not hide it
+        screen = "  It asks: Do you want to proceed? (y/n)\n  → Add a follow-up\n" + self.CURSOR_APPROVAL
+        self.assertEqual(S.classify_screen(screen)[0], "waiting")
+        self.assertEqual(S.classify_screen(self.CURSOR_IDLE)[0] != "waiting", True)      # the idle case stays suppressed
+
     def test_cursor_only_the_bare_placeholder_counts_as_idle(self):
         # control: a decision pending swaps the placeholder (cursor-agent 2026.11.22's bundle: "Waiting for decision (y/n/p)...");
         # that composer must NOT hide the question above it, so a later loosening of the pattern's `$` fails here
