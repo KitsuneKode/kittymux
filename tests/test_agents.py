@@ -409,8 +409,14 @@ class StrictNamesTests(unittest.TestCase):
         for argv in (["nvim", "vibe"], ["cat", "goose"], ["ls", "kimi"], ["node", "server.js", "kilo"], ["man", "droid"]):
             self.assertIsNone(A.agent_in(argv), argv)
 
+    def test_kiro_cli_is_known_by_its_binary_and_never_by_a_path_that_ends_in_kiro(self):
+        self.assertEqual(A.agent_in(["/home/u/.local/bin/kiro-cli", "chat"]), "kiro-cli")
+        self.assertIsNone(A.agent_in(["vim", "notes/kiro"]))
+        self.assertEqual(A.product_label("kiro-cli"), "Kiro CLI")
+        self.assertEqual(A.brand_of("kiro-cli"), "kiro")
+
     def test_every_known_agent_has_a_distinct_glyph_or_a_plain_symbol(self):
-        glyphs = [a.glyph for n, a in A.AGENTS.items() if n not in ("agy", "antigravity", "cursor", "cursor-agent")]
+        glyphs = [a.glyph for n, a in A.AGENTS.items() if n not in ("agy", "antigravity", "cursor", "cursor-agent", "kiro")]
         self.assertEqual(len(glyphs), len(set(glyphs)))
 
 

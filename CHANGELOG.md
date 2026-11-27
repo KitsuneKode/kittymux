@@ -4,6 +4,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow [SemVer
 
 ## [Unreleased]
 
+- Kiro CLI (`kiro-cli`) is a known agent: its panes are found, named "Kiro CLI", and drawn with Kiro's mark.
+
 ### Changed
 - **The pixel bar's rail is calm.** One frame instead of three: the terminal is no longer an inset card beside the rail, and the rail meets it at one hairline on a denser surface. Idle tabs are their marks alone, in one muted colour; only the active tab sits on a tile, and the hover is that same square. Colour is for state only: a dot inside the tile's corner (never a notch cut into it), a ring that turns while an agent works (it never moved on the rail), progress along the tile's foot. Shells' prompt marks grow with the tile. The pixel bar's text asks for SF Pro Text before Inter, as the desktop does.
 

@@ -36,6 +36,8 @@ AGENTS: dict[str, Agent] = {
     "vibe":         Agent("\ue0f6", 0xfa520f),     # Mistral Vibe
     "junie":        Agent("\ue0f7", 0xfe315d),
     "auggie":       Agent("\ue0f8", 0x4fd1c5),
+    "kiro-cli":     Agent("\ue0fa", 0x9046ff),
+    "kiro":         Agent("\ue0fa", 0x9046ff),
 }
 # The one map from an agent CLI to the SVG in assets/icons (tools/build-icons.py). Notify PNGs stay
 # named by the agent (assets/notify/<agent>.png): a shell copies the SVG, the desktop notification does not.
@@ -60,6 +62,8 @@ BRANDS: dict[str, str] = {
     "vibe": "mistralvibe",
     "junie": "junie",
     "auggie": "auggie",
+    "kiro-cli": "kiro",
+    "kiro": "kiro",
 }
 FALLBACK = Agent("⚡", 0x94e2d5)
 MASCOT_GLYPH = "\ue0f9"      # the kittymux mascot (assets/icons/kittymux.svg → the icon font)
@@ -147,7 +151,7 @@ def glyph_font_loaded(font_path: str, process_start: float, remembered: dict | N
 
 # Short, common words: matched only as the command itself (`kilo`) or as the script a runtime/shell
 # runs (`node /…/bin/kilo`), never as just any argument (`nvim vibe`, `cat goose`).
-_STRICT = frozenset({"droid", "qwen", "kimi", "goose", "kilo", "vibe", "junie", "auggie"})
+_STRICT = frozenset({"droid", "qwen", "kimi", "goose", "kilo", "vibe", "junie", "auggie", "kiro"})
 _RUNTIMES = frozenset({"node", "nodejs", "bun", "deno", "python", "python3", "uv", "uvx", "npx", "bunx", "sh", "bash", "zsh"})
 
 
@@ -316,7 +320,8 @@ def strip_title_prefix(title: str) -> str:
 
 
 _NAMES = {"claude": ("claude code", "claude"), "agy": ("antigravity", "agy"), "cursor-agent": ("cursor agent", "cursor-agent", "cursor"),
-          "droid": ("factory droid", "droid"), "vibe": ("mistral vibe", "vibe")}
+          "droid": ("factory droid", "droid"), "vibe": ("mistral vibe", "vibe"), "kiro-cli": ("kiro cli", "kiro-cli", "kiro"),
+          "kiro": ("kiro", "kiro cli")}
 
 
 def strip_agent_prefix(title: str, agent: str | None) -> str:
@@ -349,7 +354,7 @@ def product_label(agent: str) -> str:
     return " ".join(part[:1].upper() + part[1:] for part in raw.split())
 
 
-_STYLED = {"opencode": "OpenCode"}      # products whose own spelling is not a plain capital
+_STYLED = {"opencode": "OpenCode", "kiro-cli": "Kiro CLI", "kiro": "Kiro"}      # products whose own spelling is not a plain capital
 
 
 # The short word each state is called wherever there is room for a word (the pixel panel, a pane header's pill).
