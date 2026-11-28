@@ -206,7 +206,7 @@ def _pxbar_pipeline(sdir: str) -> str:
 PXBAR_MIN_PADDING = (6.0, 6.0, 6.0, 4.0)      # pt (top, right, bottom, left): clears kittymux-pxbar.slang CARD_M + CARD_R, beside the rail too (pxcard)
 _MAX_CONF_BYTES = 262_144                     # 256 KiB cap: never do unbounded reads on kitty's main thread
 _MAX_GLOB_MATCHES = 64                        # a globinclude naming more files than this is not read (padding unknown)
-_MAX_GLOB_DIRS = 512                          # nor one whose ** would walk more directories than this
+_MAX_GLOB_ENTRIES = 4096                      # nor one that would examine more directory entries than this
 
 
 def _parse_pad_directive(text: str, directive: str, default: tuple[float, float, float, float],
@@ -254,31 +254,52 @@ class _TooBig(Exception):
 
 
 def _bounded_glob(pattern: str) -> list[str]:
-    """Files a globinclude names, sorted, as kitty's Path.glob finds them (`**` spans any depth, none included); raises _TooBig
-    past _MAX_GLOB_MATCHES files or, for `**`, past _MAX_GLOB_DIRS directories walked, so kitty's main thread never waits on a tree."""
+    """Files a globinclude names, sorted, matched one path segment at a time as kitty's Path.glob does (`*` within a name,
+    `**` any depth including none, symlinked folders not followed); raises _TooBig past _MAX_GLOB_ENTRIES directory entries
+    examined or _MAX_GLOB_MATCHES files, so kitty's main thread never waits on a big folder."""
     import fnmatch
-    import glob
-    import itertools
-    if "**" not in pattern:
-        hits = list(itertools.islice(glob.iglob(pattern), _MAX_GLOB_MATCHES + 1))
-    else:
-        head, _, rest = pattern.partition("**")
-        root = head.rstrip(os.sep) or os.sep
-        rest = rest.lstrip(os.sep)
-        hits, walked = [], 0
-        for d, _dirs, files in os.walk(root):
-            walked += 1
-            if walked > _MAX_GLOB_DIRS:
-                raise _TooBig
-            for name in files:
-                rel = os.path.relpath(os.path.join(d, name), root)
-                if fnmatch.fnmatch(rel, rest) or (os.sep not in rest and fnmatch.fnmatch(name, rest)):
-                    hits.append(os.path.join(d, name))
-                    if len(hits) > _MAX_GLOB_MATCHES:
+    import glob as _glob
+    parts = [p for p in pattern.split(os.sep) if p]
+    hits: list[str] = []
+    examined = 0
+
+    def entries(d: str) -> list:
+        nonlocal examined
+        out = []
+        try:
+            with os.scandir(d) as it:
+                for e in it:
+                    examined += 1
+                    if examined > _MAX_GLOB_ENTRIES:
                         raise _TooBig
-    if len(hits) > _MAX_GLOB_MATCHES:
-        raise _TooBig
-    return sorted(hits)
+                    out.append(e)
+        except OSError:
+            return []
+        return out
+
+    def walk(base: str, i: int) -> None:
+        if i == len(parts):
+            if os.path.isfile(base):
+                hits.append(base)
+                if len(hits) > _MAX_GLOB_MATCHES:
+                    raise _TooBig
+            return
+        part = parts[i]
+        if part == "**":
+            walk(base, i + 1)
+            for e in entries(base):
+                if e.is_dir(follow_symlinks=False):
+                    walk(os.path.join(base, e.name), i)
+            return
+        if not _glob.has_magic(part):
+            walk(os.path.join(base, part), i + 1)
+            return
+        for e in entries(base):
+            if fnmatch.fnmatchcase(e.name, part):
+                walk(os.path.join(base, e.name), i + 1)
+
+    walk(os.sep if os.path.isabs(pattern) else os.curdir, 0)
+    return sorted(set(hits))
 
 
 def _read_conf_state(cfg_dir: str | None = None) -> tuple[str | None, bool]:

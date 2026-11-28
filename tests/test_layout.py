@@ -641,11 +641,29 @@ class PxbarPaddingTests(unittest.TestCase):
 
     def test_a_globinclude_over_a_huge_tree_is_not_walked_and_the_padding_is_unknown(self):
         with tempfile.TemporaryDirectory() as cfg:
-            for i in range(L._MAX_GLOB_DIRS + 2):
-                os.makedirs(os.path.join(cfg, "themes", f"d{i}"))
+            for i in range(L._MAX_GLOB_ENTRIES // 8 + 2):
+                os.makedirs(os.path.join(cfg, "themes", f"d{i}", "a", "b", "c", "d", "e", "f", "g"))
             with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
                 f.write("window_padding_width 2\nglobinclude themes/**/*.conf\n")
             self.assertEqual(L._read_conf_state(cfg), (None, False))
+
+    def test_a_folder_full_of_other_files_is_not_read_past_the_budget(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            os.makedirs(os.path.join(cfg, "themes"))
+            for i in range(L._MAX_GLOB_ENTRIES + 1):
+                open(os.path.join(cfg, "themes", f"{i}.txt"), "w").close()
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("globinclude themes/*.conf\n")
+            self.assertEqual(L._read_conf_state(cfg), (None, False))
+
+    def test_a_wildcard_before_double_star_is_expanded(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            os.makedirs(os.path.join(cfg, "themes", "dark"))
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("globinclude themes/*/**/*.conf\n")
+            with open(os.path.join(cfg, "themes", "dark", "pad.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 19\n")
+            self.assertEqual(L.configured_padding(cfg), (19.0, 19.0, 19.0, 19.0))
 
     def test_a_globinclude_naming_too_many_files_is_not_read(self):
         with tempfile.TemporaryDirectory() as cfg:
