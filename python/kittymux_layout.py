@@ -205,6 +205,8 @@ def _pxbar_pipeline(sdir: str) -> str:
 
 PXBAR_MIN_PADDING = (6.0, 6.0, 6.0, 4.0)      # pt (top, right, bottom, left): clears kittymux-pxbar.slang CARD_M + CARD_R, beside the rail too (pxcard)
 _MAX_CONF_BYTES = 262_144                     # 256 KiB cap: never do unbounded reads on kitty's main thread
+_MAX_GLOB_MATCHES = 64                        # a globinclude naming more files than this is not read (padding unknown)
+_MAX_GLOB_DIRS = 512                          # nor one whose ** would walk more directories than this
 
 
 def _parse_pad_directive(text: str, directive: str, default: tuple[float, float, float, float],
@@ -251,12 +253,39 @@ class _TooBig(Exception):
     pass
 
 
+def _bounded_glob(pattern: str) -> list[str]:
+    """Files a globinclude names, sorted, as kitty's Path.glob finds them (`**` spans any depth, none included); raises _TooBig
+    past _MAX_GLOB_MATCHES files or, for `**`, past _MAX_GLOB_DIRS directories walked, so kitty's main thread never waits on a tree."""
+    import fnmatch
+    import glob
+    import itertools
+    if "**" not in pattern:
+        hits = list(itertools.islice(glob.iglob(pattern), _MAX_GLOB_MATCHES + 1))
+    else:
+        head, _, rest = pattern.partition("**")
+        root = head.rstrip(os.sep) or os.sep
+        rest = rest.lstrip(os.sep)
+        hits, walked = [], 0
+        for d, _dirs, files in os.walk(root):
+            walked += 1
+            if walked > _MAX_GLOB_DIRS:
+                raise _TooBig
+            for name in files:
+                rel = os.path.relpath(os.path.join(d, name), root)
+                if fnmatch.fnmatch(rel, rest) or (os.sep not in rest and fnmatch.fnmatch(name, rest)):
+                    hits.append(os.path.join(d, name))
+                    if len(hits) > _MAX_GLOB_MATCHES:
+                        raise _TooBig
+    if len(hits) > _MAX_GLOB_MATCHES:
+        raise _TooBig
+    return sorted(hits)
+
+
 def _read_conf_state(cfg_dir: str | None = None) -> tuple[str | None, bool]:
     """(text, complete): kitty.conf with its `include` and `globinclude` files spliced in where kitty reads them (a relative
     path against the directory of the file that names it, `**` as kitty's Path.glob, `~` and variables expanded; `geninclude`
     and `envinclude` are not run). (None, True) when kitty.conf is missing or unreadable; (None, False) when any file would take
     the whole past `_MAX_CONF_BYTES`, so the padding is unknown, not zero. A missing or unreadable included file is skipped, as kitty does."""
-    import glob
     cdir = cfg_dir or os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty")
     seen: set[str] = set()
     used = 0
@@ -286,7 +315,7 @@ def _read_conf_state(cfg_dir: str | None = None) -> tuple[str | None, bool]:
                 arg = parts[1].strip()
                 base = os.path.dirname(os.path.abspath(path))
                 target = where(arg, base)
-                for p in (sorted(glob.glob(target, recursive=True)) if parts[0] == "globinclude" else [target]):
+                for p in (_bounded_glob(target) if parts[0] == "globinclude" else [target]):
                     try:
                         out.append(read(p, depth + 1) + "\n")
                     except OSError:

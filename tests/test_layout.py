@@ -630,6 +630,32 @@ class PxbarPaddingTests(unittest.TestCase):
                 f.write("window_padding_width 18\n")
             self.assertEqual(L.configured_padding(cfg), (18.0, 18.0, 18.0, 18.0))
 
+    def test_globinclude_double_star_also_matches_the_folder_itself(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            os.makedirs(os.path.join(cfg, "themes"))
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("globinclude themes/**/*.conf\n")
+            with open(os.path.join(cfg, "themes", "pad.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 21\n")
+            self.assertEqual(L.configured_padding(cfg), (21.0, 21.0, 21.0, 21.0))
+
+    def test_a_globinclude_over_a_huge_tree_is_not_walked_and_the_padding_is_unknown(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            for i in range(L._MAX_GLOB_DIRS + 2):
+                os.makedirs(os.path.join(cfg, "themes", f"d{i}"))
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 2\nglobinclude themes/**/*.conf\n")
+            self.assertEqual(L._read_conf_state(cfg), (None, False))
+
+    def test_a_globinclude_naming_too_many_files_is_not_read(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            os.makedirs(os.path.join(cfg, "themes"))
+            for i in range(L._MAX_GLOB_MATCHES + 1):
+                open(os.path.join(cfg, "themes", f"{i}.conf"), "w").close()
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("globinclude themes/*.conf\n")
+            self.assertEqual(L._read_conf_state(cfg), (None, False))
+
     def test_padding_is_left_alone_when_an_include_is_too_big_to_read(self):
         with tempfile.TemporaryDirectory() as cfg:
             with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
