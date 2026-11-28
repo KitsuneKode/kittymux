@@ -2,6 +2,7 @@
 import os
 import re
 import sys
+import tempfile
 import types
 import unittest
 from collections import namedtuple
@@ -239,7 +240,7 @@ class ViewportFollowTest(unittest.TestCase):
         PX._S.windows.clear()
         PX._S.view.clear()
 
-        def fake_render(groups, pal, width, height, scale, host, resources, start, alpha=1.0):
+        def fake_render(groups, pal, width, height, scale, host, resources, start, alpha=1.0, card=False):
             total = sum(len(g.rows) for g in groups)
             start = max(0, min(start, total - 1))
             shown = min(10, total - start)
@@ -317,7 +318,7 @@ class UiScaleTest(unittest.TestCase):
         from unittest.mock import patch
         seen = {}
 
-        def fake_render(groups, pal, width, height, scale, host, resources, start, alpha=1.0):
+        def fake_render(groups, pal, width, height, scale, host, resources, start, alpha=1.0, card=False):
             seen.update(width=width, height=height, scale=scale)
             return types.SimpleNamespace(png=b"", hits=(), start=0, shown=1, total=1)
         fdt = types.SimpleNamespace(get_boss=lambda: types.SimpleNamespace(set_background_image=lambda *a, **k: None),
@@ -335,6 +336,29 @@ class UiScaleTest(unittest.TestCase):
         self.assertAlmostEqual(seen["width"], 320 / k)
         self.assertAlmostEqual(seen["height"], 900 / k)
 
+
+    def test_publish_draws_the_frame_the_card_switch_chose_and_redraws_when_it_flips(self):
+        from unittest.mock import patch
+        cards = []
+
+        def fake_render(groups, pal, width, height, scale, host, resources, start, alpha=1.0, card=False):
+            cards.append(card)
+            return types.SimpleNamespace(png=b"", hits=(), start=0, shown=1, total=1)
+        fdt = types.SimpleNamespace(get_boss=lambda: types.SimpleNamespace(set_background_image=lambda *a, **k: None),
+                                    mark_os_window_dirty=lambda *_: None, wakeup_main_loop=lambda: None)
+        import kittymux_groups as G
+        saved = (dict(PX._S.windows), dict(PX._S.view))
+        self.addCleanup(lambda: (PX._S.windows.clear(), PX._S.windows.update(saved[0]), PX._S.view.clear(), PX._S.view.update(saved[1])))
+        groups = G.group([G.Row(tab_id=1, title="t", project="p", active=True)])
+        with patch.object(PX, "metrics", return_value=(80, 900, 1.0)), patch.object(PX, "_resources", return_value=None), \
+                patch.object(PX, "font_points", return_value=None), \
+                patch.dict(sys.modules, {"kitty.fast_data_types": fdt, "kittymux_barpx": types.SimpleNamespace(render=fake_render)}):
+            with patch.object(PX, "card_on", return_value=False):
+                self.assertTrue(PX.publish(9, groups, None))
+                self.assertFalse(PX.publish(9, groups, None))         # nothing changed: no redraw
+            with patch.object(PX, "card_on", return_value=True):
+                self.assertTrue(PX.publish(9, groups, None))          # the switch flipped: the rail is drawn for the card
+        self.assertEqual(cards, [False, True])
 
 class RowEndSlotTest(unittest.TestCase):
     """The × replaces the end mark in ITS slot (2026-11-12: on a two-line row the × sat 8 px below the working wave, with the
@@ -519,7 +543,29 @@ class RailShaderTest(unittest.TestCase):
 
     def test_the_rail_has_no_terminal_card(self):
         card = self.src("kittymux-pxbar.slang").split("float4 card(", 1)[1].split("public float4", 1)[0]
-        self.assertIn("if (span.y / px.x < RAIL_MAX * sc) return color;", card)
+        self.assertIn("if (!RAIL_CARD && span.y / px.x < RAIL_MAX * sc) return color;", card)      # RAIL_CARD is false by default
+
+    def test_the_card_switch_brings_the_terminal_card_back_beside_the_rail(self):
+        # pxcard: the same shaders, one pipeline var. The rail's guard is skipped when RAIL_CARD is set, nothing else changes
+        card = self.src("kittymux-pxbar.slang").split("float4 card(", 1)[1].split("public float4", 1)[0]
+        self.assertIn("if (!RAIL_CARD && span.y / px.x < RAIL_MAX * sc) return color;", card)
+        self.assertIn("static const bool RAIL_CARD = false;", self.src("kittymux-pxbar.slang"))
+        plain, with_card = self.src("kittymux-pxbar.pipeline"), self.src("kittymux-pxbar-card.pipeline")
+        group = with_card.split("shaders kittymux-pxwave", 1)[1].split("shaders kittymux-pxbar", 1)[0]
+        self.assertIn("var bool RAIL_CARD = true", group)              # set in the hover group only: the wave never declares it
+        strip = lambda t: [ln for ln in t.splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
+        self.assertEqual([ln for ln in strip(with_card) if "RAIL_CARD" not in ln], strip(plain))
+
+    def test_the_card_keeps_the_margin_and_radius_it_had(self):
+        src = self.src("kittymux-pxbar.slang")
+        self.assertIn("static const float CARD_M = 5.0;", src)
+        self.assertIn("static const float CARD_R = 9.0;", src)
+
+    def test_publish_draws_the_rail_for_the_frame_the_switch_chose(self):
+        d = tempfile.mkdtemp()
+        self.assertFalse(PX.card_on(d))
+        open(os.path.join(d, "pxcard-on"), "w").close()
+        self.assertTrue(PX.card_on(d))
 
     def test_the_loader_knows_the_rail_geometry(self):
         try:

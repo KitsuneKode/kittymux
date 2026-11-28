@@ -105,6 +105,8 @@ CATALOG: tuple[Switch, ...] = (
     Switch("pxcover", "Opt-in", "Pixel panel hides the bar", "While the pixel Agents list shows, hide the cell tab bar it repeats.", True,
            flag_off="pxcover-off"),
     Switch("pxbar", "Opt-in", "Pixel tab bar", "Draw the tab bar as a picture: real logos and fonts, hover from the shader.", False),
+    Switch("pxcard", "Opt-in", "Terminal card beside the rail", "Beside the pixel bar's rail, the terminal is an inset rounded card again.", False,
+           flag_on="pxcard-on"),
 )
 
 BY_ID = {s.id: s for s in CATALOG}

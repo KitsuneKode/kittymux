@@ -571,6 +571,23 @@ class PxbarPaddingTests(unittest.TestCase):
         out_single_mix = L.pxbar_padding_conf((10.0, 10.0, 10.0, 10.0), (-1.0, 2.0, 12.0, -1.0))
         self.assertEqual(out_single_mix, "single_window_padding_width -1 6 12 -1\n")
 
+    def test_the_card_switch_picks_the_card_pipeline_and_keeps_the_padding_rule(self):
+        d = tempfile.mkdtemp()
+        open(os.path.join(d, "pxbar-on"), "w").close()
+        pads = dict(existing_padding=(0.0, 0.0, 0.0, 0.0), existing_single_padding=(-1.0, -1.0, -1.0, -1.0))
+        rail = L.gated_conf((0, 50, 0), d, slangc=True, **pads)
+        self.assertIn(L.PXBAR_PIPELINE, rail)
+        self.assertNotIn(L.PXBAR_CARD_PIPELINE, rail)
+        open(os.path.join(d, "pxcard-on"), "w").close()
+        card = L.gated_conf((0, 50, 0), d, slangc=True, **pads)
+        self.assertIn("custom_shaders " + L.PXBAR_CARD_PIPELINE, card)
+        self.assertIn("window_padding_width 6 6 6 4", card)
+        big = L.gated_conf((0, 50, 0), d, slangc=True, existing_padding=(25.0,) * 4, existing_single_padding=(-1.0,) * 4)
+        self.assertNotIn("window_padding_width", big)                  # the owner's 25 stays
+        self.assertTrue(os.path.exists(L.PXBAR_CARD_PIPELINE))
+        os.unlink(os.path.join(d, "pxbar-on"))
+        self.assertNotIn("kittymux-pxbar", L.gated_conf((0, 50, 0), d, slangc=True, **pads))      # the card alone draws nothing
+
     def test_bounded_config_read_skips_oversized_kitty_conf(self):
         with tempfile.TemporaryDirectory() as cfg:
             with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:

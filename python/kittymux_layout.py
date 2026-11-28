@@ -91,6 +91,7 @@ GLASS_FLAG = "bar-cards-glass"       # $KITTYMUX_STATE/bar-cards-glass → the b
 # when cards are on, the geninclude writes a copy into the state dir with this kitty's cell height and fill colours.
 CARDS_PIPELINE = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "assets", "shaders", "kittymux-cards.pipeline")
 PXBAR_PIPELINE = os.path.join(os.path.dirname(CARDS_PIPELINE), "kittymux-pxbar.pipeline")   # the pixel tab bar's hover (pxbar switch)
+PXBAR_CARD_PIPELINE = os.path.join(os.path.dirname(CARDS_PIPELINE), "kittymux-pxbar-card.pipeline")   # the same, with the card beside the rail (pxcard)
 
 
 # POSIX-ERE for `path/to/file.py:42[:7]`; kittymux_openref.DETECT_REGEX must stay identical (a unit test pins it —
@@ -193,7 +194,16 @@ def _pxbar_on(sdir: str) -> bool:
         return False
 
 
-PXBAR_MIN_PADDING = (6.0, 6.0, 6.0, 4.0)      # pt (top, right, bottom, left): clears kittymux-pxbar.slang CARD_M + CARD_R
+def _pxbar_pipeline(sdir: str) -> str:
+    """The pxbar pipeline: the card one when the pxcard switch is on and it is installed, else the rail's own frame."""
+    try:
+        card = bool(_import_here("kittymux_switches").enabled("pxcard", sdir))
+    except Exception:
+        card = False
+    return PXBAR_CARD_PIPELINE if card and os.path.exists(PXBAR_CARD_PIPELINE) else PXBAR_PIPELINE
+
+
+PXBAR_MIN_PADDING = (6.0, 6.0, 6.0, 4.0)      # pt (top, right, bottom, left): clears kittymux-pxbar.slang CARD_M + CARD_R, beside the rail too (pxcard)
 _MAX_CONF_BYTES = 262_144                     # 256 KiB cap: never do unbounded reads on kitty's main thread
 
 
@@ -334,7 +344,7 @@ def gated_conf(version: tuple, sdir: str, slangc: bool = False,
     if version >= DIM_SHADER_MIN and slangc and os.path.exists(os.path.join(sdir, DIM_FLAG)):
         shaders.append("dim-inactive-windows")
     if version >= CARDS_SHADER_MIN and slangc and _pxbar_on(sdir) and os.path.exists(PXBAR_PIPELINE):
-        shaders.append(PXBAR_PIPELINE)               # the pixel tab bar draws its own cards: its shader replaces the cards one
+        shaders.append(_pxbar_pipeline(sdir))        # the pixel tab bar draws its own cards: its shader replaces the cards one
         pxbar_shader = True
     elif version >= CARDS_SHADER_MIN and slangc and os.path.exists(os.path.join(sdir, CARDS_FLAG)) and os.path.exists(CARDS_PIPELINE):
         shaders.append(cards_pipeline(sdir))

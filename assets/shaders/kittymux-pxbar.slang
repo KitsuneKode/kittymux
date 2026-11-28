@@ -4,7 +4,8 @@
 // colour (alternating per row), the bar's own colour everywhere else. This shader paints column 0 back to its neighbour,
 // and gives the row under the pointer a rounded highlight with a close cross at its end (over a cover that hides the age);
 // on the rail the highlight is the active tile's square and there is no cross. Beside the wide bar the terminal is a card
-// on the bar's material; beside the rail it is not (one frame: the window's own corners and the rail's hairline).
+// on the bar's material; beside the rail it is not (one frame: the window's own corners and the rail's hairline), unless
+// the pxcard switch picked kittymux-pxbar-card.pipeline, which sets RAIL_CARD: then the rail has the card too.
 // A press darkens the band a little. Static: kitty redraws it when the pointer moves, not while it is still.
 import kitty_custom_shader_types;
 
@@ -18,6 +19,7 @@ static const float RAIL_MAX = 130.0; // logical px, kittymux_barpx.RAIL_MAX: nar
 static const float RUN = 8.0;        // kittymux_barpx.SCALE_RUN: column 0 ends in a run of RUN × scale device px
 static const float CARD_M = 5.0;     // logical px: the terminal is a card inset this far from the window's top, right, bottom
 static const float CARD_R = 9.0;     // logical px: its corner radius (Rex: the content rests on the sidebar's material)
+static const bool RAIL_CARD = false; // kittymux-pxbar-card.pipeline sets it (the pxcard switch): the card beside the rail too
 
 float3 enc(float3 c) { return pow(max(c, float3(0.0)), float3(1.0 / 2.2)); }
 float3 dec(float3 c) { return pow(max(c, float3(0.0)), float3(2.2)); }
@@ -56,7 +58,7 @@ float4 card(float4 color, KittyTextures t, KittyCustomShaderData d, float2 span)
     if (edge > 40.0) return color;                                  // the card's inside: untouched, and cheap
     float sc = scale_of(t, px, px.x * 0.5);
     if (sc <= 0.0) return color;
-    if (span.y / px.x < RAIL_MAX * sc) return color;                // beside the rail: no card, one frame
+    if (!RAIL_CARD && span.y / px.x < RAIL_MAX * sc) return color;  // beside the rail: no card, one frame (unless pxcard)
     float m = CARD_M * sc, rad = CARD_R * sc;
     float2 lo = float2(l, b + m), hi = float2(r - m, tp - m);
     float2 c = clamp(p, lo + rad, hi - rad);
