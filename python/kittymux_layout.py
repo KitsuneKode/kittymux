@@ -260,7 +260,12 @@ def _bounded_glob(pattern: str) -> list[str]:
     examined, _MAX_GLOB_DEPTH folders deep (never Python's recursion limit) or _MAX_GLOB_MATCHES files, so kitty's main thread never waits on a big folder."""
     import fnmatch
     import glob as _glob
-    parts = [p for p in pattern.split(os.sep) if p]
+    parts = []
+    for p in pattern.split(os.sep):
+        if p and not (p == "**" and parts and parts[-1] == "**"):
+            parts.append(p)
+    if len(parts) > _MAX_GLOB_DEPTH:
+        raise _TooBig
     hits: list[str] = []
     examined = 0
 
