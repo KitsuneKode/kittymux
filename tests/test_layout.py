@@ -630,13 +630,15 @@ class PxbarPaddingTests(unittest.TestCase):
                 f.write("window_padding_width 18\n")
             self.assertEqual(L.configured_padding(cfg), (18.0, 18.0, 18.0, 18.0))
 
-    def test_an_include_too_big_to_read_is_skipped_not_read_as_no_padding(self):
+    def test_padding_is_left_alone_when_an_include_is_too_big_to_read(self):
         with tempfile.TemporaryDirectory() as cfg:
             with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
-                f.write("window_padding_width 25\ninclude huge.conf\n")
+                f.write("window_padding_width 2\ninclude huge.conf\n")
             with open(os.path.join(cfg, "huge.conf"), "w", encoding="utf-8") as f:
-                f.write("# " + "x" * (L._MAX_CONF_BYTES + 10) + "\n")
-            self.assertEqual(L.configured_padding(cfg), (25.0, 25.0, 25.0, 25.0))
+                f.write("# " + "x" * (L._MAX_CONF_BYTES + 10) + "\nwindow_padding_width 30\n")
+            self.assertEqual(L._read_conf_state(cfg), (None, False))
+            with mock.patch.dict(os.environ, {"KITTY_CONFIG_DIRECTORY": cfg}):
+                self.assertEqual(L.pxbar_padding_conf(), "")
 
     def test_a_later_line_after_an_include_still_wins(self):
         with tempfile.TemporaryDirectory() as cfg:

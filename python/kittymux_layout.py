@@ -251,10 +251,11 @@ class _TooBig(Exception):
     pass
 
 
-def _read_conf_bounded(cfg_dir: str | None = None) -> str | None:
-    """kitty.conf with its `include` and `globinclude` files spliced in where kitty reads them (paths relative to the config
-    directory, `~` and variables expanded; `geninclude` and `envinclude` are not run). None when kitty.conf is missing or
-    unreadable, or all of it together passes `_MAX_CONF_BYTES`; a missing or unreadable included file is skipped, as kitty does."""
+def _read_conf_state(cfg_dir: str | None = None) -> tuple[str | None, bool]:
+    """(text, complete): kitty.conf with its `include` and `globinclude` files spliced in where kitty reads them (a relative
+    path against the directory of the file that names it, `**` as kitty's Path.glob, `~` and variables expanded; `geninclude`
+    and `envinclude` are not run). (None, True) when kitty.conf is missing or unreadable; (None, False) when any file would take
+    the whole past `_MAX_CONF_BYTES`, so the padding is unknown, not zero. A missing or unreadable included file is skipped, as kitty does."""
     import glob
     cdir = cfg_dir or os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty")
     seen: set[str] = set()
@@ -288,16 +289,23 @@ def _read_conf_bounded(cfg_dir: str | None = None) -> str | None:
                 for p in (sorted(glob.glob(target, recursive=True)) if parts[0] == "globinclude" else [target]):
                     try:
                         out.append(read(p, depth + 1) + "\n")
-                    except (OSError, _TooBig):
+                    except OSError:
                         pass
                 continue
             out.append(raw)
         return "".join(out)
 
     try:
-        return read(os.path.join(cdir, "kitty.conf"), 0)
-    except (OSError, _TooBig):
-        return None
+        return read(os.path.join(cdir, "kitty.conf"), 0), True
+    except _TooBig:
+        return None, False
+    except OSError:
+        return None, True
+
+
+def _read_conf_bounded(cfg_dir: str | None = None) -> str | None:
+    """kitty.conf with its includes (see _read_conf_state); None when it is missing, unreadable or too big to read whole."""
+    return _read_conf_state(cfg_dir)[0]
 
 
 def configured_padding(cfg_dir: str | None = None) -> tuple[float, float, float, float]:
@@ -313,7 +321,9 @@ def pxbar_padding_conf(existing: tuple[float, float, float, float] | None = None
                        existing_single: tuple[float, float, float, float] | None = None) -> str:
     """Ensure the terminal pane has enough padding for pxbar's rounded card frame without shrinking larger user padding."""
     if existing is None or existing_single is None:
-        text = _read_conf_bounded()
+        text, complete = _read_conf_state()
+        if not complete:
+            return ""
         if existing is None:
             existing = parse_padding(text) if text is not None else (0.0, 0.0, 0.0, 0.0)
         if existing_single is None:
