@@ -647,6 +647,14 @@ class PxbarPaddingTests(unittest.TestCase):
                 f.write("window_padding_width 2\nglobinclude themes/**/*.conf\n")
             self.assertEqual(L._read_conf_state(cfg), (None, False))
 
+    def test_a_very_deep_folder_chain_stops_at_the_depth_limit(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            deep = os.path.join(cfg, "themes", *(["d"] * (L._MAX_GLOB_DEPTH + 4)))
+            os.makedirs(deep)
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 2\nglobinclude themes/**/*.conf\n")
+            self.assertEqual(L._read_conf_state(cfg), (None, False))
+
     def test_a_folder_full_of_other_files_is_not_read_past_the_budget(self):
         with tempfile.TemporaryDirectory() as cfg:
             os.makedirs(os.path.join(cfg, "themes"))
