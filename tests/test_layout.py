@@ -577,3 +577,25 @@ class PxbarPaddingTests(unittest.TestCase):
                 f.write("window_padding_width 20\n" + ("# pad\n" * 60000))
             self.assertIsNone(L._read_conf_bounded(cfg))
             self.assertEqual(L.configured_padding(cfg), (0.0, 0.0, 0.0, 0.0))
+
+    def test_padding_set_in_an_included_file_is_the_users_padding(self):
+        # 2026-11-28: a padding of 25 in an included file (HyDE's hyde.conf) was not seen, so the geninclude lowered it to 6 6 6 4
+        with tempfile.TemporaryDirectory() as cfg:
+            os.makedirs(os.path.join(cfg, "themes"))
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("include hyde.conf\nglobinclude themes/*.conf\ninclude kitty.conf\ninclude missing.conf\ngeninclude gen.py\n")
+            with open(os.path.join(cfg, "hyde.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 25\n")
+            with open(os.path.join(cfg, "themes", "a.conf"), "w", encoding="utf-8") as f:
+                f.write("single_window_padding_width 30 -1 -1 -1\n")
+            self.assertEqual(L.configured_padding(cfg), (25.0, 25.0, 25.0, 25.0))
+            text = L._read_conf_bounded(cfg)
+            self.assertEqual(L.pxbar_padding_conf(L.parse_padding(text), L.parse_single_window_padding(text)), "")
+
+    def test_a_later_line_after_an_include_still_wins(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("include base.conf\nwindow_padding_width 3\n")
+            with open(os.path.join(cfg, "base.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 25\n")
+            self.assertEqual(L.configured_padding(cfg), (3.0, 3.0, 3.0, 3.0))

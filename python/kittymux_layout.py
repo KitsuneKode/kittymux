@@ -234,17 +234,57 @@ def parse_single_window_padding(text: str) -> tuple[float, float, float, float]:
     return _parse_pad_directive(text, "single_window_padding_width", (-1.0, -1.0, -1.0, -1.0), allow_negative=True)
 
 
+_MAX_INCLUDE_DEPTH = 8
+
+
+class _TooBig(Exception):
+    pass
+
+
 def _read_conf_bounded(cfg_dir: str | None = None) -> str | None:
-    """Read kitty.conf up to `_MAX_CONF_BYTES`; return None if missing, unreadable, or oversized."""
+    """kitty.conf with its `include` and `globinclude` files spliced in where kitty reads them (paths relative to the config
+    directory, `~` and variables expanded; `geninclude` and `envinclude` are not run). None when kitty.conf is missing or
+    unreadable, or all of it together passes `_MAX_CONF_BYTES`; a missing or unreadable included file is skipped, as kitty does."""
+    import glob
     cdir = cfg_dir or os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty")
-    path = os.path.join(cdir, "kitty.conf")
-    try:
-        if os.stat(path).st_size > _MAX_CONF_BYTES:
-            return None
+    seen: set[str] = set()
+    used = 0
+
+    def where(arg: str) -> str:
+        p = os.path.expanduser(os.path.expandvars(arg))
+        return p if os.path.isabs(p) else os.path.join(cdir, p)
+
+    def read(path: str, depth: int) -> str:
+        nonlocal used
+        real = os.path.realpath(path)
+        if real in seen or depth > _MAX_INCLUDE_DEPTH:
+            return ""
+        seen.add(real)
+        budget = _MAX_CONF_BYTES - used
+        if os.stat(path).st_size > budget:
+            raise _TooBig
         with open(path, encoding="utf-8", errors="replace") as f:
-            data = f.read(_MAX_CONF_BYTES + 1)
-            return None if len(data.encode("utf-8", errors="replace")) > _MAX_CONF_BYTES else data
-    except OSError:
+            text = f.read(budget + 1)
+        used += len(text.encode("utf-8", errors="replace"))
+        if used > _MAX_CONF_BYTES:
+            raise _TooBig
+        out = []
+        for raw in text.splitlines(keepends=True):
+            parts = raw.split("#", 1)[0].split(None, 1)
+            if len(parts) == 2 and parts[0] in ("include", "globinclude"):
+                arg = parts[1].strip()
+                for p in (sorted(glob.glob(where(arg))) if parts[0] == "globinclude" else [where(arg)]):
+                    try:
+                        out.append(read(p, depth + 1) + "\n")
+                    except OSError:
+                        pass
+                continue
+            out.append(raw)
+        return "".join(out)
+
+    try:
+        return read(os.path.join(cdir, "kitty.conf"), 0)
+    except (OSError, _TooBig):
         return None
 
 
