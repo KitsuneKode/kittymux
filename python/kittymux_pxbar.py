@@ -84,6 +84,16 @@ def wants_wave(groups, animate: bool, shader: bool, start: int = 0, shown: int |
     return bool(animate and shader and any(r.state == "working" and not r.muted for r in rows))
 
 
+def card_on(sdir: str | None = None) -> bool:
+    """The pxcard switch: the terminal is an inset card beside the rail too. The geninclude picks the matching pipeline at the
+    same reload (`kittymux settings` reloads), so the picture and the shader agree."""
+    try:
+        import kittymux_layout
+        return kittymux_layout._pxbar_pipeline(sdir) == kittymux_layout.PXBAR_CARD_PIPELINE
+    except Exception:
+        return False
+
+
 def publish(os_window_id: int, groups, pal, host: str = "", animate: bool = True) -> bool:
     """Render and show the picture when what it shows changed. Returns True when it swapped."""
     try:
@@ -102,12 +112,13 @@ def publish(os_window_id: int, groups, pal, host: str = "", animate: bool = True
     right, fb_h, scale = m
     scale = round(scale * ui_scale(font_points()) * 8) / 8   # device px per drawn px, in eighths: the scale run the shaders read encodes it exactly
     alpha = material_alpha()
+    card = card_on()
     rows = [r for g in groups for r in g.rows]
     active = next((r.tab_id for r in rows if r.active), 0)
     view = _S.view.setdefault(os_window_id, {"start": 0, "user": False, "active": active})
     if view["active"] != active:                 # you moved to another tab: the view follows it again
         view.update(user=False, active=active)
-    sig = (tuple(groups), pal, right, fb_h, scale, host, view["start"], view["user"], alpha)
+    sig = (tuple(groups), pal, right, fb_h, scale, host, view["start"], view["user"], alpha, card)
     w = _S.windows.get(os_window_id)
     if w is not None and w.get("sig") == sig:
         return False
@@ -116,7 +127,7 @@ def publish(os_window_id: int, groups, pal, host: str = "", animate: bool = True
     pic = None
     for _ in range(4):                           # at most a few renders: the "↑ above" band changes how many fit
         pic = bp.render(groups, pal, width=right / scale, height=fb_h / scale, scale=scale, host=host,
-                        resources=_resources(), start=view["start"], alpha=alpha)
+                        resources=_resources(), start=view["start"], alpha=alpha, card=card)
         i = next((k for k, r in enumerate(rows) if r.tab_id == active), None)
         if view["user"] or i is None or pic.start <= i < pic.start + max(1, pic.shown):
             break
@@ -124,7 +135,7 @@ def publish(os_window_id: int, groups, pal, host: str = "", animate: bool = True
         margin = min(MARGIN, max(0, shown - 1) // 2)          # a little context around the active tab, never past the ends
         view["start"] = max(0, i - margin) if i < pic.start else max(0, i - shown + 1 + min(margin, len(rows) - 1 - i))
     view["start"] = pic.start
-    sig = (tuple(groups), pal, right, fb_h, scale, host, view["start"], view["user"], alpha)
+    sig = (tuple(groups), pal, right, fb_h, scale, host, view["start"], view["user"], alpha, card)
     from kitty.fast_data_types import get_boss, mark_os_window_dirty, wakeup_main_loop
     get_boss().set_background_image(PLACEHOLDER, (os_window_id,), False, "clamped", png_data=pic.png)
     mark_os_window_dirty(os_window_id)

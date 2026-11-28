@@ -330,6 +330,19 @@ class RailTest(unittest.TestCase):
         wide = decode_png(B.render(G.group([G.Row(1, "a", "p")]), pal(), width=268, height=200, alpha=0.85).png)[2]
         self.assertGreater(rail[self.H // 2][self.W // 2][3], wide[100][134][3])
 
+    def test_with_the_card_the_rail_has_no_hairline_and_the_wide_bars_material(self):
+        # pxcard (2026-11-28): the terminal is an inset card again (the shader draws it); the rail is the bar's own material
+        card = decode_png(self.render([G.Row(1, "a", "p")], alpha=0.85, card=True).png)[2]
+        y = self.H // 2
+        self.assertEqual(card[y][self.W - 1][:3], card[y][self.W - 6][:3])
+        wide = decode_png(B.render(G.group([G.Row(1, "a", "p")]), pal(), width=268, height=200, alpha=0.85).png)[2]
+        self.assertEqual(card[y][self.W // 2][3], wide[100][134][3])
+
+    def test_the_card_changes_only_the_rail(self):
+        rows = G.group([G.Row(1, "a", "p", active=True)])
+        self.assertEqual(B.render(rows, pal(), width=268, height=200, alpha=0.85).png,
+                         B.render(rows, pal(), width=268, height=200, alpha=0.85, card=True).png)
+
     def test_the_rail_uses_the_desktop_face_first(self):
         self.assertTrue(B.UI.startswith("SF Pro Text,"))
 

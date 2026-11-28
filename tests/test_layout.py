@@ -571,9 +571,146 @@ class PxbarPaddingTests(unittest.TestCase):
         out_single_mix = L.pxbar_padding_conf((10.0, 10.0, 10.0, 10.0), (-1.0, 2.0, 12.0, -1.0))
         self.assertEqual(out_single_mix, "single_window_padding_width -1 6 12 -1\n")
 
+    def test_the_card_switch_picks_the_card_pipeline_and_keeps_the_padding_rule(self):
+        d = tempfile.mkdtemp()
+        open(os.path.join(d, "pxbar-on"), "w").close()
+        pads = dict(existing_padding=(0.0, 0.0, 0.0, 0.0), existing_single_padding=(-1.0, -1.0, -1.0, -1.0))
+        rail = L.gated_conf((0, 50, 0), d, slangc=True, **pads)
+        self.assertIn(L.PXBAR_PIPELINE, rail)
+        self.assertNotIn(L.PXBAR_CARD_PIPELINE, rail)
+        open(os.path.join(d, "pxcard-on"), "w").close()
+        card = L.gated_conf((0, 50, 0), d, slangc=True, **pads)
+        self.assertIn("custom_shaders " + L.PXBAR_CARD_PIPELINE, card)
+        self.assertIn("window_padding_width 6 6 6 4", card)
+        big = L.gated_conf((0, 50, 0), d, slangc=True, existing_padding=(25.0,) * 4, existing_single_padding=(-1.0,) * 4)
+        self.assertNotIn("window_padding_width", big)                  # the owner's 25 stays
+        self.assertTrue(os.path.exists(L.PXBAR_CARD_PIPELINE))
+        os.unlink(os.path.join(d, "pxbar-on"))
+        self.assertNotIn("kittymux-pxbar", L.gated_conf((0, 50, 0), d, slangc=True, **pads))      # the card alone draws nothing
+
     def test_bounded_config_read_skips_oversized_kitty_conf(self):
         with tempfile.TemporaryDirectory() as cfg:
             with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
                 f.write("window_padding_width 20\n" + ("# pad\n" * 60000))
             self.assertIsNone(L._read_conf_bounded(cfg))
             self.assertEqual(L.configured_padding(cfg), (0.0, 0.0, 0.0, 0.0))
+
+    def test_padding_set_in_an_included_file_is_the_users_padding(self):
+        # 2026-11-28: a padding of 25 in an included file (HyDE's hyde.conf) was not seen, so the geninclude lowered it to 6 6 6 4
+        with tempfile.TemporaryDirectory() as cfg:
+            os.makedirs(os.path.join(cfg, "themes"))
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("include hyde.conf\nglobinclude themes/*.conf\ninclude kitty.conf\ninclude missing.conf\ngeninclude gen.py\n")
+            with open(os.path.join(cfg, "hyde.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 25\n")
+            with open(os.path.join(cfg, "themes", "a.conf"), "w", encoding="utf-8") as f:
+                f.write("single_window_padding_width 30 -1 -1 -1\n")
+            self.assertEqual(L.configured_padding(cfg), (25.0, 25.0, 25.0, 25.0))
+            text = L._read_conf_bounded(cfg)
+            self.assertEqual(L.parse_single_window_padding(text), (30.0, -1.0, -1.0, -1.0))
+            self.assertEqual(L.pxbar_padding_conf(L.parse_padding(text), L.parse_single_window_padding(text)), "")
+
+    def test_a_nested_include_is_relative_to_the_file_that_includes_it(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            os.makedirs(os.path.join(cfg, "sub"))
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("include sub/a.conf\n")
+            with open(os.path.join(cfg, "sub", "a.conf"), "w", encoding="utf-8") as f:
+                f.write("include b.conf\n")
+            with open(os.path.join(cfg, "sub", "b.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 22\n")
+            self.assertEqual(L.configured_padding(cfg), (22.0, 22.0, 22.0, 22.0))
+
+    def test_globinclude_follows_a_recursive_pattern(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            os.makedirs(os.path.join(cfg, "themes", "deep"))
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("globinclude themes/**/*.conf\n")
+            with open(os.path.join(cfg, "themes", "deep", "pad.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 18\n")
+            self.assertEqual(L.configured_padding(cfg), (18.0, 18.0, 18.0, 18.0))
+
+    def test_globinclude_double_star_also_matches_the_folder_itself(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            os.makedirs(os.path.join(cfg, "themes"))
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("globinclude themes/**/*.conf\n")
+            with open(os.path.join(cfg, "themes", "pad.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 21\n")
+            self.assertEqual(L.configured_padding(cfg), (21.0, 21.0, 21.0, 21.0))
+
+    def test_a_globinclude_over_a_huge_tree_is_not_walked_and_the_padding_is_unknown(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            for i in range(L._MAX_GLOB_ENTRIES // 8 + 2):
+                os.makedirs(os.path.join(cfg, "themes", f"d{i}", "a", "b", "c", "d", "e", "f", "g"))
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 2\nglobinclude themes/**/*.conf\n")
+            self.assertEqual(L._read_conf_state(cfg), (None, False))
+
+    def test_a_very_deep_folder_chain_stops_at_the_depth_limit(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            deep = os.path.join(cfg, "themes", *(["d"] * (L._MAX_GLOB_DEPTH + 4)))
+            os.makedirs(deep)
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 2\nglobinclude themes/**/*.conf\n")
+            self.assertEqual(L._read_conf_state(cfg), (None, False))
+
+    def test_repeated_double_stars_are_one_and_never_recurse_without_bound(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            os.makedirs(os.path.join(cfg, "themes", "dark"))
+            with open(os.path.join(cfg, "themes", "dark", "pad.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 17\n")
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("globinclude themes/" + "**/" * 2000 + "*.conf\n")
+            self.assertEqual(L.configured_padding(cfg), (17.0, 17.0, 17.0, 17.0))
+
+    def test_a_pattern_with_too_many_segments_is_not_read(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 2\nglobinclude " + "*/" * (L._MAX_GLOB_DEPTH + 2) + "*.conf\n")
+            self.assertEqual(L._read_conf_state(cfg), (None, False))
+
+    def test_a_folder_full_of_other_files_is_not_read_past_the_budget(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            os.makedirs(os.path.join(cfg, "themes"))
+            for i in range(L._MAX_GLOB_ENTRIES + 1):
+                open(os.path.join(cfg, "themes", f"{i}.txt"), "w").close()
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("globinclude themes/*.conf\n")
+            self.assertEqual(L._read_conf_state(cfg), (None, False))
+
+    def test_a_wildcard_before_double_star_is_expanded(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            os.makedirs(os.path.join(cfg, "themes", "dark"))
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("globinclude themes/*/**/*.conf\n")
+            with open(os.path.join(cfg, "themes", "dark", "pad.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 19\n")
+            self.assertEqual(L.configured_padding(cfg), (19.0, 19.0, 19.0, 19.0))
+
+    def test_a_globinclude_naming_too_many_files_is_not_read(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            os.makedirs(os.path.join(cfg, "themes"))
+            for i in range(L._MAX_GLOB_MATCHES + 1):
+                open(os.path.join(cfg, "themes", f"{i}.conf"), "w").close()
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("globinclude themes/*.conf\n")
+            self.assertEqual(L._read_conf_state(cfg), (None, False))
+
+    def test_padding_is_left_alone_when_an_include_is_too_big_to_read(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 2\ninclude huge.conf\n")
+            with open(os.path.join(cfg, "huge.conf"), "w", encoding="utf-8") as f:
+                f.write("# " + "x" * (L._MAX_CONF_BYTES + 10) + "\nwindow_padding_width 30\n")
+            self.assertEqual(L._read_conf_state(cfg), (None, False))
+            with mock.patch.dict(os.environ, {"KITTY_CONFIG_DIRECTORY": cfg}):
+                self.assertEqual(L.pxbar_padding_conf(), "")
+
+    def test_a_later_line_after_an_include_still_wins(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("include base.conf\nwindow_padding_width 3\n")
+            with open(os.path.join(cfg, "base.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 25\n")
+            self.assertEqual(L.configured_padding(cfg), (3.0, 3.0, 3.0, 3.0))

@@ -453,17 +453,18 @@ def _rail_footer(pt, width, height, p, hits, s) -> float:
     return top
 
 
-def _render_rail(pt, cr, groups, pal, width, height, s, hits, start=0):
-    """Returns (start, shown, total)."""
+def _render_rail(pt, cr, groups, pal, width, height, s, hits, start=0, card=False):
+    """Returns (start, shown, total). `card`: the terminal is an inset card beside the rail (pxcard), so no hairline."""
     cx = width / 2
     _sidebar_icon(pt, cx, HEADER_H / 2, pal.muted)                 # the way back open: the wide bar's sidebar icon
     if G.needs_you(groups):
         pt.dot(cx + 11, HEADER_H / 2 - 8, RAIL_PIP_R, pal.waiting)     # clear of the icon, as a row's dot is of its mark
     _action(hits, "collapse", 0, 0, width, HEADER_H, s)            # the whole header expands the sidebar again
-    c, a = pt.veil(0.07)                                           # one hairline where the rail meets the terminal
-    cr.rectangle(width * s - 1, 0, 1, height * s)
-    cr.set_source_rgba(*dp.rgb(c, a))
-    cr.fill()
+    if not card:
+        c, a = pt.veil(0.07)                                       # one hairline where the rail meets the terminal
+        cr.rectangle(width * s - 1, 0, 1, height * s)
+        cr.set_source_rgba(*dp.rgb(c, a))
+        cr.fill()
     total = sum(len(g.rows) for g in groups)
     start = max(0, min(start, max(0, total - 1)))
     foot_h = RAIL_GAP + len(RAIL_FOOT) * RAIL_FOOT_ROW
@@ -527,13 +528,15 @@ def _render_rail(pt, cr, groups, pal, width, height, s, hits, start=0):
 
 
 def render(groups, pal: th.Palette, width: int, height: int, *, host: str = "", scale: float = 1.0,
-           alpha: float = 1.0, resources=None, start: int = 0) -> Picture:
+           alpha: float = 1.0, resources=None, start: int = 0, card: bool = False) -> Picture:
     """Draw the bar. `width`/`height` are logical px; the picture is width*scale × height*scale device px. `start` tab rows
-    are scrolled off the top when the tabs don't all fit (kittymux_pxbar keeps the active one in view)."""
+    are scrolled off the top when the tabs don't all fit (kittymux_pxbar keeps the active one in view). `card` (the pxcard
+    switch): beside the rail the terminal is the shader's inset card, as beside the wide bar, so the rail keeps the wide bar's
+    material and has no hairline."""
     W, H = int(round(width * scale)), int(round(height * scale))
     surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, W, H)
     cr = cairo.Context(surf)
-    if width < RAIL_MAX:
+    if width < RAIL_MAX and not card:
         alpha = rail_alpha(alpha)
     cr.set_source_rgba(*_rgb(pal.bar), alpha)
     cr.paint()
@@ -544,7 +547,7 @@ def render(groups, pal: th.Palette, width: int, height: int, *, host: str = "", 
     narrow = width < 200
     right = width - PAD - INSET
     if width < RAIL_MAX:
-        st, shown, total = _render_rail(pt, cr, groups, pal, width, height, s, hits, start)
+        st, shown, total = _render_rail(pt, cr, groups, pal, width, height, s, hits, start, card)
         return Picture(_png(surf), tuple(hits), W, H, st, shown, total)
 
     # the header: the mascot on a neutral tile, the machine, the needs-you count

@@ -91,6 +91,7 @@ GLASS_FLAG = "bar-cards-glass"       # $KITTYMUX_STATE/bar-cards-glass → the b
 # when cards are on, the geninclude writes a copy into the state dir with this kitty's cell height and fill colours.
 CARDS_PIPELINE = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "assets", "shaders", "kittymux-cards.pipeline")
 PXBAR_PIPELINE = os.path.join(os.path.dirname(CARDS_PIPELINE), "kittymux-pxbar.pipeline")   # the pixel tab bar's hover (pxbar switch)
+PXBAR_CARD_PIPELINE = os.path.join(os.path.dirname(CARDS_PIPELINE), "kittymux-pxbar-card.pipeline")   # the same, with the card beside the rail (pxcard)
 
 
 # POSIX-ERE for `path/to/file.py:42[:7]`; kittymux_openref.DETECT_REGEX must stay identical (a unit test pins it —
@@ -193,8 +194,20 @@ def _pxbar_on(sdir: str) -> bool:
         return False
 
 
-PXBAR_MIN_PADDING = (6.0, 6.0, 6.0, 4.0)      # pt (top, right, bottom, left): clears kittymux-pxbar.slang CARD_M + CARD_R
+def _pxbar_pipeline(sdir: str) -> str:
+    """The pxbar pipeline: the card one when the pxcard switch is on and it is installed, else the rail's own frame."""
+    try:
+        card = bool(_import_here("kittymux_switches").enabled("pxcard", sdir))
+    except Exception:
+        card = False
+    return PXBAR_CARD_PIPELINE if card and os.path.exists(PXBAR_CARD_PIPELINE) else PXBAR_PIPELINE
+
+
+PXBAR_MIN_PADDING = (6.0, 6.0, 6.0, 4.0)      # pt (top, right, bottom, left): clears kittymux-pxbar.slang CARD_M + CARD_R, beside the rail too (pxcard)
 _MAX_CONF_BYTES = 262_144                     # 256 KiB cap: never do unbounded reads on kitty's main thread
+_MAX_GLOB_MATCHES = 64                        # a globinclude naming more files than this is not read (padding unknown)
+_MAX_GLOB_ENTRIES = 4096                      # nor one that would examine more directory entries than this
+_MAX_GLOB_DEPTH = 64                          # nor one whose ** would go deeper than this many folders
 
 
 def _parse_pad_directive(text: str, directive: str, default: tuple[float, float, float, float],
@@ -234,18 +247,123 @@ def parse_single_window_padding(text: str) -> tuple[float, float, float, float]:
     return _parse_pad_directive(text, "single_window_padding_width", (-1.0, -1.0, -1.0, -1.0), allow_negative=True)
 
 
-def _read_conf_bounded(cfg_dir: str | None = None) -> str | None:
-    """Read kitty.conf up to `_MAX_CONF_BYTES`; return None if missing, unreadable, or oversized."""
+_MAX_INCLUDE_DEPTH = 8
+
+
+class _TooBig(Exception):
+    pass
+
+
+def _bounded_glob(pattern: str) -> list[str]:
+    """Files a globinclude names, sorted, matched one path segment at a time as kitty's Path.glob does (`*` within a name,
+    `**` any depth including none, symlinked folders not followed); raises _TooBig past _MAX_GLOB_ENTRIES directory entries
+    examined, _MAX_GLOB_DEPTH folders deep (never Python's recursion limit) or _MAX_GLOB_MATCHES files, so kitty's main thread never waits on a big folder."""
+    import fnmatch
+    import glob as _glob
+    parts = []
+    for p in pattern.split(os.sep):
+        if p and not (p == "**" and parts and parts[-1] == "**"):
+            parts.append(p)
+    if len(parts) > _MAX_GLOB_DEPTH:
+        raise _TooBig
+    hits: list[str] = []
+    examined = 0
+
+    def entries(d: str) -> list:
+        nonlocal examined
+        out = []
+        try:
+            with os.scandir(d) as it:
+                for e in it:
+                    examined += 1
+                    if examined > _MAX_GLOB_ENTRIES:
+                        raise _TooBig
+                    out.append(e)
+        except OSError:
+            return []
+        return out
+
+    def walk(base: str, i: int, depth: int = 0) -> None:
+        if depth > _MAX_GLOB_DEPTH:
+            raise _TooBig
+        if i == len(parts):
+            if os.path.isfile(base):
+                hits.append(base)
+                if len(hits) > _MAX_GLOB_MATCHES:
+                    raise _TooBig
+            return
+        part = parts[i]
+        if part == "**":
+            walk(base, i + 1, depth)
+            for e in entries(base):
+                if e.is_dir(follow_symlinks=False):
+                    walk(os.path.join(base, e.name), i, depth + 1)
+            return
+        if not _glob.has_magic(part):
+            walk(os.path.join(base, part), i + 1, depth + 1)
+            return
+        for e in entries(base):
+            if fnmatch.fnmatchcase(e.name, part):
+                walk(os.path.join(base, e.name), i + 1, depth + 1)
+
+    walk(os.sep if os.path.isabs(pattern) else os.curdir, 0)
+    return sorted(set(hits))
+
+
+def _read_conf_state(cfg_dir: str | None = None) -> tuple[str | None, bool]:
+    """(text, complete): kitty.conf with its `include` and `globinclude` files spliced in where kitty reads them (a relative
+    path against the directory of the file that names it, `**` as kitty's Path.glob, `~` and variables expanded; `geninclude`
+    and `envinclude` are not run). (None, True) when kitty.conf is missing or unreadable; (None, False) when any file would take
+    the whole past `_MAX_CONF_BYTES`, so the padding is unknown, not zero. A missing or unreadable included file is skipped, as kitty does."""
     cdir = cfg_dir or os.environ.get("KITTY_CONFIG_DIRECTORY") or os.path.expanduser("~/.config/kitty")
-    path = os.path.join(cdir, "kitty.conf")
-    try:
-        if os.stat(path).st_size > _MAX_CONF_BYTES:
-            return None
+    seen: set[str] = set()
+    used = 0
+
+    def where(arg: str, base: str) -> str:
+        p = os.path.expanduser(os.path.expandvars(arg))
+        return p if os.path.isabs(p) else os.path.join(base, p)
+
+    def read(path: str, depth: int) -> str:
+        nonlocal used
+        real = os.path.realpath(path)
+        if real in seen or depth > _MAX_INCLUDE_DEPTH:
+            return ""
+        seen.add(real)
+        budget = _MAX_CONF_BYTES - used
+        if os.stat(path).st_size > budget:
+            raise _TooBig
         with open(path, encoding="utf-8", errors="replace") as f:
-            data = f.read(_MAX_CONF_BYTES + 1)
-            return None if len(data.encode("utf-8", errors="replace")) > _MAX_CONF_BYTES else data
+            text = f.read(budget + 1)
+        used += len(text.encode("utf-8", errors="replace"))
+        if used > _MAX_CONF_BYTES:
+            raise _TooBig
+        out = []
+        for raw in text.splitlines(keepends=True):
+            parts = raw.split("#", 1)[0].split(None, 1)
+            if len(parts) == 2 and parts[0] in ("include", "globinclude"):
+                arg = parts[1].strip()
+                base = os.path.dirname(os.path.abspath(path))
+                target = where(arg, base)
+                for p in (_bounded_glob(target) if parts[0] == "globinclude" else [target]):
+                    try:
+                        out.append(read(p, depth + 1) + "\n")
+                    except OSError:
+                        pass
+                continue
+            out.append(raw)
+        return "".join(out)
+
+    try:
+        return read(os.path.join(cdir, "kitty.conf"), 0), True
+    except _TooBig:
+        return None, False
     except OSError:
-        return None
+        return None, True
+
+
+def _read_conf_bounded(cfg_dir: str | None = None) -> str | None:
+    """kitty.conf with its includes (see _read_conf_state); None when it is missing, unreadable or too big to read whole."""
+    return _read_conf_state(cfg_dir)[0]
 
 
 def configured_padding(cfg_dir: str | None = None) -> tuple[float, float, float, float]:
@@ -261,7 +379,9 @@ def pxbar_padding_conf(existing: tuple[float, float, float, float] | None = None
                        existing_single: tuple[float, float, float, float] | None = None) -> str:
     """Ensure the terminal pane has enough padding for pxbar's rounded card frame without shrinking larger user padding."""
     if existing is None or existing_single is None:
-        text = _read_conf_bounded()
+        text, complete = _read_conf_state()
+        if not complete:
+            return ""
         if existing is None:
             existing = parse_padding(text) if text is not None else (0.0, 0.0, 0.0, 0.0)
         if existing_single is None:
@@ -294,7 +414,7 @@ def gated_conf(version: tuple, sdir: str, slangc: bool = False,
     if version >= DIM_SHADER_MIN and slangc and os.path.exists(os.path.join(sdir, DIM_FLAG)):
         shaders.append("dim-inactive-windows")
     if version >= CARDS_SHADER_MIN and slangc and _pxbar_on(sdir) and os.path.exists(PXBAR_PIPELINE):
-        shaders.append(PXBAR_PIPELINE)               # the pixel tab bar draws its own cards: its shader replaces the cards one
+        shaders.append(_pxbar_pipeline(sdir))        # the pixel tab bar draws its own cards: its shader replaces the cards one
         pxbar_shader = True
     elif version >= CARDS_SHADER_MIN and slangc and os.path.exists(os.path.join(sdir, CARDS_FLAG)) and os.path.exists(CARDS_PIPELINE):
         shaders.append(cards_pipeline(sdir))

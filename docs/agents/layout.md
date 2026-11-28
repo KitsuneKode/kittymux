@@ -66,7 +66,12 @@ Part of the agent guide: start at [AGENTS.md](../../AGENTS.md) (the rules and th
 - The rail (`kittymux_barpx._render_rail`, below `RAIL_MAX`): kitty makes a custom-drawn left bar title + 8 cells wide at the least (measured: `tab_fade`
   and `tab_separator` shrink the built-in styles, not `custom`), so the rail is ~80 px and cannot be narrower. Marks only, monochrome; the active row alone has a
   tile (`RAIL_TILE`), and the hover in `kittymux-pxbar.slang` is the same square; state is a dot inside the tile's corner; a working row uses the working
-  marker family and `kittymux-pxwave.slang` turns its ring (`rail_ring`, constants pinned by `test_pxbar`). Beside the rail the shader draws no terminal card.
+  marker family and `kittymux-pxwave.slang` turns its ring (`rail_ring`, constants pinned by `test_pxbar`). Beside the rail the shader draws no terminal card,
+  unless the `pxcard` switch is on: then the geninclude emits `kittymux-pxbar-card.pipeline` (`kittymux_layout._pxbar_pipeline`), the same groups with
+  `var bool RAIL_CARD = true` in the hover group (the shader's `static const bool RAIL_CARD = false` is the default; `test_pxbar` keeps the two pipelines the same
+  otherwise), and `kittymux_pxbar.card_on` makes `kittymux_barpx.render(card=True)` drop the rail's hairline and `rail_alpha`. The card keeps `CARD_M` 5 / `CARD_R` 9.
+  The padding floor (`pxbar_padding_conf`, `PXBAR_MIN_PADDING`) is the same in both frames; `_read_conf_bounded` splices `include`/`globinclude` files in, so a
+  larger padding set in one is seen and kept.
 - Mute (`kittymux_quiet`: `mutes-<kitty pid>.json`, `tab_windows` for `kittymux mute [TAB]`): `RowData.muted` / `PaneData.muted` from the collector; `kittymux_deck.asks` is the one "does this row need you" rule (muted never does); `agents.json` rows carry `muted`, the document `needs_you`. Group by state (`g`): `kittymux_deck.group_by_state` + `flatten(headed=True)`, remembered in `$STATE/panel-group`.
 - `python/kittymux_helpview.py` (pure) — the panel's `?` card (keys + mouse of the current view; the key list is data, `tests/test_helpview.py` checks every named key is one the panel handles). `kittymux_deck.wrap_words` wraps prose at spaces (`wrap_detail` splits characters: for paths).
   A split tab's panes are listed only for tab ids in `Snapshot.open_tabs` (`sidebar-kit._open`; `deck.flatten(…, open_tabs)`): toggled by `▸`/`▾` clicks, `→ ← o`; NEVER by hover or by a state change (the list must not move under the pointer).
