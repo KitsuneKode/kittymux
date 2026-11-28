@@ -562,10 +562,22 @@ class RailShaderTest(unittest.TestCase):
         self.assertIn("static const float CARD_R = 9.0;", src)
 
     def test_publish_draws_the_rail_for_the_frame_the_switch_chose(self):
+        from unittest import mock
         d = tempfile.mkdtemp()
-        self.assertFalse(PX.card_on(d))
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("KITTYMUX_PXCARD", None)
+            self.assertFalse(PX.card_on(d))
+            open(os.path.join(d, "pxcard-on"), "w").close()
+            self.assertTrue(PX.card_on(d))
+
+    def test_the_rail_draws_no_card_when_the_card_pipeline_is_missing(self):
+        from unittest import mock
+        import kittymux_layout as L
+        d = tempfile.mkdtemp()
         open(os.path.join(d, "pxcard-on"), "w").close()
-        self.assertTrue(PX.card_on(d))
+        with mock.patch.dict(os.environ, {}, clear=False), mock.patch.object(L, "PXBAR_CARD_PIPELINE", os.path.join(d, "missing.pipeline")):
+            os.environ.pop("KITTYMUX_PXCARD", None)
+            self.assertFalse(PX.card_on(d))
 
     def test_the_loader_knows_the_rail_geometry(self):
         try:

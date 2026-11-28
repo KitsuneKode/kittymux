@@ -607,7 +607,36 @@ class PxbarPaddingTests(unittest.TestCase):
                 f.write("single_window_padding_width 30 -1 -1 -1\n")
             self.assertEqual(L.configured_padding(cfg), (25.0, 25.0, 25.0, 25.0))
             text = L._read_conf_bounded(cfg)
+            self.assertEqual(L.parse_single_window_padding(text), (30.0, -1.0, -1.0, -1.0))
             self.assertEqual(L.pxbar_padding_conf(L.parse_padding(text), L.parse_single_window_padding(text)), "")
+
+    def test_a_nested_include_is_relative_to_the_file_that_includes_it(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            os.makedirs(os.path.join(cfg, "sub"))
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("include sub/a.conf\n")
+            with open(os.path.join(cfg, "sub", "a.conf"), "w", encoding="utf-8") as f:
+                f.write("include b.conf\n")
+            with open(os.path.join(cfg, "sub", "b.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 22\n")
+            self.assertEqual(L.configured_padding(cfg), (22.0, 22.0, 22.0, 22.0))
+
+    def test_globinclude_follows_a_recursive_pattern(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            os.makedirs(os.path.join(cfg, "themes", "deep"))
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("globinclude themes/**/*.conf\n")
+            with open(os.path.join(cfg, "themes", "deep", "pad.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 18\n")
+            self.assertEqual(L.configured_padding(cfg), (18.0, 18.0, 18.0, 18.0))
+
+    def test_an_include_too_big_to_read_is_skipped_not_read_as_no_padding(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            with open(os.path.join(cfg, "kitty.conf"), "w", encoding="utf-8") as f:
+                f.write("window_padding_width 25\ninclude huge.conf\n")
+            with open(os.path.join(cfg, "huge.conf"), "w", encoding="utf-8") as f:
+                f.write("# " + "x" * (L._MAX_CONF_BYTES + 10) + "\n")
+            self.assertEqual(L.configured_padding(cfg), (25.0, 25.0, 25.0, 25.0))
 
     def test_a_later_line_after_an_include_still_wins(self):
         with tempfile.TemporaryDirectory() as cfg:

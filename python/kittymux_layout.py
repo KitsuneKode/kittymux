@@ -260,9 +260,9 @@ def _read_conf_bounded(cfg_dir: str | None = None) -> str | None:
     seen: set[str] = set()
     used = 0
 
-    def where(arg: str) -> str:
+    def where(arg: str, base: str) -> str:
         p = os.path.expanduser(os.path.expandvars(arg))
-        return p if os.path.isabs(p) else os.path.join(cdir, p)
+        return p if os.path.isabs(p) else os.path.join(base, p)
 
     def read(path: str, depth: int) -> str:
         nonlocal used
@@ -283,10 +283,12 @@ def _read_conf_bounded(cfg_dir: str | None = None) -> str | None:
             parts = raw.split("#", 1)[0].split(None, 1)
             if len(parts) == 2 and parts[0] in ("include", "globinclude"):
                 arg = parts[1].strip()
-                for p in (sorted(glob.glob(where(arg))) if parts[0] == "globinclude" else [where(arg)]):
+                base = os.path.dirname(os.path.abspath(path))
+                target = where(arg, base)
+                for p in (sorted(glob.glob(target, recursive=True)) if parts[0] == "globinclude" else [target]):
                     try:
                         out.append(read(p, depth + 1) + "\n")
-                    except OSError:
+                    except (OSError, _TooBig):
                         pass
                 continue
             out.append(raw)

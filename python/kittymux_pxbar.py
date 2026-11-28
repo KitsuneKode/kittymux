@@ -88,8 +88,8 @@ def card_on(sdir: str | None = None) -> bool:
     """The pxcard switch: the terminal is an inset card beside the rail too. The geninclude picks the matching pipeline at the
     same reload (`kittymux settings` reloads), so the picture and the shader agree."""
     try:
-        import kittymux_switches
-        return kittymux_switches.enabled("pxcard", sdir)
+        import kittymux_layout
+        return kittymux_layout._pxbar_pipeline(sdir) == kittymux_layout.PXBAR_CARD_PIPELINE
     except Exception:
         return False
 
